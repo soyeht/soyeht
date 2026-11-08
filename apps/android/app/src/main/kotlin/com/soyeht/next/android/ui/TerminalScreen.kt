@@ -140,6 +140,8 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
             autoCorrectEnabled = false,
         ),
         keyboardActions = KeyboardActions(onSend = { model.press(TerminalKey.Enter) }),
+        // The field is invisible, so its caret is too, and no brush means no blink: an idle terminal draws no frames.
+        cursorBrush = SolidColor(Color.Unspecified),
         modifier = Modifier
             .size(1.dp)
             .alpha(0f)
