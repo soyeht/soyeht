@@ -1,6 +1,7 @@
 //! Ending a harness switch: the continuation package, the commit, and the failure paths.
 
 use super::*;
+use crate::agents::{configuration::MODE_CEILING_STOP, mode_ceiling::Verdict};
 
 impl Core {
     pub(super) fn begin_continuation_or_commit(
@@ -9,6 +10,11 @@ impl Core {
         next_name: &str,
         candidate: &mut Candidate,
     ) -> Result<bool> {
+        // The continuation package is a prompt turn: it never runs in a mode above the ceiling
+        // of the agent that started the pane.
+        if !self.hold_candidate_ceiling(candidate)? {
+            return Ok(false);
+        }
         let original = self.agent_state(pane)?;
         let Some((package, included_messages)) =
             self.continuation_package(pane, &original, next_name)?
@@ -45,6 +51,28 @@ impl Core {
             incorporated_pending,
         };
         Ok(false)
+    }
+
+    /// Checks the mode the candidate session runs against the ceiling the pane carries.
+    /// `false` when the candidate was asked for a mode within it and the check resumes once
+    /// the harness confirms; an error, which ends the switch, when no mode of the harness is.
+    pub(super) fn hold_candidate_ceiling(&mut self, candidate: &mut Candidate) -> Result<bool> {
+        let Some(mut ceiling) = candidate.state.mode_ceiling.take() else {
+            return Ok(true);
+        };
+        let verdict = ceiling.verdict(&candidate.state, None);
+        candidate.state.mode_ceiling = Some(ceiling);
+        match verdict {
+            Verdict::Within => Ok(true),
+            Verdict::Stop => Err(errors::harness_unavailable(MODE_CEILING_STOP)),
+            Verdict::Switch(mode) => {
+                self.send_next_candidate_option(
+                    candidate,
+                    vec![(crate::agents::configuration::MODE_KEY.into(), mode)],
+                )?;
+                Ok(false)
+            }
+        }
     }
 
     pub(super) fn commit_switch_candidate(

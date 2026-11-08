@@ -32,6 +32,7 @@ from generated_profile import PROFILES
 from legacy_guard import require_next
 from package_common import (
     HOMEPAGE,
+    LICENSE_DOCUMENTS,
     PROFILE_NAME,
     ROOT,
     PackagingError,
@@ -41,6 +42,7 @@ from package_common import (
     cargo_build,
     check_sizes,
     host_arch,
+    license_document,
     make_plan,
     run,
     stream,
@@ -78,7 +80,7 @@ SUBSYSTEMS = {
     "soyeht-desktop": GUI,
 }
 # Files beside the programs, which the installer puts in the install folder.
-LICENSE_FILES = ("LICENSE", "NOTICE")
+LICENSE_FILES = LICENSE_DOCUMENTS
 
 # architecture -> (rust target, PE machine, Inno architecture, folder of the Windows SDK tools).
 # An x64 installer also opens on Windows on Arm, which runs x64 programs; an arm64 one does not
@@ -272,7 +274,7 @@ def stage(plan, out):
     for name, source in plan.programs.items():
         shutil.copy2(source, staging / f"{name}.exe")
     for name in LICENSE_FILES:
-        shutil.copy2(ROOT / name, staging / name)
+        (staging / name).write_bytes(license_document(name))
     return staging
 
 

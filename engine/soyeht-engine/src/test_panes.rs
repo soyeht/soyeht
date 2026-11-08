@@ -339,3 +339,40 @@ impl Core {
         self.settle_supervisor(&supervisor, result)
     }
 }
+
+/// The state of a ready agent of `harness`, in the mode `current` of the modes `choices` (a value
+/// and the kind its harness announces for it).
+pub(crate) fn agent_with_modes(
+    harness: &str,
+    current: &str,
+    choices: &[(&str, &str)],
+) -> crate::agents::state::State {
+    let choices: Vec<_> = choices
+        .iter()
+        .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
+        .collect();
+    let mut state = ready_agent_state();
+    state.launch.id = harness.into();
+    state.options = soyeht_acp::config::Options::from_response(&json!({"configOptions":[{
+        "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":current,
+        "options":choices}]}))
+    .unwrap();
+    state
+}
+
+/// The modes the Claude adapter announces, with the kind each carries.
+pub(crate) const CLAUDE_MODES: [(&str, &str); 5] = [
+    ("default", "standard"),
+    ("acceptEdits", "standard"),
+    ("plan", "plan"),
+    ("auto", "auto_review"),
+    ("bypassPermissions", "full_access"),
+];
+
+/// The modes the Codex adapter announces: it has no plan mode, and its `read-only` is the
+/// standard one that asks before editing outside the workspace.
+pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
+    ("read-only", "standard"),
+    ("agent", "auto_review"),
+    ("agent-full-access", "full_access"),
+];
