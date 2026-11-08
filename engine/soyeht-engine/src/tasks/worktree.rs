@@ -80,12 +80,23 @@ impl CommandWorktree {
             ..soyeht_platform::git::Probe::system()
         };
         soyeht_process::require_git_with(&probe).map_err(errors::worktree_process)?;
+        // `wt` runs git on the repository, and git starts the programs the repository's own
+        // configuration names (the file system monitor, a filter driver, a hook). The settings that
+        // keep git from it travel in the environment `wt` hands to every git it starts.
+        let limits = Limits::new(LIST_TIMEOUT, OUTPUT_LIMIT);
+        // Git before 2.31 ignores the settings, which would leave `wt` unhardened: it is not run.
+        soyeht_process::require_config_environment(&probe, limits)
+            .map_err(errors::worktree_process)?;
+        let git = soyeht_process::ReadOnlyGit::prepare_with(&probe, repository, limits)
+            .map_err(errors::worktree_process)?;
         let mut command = Command::new(&self.executable);
         command
             .env("PATH", path)
             .arg("-C")
             .arg(repository)
             .args(args);
+        git.harden_environment(&mut command)
+            .map_err(errors::worktree_process)?;
         bounded_command(command, timeout)
     }
 
@@ -497,6 +508,9 @@ fn comments_section(comments: &[Comment], room: usize) -> String {
     }
     section
 }
+
+#[cfg(all(test, unix))]
+mod hardening_tests;
 
 #[cfg(test)]
 mod tests {
