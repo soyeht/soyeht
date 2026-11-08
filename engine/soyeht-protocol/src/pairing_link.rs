@@ -8,6 +8,10 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use std::net::{IpAddr, SocketAddr};
 
 const PREFIX: &str = "soyeht-next://pair?";
+/// What a QR code carries instead of the link (ADR 0153). It is not a URL, so the system camera
+/// shows it as text and hands it to no app that has claimed the link's scheme; only a scanner
+/// inside the app reads it. The number is the grammar's version.
+const QR_PREFIX: &str = "SOYEHT-PAIR 1 ";
 const FIELDS: [&str; 4] = ["address", "code", "engineId", "engineKey"];
 
 /// Why a text is not a pairing link a device can use.
@@ -52,7 +56,20 @@ pub fn permitted_address(address: IpAddr) -> bool {
 /// The link of a pairing window. `address` is `host:port`, with an IPv6 host in brackets, and
 /// `engine_key` the engine's public key as [`key_text`] writes it.
 pub fn uri(engine_id: &str, address: &str, code: &str, engine_key: &str) -> String {
-    format!("{PREFIX}engineId={engine_id}&address={address}&code={code}&engineKey={engine_key}")
+    format!("{PREFIX}{}", fields(engine_id, address, code, engine_key))
+}
+
+/// The text of a pairing window's QR code: the fields of [`uri`] behind a prefix that is not a
+/// URL scheme. [`PairingLink::parse`] reads both.
+pub fn qr(engine_id: &str, address: &str, code: &str, engine_key: &str) -> String {
+    format!(
+        "{QR_PREFIX}{}",
+        fields(engine_id, address, code, engine_key)
+    )
+}
+
+fn fields(engine_id: &str, address: &str, code: &str, engine_key: &str) -> String {
+    format!("engineId={engine_id}&address={address}&code={code}&engineKey={engine_key}")
 }
 
 /// The short code a pairing shows on both devices for the person to compare (ADR 0152): the first
@@ -85,7 +102,11 @@ pub fn key_text(key: &[u8; 32]) -> String {
 
 impl PairingLink {
     pub fn parse(text: &str) -> Result<Self, LinkError> {
-        let query = text.trim().strip_prefix(PREFIX).ok_or(LinkError::Invalid)?;
+        let text = text.trim();
+        let query = text
+            .strip_prefix(PREFIX)
+            .or_else(|| text.strip_prefix(QR_PREFIX))
+            .ok_or(LinkError::Invalid)?;
         let mut fields: Vec<(String, String)> = Vec::new();
         for pair in query.split('&') {
             let (name, value) = pair.split_once('=').ok_or(LinkError::Invalid)?;
@@ -210,6 +231,41 @@ mod tests {
         let parsed = PairingLink::parse(&link).unwrap();
         assert_eq!(parsed.engine_key, key);
         assert_eq!(parsed.address.to_string(), "100.64.1.2:8443");
+    }
+
+    #[test]
+    fn the_qr_text_is_not_a_url_and_reads_as_the_link_does() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7; 32])
+            .verifying_key()
+            .to_bytes();
+        let args = (
+            "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b",
+            "100.64.1.2:8443",
+            "A".repeat(PAIRING_CODE_CHARS),
+            key_text(&key),
+        );
+        let link = uri(args.0, args.1, &args.2, &args.3);
+        let text = qr(args.0, args.1, &args.2, &args.3);
+        assert!(!text.contains("://") && text.contains(' '));
+        assert!(text.starts_with("SOYEHT-PAIR "));
+        assert_eq!(
+            PairingLink::parse(&text).unwrap(),
+            PairingLink::parse(&link).unwrap()
+        );
+        // The version is part of the grammar, and a prefix of another case or number is not it.
+        for other in [
+            "soyeht-pair 1 ",
+            "SOYEHT-PAIR 2 ",
+            "SOYEHT-PAIR  1 ",
+            "SOYEHT-PAIR 1",
+        ] {
+            let changed = text.replacen("SOYEHT-PAIR 1 ", other, 1);
+            assert_eq!(
+                PairingLink::parse(&changed),
+                Err(LinkError::Invalid),
+                "{other:?}"
+            );
+        }
     }
 
     #[test]
