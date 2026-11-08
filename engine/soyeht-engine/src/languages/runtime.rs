@@ -5,6 +5,7 @@ use crate::{
     model,
     ports::StorePort,
     process_start::Started,
+    project_trust::project_trusted,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -23,17 +24,20 @@ impl Core {
     pub(crate) fn ensure_language_server(&mut self, file: &EditorFile) -> Result<String> {
         let workspace = model::workspace(&self.store, &file.workspace_id)?;
         let key = Service::key(&file.workspace_id, &file.language)?;
+        let trusted = project_trusted(&self.store, &workspace.path)?;
         if self.languages.get(&key).is_none() {
-            let server = Server::new(&file.workspace_id, &workspace.path, file.language.clone())?;
+            // The canonical folder is the working directory: a link that is swapped afterwards
+            // does not move the server to another folder.
+            let root = crate::project_trust::root_of(&workspace.path);
+            let server =
+                Server::new(&file.workspace_id, &root, file.language.clone())?.with_trust(trusted);
             self.languages.insert(server)?;
             self.persist_language_server(&key, Vec::new())?;
+        } else {
+            self.follow_language_trust(&key, None)?;
         }
-        if self
-            .languages
-            .get(&key)
-            .and_then(|server| server.instance_id.as_ref())
-            .is_none()
-        {
+        let server = language(&self.languages, &key)?;
+        if server.instance_id.is_none() && server.refusal().is_none() {
             self.spawn_language_server(&key)?;
         }
         self.sync_language_document(&key, file)?;
@@ -164,12 +168,53 @@ impl Core {
                     && !instance.closed
                     && instance.exit_code.is_none()
             });
+            if self.follow_language_trust(&key, existing)? {
+                // A new trust: the old process is closed, and a server an editor needs starts again.
+                if self.language_server_requires_process(&key)?
+                    && language(&self.languages, &key)?.refusal().is_none()
+                    && let Err(error) = self.spawn_language_server(&key)
+                {
+                    self.language_failed(&key, &error);
+                }
+                continue;
+            }
             if !self.language_server_requires_process(&key)? {
                 self.park_language_server(&key, existing)?;
                 continue;
             }
+            if language(&self.languages, &key)?.refusal().is_some() {
+                self.park_language_server(&key, existing)?;
+                continue;
+            }
+            // A server that cannot start the way its folder's trust asks (no installed
+            // tsserver.js, no program outside the folder) is left unavailable, with its process
+            // closed; it must not drop the link to the supervisor. What it starts as is worked
+            // out once here and used for the adoption.
+            let launch = match self.language_launch(&key) {
+                Ok(launch) => launch,
+                Err(error) => {
+                    if let Some(instance) = existing {
+                        self.close_process(&instance.instance_id);
+                    }
+                    self.language_failed(&key, &error);
+                    continue;
+                }
+            };
             if let Some(instance) = existing {
-                language_mut(&mut self.languages, &key)?.adopt(instance)?;
+                if let Err(error) =
+                    language_mut(&mut self.languages, &key)?.adopt(instance, &launch.spawn)
+                {
+                    // Started under another identity (another search path, say): it is not
+                    // this engine's to keep, and the link to the supervisor stays.
+                    log::failure("engine.lsp_not_adopted", &error);
+                    self.close_process(&instance.instance_id);
+                    if let Err(error) =
+                        self.restart_language_server(&key, "Language server process was replaced")
+                    {
+                        self.leave_language_server_unavailable(&key, error)?;
+                    }
+                    continue;
+                }
                 self.persist_language_server(&key, Vec::new())?;
                 self.resume_language_writes(&key)?;
                 self.publish_language_completions(&key)?;
@@ -192,7 +237,7 @@ impl Core {
         self.mark_language_unavailable(key, "Language server could not be restarted")
     }
 
-    fn language_server_requires_process(&self, key: &str) -> Result<bool> {
+    pub(super) fn language_server_requires_process(&self, key: &str) -> Result<bool> {
         let server = language(&self.languages, key)?;
         if !server.pending_writes.is_empty() || !server.requests.is_empty() {
             return Ok(true);
@@ -256,8 +301,9 @@ impl Core {
 
     /// Asks the supervisor for the server's process, off the lock (ADR 0126). The server is
     /// adopted when it has made it; a server restarted meanwhile starts under its new identity.
-    fn spawn_language_server(&mut self, key: &str) -> Result<()> {
-        let spawn = language(&self.languages, key)?.spawn()?;
+    pub(super) fn spawn_language_server(&mut self, key: &str) -> Result<()> {
+        // A server that cannot start safely fails before it starts, not after.
+        let spawn = self.language_launch(key)?.spawn;
         let (owner, key, identity) = (
             format!("lsp:{key}:{}", spawn.instance_key),
             key.to_owned(),
@@ -307,7 +353,7 @@ impl Core {
 
     /// Leaves the server unavailable and fails the editor requests waiting for it, after a failure
     /// that stops it.
-    fn language_failed(&mut self, key: &str, error: &errors::Error) {
+    pub(super) fn language_failed(&mut self, key: &str, error: &errors::Error) {
         let marked = self.mark_language_unavailable(key, &error.to_string());
         errors::log_if_failed("engine.lsp_mark_unavailable_failed", marked);
         let failed = self.fail_language_waiters(
@@ -320,12 +366,13 @@ impl Core {
     }
 
     fn adopt_language_process(&mut self, key: &str, instance: &Instance) -> Result<()> {
-        language_mut(&mut self.languages, key)?.adopt(instance)?;
+        let launch = self.language_launch(key)?;
+        language_mut(&mut self.languages, key)?.adopt(instance, &launch.spawn)?;
         self.persist_language_server(key, Vec::new())?;
         let root = root_uri(Path::new(&language(&self.languages, key)?.root))?;
         let initialize = language_mut(&mut self.languages, key)?
             .client
-            .initialize(&root)
+            .initialize(&root, launch.options.as_ref())
             .map_err(errors::lsp)?;
         self.send_language_value(key, &initialize)
     }
@@ -578,13 +625,16 @@ impl Core {
         language_mut(&mut self.languages, key)?.restart(detail)?;
         self.persist_language_server(key, Vec::new())?;
         self.confirm_language_writes(pending);
+        if language(&self.languages, key)?.refusal().is_some() {
+            return Ok(());
+        }
         self.spawn_language_server(key)
     }
 
     /// Sends the close of the server's process, and returns the writes it never confirmed. Best
     /// effort: the generation bump that follows makes any late output from it stale, and a
     /// replacement starts under a new instance key.
-    fn close_language_process(&mut self, key: &str) -> Result<Vec<String>> {
+    pub(super) fn close_language_process(&mut self, key: &str) -> Result<Vec<String>> {
         let pending = language(&self.languages, key)?
             .pending_writes
             .keys()
@@ -599,7 +649,7 @@ impl Core {
 
     /// Confirms the receipts of writes that will not be delivered. Nobody waits for it: an
     /// unconfirmed receipt is reconciled when the supervisor returns.
-    fn confirm_language_writes(&mut self, operation_keys: Vec<String>) {
+    pub(super) fn confirm_language_writes(&mut self, operation_keys: Vec<String>) {
         for operation_key in operation_keys {
             self.send_later(Request::ConfirmInput { operation_key });
         }
@@ -700,13 +750,13 @@ pub(super) fn bounded_diagnostics(
     Ok((bounded, omitted))
 }
 
-fn language<'a>(service: &'a Service, key: &str) -> Result<&'a Server> {
+pub(super) fn language<'a>(service: &'a Service, key: &str) -> Result<&'a Server> {
     service
         .get(key)
         .ok_or_else(|| errors::internal("Language server disappeared"))
 }
 
-fn language_mut<'a>(service: &'a mut Service, key: &str) -> Result<&'a mut Server> {
+pub(super) fn language_mut<'a>(service: &'a mut Service, key: &str) -> Result<&'a mut Server> {
     service
         .get_mut(key)
         .ok_or_else(|| errors::internal("Language server disappeared"))

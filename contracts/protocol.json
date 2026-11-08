@@ -82,7 +82,8 @@
         "capabilities",
         "streams",
         "files",
-        "writing"
+        "writing",
+        "trust"
       ]
     },
     "ErrorKind": {
@@ -1428,6 +1429,10 @@
         },
         "uri": {
           "type": "string"
+        },
+        "qr": {
+          "type": "string",
+          "description": "The text of the pairing QR code: the fields of `uri` behind a prefix that is not a URL scheme, so the system camera hands it to no app (ADR 0153). Absent from an engine that predates it, whose app draws `uri`."
         },
         "reachability": {
           "$ref": "#/$defs/EngineReachability"
@@ -7881,6 +7886,106 @@
       ],
       "additionalProperties": true
     },
+    "ProjectTrust": {
+      "type": "string",
+      "enum": [
+        "undecided",
+        "restricted",
+        "trusted"
+      ]
+    },
+    "ProjectTrustChoice": {
+      "type": "string",
+      "enum": [
+        "restricted",
+        "trusted"
+      ]
+    },
+    "ProjectTrustEntry": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustSetParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrustChoice"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "trust",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustSetResult": {
+      "type": "object",
+      "properties": {
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "workspaceIds",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceIds",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
     "UsageProvider": {
       "type": "string",
       "enum": [
@@ -8205,7 +8310,8 @@
         "starting",
         "ready",
         "restarting",
-        "unavailable"
+        "unavailable",
+        "restricted"
       ]
     },
     "TextPosition": {
@@ -9981,6 +10087,9 @@
         "detail": {
           "type": "string",
           "maxLength": 1024
+        },
+        "safeMode": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -13739,6 +13848,15 @@
       },
       "mutation": true
     },
+    "project.trust.set": {
+      "params": {
+        "$ref": "#/$defs/ProjectTrustSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectTrustSetResult"
+      },
+      "mutation": true
+    },
     "lsp.status": {
       "params": {
         "$ref": "#/$defs/LspStatusParams"
@@ -14216,6 +14334,12 @@
     "settings.changed": {
       "params": {
         "$ref": "#/$defs/SettingsChangedEvent"
+      },
+      "durable": true
+    },
+    "project.trust_changed": {
+      "params": {
+        "$ref": "#/$defs/ProjectTrustChangedEvent"
       },
       "durable": true
     },
@@ -14904,7 +15028,13 @@
       "appMoveCopyLocked": "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.",
       "appMoveOldInTrash": "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.",
       "pushNeedsYouTitle": "An agent needs you",
-      "pushNeedsYouBody": "Open Soyeht to see what it asks."
+      "pushNeedsYouBody": "Open Soyeht to see what it asks.",
+      "projectTrustTitle": "Trust this folder?",
+      "projectTrustSummary": "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from.",
+      "projectTrustTrust": "Trust folder",
+      "projectTrustRestrict": "Keep restricted",
+      "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
+      "projectTrustFailed": "Soyeht could not save this choice."
     },
     "inlineImageTypes": ["image/png", "image/jpeg", "image/gif", "image/webp"],
     "paneStates": {
