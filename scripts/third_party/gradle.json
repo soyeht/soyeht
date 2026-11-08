@@ -73,7 +73,20 @@
       "url": "https://github.com/zxing/zxing"
     },
     {
-      "coordinate": "Kotlin standard library, AndroidX and Compose runtime libraries (transitive)",
+      "coordinate": "com.google.mlkit:digital-ink-recognition",
+      "version": "18.1.0",
+      "license": "LicenseRef-ML-Kit-Terms",
+      "url": "https://developers.google.com/ml-kit/vision/digital-ink-recognition"
+    },
+    {
+      "coordinate": "ML Kit's runtime libraries: ML Kit common, Google Play services base, basement and tasks (transitive)",
+      "version": "",
+      "license": "LicenseRef-ML-Kit-Terms AND LicenseRef-Android-SDK-License",
+      "url": "https://developers.google.com/ml-kit/terms",
+      "transitive": true
+    },
+    {
+      "coordinate": "Kotlin standard library, AndroidX, WorkManager, Firebase components, Datatransport, OkHttp and Okio libraries (transitive)",
       "version": "",
       "license": "Apache-2.0",
       "url": "https://developer.android.com/jetpack/androidx",

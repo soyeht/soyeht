@@ -213,7 +213,7 @@ class CargoTests(unittest.TestCase):
         self.assertEqual(found.exception, "reviewed")
 
     def test_an_exception_nobody_uses_fails(self):
-        extra = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {("ghost", "GPL-3.0-or-later"): "once"})
+        extra = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {**POLICY.exceptions, ("ghost", "GPL-3.0-or-later"): "once"})
         with self.assertRaisesRegex(sources.SourceError, "exceptions"):
             notices.collect(extra, metadata=lambda w, r: self.metadata([]))
 
@@ -293,8 +293,12 @@ class RepositoryTests(unittest.TestCase):
         for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:  # FTL has its own file
             licenses.spdx_text(identifier)
 
-    def test_the_policy_holds_no_exception_so_a_gpl_crate_that_comes_back_fails_the_gate(self):
-        self.assertEqual(POLICY.exceptions, {})
+    def test_the_only_exceptions_are_the_ml_kit_libraries_and_no_copyleft_one_is_among_them(self):
+        # A GPL crate that comes back must fail the gate, so no exception may name one; the ML Kit libraries (ADR 0157)
+        # are proprietary binaries and are refused by a release until the owner accepts their terms.
+        for package, license in POLICY.exceptions:
+            self.assertTrue(package.startswith(("com.google.mlkit:", "ML Kit's runtime libraries")), package)
+            self.assertNotRegex(license, r"GPL|AGPL|LGPL")
 
     def test_a_swift_license_file_is_never_a_source_file(self):
         data = json.loads(sources.SWIFT_DATA.read_text())["packages"]

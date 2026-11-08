@@ -38,6 +38,14 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   field a line of mono words names the harness the pane runs (choosing another restarts the pane on
   it and hands the conversation over, after asking, ADR 0140) and sets the session's model, effort and
   permission mode. The usage ring of each provider (ADR 0141) is in the rail.
+- **Writes with the pen** (ADR 0157). A stylus touch on an agent pane's message field opens an ink area, draws the
+  strokes as they come, and after a 1.2 s pause reads them and inserts the text at the cursor; a scribble over the
+  writing takes it away, a scribble over nothing deletes the word before the cursor, and a tap ends the writing. A
+  finger still scrolls and types. From Android 14 the platform's own stylus handwriting does it through the keyboard and
+  the app does nothing; below it, ML Kit's recognizer reads the strokes on the device with a language model that follows
+  the system language, which the person installs from Settings (nothing is downloaded before Install). The ML Kit
+  libraries are proprietary Google binaries: the policy lists them as exceptions and a release refuses them until the
+  owner accepts their terms.
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.

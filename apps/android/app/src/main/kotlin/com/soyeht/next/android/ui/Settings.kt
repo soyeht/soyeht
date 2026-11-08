@@ -4,11 +4,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.soyeht.next.android.AppModel
+import com.soyeht.next.android.ink.Handwriting
+import com.soyeht.next.android.ink.ModelState
+import java.util.Locale
 import com.soyeht.next.android.theme.*
 import androidx.compose.ui.unit.*
 
@@ -35,6 +39,7 @@ fun SettingsSheet(model: AppModel) {
             SettingRow("E-ink display", "The palette and sizes of a Boox's screen, with no animation.") {
                 Pill(if (model.eink) "On" else "Off", model::toggleEink, tone = if (model.eink) Tone.Primary else Tone.Neutral, description = "Switch the e-ink display")
             }
+            if (!model.handwriting.platformHandles) HandwritingRow(model.handwriting)
             if (model.paired) {
                 SettingRow("Another computer", "Pairing replaces the computer this device controls.") {
                     Pill("Pair another", { model.closeSettings(); startScan() })
@@ -50,6 +55,27 @@ fun SettingsSheet(model: AppModel) {
 }
 
 private const val SheetWidth = 520f
+
+/**
+ * Handwriting with the pen (below Android 14, where the keyboard does it): the language model downloads only when the
+ * person presses Install, and the state says where it is. The words are read on the device.
+ */
+@Composable
+private fun HandwritingRow(handwriting: Handwriting) {
+    LaunchedEffect(Unit) { handwriting.refresh() }
+    val language = Locale.getDefault().displayLanguage
+    val (detail, action) = when (val state = handwriting.state) {
+        ModelState.Checking -> "Looking for the $language model…" to null
+        ModelState.NotInstalled -> "Write with the pen in the message field. It is read on this device; the $language model downloads once, when you press Install." to ("Install" to handwriting::install)
+        ModelState.Downloading -> "Installing the $language model…" to ("Installing…" to {})
+        ModelState.Installed -> "The $language model is installed. Write with the pen in the message field." to ("Remove" to handwriting::remove)
+        is ModelState.Failed -> "Could not ${state.kind} the $language model. Try again." to ("Retry" to handwriting::install)
+        ModelState.NoModel -> "There is no handwriting model for $language." to null
+    }
+    SettingRow("Handwriting", detail) {
+        action?.let { (label, run) -> Pill(label, run, tone = if (label == "Install") Tone.Primary else Tone.Neutral) }
+    }
+}
 
 @Composable
 private fun SettingRow(title: String, detail: String, control: @Composable () -> Unit) {
