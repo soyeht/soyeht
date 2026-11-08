@@ -78,9 +78,11 @@ address holds at most 16 of the listeners' (ADR 0129).
 **2.2 iPhone pairing (the path to a `deviceToken`).**
 Only on the WebSocket connection, before authenticated `hello`, and only
 while the Mac's “Add iPhone” window is open:
-1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri,
-   reachability?}`; the app displays a QR with `uri` (engine id, address, `code` and
-   `engineKey`, the engine's Ed25519 public key in URL-safe base64) and,
+1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri, qr?,
+   reachability?}`; the app displays a QR with `qr` (`uri` when an older engine sends no `qr`): the same
+   fields, engine id, address, `code` and `engineKey`, the engine's Ed25519 public key in URL-safe
+   base64, behind the prefix `SOYEHT-PAIR 1 ` instead of `soyeht-next://pair?`, so the
+   system camera cannot hand them to another app (ADR 0153). The in-app scanners read both forms. The app also shows,
    when `reachability.remote` is false, why devices cannot reach the Mac.
 2. iPhone: `pair.begin {code, deviceName, devicePublicKey (Ed25519, 32
    bytes, base64)}` → `{requestId, challenge (32 random bytes, base64),

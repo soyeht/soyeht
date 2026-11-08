@@ -836,11 +836,13 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `code`: String
     public var `expiresAt`: String
     public var `uri`: String
+    public var `qr`: String?
     public var `reachability`: EngineReachability?
-    public init(`code`: String, `expiresAt`: String, `uri`: String, `reachability`: EngineReachability? = nil) {
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
+        self.`qr` = `qr`
         self.`reachability` = `reachability`
     }
 }

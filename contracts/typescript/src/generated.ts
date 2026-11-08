@@ -398,6 +398,7 @@ export interface DevicePairStartResult {
   "code": string;
   "expiresAt": string;
   "uri": string;
+  "qr"?: string;
   "reachability"?: EngineReachability;
 }
 
