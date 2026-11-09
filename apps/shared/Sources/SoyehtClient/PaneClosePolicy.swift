@@ -21,6 +21,9 @@ public struct CloseConfirmation: Equatable, Sendable {
 /// When closing a pane or a workspace asks first. The Mac and the paired iPhone and iPad share
 /// it, so both answer the same way.
 public enum PaneClosePolicy {
+  /// The word on the button that closes a workspace.
+  public static let closeWorkspaceTitle = "Close workspace"
+
   /// The question to ask before closing `pane`, or `nil` when it closes at once. A pane that
   /// runs a process always asks. A document asks only while it holds unsaved changes, and an
   /// editor tab only when its draft conflicts with the disk. `file` is the pane's open file.
@@ -54,7 +57,7 @@ public enum PaneClosePolicy {
     return CloseConfirmation(
       title: "Close \(workspace.name)?",
       message: "The processes in \(panes) will be terminated. The folder stays on the Mac.",
-      confirmTitle: "Close workspace")
+      confirmTitle: closeWorkspaceTitle)
   }
 
   private static func fileName(_ file: FileDocument?, fallback: String) -> String {

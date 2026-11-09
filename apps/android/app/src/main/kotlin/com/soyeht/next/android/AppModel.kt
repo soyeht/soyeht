@@ -13,6 +13,8 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.soyeht.next.android.scan.CameraProblem
+import com.soyeht.next.android.theme.Eink
 import uniffi.soyeht_android.ComposerControls
 import uniffi.soyeht_android.Conversation
 import uniffi.soyeht_android.Core
@@ -58,6 +60,11 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val pending = AtomicBoolean(false)
 
     private val saved = credentials.load()
+    private val display = DisplaySettings(application)
+
+    /** The e-ink mode: the palette and sizes of a Boox's screen, no animation, and output batched into few redraws. */
+    var eink by mutableStateOf(einkEnabled(display.saved(), Build.MANUFACTURER))
+        private set
 
     var paired by mutableStateOf(saved != null)
         private set
@@ -93,8 +100,8 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     var scanProblem: String? by mutableStateOf(null)
         private set
 
-    /** The person did not allow the camera: the pair screen says where else to pair. */
-    var cameraDenied by mutableStateOf(false)
+    /** The camera cannot be used (refused, or it failed to start): the screen says where else to pair. */
+    var cameraProblem: CameraProblem? by mutableStateOf(null)
         private set
 
     /** "Forget this computer" waits for the person to say yes: it cannot be undone from the phone. */
@@ -132,13 +139,18 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleEink() {
+        eink = !eink
+        display.save(eink)
+    }
+
     /** At most one redraw is queued, however fast the core reports: a terminal can change a hundred times a second. */
     private fun refreshSoon() {
         if (pending.compareAndSet(false, true)) {
             main.postDelayed({
                 pending.set(false)
                 refresh()
-            }, REDRAW_MS)
+            }, if (eink) Eink.redrawIntervalMs.toLong() else REDRAW_MS)
         }
     }
 
@@ -185,7 +197,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
     /** The person asked to scan, and the camera is allowed. */
     fun startScanning() {
-        cameraDenied = false
+        cameraProblem = null
         scanProblem = null
         scanning = true
     }
@@ -196,7 +208,14 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cameraRefused() {
-        cameraDenied = true
+        cameraProblem = CameraProblem.Denied
+    }
+
+    /** The camera did not start (none on this device, or it is in use): leave the scan and say so, never crash. */
+    fun cameraFailed() {
+        scanning = false
+        scanProblem = null
+        cameraProblem = CameraProblem.Failed
     }
 
     /** The camera read a code: a pairing link is asked about as a tapped one is, anything else is said and the camera keeps looking. */

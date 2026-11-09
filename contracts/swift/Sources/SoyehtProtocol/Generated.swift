@@ -61,6 +61,7 @@ public enum SnapshotSection: String, Codable, Sendable, CaseIterable {
     case `streams` = "streams"
     case `files` = "files"
     case `writing` = "writing"
+    case `trust` = "trust"
 }
 
 public enum ErrorKind: String, Codable, Sendable, CaseIterable {
@@ -105,6 +106,7 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `git_unavailable` = "git_unavailable"
     case `file_not_text` = "file_not_text"
     case `file_too_large` = "file_too_large"
+    case `workspace_folder_missing` = "workspace_folder_missing"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -835,11 +837,13 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `code`: String
     public var `expiresAt`: String
     public var `uri`: String
+    public var `qr`: String?
     public var `reachability`: EngineReachability?
-    public init(`code`: String, `expiresAt`: String, `uri`: String, `reachability`: EngineReachability? = nil) {
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
+        self.`qr` = `qr`
         self.`reachability` = `reachability`
     }
 }
@@ -983,6 +987,7 @@ public enum EngineReachabilityReason: String, Codable, Sendable, CaseIterable {
     case `tailnet_address_not_found` = "tailnet_address_not_found"
     case `tailnet_lookup_failed` = "tailnet_lookup_failed"
     case `tailnet_listen_failed` = "tailnet_listen_failed"
+    case `tailnet_port_in_use` = "tailnet_port_in_use"
     case `loopback_only` = "loopback_only"
 }
 
@@ -4445,6 +4450,61 @@ public struct PaneRoleSetResult: Codable, Sendable {
     }
 }
 
+public enum ProjectTrust: String, Codable, Sendable, CaseIterable {
+    case `undecided` = "undecided"
+    case `restricted` = "restricted"
+    case `trusted` = "trusted"
+}
+
+public enum ProjectTrustChoice: String, Codable, Sendable, CaseIterable {
+    case `restricted` = "restricted"
+    case `trusted` = "trusted"
+}
+
+public struct ProjectTrustEntry: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `trust`: ProjectTrust
+    public init(`workspaceId`: Id, `trust`: ProjectTrust) {
+        self.`workspaceId` = `workspaceId`
+        self.`trust` = `trust`
+    }
+}
+
+public struct ProjectTrustSetParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `trust`: ProjectTrustChoice
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `trust`: ProjectTrustChoice, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`trust` = `trust`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct ProjectTrustSetResult: Codable, Sendable {
+    public var `workspaceIds`: [Id]
+    public var `trust`: ProjectTrust
+    public init(`workspaceIds`: [Id], `trust`: ProjectTrust) {
+        self.`workspaceIds` = `workspaceIds`
+        self.`trust` = `trust`
+    }
+}
+
+public struct ProjectTrustChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `actor`: Actor?
+    public var `workspaceIds`: [Id]
+    public var `trust`: ProjectTrust
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `workspaceIds`: [Id], `trust`: ProjectTrust) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`actor` = `actor`
+        self.`workspaceIds` = `workspaceIds`
+        self.`trust` = `trust`
+    }
+}
+
 public enum UsageProvider: String, Codable, Sendable, CaseIterable {
     case `claude` = "claude"
     case `codex` = "codex"
@@ -4661,6 +4721,7 @@ public enum LspState: String, Codable, Sendable, CaseIterable {
     case `ready` = "ready"
     case `restarting` = "restarting"
     case `unavailable` = "unavailable"
+    case `restricted` = "restricted"
 }
 
 public struct TextPosition: Codable, Sendable {
@@ -5538,11 +5599,13 @@ public struct LspServerStatus: Codable, Sendable {
     public var `state`: LspState
     public var `generation`: UInt32
     public var `detail`: String?
-    public init(`language`: EditorLanguage, `state`: LspState, `generation`: UInt32, `detail`: String? = nil) {
+    public var `safeMode`: Bool?
+    public init(`language`: EditorLanguage, `state`: LspState, `generation`: UInt32, `detail`: String? = nil, `safeMode`: Bool? = nil) {
         self.`language` = `language`
         self.`state` = `state`
         self.`generation` = `generation`
         self.`detail` = `detail`
+        self.`safeMode` = `safeMode`
     }
 }
 
@@ -7089,6 +7152,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case editorReviewAccept = "editor.review.accept"
     case editorReviewReject = "editor.review.reject"
     case editorReviewComment = "editor.review.comment"
+    case projectTrustSet = "project.trust.set"
     case lspStatus = "lsp.status"
     case serversLocalList = "servers.local.list"
     case webOpen = "web.open"
@@ -7153,6 +7217,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case ptydLost = "ptyd.lost"
     case paneUpdated = "pane.updated"
     case settingsChanged = "settings.changed"
+    case projectTrustChanged = "project.trust_changed"
     case paneSessionStarted = "pane.session_started"
     case paneTurnEnded = "pane.turn_ended"
     case paneQueued = "pane.queued"
@@ -7240,6 +7305,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .ptydLost: EventDescriptor(paramsType: "PtydLostEvent", durable: true),
     .paneUpdated: EventDescriptor(paramsType: "PaneUpdatedEvent", durable: true),
     .settingsChanged: EventDescriptor(paramsType: "SettingsChangedEvent", durable: true),
+    .projectTrustChanged: EventDescriptor(paramsType: "ProjectTrustChangedEvent", durable: true),
     .paneSessionStarted: EventDescriptor(paramsType: "PaneSessionStartedEvent", durable: true),
     .paneTurnEnded: EventDescriptor(paramsType: "PaneTurnEndedEvent", durable: true),
     .paneQueued: EventDescriptor(paramsType: "PaneQueuedEvent", durable: true),

@@ -436,6 +436,9 @@ pub(crate) mod tests {
         let directory = short_directory();
         let supervisor = HangUp::start(&directory, welcome);
         let mut core = Core::open(&directory).unwrap();
+        // The burst happens at one instant: a loaded host that slows the ticks past the retry
+        // delay must not turn into a second attempt.
+        core.clock = Arc::new(Manual(AtomicI64::new(1_000_000)));
         // Each attempt is made and settled in its tick, so the burst counts every one.
         core.background = crate::offload::Background::inline();
         let opened = supervisor.accepted();

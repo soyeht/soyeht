@@ -98,6 +98,8 @@ pub struct Core {
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
     pub language_waiters: BTreeMap<String, Vec<Waiter>>,
+    /// The search path the language servers of folders that are not trusted are started from.
+    pub language_search_path: Option<std::ffi::OsString>,
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
@@ -231,6 +233,7 @@ impl Core {
             harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
             language_waiters: BTreeMap::new(),
+            language_search_path: std::env::var_os("PATH"),
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: loopback_address(&DEV),
