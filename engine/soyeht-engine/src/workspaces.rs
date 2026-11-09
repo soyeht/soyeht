@@ -133,6 +133,8 @@ impl Core {
                 })?
                 .result);
         }
+        // Forgotten before the close commits and is published, whatever becomes of it.
+        self.workspace_roots.remove(id);
         let closed: Vec<_> = self
             .panes
             .values()
