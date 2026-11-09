@@ -206,7 +206,7 @@ fn wait_for_stamped_hook_label(rig: &Rig, pane: &str, generation: u64, capabilit
 #[cfg(unix)]
 #[test]
 fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::with_own_search_path();
     rig.install_fake_claude_runner();
     let mut client = rig.client();
     let (pane, capability, generation) = open_claude_hook_session(&mut rig, &mut client);
@@ -464,6 +464,12 @@ fn assert_paired_phone_acts_like_the_local_human(
 
 /// The engine key the pairing link of `window` names, which a phone pins.
 fn pinned_engine_key(window: &Value) -> ed25519_dalek::VerifyingKey {
+    // The QR text is no URL (the system camera would hand it to another app) and names the
+    // same engine, address, code and key as the link.
+    let qr = window["qr"].as_str().unwrap();
+    assert!(!qr.contains("://"), "the QR text is a URL");
+    let parse = |text: &str| soyeht_protocol::pairing_link::PairingLink::parse(text).unwrap();
+    assert_eq!(parse(qr), parse(window["uri"].as_str().unwrap()));
     let text = window["uri"]
         .as_str()
         .unwrap()

@@ -11,32 +11,49 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   camera permission is asked for when you tap Scan, and ZXing reads the code on the phone, ADR 0138),
   paste the link (`soyeht-next://pair?...`) into the app, or open it on the phone. All three go through
   the core's one parser; a code that is not a pairing link is refused in words and the camera keeps looking. A phone that is
-  already paired scans from "Pair another computer" on the list of panes; the new computer replaces the old
+  already paired scans from "Pair another" in Settings; the new computer replaces the old
   one only after the person confirms, as for a tapped link. A link that reaches the app from
   outside asks first, naming the address it would connect to (ADR 0129). The app shows the fingerprint
   of the phone's key to compare with the one on the computer, and the person allows access there. The
   phone checks that the engine holds the key the link named before it proves the code (ADR 0132). Both
   must be on the same tailnet; a link names a tailnet or loopback address and nothing else.
-- **Lists workspaces and their panes**, as the iPhone does, from the engine's snapshot and events.
+- **Draws the approved designs** (`design/soyeht-desktop.pen`), the same way on every screen size. A wide screen
+  (600 dp or more, a tablet in either orientation) shows the workspace tabs over the rail of apps and the panes: the
+  rail picks what to see (agents, editor, web, terminals) and holds a usage ring for each provider the engine meters
+  and the settings; the panes sit side by side on a landscape screen and stacked on a portrait one, and become tabs
+  when they do not fit at a readable size (340 x 360 dp). A narrow screen (a phone) shows the list of workspaces and,
+  inside one, a segmented switch and one pane at a time. A pane is a raised shell, the only raised surface, holding
+  its header (state dot, name, what it runs, the state in words) over a flat interior; the tabs and the top bar's
+  buttons are raised too. Colors, radii, spacing, type sizes and the shadows of the raised surfaces are the tokens of
+  `contracts/design-tokens.json`; the fonts (Nunito, Inter, JetBrains Mono) are the files the Mac ships, copied into
+  the app's resources at build time, and so are the four providers' logos (the shared package's `ProviderIcons.xcassets`, tinted in a palette color as `ProviderGlyph` does). A logo is in each ring of the rail and leads the harness word of the composer's line, by the core's mapping of a harness to its provider; in the e-ink mode they stay, as content.
 - **Terminal pane.** The screen is the computer's, drawn from the desktop client's screen model: what
   the computer shows is what the phone shows. The phone never resizes the pane (ADR 0013); a pane wider
   than the phone scrolls sideways. Typing goes through the soft keyboard; a row has Esc, Tab, Ctrl,
   the arrows, Backspace and Enter. A hardware keyboard sends Enter, Backspace, Tab, Esc and the arrows.
 - **Agent pane.** The conversation, with an agent's replies and thoughts drawn as the shared Markdown subset
   (ADR 0087, 0139: bold, italic, code, lists, quotes, tables, links, and a Copy button on each code block),
-  the prompt, and the question the agent waits on (a permission), with the options the agent gave. Under
-  the message field a row of menus names the harness the pane runs (choosing another restarts the pane on
+  the prompt (queued while a turn runs), tool calls as ruled rows, and the question the agent waits on (a
+  permission), with the options the agent gave: the allowing one in ink, a refusal in red. Under the message
+  field a line of mono words names the harness the pane runs (choosing another restarts the pane on
   it and hands the conversation over, after asking, ADR 0140) and sets the session's model, effort and
-  permission mode. The header carries the usage ring of the
-  provider that reads the pane's harness (ADR 0141).
+  permission mode. The usage ring of each provider (ADR 0141) is in the rail.
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.
-- "Forget" asks first. A web, editor or writing pane says it is shown on the computer.
+- "Forget" (in Settings) asks first. A web, editor or writing pane says it is shown on the computer.
+
+- **E-ink mode** (ADR 0155). On by itself on a Boox (`Build.MANUFACTURER` is `ONYX`) and switchable by hand in Settings. It draws the layout above, unchanged. It uses the e-ink palette and sizes of `contracts/design-tokens.json`
+  (`einkPalette`, `eink`): high contrast, an edge on every card, well, pill and modal, 18 sp text, a 56 dp touch
+  target, no animation, a reading column on a wide screen, and a terminal whose font grows until the columns fill
+  the pane's width (the phone still never resizes the pane). Terminal output is redrawn about four times a second
+  and each row is drawn only when it changes. On a Boox the terminal also steers the panel's refresh: the text
+  mode by default, the fast mode while output streams, one full refresh about 400 ms after it stops, and a
+  "Refresh screen" button. Anywhere else the refresh does nothing.
 
 Not yet: push notifications, new panes
-and workspaces, the board layout of a tablet, the Fira/JetBrains fonts (the terminal uses the system
-monospace font), terminal text size and selection.
+and workspaces, closing a workspace tab, the tasks page, the the context ring and the microphone of the composer,
+terminal text size and selection (outside the e-ink mode).
 
 ## Build and test
 

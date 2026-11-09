@@ -1,5 +1,5 @@
 {
-  "description": "What a pairing link must carry and which addresses it may name (ADR 0134). The Rust protocol crate and the Swift client both pass these cases; `result` is valid, invalid, or old (the three-field link of an engine that does not prove itself). `weakEngineKeys` are the encodings of the eight points of small order (as hex): a link that carries one as its engine key is invalid, since such a key would sign for anyone. `nonCanonicalWeakEngineKeys` encode small-order points with y = p and y = p + 1, with and without the sign bit: a key whose y is not below p = 2^255 - 19 is refused whatever point it names. A case marked `rustOnly` needs a point decompression, which the Rust client does and the Swift one does not: Swift skips it.",
+  "description": "What a pairing link must carry and which addresses it may name (ADR 0134). The Rust protocol crate and the Swift client both pass these cases. A case whose link starts with `SOYEHT-PAIR 1 ` is the text of a pairing QR code (ADR 0153): it is not a URL, and the same fields in the same rules make it valid or invalid. In every case `result` is valid, invalid, or old (the three-field link of an engine that does not prove itself). `weakEngineKeys` are the encodings of the eight points of small order (as hex): a link that carries one as its engine key is invalid, since such a key would sign for anyone. `nonCanonicalWeakEngineKeys` encode small-order points with y = p and y = p + 1, with and without the sign bit: a key whose y is not below p = 2^255 - 19 is refused whatever point it names. Whitespace around a link or QR text (blanks, tabs, newlines) is not part of it, and both parsers trim it before reading. A case marked `rustOnly` needs a point decompression, which the Rust client does and the Swift one does not: Swift skips it.",
   "cases": [
     {
       "name": "tailnet IPv4",
@@ -208,6 +208,90 @@
       "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=127.0.0.1:9&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
       "result": "invalid",
       "rustOnly": true
+    },
+    {
+      "name": "QR text, tailnet IPv4",
+      "link": "SOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "QR text with a trailing newline",
+      "link": "SOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\n",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "QR text with a trailing CRLF",
+      "link": "SOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\r\n",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "QR text with leading and trailing blanks",
+      "link": "  SOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc  ",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "QR text with a leading tab and newline",
+      "link": "\t\nSOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "link with a trailing newline",
+      "link": "soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\n",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "link with leading and trailing whitespace",
+      "link": " \nsoyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc\r\n ",
+      "result": "valid",
+      "address": "100.64.1.2:8443",
+      "engineId": "6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b"
+    },
+    {
+      "name": "QR text with whitespace between the prefix and the fields",
+      "link": "SOYEHT-PAIR 1  engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "only whitespace",
+      "link": " \n\t",
+      "result": "invalid"
+    },
+    {
+      "name": "QR text with a lowercase prefix",
+      "link": "soyeht-pair 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "QR text of another version",
+      "link": "SOYEHT-PAIR 2 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "QR text with no version",
+      "link": "SOYEHT-PAIR engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "QR text with the link's scheme after the prefix",
+      "link": "SOYEHT-PAIR 1 soyeht-next://pair?engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=100.64.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
+    },
+    {
+      "name": "QR text naming a LAN address",
+      "link": "SOYEHT-PAIR 1 engineId=6f1e2d3c-4b5a-4978-8a6b-5c4d3e2f1a0b&address=192.168.1.2:8443&code=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&engineKey=0EqyMnQrtKs6E2i9RhXk5tAiSrcaAWuvhSCjMsl3hzc",
+      "result": "invalid"
     }
   ],
   "weakEngineKeys": [

@@ -108,6 +108,9 @@ pub trait Failure {
 
 impl Failure for io::Error {
     fn failure_kind(&self) -> String {
+        if crate::net::is_accept_give_up(self) {
+            return "accept_gave_up".to_owned();
+        }
         format!("{:?}", self.kind())
     }
 }

@@ -40,8 +40,9 @@ such as the theme and the terminal text size are kept in the app's own preferenc
 reads the pairing QR code on the device; the image is not stored or sent.
 
 **On Android** (the app is not published yet), the credential is sealed with a key in the Android
-Keystore, in the app's private storage, and the app opts out of backup. Its only permission is
-network access, which it uses to reach your computer.
+Keystore, in the app's private storage, and the app opts out of backup. It asks for two
+permissions: network access, which it uses to reach your computer, and the camera, which reads the
+pairing QR code; the image is not stored or sent.
 
 You can remove all of it. "Forget this Mac" in the phone app deletes the credential from the phone
 and asks the Mac to drop the phone's push token when the Mac is reachable; revoking the phone on

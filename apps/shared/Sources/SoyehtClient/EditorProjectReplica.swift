@@ -38,7 +38,10 @@ extension EngineClient {
         return
       } catch {
         guard directory != EditorProjectTree.root else {
-          problem = error.localizedDescription
+          // A workspace whose folder is gone is a state of the workspace, not an action that failed.
+          if !noteMissingWorkspaceFolder(error, workspaceId: workspaceId) {
+            problem = error.localizedDescription
+          }
           return
         }
         // A folder that disappeared before it was listed simply closes.
@@ -138,6 +141,7 @@ extension EngineClient {
       .encoded(
         ProjectTreeListParams(workspaceId: workspaceId, path: path, showIgnored: showIgnored))
     ).decoded(ProjectTreeListResult.self)
+    if path == EditorProjectTree.root { editorWorkspace.missingFolders.remove(workspaceId) }
     // A listing that raced a toggle of ignored files describes the old view.
     guard projectTree(workspaceId).showIgnored == showIgnored else { return }
     var tree = projectTree(workspaceId)

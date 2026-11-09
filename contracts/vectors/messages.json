@@ -13929,5 +13929,16 @@
       "preview": true,
       "idempotencyKey": "x"
     }
-  }
+  },
+  {"name": "request:project.trust.set", "type": "RequestEnvelope", "value": {"jsonrpc": "2.0", "id": "request-1", "method": "project.trust.set", "params": {"workspaceId": "00000000-0000-4000-8000-000000000002", "trust": "trusted", "idempotencyKey": "00000000-0000-4000-8000-000000000001"}}},
+  {"name": "response:project.trust.set", "type": "SuccessEnvelope", "value": {"jsonrpc": "2.0", "id": "request-1", "result": {"workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "trusted"}}},
+  {"name": "event:project.trust_changed", "type": "NotificationEnvelope", "value": {"jsonrpc": "2.0", "method": "project.trust_changed", "params": {"eventId": "1", "at": "2026-09-11T00:00:00Z", "workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "restricted"}}},
+  {"name": "ProjectTrust", "type": "ProjectTrust", "value": "undecided"},
+  {"name": "ProjectTrustChoice", "type": "ProjectTrustChoice", "value": "trusted"},
+  {"name": "ProjectTrustEntry", "type": "ProjectTrustEntry", "value": {"workspaceId": "00000000-0000-4000-8000-000000000002", "trust": "restricted"}},
+  {"name": "ProjectTrustSetParams", "type": "ProjectTrustSetParams", "value": {"workspaceId": "00000000-0000-4000-8000-000000000002", "trust": "trusted", "idempotencyKey": "00000000-0000-4000-8000-000000000001"}},
+  {"name": "ProjectTrustSetResult", "type": "ProjectTrustSetResult", "value": {"workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "trusted"}},
+  {"name": "ProjectTrustChangedEvent", "type": "ProjectTrustChangedEvent", "value": {"eventId": "1", "at": "2026-09-11T00:00:00Z", "workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "restricted"}},
+  {"name": "SnapshotSection:trust", "type": "SnapshotSection", "value": "trust"},
+  {"name": "LspState:restricted", "type": "LspState", "value": "restricted"}
 ]
