@@ -8,10 +8,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.soyeht.next.android.*
 import com.soyeht.next.android.theme.*
+import androidx.compose.ui.text.TextStyle
 
 @Composable
 fun PairScreen(model: AppModel) {
@@ -22,37 +23,47 @@ fun PairScreen(model: AppModel) {
     val startScan = rememberStartScan(model)
     val hasCamera = rememberHasCamera()
     val paste = rememberPasteLink { pasted -> link = pasted }
-    Column(
-        Modifier.padding(PaneInterior.phoneInset.dp),
-        verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
-    ) {
-        Text("Soyeht", color = roles.ink, fontSize = metrics.title.sp)
-        Text(
-            "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
-                "paste the link here or open it on this phone. Both must be on the same tailnet.",
-            color = roles.secondary,
-            fontSize = metrics.body.sp,
-        )
-        BasicTextField(
-            value = link,
-            onValueChange = { link = it },
-            textStyle = TextStyle(color = roles.ink, fontSize = metrics.body.sp),
-            cursorBrush = SolidColor(roles.accent),
-            modifier = Modifier
-                .fillMaxWidth()
-                .panel(roles.well, RoundedCornerShape(Radius.control.dp))
-                .padding(PaneInterior.cardPadding.dp),
-            decorationBox = { inner ->
-                if (link.isEmpty()) Text("soyeht-next://pair?…", color = roles.muted, fontSize = metrics.body.sp)
-                inner()
-            },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
-            Pill("Pair", { model.pair(link) }, primary = true)
-            if (hasCamera) Pill("Scan QR code", startScan) else Pill("Paste the pairing link", paste)
+    Column(Modifier.fillMaxSize().padding(PaneLayout.screenPadding.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            SquareButton(Icon.Settings, model::openSettings, "Settings")
         }
-        model.cameraProblem?.let { CameraNotice(it) }
-        EinkSwitch(model.eink, model::toggleEink)
+        Spacer(Modifier.weight(1f))
+        // The pairing form is one raised card, as a pane is.
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .paneShell()
+                .padding(PaneInterior.phoneInset.dp),
+            verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
+        ) {
+            Text("Soyeht", color = roles.ink, fontFamily = Faces.chrome, fontWeight = FontWeight.Bold, fontSize = metrics.title.sp)
+            Text(
+                "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
+                    "paste the link here or open it on this device. Both must be on the same tailnet.",
+                color = roles.secondary,
+                fontSize = metrics.paneBody.sp,
+            )
+            BasicTextField(
+                value = link,
+                onValueChange = { link = it },
+                textStyle = TextStyle(color = roles.ink, fontSize = metrics.paneBody.sp),
+                cursorBrush = SolidColor(roles.accent),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .panel(roles.canvas, RoundedCornerShape(PaneInterior.composerRadius.dp))
+                    .padding(PaneInterior.cardPadding.dp),
+                decorationBox = { inner ->
+                    if (link.isEmpty()) Text("soyeht-next://pair?…", color = roles.muted, fontFamily = Faces.mono, fontSize = metrics.paneBody.sp)
+                    inner()
+                },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
+                Pill("Pair", { model.pair(link) }, tone = Tone.Primary)
+                if (hasCamera) Pill("Scan QR code", startScan) else Pill("Paste the pairing link", paste)
+            }
+            model.cameraProblem?.let { CameraNotice(it) }
+        }
+        Spacer(Modifier.weight(2f))
     }
 }
 

@@ -3,6 +3,7 @@
 //! is which, how harnesses are grouped and when a switch may start are `soyeht-client`'s rules, the
 //! ones the Mac and the desktop follow (`contracts/vectors/harness-picker.json`, `harness-switch.json`).
 
+use crate::usage;
 use soyeht_client::{
     Command, State,
     agent::{Controls, Menu},
@@ -10,7 +11,7 @@ use soyeht_client::{
     state::Connection,
     switch::{self, Phase},
 };
-use soyeht_protocol::{HarnessInfo, client_policy};
+use soyeht_protocol::{HarnessInfo, UsageProvider, client_policy};
 
 /// One choice of a menu.
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
@@ -36,6 +37,8 @@ pub struct ChoiceMenu {
 pub struct HarnessChip {
     /// The harness the pane runs ("Claude"), or the one it is switching to while a switch runs.
     pub title: String,
+    /// The logo of the provider that reads the harness, when there is one (`ProviderGlyph`'s mapping).
+    pub icon: Option<String>,
     pub busy: bool,
     /// The menu may open: connected, no configuration change in flight, no switch running.
     pub can_switch: bool,
@@ -133,6 +136,8 @@ pub(crate) fn composer(state: &State, pane_id: &str) -> Option<ComposerControls>
     Some(ComposerControls {
         harness: HarnessChip {
             title,
+            icon: UsageProvider::for_harness(&agent.harness)
+                .map(|provider| usage::icon_key(&provider).to_owned()),
             busy,
             can_switch: switch::can_switch(connected, Some(agent), view.harness_switch.as_ref()),
         },

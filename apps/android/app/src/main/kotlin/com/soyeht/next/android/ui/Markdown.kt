@@ -49,7 +49,7 @@ fun annotate(runs: List<MarkdownRun>, look: RunLook, open: (String) -> Unit): An
         val style = SpanStyle(
             fontWeight = FontWeight.Bold.takeIf { run.bold || look.bold },
             fontStyle = FontStyle.Italic.takeIf { run.italic },
-            fontFamily = FontFamily.Monospace.takeIf { run.code },
+            fontFamily = Faces.mono.takeIf { run.code },
             background = if (run.code) look.codeBackground else Color.Unspecified,
             color = if (run.link != null) look.accent else Color.Unspecified,
             textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
@@ -127,7 +127,7 @@ private fun CodeBlock(text: String, copy: CodeCopy, ink: Color) {
         Text(
             text,
             color = ink,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = Faces.mono,
             fontSize = metrics.terminalFont.sp,
             modifier = Modifier.weight(1f).padding(PaneInterior.rowSpacing.dp),
         )

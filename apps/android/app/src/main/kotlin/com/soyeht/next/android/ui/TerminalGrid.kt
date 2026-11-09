@@ -1,5 +1,6 @@
 package com.soyeht.next.android.ui
 
+import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
 import androidx.compose.foundation.Canvas
@@ -16,11 +17,13 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soyeht.next.android.R
 import com.soyeht.next.android.theme.LocalMetrics
 import com.soyeht.next.android.theme.LocalRoles
 import com.soyeht.next.android.theme.Palette
@@ -44,6 +47,7 @@ private class RowRuns(val runs: List<TermRun>) {
 @Immutable
 private data class GridStyle(
     val textSize: Float,
+    val faces: List<Typeface>,
     val cellWidth: Float,
     val cellHeight: Float,
     val baseline: Float,
@@ -60,11 +64,15 @@ private data class GridStyle(
     val legible: Boolean,
 )
 
-/** The monospace family in each style, so that bold and italic are the font's own. */
-private val faces = (0..3).map { style -> Typeface.create(Typeface.MONOSPACE, style) }
+/** The approved mono face in each style (regular, bold, italic, bold italic), indexed as `Typeface` numbers them. */
+private fun monoFaces(context: Context): List<Typeface> {
+    val regular = context.resources.getFont(R.font.jetbrainsmono_regular)
+    val bold = context.resources.getFont(R.font.jetbrainsmono_bold)
+    return listOf(regular, bold, Typeface.create(regular, Typeface.ITALIC), Typeface.create(bold, Typeface.BOLD_ITALIC))
+}
 
-private fun paintOf(size: Float) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-    typeface = Typeface.MONOSPACE
+private fun paintOf(size: Float, face: Typeface) = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    typeface = face
     textSize = size
 }
 
@@ -79,18 +87,21 @@ fun TerminalGrid(frame: TerminalFrame) {
     val roles = LocalRoles.current
     val metrics = LocalMetrics.current
     val density = LocalDensity.current
+    val context = LocalContext.current
+    val faces = remember(context) { monoFaces(context) }
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val basePx = with(density) { metrics.terminalFont.sp.toPx() }
         val maxPx = with(density) { metrics.terminalFontMaximum.sp.toPx() }
         val columns = frame.columns.toInt()
-        val size = fitTextSize(columns, constraints.maxWidth.toFloat(), basePx, maxPx, paintOf(basePx).measureText("M"))
-        val style = remember(size, roles, frame.dimOpacity) {
-            val paint = paintOf(size)
+        val size = fitTextSize(columns, constraints.maxWidth.toFloat(), basePx, maxPx, paintOf(basePx, faces[0]).measureText("M"))
+        val style = remember(size, roles, frame.dimOpacity, faces) {
+            val paint = paintOf(size, faces[0])
             val font = paint.fontMetrics
             GridStyle(
                 textSize = size,
+                faces = faces,
                 cellWidth = paint.measureText("M"),
                 cellHeight = ceil(font.descent - font.ascent),
                 baseline = -font.ascent,
@@ -127,7 +138,7 @@ fun TerminalGrid(frame: TerminalFrame) {
 
 @Composable
 private fun TerminalRow(row: RowRuns, style: GridStyle, width: Dp, height: Dp) {
-    val paint = remember(style.textSize) { paintOf(style.textSize) }
+    val paint = remember(style.textSize, style.faces) { paintOf(style.textSize, style.faces[0]) }
     Canvas(Modifier.size(width, height).graphicsLayer()) {
         drawIntoCanvas { canvas ->
             row.runs.forEach { run ->
@@ -145,7 +156,7 @@ private fun TerminalRow(row: RowRuns, style: GridStyle, width: Dp, height: Dp) {
                     else -> foreground.copy(alpha = style.dimOpacity)
                 }
                 paint.color = ink.toArgb()
-                paint.typeface = faces[(if (run.bold) Typeface.BOLD else 0) or (if (run.italic) Typeface.ITALIC else 0)]
+                paint.typeface = style.faces[(if (run.bold) Typeface.BOLD else 0) or (if (run.italic) Typeface.ITALIC else 0)]
                 paint.isUnderlineText = run.underline
                 canvas.nativeCanvas.drawText(run.text, left, style.baseline, paint)
             }
@@ -158,7 +169,7 @@ private fun color(color: TermColor, style: GridStyle): Color = resolve(color, st
 /** A static block, as the desktop draws a focused cursor: an accent cell with the glyph in the on-accent color. */
 @Composable
 private fun Cursor(cursor: TermCursor, style: GridStyle, height: Dp) {
-    val paint = remember(style.textSize) { paintOf(style.textSize) }
+    val paint = remember(style.textSize, style.faces) { paintOf(style.textSize, style.faces[0]) }
     val width = with(LocalDensity.current) { style.cellWidth.toDp() }
     Canvas(
         Modifier
@@ -169,7 +180,7 @@ private fun Cursor(cursor: TermCursor, style: GridStyle, height: Dp) {
         drawRect(style.accent, Offset.Zero, Size(style.cellWidth, style.cellHeight))
         drawIntoCanvas { canvas ->
             paint.color = style.onAccent.toArgb()
-            paint.typeface = faces[0]
+            paint.typeface = style.faces[0]
             canvas.nativeCanvas.drawText(cursor.glyph, 0f, style.baseline, paint)
         }
     }

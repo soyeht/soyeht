@@ -386,6 +386,20 @@ def kotlin_section(title, values):
     return f"object {title} {{\n{consts}\n}}"
 
 
+def kotlin_elevation(document):
+    """The raised surfaces' shadows (`elevation`): a light one up and to the left, a dark one down and to the right."""
+    entries = []
+    for name, entry in document["elevation"].items():
+        fields = elevation_fields(entry)
+        args = ", ".join(f"{float(fields[field])!r}f" for field in ELEVATION_FIELDS)
+        entries.append(f"    val {name} = Shadow({args})")
+    return (
+        "/** The two shadows of a raised surface, as offsets and blurs: a light one and a dark one. */\n"
+        "class Shadow(val lightOffset: Float, val lightBlur: Float, val darkOffset: Float, val darkBlur: Float)\n\n"
+        "object Elevation {\n" + "\n".join(entries) + "\n}"
+    )
+
+
 def render_kotlin(document, header):
     """The palettes and numeric tokens the Android app draws with (ADR 0134). Colours are ARGB
     `Long`s so that this file needs no Android library; the theme turns them into `Color`."""
@@ -410,7 +424,7 @@ def render_kotlin(document, header):
         "    /** The palette of the e-ink mode: not a theme the person picks, so it is not in [all]. */\n"
         f"{eink}\n\n    /** The themes by name, in the order of the token file; the first is the default. */\n"
         f"    val all: List<Pair<String, Palette>> = listOf({listed})\n}}\n\n"
-        f"{sections}\n\nobject Fonts {{\n{fonts}\n}}\n"
+        f"{sections}\n\n{kotlin_elevation(document)}\n\nobject Fonts {{\n{fonts}\n}}\n"
     )
 
 
