@@ -8,6 +8,7 @@ import com.soyeht.next.android.ink.InkPoint
 import com.soyeht.next.android.ink.InkReader
 import com.soyeht.next.android.ink.InkStroke
 import com.soyeht.next.android.ink.ModelState
+import com.soyeht.next.android.ink.Once
 import com.soyeht.next.android.ink.Step
 import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
@@ -48,15 +49,25 @@ class HandwritingTest {
     }
 
     /** Counts every call: while the recognizer is off the list must stay empty. */
-    private class FakeEngine(var models: Set<String> = setOf("en", "pt")) : InkEngine {
+    private class FakeEngine(var models: Set<String> = setOf("en", "pt"), private val onceInProcess: Boolean = false) : InkEngine {
         val calls = mutableListOf<String>()
         var downloaded = false
         var failDelete = false
+        var failCheck = false
+        var failDownload = false
+        private var initialized = false
+        private val once = Once()
         var gate: CompletableDeferred<Unit>? = null
         val readers = mutableListOf<FakeReader>()
 
+        // Like the library's own initialize: it throws when called a second time in the same process.
         override fun start() {
-            calls += "start"
+            val work = {
+                calls += "start"
+                check(!initialized) { "already initialized" }
+                initialized = true
+            }
+            if (onceInProcess) once.run(work) else work()
         }
 
         override fun modelFor(tag: String): InkModel? {
@@ -66,12 +77,14 @@ class HandwritingTest {
 
         override suspend fun isDownloaded(model: InkModel): Boolean {
             calls += "isDownloaded"
+            if (failCheck) throw IllegalStateException("no")
             gate?.await()
             return downloaded
         }
 
         override suspend fun download(model: InkModel) {
             calls += "download"
+            if (failDownload) throw IllegalStateException("no")
             gate?.await()
             downloaded = true
         }
@@ -210,5 +223,72 @@ class HandwritingTest {
         none.enable(true)
         assertEquals(ModelState.NoModel, none.state)
         assertEquals(Locale.forLanguageTag("pt").getDisplayLanguage(portuguese()), none.language)
+    }
+
+    @Test
+    fun aFailedCheckOffersRetryThatChecksAndAFailedDownloadOffersRetryThatDownloads() {
+        val engine = FakeEngine().apply { failCheck = true }
+        val handwriting = handwriting(Remembered(), engine)
+        handwriting.enable(true)
+        assertEquals(ModelState.Failed(Step.Check), handwriting.state)
+        engine.failCheck = false
+        engine.calls.clear()
+        handwriting.retry()
+        assertEquals(listOf("isDownloaded"), engine.calls)
+        assertEquals(ModelState.NotInstalled, handwriting.state)
+
+        engine.failDownload = true
+        handwriting.install()
+        assertEquals(ModelState.Failed(Step.Download), handwriting.state)
+        engine.failDownload = false
+        engine.calls.clear()
+        handwriting.retry()
+        assertEquals(listOf("download"), engine.calls)
+        assertEquals(ModelState.Installed, handwriting.state)
+        // With nothing failed Retry does nothing.
+        engine.calls.clear()
+        handwriting.retry()
+        assertEquals(emptyList<String>(), engine.calls)
+    }
+
+    @Test
+    fun aSecondHandwritingOverTheSameEngineStartsAgainOnlyWhereTheEngineStartsOncePerProcess() {
+        // The activity is backed out of and opened again while the process lives: the model is built again.
+        val bare = FakeEngine()
+        handwriting(Remembered(), bare).enable(true)
+        val second = handwriting(Remembered(), bare)
+        second.enable(true)
+        // An engine that starts the library on each call fails the second one, and Retry cannot mend it.
+        assertEquals(ModelState.Failed(Step.Check), second.state)
+
+        val shared = FakeEngine(onceInProcess = true)
+        val first = handwriting(Remembered(), shared)
+        first.enable(true)
+        first.close()
+        val again = handwriting(Remembered(on = true), shared)
+        again.refresh()
+        assertEquals(ModelState.NotInstalled, again.state)
+        assertEquals(1, shared.calls.count { it == "start" })
+        again.install()
+        assertEquals(ModelState.Installed, again.state)
+    }
+
+    @Test
+    fun onceRunsAnActionOnceAndRunsItAgainOnlyIfItFailed() {
+        val once = Once()
+        var runs = 0
+        once.run { runs += 1 }
+        once.run { runs += 1 }
+        assertEquals(1, runs)
+        val retried = Once()
+        var attempts = 0
+        try {
+            retried.run { attempts += 1; throw IllegalStateException("no") }
+        } catch (expected: IllegalStateException) {
+            // The failure reaches the caller, and the action did not count as run.
+        }
+        retried.run { attempts += 1 }
+        retried.run { attempts += 1 }
+        assertEquals(2, attempts)
     }
 }

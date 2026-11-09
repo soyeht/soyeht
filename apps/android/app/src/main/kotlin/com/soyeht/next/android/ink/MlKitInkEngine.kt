@@ -1,10 +1,11 @@
 package com.soyeht.next.android.ink
 
 import android.content.Context
+import android.util.Log
 import androidx.work.Configuration
 import androidx.work.WorkManager
 import com.google.android.gms.tasks.Task
-import com.google.mlkit.common.MlKit
+import com.google.mlkit.common.sdkinternal.MlKitContext
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
@@ -29,15 +30,24 @@ class MlKitInkEngine(private val context: Context) : InkEngine {
     private val models by lazy(LazyThreadSafetyMode.NONE) { RemoteModelManager.getInstance() }
     private val known = HashMap<String, DigitalInkRecognitionModel>()
 
-    override fun start() {
+    private companion object {
+        const val TAG = "MlKitInkEngine"
+
+        // The libraries start once per process, however many engines ask: the app's model is built again when the
+        // person backs out of the activity and opens it while the process lives.
+        val libraries = Once()
+    }
+
+    override fun start() = libraries.run {
         val application = context.applicationContext
         // ML Kit's model download runs on WorkManager, whose start-up entry the manifest removes.
         try {
             WorkManager.initialize(application, Configuration.Builder().build())
         } catch (initialized: IllegalStateException) {
-            // Started already (by this app's earlier call): it is kept.
+            Log.w(TAG, "WorkManager was already started: ${initialized.javaClass.simpleName}")
         }
-        MlKit.initialize(application)
+        // Not `MlKit.initialize`, which throws on a second call in the same process (a ViewModel built again).
+        MlKitContext.initializeIfNeeded(application)
     }
 
     override fun modelFor(tag: String): InkModel? {

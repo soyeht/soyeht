@@ -42,8 +42,10 @@ scribble, what a scribble covers and the text edits are pure code with unit test
   while it is on) and closes the recognizer.
 - **Nothing of ML Kit starts while it is off.** The library's own manifest would start it at every launch of the app.
   The app's manifest removes that (see "What ships in the manifest"), and the app starts ML Kit itself
-  (`MlKit.initialize`) the first time it needs it after the person turned the recognizer on, or at launch if it was
-  already on. All calls go through the small `InkEngine` interface (`MlKitInkEngine` is the one implementation), so a
+  (`MlKitContext.initializeIfNeeded`, and WorkManager's `initialize`, once per process: `Once` guards them, because
+  `MlKit.initialize` throws on a second call and the model is built again when the person backs out of the activity and
+  opens it while the process lives) the first time it needs it after the person turned the recognizer on, or at launch
+  if it was already on. All calls go through the small `InkEngine` interface (`MlKitInkEngine` is the one implementation), so a
   unit test counts them with a fake: construction, refresh, install, recognize, remove and retry make none while it is
   off.
 
@@ -77,60 +79,29 @@ merged manifest of the debug build was read to check it:
 recognizer off the app starts with no ML Kit, WorkManager or Datatransport file, database or job (`dumpsys` shows no
 provider but `androidx.startup`'s, and the app's files and databases have no ML Kit entry, and `handwriting.xml` is not
 written); turning it on starts ML Kit, finds the model absent, Install downloads the English model, the row shows
-Installed and keeps it after the app is stopped and started again; turning it off saves the choice. Recognizing a word
-with the pen needs a paired computer's message field and was not run there.
+Installed and keeps it after the app is stopped and started again; turning it off saves the choice. The activity was
+also replaced while the process lived (`am start` with a new task and the old one cleared, so the ViewModel and its
+`Handwriting` are built again, same process id) with handwriting on and the model installed: the new one starts the
+libraries again without error and shows Installed. Recognizing a word with the pen needs a paired computer's message
+field and was not run there.
 
 **The license of ML Kit, and what the gate does with it.** The repository is Apache-2.0, and the gate allows only
 permissive licenses (ADR 0149). The libraries ML Kit brings are not open source:
 
 | Library | License |
 | --- | --- |
-| `com.google.mlkit:digital-ink-recognition` 18.1.0, `com.google.mlkit:common` 18.6.0 | ML Kit Terms of Service (Google's, proprietary; free to use in an app; no source) |
+| `com.google.mlkit:digital-ink-recognition` 18.1.0, `com.google.mlkit:common` 18.6.0 | ML Kit Terms of Service (Google's, proprietary; no source) |
 | `com.google.android.gms:play-services-base` 18.1.0, `-basement` 18.1.0, `-tasks` 18.0.2 | Android Software Development Kit License (Google's, proprietary) |
 | Firebase components and encoders, Datatransport, OkHttp, Okio | Apache-2.0 |
 
 ML Kit's model download runs on WorkManager (`androidx.work:work-runtime` 2.7.0, Apache-2.0, declared in
 `build.gradle.kts` at the version ML Kit brings, so that the app can start it).
 
-**What ships in the manifest.** The libraries ML Kit brings declare components that would run in the process whether
-or not the person ever turns the recognizer on. The app's manifest and build remove what ML Kit does not need to
-download a model and read strokes, and the merged manifest of the debug build was read to check it:
-
-- Removed: `com.google.mlkit.common.internal.MlKitInitProvider`, the content provider that starts ML Kit when the
-  process starts (`tools:node="remove"` in `AndroidManifest.xml`; the app calls `MlKit.initialize` itself, see above).
-  WorkManager, which the recognizer declares as a dependency and nothing of ML Kit calls (`exclude(group =
-  "androidx.work")`): its entry in `androidx.startup.InitializationProvider` (`WorkManagerInitializer`), its three
-  services (`SystemAlarmService`, `SystemJobService`, `SystemForegroundService`), its eight receivers, Room's
-  `MultiInstanceInvalidationService`, and the permissions `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` and
-  `FOREGROUND_SERVICE`.
-- Still there, because ML Kit reads or uses them once it runs: the permission `ACCESS_NETWORK_STATE` (the recognizer and
-  Datatransport declare it, "for downloading"); `MlKitComponentDiscoveryService`, not exported, which ML Kit reads for
-  the registrars of the common library and of digital ink when it is started and which nothing starts; the Datatransport
-  declarations `TransportBackendDiscovery` (the backend list, read when the transport is used),
-  `JobInfoSchedulerService` and `AlarmManagerSchedulerBroadcastReceiver` (the transport's own retries, with no intent
-  filter); `GoogleApiActivity` and the `com.google.android.gms.version` entry of Google Play services' base library.
-  Android starts none of these by itself: they act only after ML Kit has run and the transport has something to send,
-  which is after the person turned the recognizer on.
-- `androidx.startup.InitializationProvider` stays for the app's own libraries (`EmojiCompatInitializer`,
-  `ProcessLifecycleInitializer`, `ProfileInstallerInitializer`), none of them ML Kit's.
-
-**The license of ML Kit, and what the gate does with it.** The repository is Apache-2.0, and the gate allows only
-permissive licenses (ADR 0149). The libraries ML Kit brings are not open source:
-
-| Library | License |
-| --- | --- |
-| `com.google.mlkit:digital-ink-recognition` 18.1.0, `com.google.mlkit:common` 18.6.0 | ML Kit Terms of Service (Google's, proprietary; free to use in an app; no source) |
-| `com.google.android.gms:play-services-base` 18.1.0, `-basement` 18.1.0, `-tasks` 18.0.2 | Android Software Development Kit License (Google's, proprietary) |
-| Firebase components and encoders, Datatransport, OkHttp, Okio | Apache-2.0 |
-
-The recognizer also declares WorkManager; neither it nor ML Kit's common library calls it, and the app excludes it
-(`exclude(group = "androidx.work")`), which also removes Room and the manifest entries below.
-
 None is copyleft, and no GPL code is linked: `third-party-notices:check` still fails for one. The
 proprietary ones are listed in `scripts/third_party/gradle.json` and in `exceptions` of `scripts/third_party/policy.json`,
 each with its reason. The gradle part of `third_party_sources.py` honours `exceptions` as the cargo part does.
 
-**The owner accepted ML Kit on 2026-11-08.** It is free of charge. Each of its exceptions carries
+**The owner accepted ML Kit on 2026-11-08.** Each of its exceptions carries
 `"accepted": {"by": "owner", "date": "2026-11-08"}`; `release_checks.exception_problems` lets an accepted exception
 pass `release_flow.py collect` and `publish` and still stops at one nobody accepted, and a copyleft entry (GPL, AGPL, LGPL,
 MPL, EPL, CDDL, EUPL, SSPL, CC-BY-SA) cannot be accepted at all, `by` must be on an explicit list (`ACCEPTERS`: only
@@ -142,6 +113,11 @@ terms' URLs, not the terms' text (each file says so), and the release notes say 
 The transitive entries (`"transitive": true`) are written by hand and are not compared with the resolved Gradle
 graph. Follow-up: a gate step that runs `gradle :app:dependencies` and compares the Google coordinates and versions
 with `gradle.json`.
+
+A limit of that: Datatransport, the SDK's transport for the metrics, can start in a later process by itself
+(`JobInfoSchedulerService` initializes it when the system runs its job), so metrics that were queued before the person
+turned the recognizer off may still be sent. While it is off the app starts nothing of ML Kit and no new data is
+collected, and that is what the text says, not that nothing is sent.
 
 **What the person is told.** The ML Kit terms require the developer to inform users about Google's processing of ML
 Kit metrics data (<https://developers.google.com/ml-kit/terms>: "You are responsible for informing users of your app
@@ -155,8 +131,12 @@ metrics such as latency; the API configuration; the input and output size; the f
 initializations, model downloads, detection, resource releases) and the error codes of those events; and, for digital
 ink recognition, the configured languages. Google adds that it encrypts these data in transit (HTTPS) and does not
 transfer them to third parties. The disclosure does not name the identifiers or say how they are reset, and it does not
-list the content of the input. So the text says: the content of what you write is not in the data Google lists (it does
-not assert that nothing of it is ever sent, because that is Google's to say), and Soyeht sends none of it. Downloading
+list the content of the input. The terms say that the processing of the input data "fully happens on-device" and that ML
+Kit "does not send that data and the resultant outputs to Google servers", and that ML Kit "may contact Google servers
+from time to time in order to receive things like bug fixes, updated models". So the text says: the content of what you
+write is not in the data Google lists, and the terms say it is not sent, and Soyeht sends none of it; that once the
+recognizer is on, ML Kit may contact Google outside Install; and that while it is off no new data is collected but
+metrics queued earlier may still be sent. Downloading
 the model contacts Google's servers, which see the device's IP address, as the Hugging Face download does for the
 dictation models (`PRIVACY.md`). `PRIVACY.md` (the exception to "no analytics library", the list of what leaves the
 device, "Handwriting on Android"), the Settings row and this ADR carry the same list; a Google Play data-safety form

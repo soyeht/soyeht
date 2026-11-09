@@ -70,8 +70,11 @@ private fun HandwritingRow(handwriting: Handwriting) {
         "Write with the pen in the message field, read on this device by Google ML Kit. Turning this on starts ML Kit, " +
             "which sends diagnostics and usage metrics to Google: the device's maker, model and system version, " +
             "hardware accelerators, this app's name and version, settings used, input and output sizes, speed, events, " +
-            "errors, the language, and identifiers of this installation. What you write is not among the data Google lists. " +
-            "Installing the model contacts Google's servers, which see this device's IP address. Off, the pen works as a finger and ML Kit is not started.",
+            "errors, the language, and identifiers of this installation. " +
+            "Google says what you write is processed on this device and not sent to Google's servers. Installing the model contacts Google's " +
+            "servers, which see this device's IP address, and once on ML Kit may contact them from time to time for fixes and " +
+            "model updates. Off, the pen works as a finger, ML Kit is not started and no new data is collected; metrics queued " +
+            "earlier may still be sent.",
     ) { Pill(if (handwriting.enabled) "On" else "Off", { handwriting.enable(!handwriting.enabled) }, tone = if (handwriting.enabled) Tone.Primary else Tone.Neutral, description = "Switch handwriting on this device") }
     if (!handwriting.enabled) return
     val language = handwriting.language

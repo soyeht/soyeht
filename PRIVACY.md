@@ -112,8 +112,10 @@ the IP address. You can delete it again with "Remove download" in Preferences. N
 
 On Android 13 and older you can turn on "Handwriting on this device" in Settings: the pen then writes in the message
 field, read on the device by Google's ML Kit Digital Ink Recognition. It is off until you turn it on. While it is off,
-the app never starts ML Kit: the component that would start it at launch is removed from the app, and nothing is sent
-to Google. Turning it on starts ML Kit, and from then on **ML Kit sends diagnostics and usage metrics to Google**. The
+the app does not start ML Kit (the component that would start it at launch is removed from the app) and no new data is
+collected. Metrics that ML Kit queued before you turned it off may still be sent later, because its transport can run
+again when the app starts. Turning it on starts ML Kit, and from then on **ML Kit sends diagnostics and usage metrics
+to Google**. The
 [ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure) lists them as: the device's
 manufacturer, model, system version and build, and the machine-learning hardware accelerators it has; the app's package
 name and version; the API configuration; the size of the input and of the output; the feature version; performance
@@ -122,10 +124,12 @@ error codes; the languages configured; and per-installation identifiers, which G
 identify a user or a physical device. Google says it encrypts this data in transit (HTTPS) and does not transfer it to
 third parties. The [ML Kit terms](https://developers.google.com/ml-kit/terms) require us to tell you this.
 
-The content of what you write (your strokes, and the text read from them) is not in the data Google lists, and
-Soyeht sends it nowhere; we cannot speak for more than Google publishes. After you turn it on, nothing is downloaded
-until you press Install, which fetches the language model from Google's servers; like the download above, that shows
-your device's IP address to Google. You can remove the model there. Soyeht itself sends nothing. While it is off the pen
+The content of what you write (your strokes, and the text read from them) is not in the data Google lists, and the
+ML Kit terms say that the processing of the input "fully happens on-device" and that ML Kit "does not send that data
+and the resultant outputs to Google servers"; Soyeht sends it nowhere either. After you turn it on, the language model
+is not downloaded until you press Install, which fetches it from Google's servers; like the download above, that shows
+your device's IP address to Google. Outside Install, once it is on, the terms also say ML Kit "may contact Google
+servers from time to time in order to receive things like bug fixes, updated models", which shows the address too. You can remove the model there. Soyeht itself sends nothing. While it is off the pen
 works as a finger. On Android 14 and later the system's own handwriting is used and ML Kit is not involved. If the app
 is listed on Google Play, its data-safety form declares these data
 (`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).

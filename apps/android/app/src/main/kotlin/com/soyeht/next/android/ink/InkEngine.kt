@@ -17,7 +17,7 @@ interface InkReader {
  * on; while it is off no method of this interface is called.
  */
 interface InkEngine {
-    /** Starts the library, which nothing in the app's manifest does. Called once. */
+    /** Starts the library, which nothing in the app's manifest does. Called by each [Handwriting] before its first use, so it must do its work once per process and be harmless the second time. */
     fun start()
 
     /** The model for [tag], or null when the library has none for it. */
