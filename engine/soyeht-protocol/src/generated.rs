@@ -9205,9 +9205,9 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::FileTooLarge => -32040,
         ErrorKind::AdapterNotAcknowledged => -32041,
         ErrorKind::WorkspaceFolderMissing => -32042,
-        ErrorKind::InkUnsupported => -32043,
-        ErrorKind::InkLanguageUnavailable => -32044,
-        ErrorKind::InkLimitExceeded => -32045,
-        ErrorKind::InkRecognitionFailed => -32046,
+        ErrorKind::InkUnsupported => -32044,
+        ErrorKind::InkLanguageUnavailable => -32045,
+        ErrorKind::InkLimitExceeded => -32046,
+        ErrorKind::InkRecognitionFailed => -32047,
     }
 }

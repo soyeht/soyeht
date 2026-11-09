@@ -5,10 +5,10 @@ use super::*;
 
 /// How long the fixture recognizer takes to read. Long enough that a request which waited for it
 /// would show, short enough to keep the suite quick.
-const READING_MS: &str = "1500";
+const READING_MS: &str = "4000";
 /// What the engine takes to answer a request that is not held back by a recognition, with a wide
 /// margin for a loaded host; the recognition itself takes longer than this.
-const PROMPT: Duration = Duration::from_millis(1_000);
+const PROMPT: Duration = Duration::from_millis(3_000);
 
 fn stroke(points: usize) -> Value {
     Value::Array(
@@ -53,7 +53,7 @@ fn a_recognition_runs_off_the_core_lock_and_holds_back_nothing() {
 
     let answer = writer.wait(recognition);
     assert!(
-        started.elapsed() >= Duration::from_millis(1_400),
+        started.elapsed() >= Duration::from_millis(3_900),
         "the recognizer did not read"
     );
     let result = &answer["result"];
@@ -78,7 +78,7 @@ fn a_request_over_a_limit_or_malformed_is_refused_before_any_recognition() {
             error["data"]["kind"], "ink_limit_exceeded",
             "{what}: {error}"
         );
-        assert_eq!(error["code"], -32045, "{what}");
+        assert_eq!(error["code"], -32046, "{what}");
     }
     let mut many = writing(1, 3);
     many["maxCandidates"] = json!(11);
@@ -103,7 +103,7 @@ fn a_request_over_a_limit_or_malformed_is_refused_before_any_recognition() {
     swedish["languages"] = json!(["sv-SE"]);
     let error = refused(&mut client, swedish);
     assert_eq!(error["data"]["kind"], "ink_language_unavailable");
-    assert_eq!(error["code"], -32044);
+    assert_eq!(error["code"], -32045);
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -119,7 +119,7 @@ fn a_system_without_a_recognizer_says_so_and_offers_nothing() {
     let error = refused(&mut client, writing(1, 3));
     assert_eq!(error["data"]["kind"], "ink_unsupported");
     assert_eq!(error["data"]["detail"], "no_os_support");
-    assert_eq!(error["code"], -32043);
+    assert_eq!(error["code"], -32044);
 }
 
 #[cfg(target_os = "macos")]
