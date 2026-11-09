@@ -1,5 +1,6 @@
 package com.soyeht.next.android
 
+import com.soyeht.next.android.theme.Eink
 import com.soyeht.next.android.theme.PaneInterior
 import com.soyeht.next.android.theme.Palettes
 import com.soyeht.next.android.theme.Radius
@@ -28,6 +29,26 @@ class DesignTokensTest {
             assertEquals(16, palette.ansi.size)
             assertEquals(source.getString("displayName"), palette.displayName)
         }
+    }
+
+    @Test
+    fun theE_inkPaletteAndSizesAreTheFilesNot() {
+        val source = tokens.getJSONObject("einkPalette")
+        for (role in listOf("screen", "ink", "well", "accent", "border", "dim")) {
+            val actual = when (role) {
+                "screen" -> Palettes.eink.screen
+                "ink" -> Palettes.eink.ink
+                "well" -> Palettes.eink.well
+                "accent" -> Palettes.eink.accent
+                "border" -> Palettes.eink.border
+                else -> Palettes.eink.dim
+            }
+            assertEquals(role, argb(source.getString(role)), actual)
+        }
+        assertEquals(16, Palettes.eink.ansi.size)
+        assertEquals(tokens.getJSONObject("eink").getDouble("touchTarget").toFloat(), Eink.touchTarget)
+        // It is not a theme the person picks.
+        assertTrue(Palettes.all.none { it.second === Palettes.eink })
     }
 
     @Test

@@ -22,6 +22,7 @@ import uniffi.soyeht_android.*
 @Composable
 fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     val conversation = model.conversation
     TopBar(pane.name, pane.status, onBack = model::close) { model.usage?.let { UsageRingView(it) } }
     val list = rememberLazyListState()
@@ -33,12 +34,13 @@ fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
     LazyColumn(
         Modifier.weight(1f).fillMaxWidth(),
         state = list,
+        flingBehavior = flingBehavior(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(PaneInterior.phoneInset.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.stackSpacing.dp),
     ) {
         items(conversation?.items ?: emptyList(), key = { it.id }) { item -> Message(item) }
         conversation?.notice?.let { notice ->
-            item { Text(notice, color = roles.secondary, fontSize = TypeScale.caption.sp) }
+            item { Text(notice, color = roles.secondary, fontSize = metrics.caption.sp) }
         }
     }
     conversation?.question?.let { Question(it) { option -> model.answer(it.requestId, option) } }
@@ -49,17 +51,18 @@ fun ColumnScope.AgentScreen(model: AppModel, pane: PaneRow) {
 @Composable
 private fun Message(item: ConversationItem) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     val person = item.speaker == Speaker.PERSON
     Column(
         Modifier
             .fillMaxWidth()
-            .then(if (person) Modifier.background(roles.well, RoundedCornerShape(Radius.control.dp)).padding(PaneInterior.cardPadding.dp) else Modifier),
+            .then(if (person) Modifier.panel(roles.well, RoundedCornerShape(Radius.control.dp)).padding(PaneInterior.cardPadding.dp) else Modifier),
     ) {
         if (item.kind == ItemKind.TOOL || item.kind == ItemKind.THOUGHT) {
             Text(
                 (if (item.kind == ItemKind.TOOL) "Tool" else "Thinking"),
                 color = roles.muted,
-                fontSize = TypeScale.small.sp,
+                fontSize = metrics.small.sp,
             )
         }
         val ink = if (item.kind == ItemKind.MESSAGE) roles.ink else roles.secondary
@@ -69,9 +72,9 @@ private fun Message(item: ConversationItem) {
             val blocks = remember(item.id, item.revision, item.streaming) { markdownBlocks(item.text, item.streaming) }
             val copy = remember { codeCopy() }
             MarkdownView(blocks, copy, ink)
-            if (item.streaming) Text("…", color = roles.muted, fontSize = TypeScale.body.sp)
+            if (item.streaming) Text("…", color = roles.muted, fontSize = metrics.body.sp)
         } else {
-            Text(item.text + if (item.streaming) " …" else "", color = ink, fontSize = TypeScale.body.sp)
+            Text(item.text + if (item.streaming) " …" else "", color = ink, fontSize = metrics.body.sp)
         }
     }
 }
@@ -79,16 +82,17 @@ private fun Message(item: ConversationItem) {
 @Composable
 private fun Question(question: PermissionQuestion, answer: (String) -> Unit) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     Column(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = PaneInterior.phoneInset.dp)
-            .background(roles.well, RoundedCornerShape(Radius.control.dp))
+            .panel(roles.well, RoundedCornerShape(Radius.control.dp))
             .padding(PaneInterior.cardPadding.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp),
     ) {
-        Text(question.title, color = roles.ink, fontSize = TypeScale.body.sp)
-        if (question.detail.isNotBlank()) Text(question.detail, color = roles.secondary, fontSize = TypeScale.caption.sp)
+        Text(question.title, color = roles.ink, fontSize = metrics.body.sp)
+        if (question.detail.isNotBlank()) Text(question.detail, color = roles.secondary, fontSize = metrics.caption.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
             question.options.forEach { option -> Pill(option.name, { answer(option.optionId) }) }
         }
@@ -98,6 +102,7 @@ private fun Question(question: PermissionQuestion, answer: (String) -> Unit) {
 @Composable
 private fun MessageField(model: AppModel, working: Boolean) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     var text by rememberSaveable { mutableStateOf("") }
     Row(
         Modifier.fillMaxWidth().padding(PaneInterior.compactSpacing.dp),
@@ -107,14 +112,14 @@ private fun MessageField(model: AppModel, working: Boolean) {
         BasicTextField(
             value = text,
             onValueChange = { text = it },
-            textStyle = TextStyle(color = roles.ink, fontSize = TypeScale.body.sp),
+            textStyle = TextStyle(color = roles.ink, fontSize = metrics.body.sp),
             cursorBrush = SolidColor(roles.accent),
             modifier = Modifier
                 .weight(1f)
-                .background(roles.well, RoundedCornerShape(PaneInterior.composerRadius.dp))
+                .panel(roles.well, RoundedCornerShape(PaneInterior.composerRadius.dp))
                 .padding(PaneInterior.cardPadding.dp),
             decorationBox = { inner ->
-                if (text.isEmpty()) Text(if (working) "Working…" else "Message the agent", color = roles.muted, fontSize = TypeScale.body.sp)
+                if (text.isEmpty()) Text(if (working) "Working…" else "Message the agent", color = roles.muted, fontSize = metrics.body.sp)
                 inner()
             },
         )

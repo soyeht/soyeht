@@ -1,5 +1,6 @@
 package com.soyeht.next.android.ui
 
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +25,7 @@ private fun kindLabel(kind: PaneKind) = when (kind) {
 @Composable
 fun HomeScreen(model: AppModel) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     val overview = model.overview
     val link = overview?.link
     TopBar(
@@ -34,7 +36,10 @@ fun HomeScreen(model: AppModel) {
             is Link.Disconnected -> "Reconnecting… ${link.reason}"
             is Link.AccessRefused -> link.reason
         },
-        actions = { Pill("Forget", model::askToForget, description = "Forget this computer") },
+        actions = {
+            EinkSwitch(model.eink, model::toggleEink)
+            Pill("Forget", model::askToForget, description = "Forget this computer")
+        },
     )
     if (link is Link.AccessRefused) {
         Text(
@@ -56,10 +61,11 @@ fun HomeScreen(model: AppModel) {
     }
     model.cameraProblem?.let { Box(Modifier.padding(PaneInterior.phoneInset.dp)) { CameraNotice(it) } }
     overview?.problem?.let {
-        Text(it, color = roles.secondary, fontSize = TypeScale.caption.sp, modifier = Modifier.padding(horizontal = PaneInterior.phoneInset.dp))
+        Text(it, color = roles.secondary, fontSize = metrics.caption.sp, modifier = Modifier.padding(horizontal = PaneInterior.phoneInset.dp))
     }
     LazyColumn(
         Modifier.fillMaxWidth(),
+        flingBehavior = flingBehavior(),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp),
     ) {
         overview?.workspaces?.forEach { workspace ->
@@ -67,7 +73,7 @@ fun HomeScreen(model: AppModel) {
                 Text(
                     workspace.name,
                     color = roles.secondary,
-                    fontSize = TypeScale.caption.sp,
+                    fontSize = metrics.caption.sp,
                     modifier = Modifier.padding(horizontal = PaneInterior.phoneInset.dp, vertical = PaneInterior.compactSpacing.dp),
                 )
             }
@@ -79,21 +85,29 @@ fun HomeScreen(model: AppModel) {
 @Composable
 private fun PaneItem(pane: PaneRow, onClick: () -> Unit) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
+    // On e-ink a row is a bordered card: rows with no edge run into each other and into the page.
+    val card = if (metrics.eink) {
+        Modifier.padding(horizontal = PaneInterior.phoneInset.dp).panel(roles.face, RoundedCornerShape(Radius.control.dp))
+    } else {
+        Modifier
+    }
     Row(
         Modifier
+            .then(card)
             .fillMaxWidth()
-            .heightIn(min = PaneInterior.touchTarget.dp)
+            .heightIn(min = metrics.touchTarget.dp)
             .clickable(onClick = onClick)
             .padding(horizontal = PaneInterior.phoneInset.dp, vertical = PaneInterior.rowVerticalPadding.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(PaneInterior.rowSpacing.dp),
     ) {
         Column(Modifier.weight(1f)) {
-            Text(pane.name, color = roles.ink, fontSize = TypeScale.body.sp, maxLines = 1)
+            Text(pane.name, color = roles.ink, fontSize = metrics.body.sp, maxLines = 1)
             Text(
                 listOf(kindLabel(pane.kind), pane.status).filter { it.isNotBlank() }.joinToString(" · "),
                 color = roles.secondary,
-                fontSize = TypeScale.small.sp,
+                fontSize = metrics.small.sp,
                 maxLines = 1,
             )
         }

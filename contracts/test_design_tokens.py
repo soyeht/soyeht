@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from design_tokens import (
+    ANDROID_SECTIONS,
     DESKTOP_SECTION,
     FALLBACKS,
     KOTLIN_OUTPUT,
@@ -163,11 +164,38 @@ class TokenGenerationTests(unittest.TestCase):
             self.assertIn(f"    val {name} = Palette(", kotlin)
             for role in ("ink", "accent", "well"):
                 self.assertIn(f"{role} = 0xFF{palette[role][1:]},", kotlin)
-        for key, title in NUMERIC_SECTIONS.items():
+        for key, title in {**NUMERIC_SECTIONS, **ANDROID_SECTIONS}.items():
             self.assertIn(f"object {title} {{", kotlin)
             for name, value in document[key].items():
                 self.assertIn(f"const val {name}: Float = {float(value)!r}f", kotlin)
         self.assertNotIn("windowWidth", kotlin)  # the desktop section is Rust-only
+
+    def test_the_eink_palette_has_no_color_the_other_palettes_lack(self):
+        """"No new colours": every value of the e-ink palette is one an existing palette already uses."""
+        document = tokens()
+
+        def colors(palette):
+            found = {v for v in palette.values() if isinstance(v, str) and v.startswith("#")}
+            return found | set(palette["agents"]) | set(palette["ansi"])
+
+        existing = set().union(*(colors(p) for p in document["palettes"].values()))
+        self.assertEqual(colors(document["einkPalette"]) - existing, set())
+
+    def test_the_eink_palette_is_not_a_theme_and_needs_its_own_roles(self):
+        document = tokens()
+        outputs = render_tokens(document)
+        self.assertNotIn("E-ink", outputs[SWIFT_OUTPUT])
+        self.assertNotIn("E-ink", outputs[RUST_OUTPUT])
+        self.assertIn('displayName = "E-ink"', outputs[KOTLIN_OUTPUT])
+        # The e-ink sizes are the Android app's alone: no other client carries an unused name.
+        self.assertIn("object Eink {", outputs[KOTLIN_OUTPUT])
+        self.assertNotIn("Eink", outputs[SWIFT_OUTPUT])
+        self.assertNotIn("pub mod eink", outputs[RUST_OUTPUT])
+        for role in ("border", "dim"):
+            missing = copy.deepcopy(document)
+            del missing["einkPalette"][role]
+            with self.assertRaises(ValueError):
+                validate_tokens(missing)
 
     def test_generated_swift_palettes_read_back_as_the_json(self):
         swift = render_tokens(tokens())[SWIFT_OUTPUT]
