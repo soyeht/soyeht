@@ -287,7 +287,7 @@ impl Service {
         let root = self
             .files
             .canonicalize(workspace_root)
-            .map_err(errors::io)?;
+            .map_err(errors::workspace_root)?;
         let target = self.files.canonicalize(requested).map_err(errors::io)?;
         contained_path(&root, target)
     }
@@ -303,7 +303,7 @@ impl Service {
         let root = self
             .files
             .canonicalize(workspace_root)
-            .map_err(errors::io)?;
+            .map_err(errors::workspace_root)?;
         let target = match self.files.canonicalize(requested) {
             Ok(target) => target,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -665,7 +665,9 @@ pub(super) fn resolve_in(
     {
         return Err(errors::invalid("File path must stay within the workspace"));
     }
-    let root = files.canonicalize(workspace_root).map_err(errors::io)?;
+    let root = files
+        .canonicalize(workspace_root)
+        .map_err(errors::workspace_root)?;
     let target = files
         .canonicalize(&root.join(requested_path))
         .map_err(errors::io)?;

@@ -13,5 +13,8 @@ func engineDeadlineTimeout(_ engineSeconds: Int) -> Double {
 /// The size of the pieces raw terminal input goes out in.
 let inputChunkBytes = ClientPolicy.terminalInputChunkBytes
 
+/// How much raw terminal input may wait to be sent before a client refuses more.
+let inputQueueBytes = ClientPolicy.terminalInputQueueBytes
+
 /// How long the engine has to send its greeting after the socket opens.
 let greetingTimeout: Duration = .seconds(ClientPolicy.greetingTimeoutSeconds)

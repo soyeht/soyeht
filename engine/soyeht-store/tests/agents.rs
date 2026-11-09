@@ -221,7 +221,7 @@ fn migration_from_v21_preserves_existing_state_and_adds_model_refusals() {
     let connection = profile.connection();
     connection
         .execute_batch(
-            "DROP TABLE harness_sign_in; DROP TABLE editor_tabs; DROP TABLE push_registrations; DROP TABLE agent_model_refusals;
+            "DROP TABLE project_trust; DROP TABLE harness_sign_in; DROP TABLE editor_tabs; DROP TABLE push_registrations; DROP TABLE agent_model_refusals;
              DROP TABLE agent_message_rate;
              DROP TABLE harness_readiness;
              ALTER TABLE writing_documents DROP COLUMN full_width;

@@ -60,7 +60,7 @@ SIGNATURES = {
 # A binary file is allowed only under one of these directories, by extension.
 BINARY_HOMES = {
     ".png": (
-        "docs/reports/",
+        "docs/archive/reports/",
         "apps/mac/Resources/Assets.xcassets/",
         "apps/ios/Resources/Assets.xcassets/",
         "apps/shared/Sources/SoyehtClient/Resources/",
@@ -73,11 +73,7 @@ BINARY_HOMES = {
     ),
     ".pen": ("design/",),
 }
-ALLOWED_FILES = {
-    "scripts/human-mode-spike/test.mp4": (
-        "the 2 KB clip that docs/reports/human-mode-spike.md describes and its script plays"
-    ),
-}
+ALLOWED_FILES: dict[str, str] = {}
 
 
 class Added(NamedTuple):

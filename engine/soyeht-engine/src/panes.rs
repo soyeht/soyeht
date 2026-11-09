@@ -2,15 +2,13 @@ use crate::{
     core::{Core, persist_pane},
     dispatch::Outcome,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     ports::StorePort,
     screen::Screen,
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{
-    Pane, PaneExperimentCapture, PaneMode, PaneState, StateSource, event, method, setting,
-};
+use soyeht_protocol::{Pane, PaneExperimentCapture, PaneMode, StateSource, event, method, setting};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -127,39 +125,18 @@ impl Core {
             (None, None) => "Shell".into(),
         };
         let instance_key = Uuid::new_v4().to_string();
+        let mode = if agent_mode {
+            PaneMode::Agent
+        } else {
+            PaneMode::Terminal
+        };
         let mut pane = Pane {
-            agent: agent.map(|state| state.public(self.now_ms())),
-            url: None,
-            title: None,
-            viewport: None,
-            incognito: None,
-            writing_kind: None,
-            writing_section: None,
-            exit_code: None,
-            web_session: None,
-            pane_id: Uuid::new_v4().to_string(),
-            workspace_id: workspace.workspace_id,
-            cwd: cwd.into(),
-            name,
-            mode: if agent_mode {
-                PaneMode::Agent
-            } else {
-                PaneMode::Terminal
-            },
-            state: PaneState::Starting,
             source: if agent_mode {
                 StateSource::Protocol
             } else {
                 StateSource::None
             },
             confidence: if agent_mode { 1.0 } else { 0.0 },
-            phrase: if agent_mode {
-                "Starting agent"
-            } else {
-                "Starting shell"
-            }
-            .into(),
-            generation: 1,
             cols: params["cols"]
                 .as_u64()
                 .map_or(defaults.cols, |value| value as u32),
@@ -167,12 +144,13 @@ impl Core {
                 .as_u64()
                 .map_or(defaults.rows, |value| value as u32),
             record: agent_mode || defaults.record,
-            experiment_capture: Some(PaneExperimentCapture {
-                on: false,
-                failure: None,
-            }),
-            pid: None,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
+            agent: agent.map(|state| state.public(self.now_ms())),
+            ..model::new_pane(mode, workspace.workspace_id, name, cwd).starting(if agent_mode {
+                "Starting agent"
+            } else {
+                "Starting shell"
+            })
         };
         let terminal_harness = params["harness"]
             .as_str()
@@ -223,6 +201,29 @@ impl Core {
         }
         let defaults = pane_defaults(&self.store)?;
         let agent = new_agent(&self.directory, &self.store, params)?;
+        // An agent that downloads a package unchecked starts only once a person acknowledged
+        // that exact package (ADR 0143): this request's own acknowledgement counts.
+        let acknowledging = agent
+            .as_ref()
+            .map(|agent| {
+                let typed: soyeht_protocol::PaneCreateParams =
+                    serde_json::from_value(params.clone())
+                        .map_err(|_| errors::invalid("Invalid pane parameters"))?;
+                let package = self.acknowledgement_of(
+                    connection,
+                    typed.acknowledged_package.as_deref(),
+                    &agent.launch,
+                )?;
+                crate::agents::adapter_consent::require(
+                    &self.store,
+                    &agent.launch,
+                    package.as_deref(),
+                )?;
+                Ok::<_, errors::Error>(package)
+            })
+            .transpose()?
+            .flatten();
+        let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
             self.prepare_process_pane(params, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
@@ -233,6 +234,9 @@ impl Core {
         let created = pane_created(&saved)?;
         let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
+            if let Some(package) = &acknowledging {
+                soyeht_store::adapter_acknowledgement::acknowledge(tx, package, acknowledged_at)?;
+            }
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }

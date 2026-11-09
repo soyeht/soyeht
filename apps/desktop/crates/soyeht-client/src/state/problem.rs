@@ -29,6 +29,7 @@ pub mod kind {
     pub const LOOP_UNREADABLE: &str = "loop_unreadable";
     pub const NEW_AGENT_REFUSED: &str = "new_agent_refused";
     pub const PERMISSION_UNREADABLE: &str = "permission_unreadable";
+    pub const PROJECT_TRUST_NOT_SAVED: &str = "project_trust_not_saved";
     pub const QUESTION_UNREADABLE: &str = "question_unreadable";
     pub const REQUEST_FAILED: &str = "request_failed";
     pub const SUPERVISOR_LOST: &str = "supervisor_lost";

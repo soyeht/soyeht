@@ -1,0 +1,70 @@
+{
+  "description": "The short code a pairing shows on the new device and on the Mac, for the person to compare (ADR 0152). It is the first sixteen hexadecimal digits of the fingerprint of the device's key (the SHA-256 of the key, which the Mac's request already carries), in capitals, in four groups of four. The fingerprint must be plain ASCII hexadecimal digits from end to end and at least sixteen long: any other character anywhere in it (a letter outside a-f, a combining mark, a line break, a full-width digit) gives no code, so that a client counting characters and one counting bytes agree. The Rust protocol crate and the Swift client both pass these cases.",
+  "cases": [
+    {
+      "name": "a full fingerprint",
+      "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "code": "E3B0 C442 98FC 1C14"
+    },
+    {
+      "name": "capitals in, capitals out",
+      "fingerprint": "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+      "code": "0123 4567 89AB CDEF"
+    },
+    {
+      "name": "exactly sixteen digits",
+      "fingerprint": "abcdef0123456789",
+      "code": "ABCD EF01 2345 6789"
+    },
+    {
+      "name": "fifteen digits",
+      "fingerprint": "abcdef012345678",
+      "code": null
+    },
+    {
+      "name": "twelve digits, the length of the earlier code",
+      "fingerprint": "abcdef012345",
+      "code": null
+    },
+    {
+      "name": "a character that is not a hexadecimal digit among the first sixteen",
+      "fingerprint": "e3b0c44298fc1c1g9afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "code": null
+    },
+    {
+      "name": "a character that is not a hexadecimal digit after the first sixteen",
+      "fingerprint": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85g",
+      "code": null
+    },
+    {
+      "name": "a combining mark after the sixteenth digit",
+      "fingerprint": "abcdef0123456789́",
+      "code": null
+    },
+    {
+      "name": "a combining mark that makes the sixteenth character more than one byte",
+      "fingerprint": "abcdef012345678é",
+      "code": null
+    },
+    {
+      "name": "a line break after the sixteenth digit",
+      "fingerprint": "abcdef0123456789\r\n",
+      "code": null
+    },
+    {
+      "name": "full-width digits",
+      "fingerprint": "０１２３４５６７８９ＡＢＣＤＥＦ",
+      "code": null
+    },
+    {
+      "name": "empty",
+      "fingerprint": "",
+      "code": null
+    },
+    {
+      "name": "multi-byte text",
+      "fingerprint": "ééééééééééééééééé",
+      "code": null
+    }
+  ]
+}

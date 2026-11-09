@@ -164,6 +164,7 @@ fn run_git(probe: &Probe, command: Command) -> Result<Output> {
 fn process_error(error: soyeht_process::Error) -> Error {
     match error {
         soyeht_process::Error::GitUnavailable => Error::GitUnavailable,
+        soyeht_process::Error::GitTooOld { .. } => Error::GitUnavailable,
         soyeht_process::Error::Spawn { .. } | soyeht_process::Error::UnderLock { .. } => {
             Error::CommandUnavailable
         }

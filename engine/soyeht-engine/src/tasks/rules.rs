@@ -18,14 +18,9 @@ fn required_text(value: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn new_task(
-    params: &TaskCreateParams,
-    task_id: String,
-    actor: String,
-    timestamp: String,
-) -> Result<Task> {
-    required_text(&params.title, "title")?;
-    required_text(&params.must_not_change, "mustNotChange")?;
+/// The executor a task creation asks for: its executor with the top-level `permissionMode`
+/// laid over it.
+pub fn requested_executor(params: &TaskCreateParams) -> Option<soyeht_protocol::TaskExecutor> {
     let mut executor = params.executor.clone();
     if let Some(mode) = &params.permission_mode {
         executor
@@ -38,6 +33,18 @@ pub fn new_task(
             })
             .permission_mode = Some(mode.clone());
     }
+    executor
+}
+
+pub fn new_task(
+    params: &TaskCreateParams,
+    task_id: String,
+    actor: String,
+    timestamp: String,
+) -> Result<Task> {
+    required_text(&params.title, "title")?;
+    required_text(&params.must_not_change, "mustNotChange")?;
+    let executor = requested_executor(params);
     Ok(Task {
         workspace_id: params.workspace_id.clone(),
         task_id,

@@ -263,19 +263,32 @@ impl Core {
         effect: Effect,
     ) -> Result<Option<(DiskJob, Snapshot)>> {
         let recreate = effect == Effect::Save && self.editor.take_recreate(file_id);
-        self.disk_job_for(self.editor.stored(file_id)?, effect, recreate)
+        let workspace_id = self.editor.stored(file_id)?.workspace_id.clone();
+        let root = self.workspace_root(&workspace_id)?;
+        self.disk_job_for(root, self.editor.stored(file_id)?, effect, recreate)
+    }
+
+    /// The folder of workspace `id`. The disk watch makes a job for every open file four times a
+    /// second, and the folder of a workspace never changes, so it is read from the database once.
+    pub(crate) fn workspace_root(&mut self, id: &str) -> Result<PathBuf> {
+        if let Some(root) = self.workspace_roots.get(id) {
+            return Ok(root.clone());
+        }
+        let root = PathBuf::from(model::workspace(&self.store, id)?.path);
+        self.workspace_roots.insert(id.to_owned(), root.clone());
+        Ok(root)
     }
 
     fn disk_job_for(
         &self,
+        root: PathBuf,
         file: &EditorFile,
         effect: Effect,
         recreate: bool,
     ) -> Result<Option<(DiskJob, Snapshot)>> {
-        let workspace = model::workspace(&self.store, &file.workspace_id)?;
         Ok(DiskJob::new(
             Arc::clone(&self.editor.files),
-            PathBuf::from(workspace.path.as_str()),
+            root,
             file,
             effect,
             recreate,
@@ -450,7 +463,8 @@ impl Core {
         if self.hooks.pause_editor_autosave() {
             return Ok(());
         }
-        let Some((job, snapshot)) = self.disk_job_for(&file, Effect::Save, false)? else {
+        let root = self.workspace_root(&file.workspace_id)?;
+        let Some((job, snapshot)) = self.disk_job_for(root, &file, Effect::Save, false)? else {
             return Ok(());
         };
         // Not the key of the job that just ended: that one is released after this apply.

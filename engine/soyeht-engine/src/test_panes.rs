@@ -12,7 +12,7 @@ use crate::{
 };
 use serde_json::json;
 use soyeht_pane_state::{EngineBuild, HarnessIdentity, ObservationPaneKind, RecordedRow};
-use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource, Workspace};
+use soyeht_protocol::{Pane, PaneMode, Workspace};
 use soyeht_ptyd::{
     Error as PtydError,
     wire::{Instance, ProcessKind, Request, Response, Spawn},
@@ -53,6 +53,27 @@ pub(crate) fn insert_terminal_pane(
         },
     );
     pane_id
+}
+
+/// A core in a new short folder, with a fixed clock and background work run inline, and the
+/// workspace `workspace_id` at that folder.
+pub(crate) fn core_with_workspace(workspace_id: &str) -> (Core, std::path::PathBuf) {
+    let directory = short_directory();
+    let mut core = Core::open(&directory).unwrap();
+    core.clock = Arc::new(FixedClock(1_000_000));
+    core.background = crate::offload::Background::inline();
+    let workspace = Workspace {
+        workspace_id: workspace_id.into(),
+        name: "Tasks".into(),
+        path: directory.to_string_lossy().into(),
+        layout: json!({}),
+    };
+    StorePort::mutate(&mut core.store, "test", "workspace", "seed", |change| {
+        change.insert_workspace(&workspace)?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+    (core, directory)
 }
 
 /// Adds the idle agent pane `id`, ready for work and with no process, to `core` and to its
@@ -129,32 +150,13 @@ pub(crate) fn ready_agent_state() -> crate::agents::state::State {
 /// An idle pane with no optional field set: a test overrides what it exercises with
 /// `Pane { name: .., ..pane(..) }`.
 pub(crate) fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {
+    use crate::model::PaneSetup as _;
     Pane {
-        pane_id: id.into(),
-        workspace_id: workspace_id.into(),
-        name: id.into(),
-        cwd: cwd.into(),
-        mode,
-        state: PaneState::Idle,
-        source: StateSource::Protocol,
-        confidence: 1.0,
         phrase: String::new(),
-        generation: 1,
         cols: 80,
         rows: 24,
-        record: false,
         experiment_capture: None,
-        pid: None,
-        exit_code: None,
-        stream_id: None,
-        agent: None,
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        web_session: None,
-        writing_kind: None,
-        writing_section: None,
+        ..crate::model::new_pane(mode, workspace_id, id, cwd).with_id(id)
     }
 }
 
@@ -337,3 +339,40 @@ impl Core {
         self.settle_supervisor(&supervisor, result)
     }
 }
+
+/// The state of a ready agent of `harness`, in the mode `current` of the modes `choices` (a value
+/// and the kind its harness announces for it).
+pub(crate) fn agent_with_modes(
+    harness: &str,
+    current: &str,
+    choices: &[(&str, &str)],
+) -> crate::agents::state::State {
+    let choices: Vec<_> = choices
+        .iter()
+        .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
+        .collect();
+    let mut state = ready_agent_state();
+    state.launch.id = harness.into();
+    state.options = soyeht_acp::config::Options::from_response(&json!({"configOptions":[{
+        "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":current,
+        "options":choices}]}))
+    .unwrap();
+    state
+}
+
+/// The modes the Claude adapter announces, with the kind each carries.
+pub(crate) const CLAUDE_MODES: [(&str, &str); 5] = [
+    ("default", "standard"),
+    ("acceptEdits", "standard"),
+    ("plan", "plan"),
+    ("auto", "auto_review"),
+    ("bypassPermissions", "full_access"),
+];
+
+/// The modes the Codex adapter announces: it has no plan mode, and its `read-only` is the
+/// standard one that asks before editing outside the workspace.
+pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
+    ("read-only", "standard"),
+    ("agent", "auto_review"),
+    ("agent-full-access", "full_access"),
+];
