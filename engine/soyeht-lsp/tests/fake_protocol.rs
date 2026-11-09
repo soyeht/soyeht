@@ -7,7 +7,11 @@ use std::process::{Command, Stdio};
 
 #[test]
 fn deterministic_server_handles_language_operations_and_diagnostics() {
+    // The fake writes what it was started with into its working directory.
+    let folder = std::env::temp_dir().join(format!("sn-fake-lsp-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_soyeht-fake-lsp"))
+        .current_dir(&folder)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -15,7 +19,7 @@ fn deterministic_server_handles_language_operations_and_diagnostics() {
     let mut input = child.stdin.take().unwrap();
     let mut output = child.stdout.take().unwrap();
     let mut client = Client::default();
-    let initialize = client.initialize("file:///workspace").unwrap();
+    let initialize = client.initialize("file:///workspace", None).unwrap();
     input.write_all(&encode(&initialize).unwrap()).unwrap();
     let response = read_one(&mut output);
     assert!(
@@ -27,6 +31,7 @@ fn deterministic_server_handles_language_operations_and_diagnostics() {
     assert!(matches!(event, Incoming::Diagnostics { diagnostics, .. } if diagnostics.len() == 1));
     child.kill().unwrap();
     child.wait().unwrap();
+    std::fs::remove_dir_all(folder).unwrap();
 }
 
 fn read_one(reader: &mut impl Read) -> Value {

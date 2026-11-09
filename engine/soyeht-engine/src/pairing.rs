@@ -12,7 +12,12 @@ use chrono::SecondsFormat;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_platform::log;
-use soyeht_protocol::{Device, Role, event, limits, method, pairing_link};
+use soyeht_protocol::{
+    Device, DevicePairDecideParams, DevicePairDecideResult, DevicePairPending,
+    DevicePairRequestedDraft, DevicePairStartResult, DevicePairedDraft, DeviceRevokeParams,
+    DeviceRevokeResult, DeviceRevokedDraft, PairBeginParams, PairBeginResult, PairProveParams,
+    PairProveResult, PairResultEvent, Role, event, limits, method, pairing_link,
+};
 use std::sync::Once;
 use uuid::Uuid;
 
@@ -89,10 +94,16 @@ impl Core {
                 let expires_at = chrono::DateTime::from_timestamp(pending.expires, 0)
                     .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?
                     .to_rfc3339();
-                requests.push(json!({"kind":"device_pair","requestId":pending.id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public),"expiresAt":expires_at}));
+                requests.push(DevicePairPending {
+                    kind: "device_pair".into(),
+                    request_id: pending.id,
+                    device_name: pending.name,
+                    fingerprint: auth::fingerprint(&public),
+                    expires_at,
+                });
             }
         }
-        Ok(json!(requests))
+        model::to_value(&requests)
     }
 
     fn pending_pair(&self, id: &str) -> Result<Pending> {
@@ -109,72 +120,98 @@ impl Core {
             return Err(errors::unauthorized("Pairing requires a fresh connection"));
         }
         let fingerprint = STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
-        let idem = errors::param_str(params, "idempotencyKey")?;
         if method == method::PAIR_BEGIN {
-            let code = errors::param_str(params, "code")?;
-            let key = errors::param_str(params, "devicePublicKey")?;
-            let name = errors::param_str(params, "deviceName")?;
-            let public =
-                auth::public_key(key).map_err(|error| errors::invalid(error.to_string()))?;
-            let scope = format!("pair:{}", auth::fingerprint(&public));
-            let receipt = StorePort::idempotency_receipt(&self.store, &scope, idem)
-                .map_err(errors::storage)?;
-            if let Some(receipt) = receipt {
-                if receipt.fingerprint != fingerprint {
-                    return Err(errors::idempotency_conflict(
-                        "Pairing key reused with different content",
-                    ));
-                }
-                let result = receipt.result;
-                let id = result["requestId"]
-                    .as_str()
-                    .ok_or_else(|| errors::internal("Missing pairing request"))?;
-                self.pending_pair(id)?;
-                self.pairing_client_mut(connection)?.pair_request = Some(id.into());
-                return Ok(result);
-            }
-            let expires = StorePort::active_pair_window_expiry(&self.store, code, self.now_unix())
-                .map_err(errors::storage)?;
-            let expires =
-                expires.ok_or_else(|| errors::unauthorized("Pairing code expired or invalid"))?;
-            let pending = Pending {
-                id: Uuid::new_v4().to_string(),
-                code: code.into(),
-                name: name.into(),
-                key: key.into(),
-                challenge: auth::random_bytes()
-                    .map_err(|error| errors::internal(error.to_string()))?,
-                proved: false,
-                approved: None,
-                token: None,
-                device: None,
-                expires,
-            };
-            let now = self.now_unix();
-            // Signed here and kept in the receipt: a replay answers with the same proof.
-            let engine_proof = auth::sign(
-                &self.engine_key,
-                &auth::engine_pair_bytes(&pending.id, &pending.challenge, public.as_bytes()),
-            );
-            let mutation = StorePort::mutate(&mut self.store, &scope, idem, &fingerprint, |tx| {
-                tx.insert_pair_request(&pending.id, &pending, expires, now)?;
-                Ok((
-                    json!({"requestId":pending.id,"challenge":STANDARD.encode(pending.challenge),"engineProof":engine_proof}),
-                    vec![],
-                ))
-            })
-            .map_err(errors::storage)?;
-            self.pairing_client_mut(connection)?.pair_request =
-                mutation.result["requestId"].as_str().map(str::to_owned);
-            return Ok(mutation.result);
+            let begin: PairBeginParams = model::typed_params(params)?;
+            return self.pair_begin(connection, &fingerprint, begin);
         }
-        let id = errors::param_str(params, "requestId")?;
-        if self.pairing_client(connection)?.pair_request.as_deref() != Some(id) {
+        let prove: PairProveParams = model::typed_params(params)?;
+        self.pair_prove(connection, &fingerprint, prove)
+    }
+
+    fn pair_begin(
+        &mut self,
+        connection: &str,
+        fingerprint: &str,
+        begin: PairBeginParams,
+    ) -> Result<Value> {
+        let PairBeginParams {
+            code,
+            device_name: name,
+            device_public_key: key,
+            idempotency_key: idem,
+        } = begin;
+        let public = auth::public_key(&key).map_err(|error| errors::invalid(error.to_string()))?;
+        let scope = format!("pair:{}", auth::fingerprint(&public));
+        let receipt =
+            StorePort::idempotency_receipt(&self.store, &scope, &idem).map_err(errors::storage)?;
+        if let Some(receipt) = receipt {
+            if receipt.fingerprint != fingerprint {
+                return Err(errors::idempotency_conflict(
+                    "Pairing key reused with different content",
+                ));
+            }
+            let result = receipt.result;
+            let id = result["requestId"]
+                .as_str()
+                .ok_or_else(|| errors::internal("Missing pairing request"))?;
+            self.pending_pair(id)?;
+            self.pairing_client_mut(connection)?.pair_request = Some(id.into());
+            return Ok(result);
+        }
+        let expires = StorePort::active_pair_window_expiry(&self.store, &code, self.now_unix())
+            .map_err(errors::storage)?;
+        let expires =
+            expires.ok_or_else(|| errors::unauthorized("Pairing code expired or invalid"))?;
+        let pending = Pending {
+            id: Uuid::new_v4().to_string(),
+            code,
+            name,
+            key,
+            challenge: auth::random_bytes().map_err(|error| errors::internal(error.to_string()))?,
+            proved: false,
+            approved: None,
+            token: None,
+            device: None,
+            expires,
+        };
+        let now = self.now_unix();
+        // Signed here and kept in the receipt: a replay answers with the same proof.
+        let engine_proof = auth::sign(
+            &self.engine_key,
+            &auth::engine_pair_bytes(&pending.id, &pending.challenge, public.as_bytes()),
+        );
+        let result = model::to_value(&PairBeginResult {
+            request_id: pending.id.clone(),
+            challenge: STANDARD.encode(pending.challenge),
+            engine_proof: Some(engine_proof),
+        })?;
+        let mutation = StorePort::mutate(&mut self.store, &scope, &idem, fingerprint, |tx| {
+            tx.insert_pair_request(&pending.id, &pending, expires, now)?;
+            Ok((result, vec![]))
+        })
+        .map_err(errors::storage)?;
+        self.pairing_client_mut(connection)?.pair_request =
+            mutation.result["requestId"].as_str().map(str::to_owned);
+        Ok(mutation.result)
+    }
+
+    fn pair_prove(
+        &mut self,
+        connection: &str,
+        fingerprint: &str,
+        prove: PairProveParams,
+    ) -> Result<Value> {
+        let PairProveParams {
+            request_id: id,
+            proof,
+            idempotency_key: idem,
+        } = prove;
+        if self.pairing_client(connection)?.pair_request.as_deref() != Some(id.as_str()) {
             return Err(errors::unauthorized(
                 "Begin pairing on this connection first",
             ));
         }
-        let mut pending = self.pending_pair(id)?;
+        let mut pending = self.pending_pair(&id)?;
         let public = auth::public_key(&pending.key)
             .map_err(|error| errors::unauthorized(error.to_string()))?;
         if !auth::pair_proof(
@@ -182,18 +219,30 @@ impl Core {
             &public,
             &pending.challenge,
             &pending.name,
-            errors::param_str(params, "proof")?,
+            &proof,
         ) {
             return Err(errors::unauthorized("Invalid pairing proof"));
         }
         let scope = format!("pair:{}", auth::fingerprint(&public));
         let was_proved = pending.proved;
         pending.proved = true;
-        let mutation=StorePort::mutate(&mut self.store,&scope,idem,&fingerprint,|tx| {
-            tx.update_pair_request(id, &pending)?;
-            let events=if was_proved {vec![]}else{vec![(event::DEVICE_PAIR_REQUESTED.into(),json!({"requestId":id,"deviceName":pending.name,"fingerprint":auth::fingerprint(&public)}))]};
-            Ok((json!({"status":"pending"}),events))
-        }).map_err(errors::storage)?;
+        let events = if was_proved {
+            vec![]
+        } else {
+            vec![model::pending(&DevicePairRequestedDraft {
+                request_id: id.clone(),
+                device_name: pending.name.clone(),
+                fingerprint: auth::fingerprint(&public),
+            })?]
+        };
+        let result = model::to_value(&PairProveResult {
+            status: "pending".into(),
+        })?;
+        let mutation = StorePort::mutate(&mut self.store, &scope, &idem, fingerprint, |tx| {
+            tx.update_pair_request(&id, &pending)?;
+            Ok((result, events))
+        })
+        .map_err(errors::storage)?;
         self.publish(&mutation.events)?;
         if pending.approved.is_some() {
             self.send_pair_result(connection, &pending)?;
@@ -211,22 +260,28 @@ impl Core {
             return Ok(());
         }
         self.reachability = update.reachability;
-        self.transient_event(event::ENGINE_REACHABILITY_CHANGED, json!(self.reachability))
+        self.transient_event(
+            event::ENGINE_REACHABILITY_CHANGED,
+            model::to_value(&self.reachability)?,
+        )
     }
 
     fn send_pair_result(&self, connection: &str, pending: &Pending) -> Result<()> {
         let approved = pending.approved == Some(true);
-        let mut result = json!({"requestId":pending.id,"approved":approved});
-        if approved {
-            result["deviceToken"] = json!(pending.token);
-            result["deviceId"] = json!(pending.device.as_ref().map(|d| &d.device_id));
-        } else {
-            result["reason"] = json!("Denied on Mac");
-        }
+        let result = PairResultEvent {
+            request_id: pending.id.clone(),
+            approved,
+            device_token: approved.then(|| pending.token.clone()).flatten(),
+            device_id: approved
+                .then(|| pending.device.as_ref().map(|d| d.device_id.clone()))
+                .flatten(),
+            reason: (!approved).then(|| "Denied on Mac".into()),
+        };
         if let Some(client) = self.clients.get(connection) {
-            client
-                .outbox
-                .send(model::notification(event::PAIR_RESULT, result)?);
+            client.outbox.send(model::notification(
+                event::PAIR_RESULT,
+                model::to_value(&result)?,
+            )?);
         }
         Ok(())
     }
@@ -243,11 +298,10 @@ impl Core {
     ) -> Result<()> {
         let client = self.clients.get(connection);
         let actor = client.and_then(|client| client.actor.as_ref());
-        let own_revocation = method == method::DEVICE_REVOKE
-            && actor.is_some_and(|actor| {
-                actor.device_id.is_some()
-                    && actor.device_id.as_deref() == params["deviceId"].as_str()
-            });
+        let own_revocation = method == method::DEVICE_REVOKE && {
+            let target: DeviceRevokeParams = model::typed_params(params)?;
+            actor.is_some_and(|actor| actor.device_id.as_deref() == Some(target.device_id.as_str()))
+        };
         let app = client.is_some_and(|client| client.signed_ui) || !ui_attestation::available();
         let allowed = match actor.map(|actor| &actor.role) {
             Some(Role::HumanLocal) => method == method::DEVICE_PAIR_START || app,
@@ -270,53 +324,88 @@ impl Core {
         params: &Value,
     ) -> Result<Value> {
         self.authorize_device_management(connection, method, params)?;
-        if method == method::DEVICE_PAIR_START {
-            let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
-            let now = self.now_unix();
-            let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
-            let expires_at = chrono::DateTime::from_timestamp(expires, 0)
-                .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
-            let uri = pairing_link::uri(
-                self.store.store_id(),
-                &self.pair_address,
-                &code,
-                &auth::engine_key_text(&self.engine_key),
-            );
-            let mut result = self.mutate(connection,method,params,|tx| {
+        match method {
+            method::DEVICE_PAIR_START => self.device_pair_start(connection, method, params),
+            method::DEVICE_REVOKE => self.device_revoke(connection, method, params),
+            method::DEVICE_PAIR_DECIDE => self.device_pair_decide(connection, method, params),
+            _ => Err(errors::internal("Method is not a device management method")),
+        }
+    }
+
+    fn device_pair_start(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
+        let now = self.now_unix();
+        let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
+        let expires_at = chrono::DateTime::from_timestamp(expires, 0)
+            .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
+        let key = auth::engine_key_text(&self.engine_key);
+        let uri = pairing_link::uri(self.store.store_id(), &self.pair_address, &code, &key);
+        let qr = pairing_link::qr(self.store.store_id(), &self.pair_address, &code, &key);
+        let started = model::to_value(&DevicePairStartResult {
+            code: code.clone(),
+            expires_at: expires_at.to_rfc3339_opts(SecondsFormat::Secs, true),
+            uri,
+            qr: Some(qr),
+            reachability: None,
+        })?;
+        let result = self
+            .mutate(connection, method, params, |tx| {
                 tx.open_pair_window(&code, expires, now)?;
-                Ok((json!({"code":code,"expiresAt":expires_at.to_rfc3339_opts(SecondsFormat::Secs,true),"uri":uri}),vec![]))
-            })?.result;
-            // Live state, not part of the idempotent record: a replay sees today's reachability.
-            result["reachability"] = json!(self.reachability);
-            return Ok(result);
+                Ok((started, vec![]))
+            })?
+            .result;
+        // Live state, not part of the idempotent record: a replay sees today's reachability.
+        let mut result: DevicePairStartResult = serde_json::from_value(result)
+            .map_err(|_| errors::internal("Stored pairing result is malformed"))?;
+        result.reachability = Some(self.reachability.clone());
+        let result = model::to_value(&result)?;
+        Ok(result)
+    }
+
+    fn device_revoke(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
+        let revoke: DeviceRevokeParams = model::typed_params(params)?;
+        let id = revoke.device_id.as_str();
+        let mut device: Device = StorePort::device(&self.store, id)
+            .map_err(errors::storage)?
+            .ok_or_else(|| errors::not_found("Device not found"))?;
+        device.revoked = true;
+        let revoked = model::to_value(&DeviceRevokeResult {
+            device_id: revoke.device_id.clone(),
+        })?;
+        let event = model::pending(&DeviceRevokedDraft {
+            device_id: revoke.device_id.clone(),
+        })?;
+        let result = self
+            .mutate(connection, method, params, |tx| {
+                tx.revoke_device(id, &device)?;
+                Ok((revoked, vec![event]))
+            })?
+            .result;
+        for client in self
+            .clients
+            .values()
+            .filter(|c| c.actor.as_ref().and_then(|a| a.device_id.as_deref()) == Some(id))
+        {
+            client
+                .outbox
+                .close(crate::outbox::CloseReason::DeviceRevoked);
         }
-        if method == method::DEVICE_REVOKE {
-            let id = errors::param_str(params, "deviceId")?;
-            let mut device: Device = StorePort::device(&self.store, id)
-                .map_err(errors::storage)?
-                .ok_or_else(|| errors::not_found("Device not found"))?;
-            device.revoked = true;
-            let result = self
-                .mutate(connection, method, params, |tx| {
-                    tx.revoke_device(id, &device)?;
-                    Ok((
-                        json!({"deviceId":id}),
-                        vec![(event::DEVICE_REVOKED.into(), json!({"deviceId":id}))],
-                    ))
-                })?
-                .result;
-            for client in self
-                .clients
-                .values()
-                .filter(|c| c.actor.as_ref().and_then(|a| a.device_id.as_deref()) == Some(id))
-            {
-                client
-                    .outbox
-                    .close(crate::outbox::CloseReason::DeviceRevoked);
-            }
-            return Ok(result);
-        }
-        let id = errors::param_str(params, "requestId")?;
+        Ok(result)
+    }
+
+    fn device_pair_decide(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let decide: DevicePairDecideParams = model::typed_params(params)?;
+        let id = decide.request_id.as_str();
         let mut pending = self.pending_pair(id)?;
         if !pending.proved || pending.approved.is_some() {
             return Err(errors::transition_refused(
@@ -325,7 +414,7 @@ impl Core {
         }
         let public =
             auth::public_key(&pending.key).map_err(|error| errors::invalid(error.to_string()))?;
-        let approve = errors::param_bool(params, "approve")?;
+        let approve = decide.approve;
         pending.approved = Some(approve);
         if approve {
             let available =
@@ -343,6 +432,19 @@ impl Core {
                 revoked: false,
             });
         }
+        let decided = model::to_value(&DevicePairDecideResult {
+            request_id: decide.request_id.clone(),
+            approved: approve,
+        })?;
+        let paired = pending
+            .device
+            .as_ref()
+            .map(|device| {
+                model::pending(&DevicePairedDraft {
+                    device: device.clone(),
+                })
+            })
+            .transpose()?;
         let result = self
             .mutate(connection, method, params, |tx| {
                 let mut events = vec![];
@@ -358,10 +460,10 @@ impl Core {
                         public.as_bytes(),
                         &auth::token_hash(token),
                     )?;
-                    events.push((event::DEVICE_PAIRED.into(), json!({"device":device})));
+                    events.extend(paired);
                 }
                 tx.update_pair_request(id, &pending)?;
-                Ok((json!({"requestId":id,"approved":approve}), events))
+                Ok((decided, events))
             })?
             .result;
         for (connection, _) in self

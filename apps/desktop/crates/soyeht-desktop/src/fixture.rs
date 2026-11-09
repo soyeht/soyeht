@@ -79,6 +79,7 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
         files: serde_json::from_value(Value::Array(list("files"))).map_err(describe("files"))?,
         writing: serde_json::from_value(Value::Array(list("writing")))
             .map_err(describe("writing"))?,
+        trust: serde_json::from_value(Value::Array(list("trust"))).map_err(describe("trust"))?,
         cursor: 1,
     };
     let mut events = vec![Event::Connected(snapshot)];
@@ -392,6 +393,25 @@ pub fn run(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_fixture_with_an_undecided_folder_asks_whether_to_trust_it() {
+        let fixture = json!({
+            "workspaces": [{"workspaceId": "w", "name": "w", "path": "/work/w", "layout": {}}],
+            "panes": [],
+            "trust": [{"workspaceId": "w", "trust": "undecided"}],
+        });
+        let mut state = soyeht_client::State::default();
+        for event in events(&fixture).unwrap() {
+            state.apply(event);
+        }
+        assert_eq!(
+            state
+                .trust_prompt()
+                .map(|workspace| workspace.path.as_str()),
+            Some("/work/w")
+        );
+    }
 
     #[test]
     fn a_panel_is_found_by_its_name() {

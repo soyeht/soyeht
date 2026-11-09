@@ -73,6 +73,7 @@ fn no_output_is_visible_and_cancel_clears_durable_wait_before_switching() {
     assert_eq!(switched["fromHarness"], "test-agent");
     assert_eq!(switched["toHarness"], "next-agent");
     assert_eq!(client.pane(&pane)["agent"]["harness"], "next-agent");
+    wait_for_open_processes(&rig, 1);
     rig.kill_engine();
     assert_eq!(process_instances(&rig).len(), 1);
     rig.start();

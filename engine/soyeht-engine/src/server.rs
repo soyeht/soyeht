@@ -144,12 +144,21 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         serde_json::json!({"event":"engine.ready","socket":socket,"version":env!("CARGO_PKG_VERSION")})
     );
     let requested = soyeht_platform::shutdown::requested()?;
-    tokio::select! {
-        () = requested => (),
-        result=tasks.join_next()=>{if let Some(result)=result {result??;}},
-    }
+    // A task that ended with an error still lets the engine record what waits before it stops.
+    let ended = tokio::select! {
+        () = requested => Ok(()),
+        result = tasks.join_next() => match result {
+            Some(result) => result.map_err(Error::Join).and_then(|ended| ended),
+            None => Ok(()),
+        },
+    };
     tasks.abort_all();
     core_lock::with(&core, "shutdown", |state| {
+        // The outcomes of inputs that wait for the next one are recorded before the engine ends.
+        errors::log_if_failed(
+            "engine.input_receipts_not_recorded",
+            state.flush_all_input_receipts(),
+        );
         for client in state.clients.values() {
             client.outbox.close(CloseReason::ServerShutdown);
         }
@@ -157,7 +166,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     })
     .await?;
     fs::remove_file(socket)?;
-    Ok(())
+    ended
 }
 
 pub(crate) async fn connection(
@@ -295,6 +304,7 @@ async fn read_requests(
         let failed_handshake = request["method"] == method::HELLO;
         let connection = id.to_owned();
         let outcome = core_lock::with(&core, "dispatch", move |state| {
+            core_lock::name_hold(method);
             state.dispatch(&connection, request)
         })
         .await;

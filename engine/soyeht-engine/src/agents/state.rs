@@ -120,6 +120,9 @@ pub struct State {
     /// harness switch when the harness offers the same mode.
     #[serde(default)]
     pub mode: Option<String>,
+    /// The mode of the agent that started this pane, above which the pane may not run.
+    #[serde(default)]
+    pub(crate) mode_ceiling: Option<super::mode_ceiling::ModeCeiling>,
     pub operation: Option<ConfigOperation>,
     #[serde(default)]
     pub operation_timed_out: bool,
@@ -144,6 +147,10 @@ pub struct State {
     pub active_silent_since_ms: Option<i64>,
     pub draft_until_ms: i64,
     pub cancel_at_ms: Option<i64>,
+    /// The turn being cancelled is cancelled by the engine because the agent raised its mode
+    /// above the ceiling of its pane, not by a person.
+    #[serde(default)]
+    pub(crate) cancelled_for_ceiling: bool,
     /// When `session/cancel` was last sent for the turn being cancelled: it is sent again while the
     /// turn goes on, since an agent drops a cancel that reaches it before the turn has begun.
     #[serde(default)]
@@ -231,6 +238,7 @@ impl State {
                 })
                 .collect(),
             mode,
+            mode_ceiling: None,
             operation: None,
             operation_user: None,
             operation_timed_out: false,
@@ -246,6 +254,7 @@ impl State {
             draft_until_ms: 0,
             cancel_at_ms: None,
             cancel_sent_ms: None,
+            cancelled_for_ceiling: false,
             last_update_ms: 0,
             acknowledged_offset: 0,
             discard_until_newline: false,
@@ -305,6 +314,10 @@ impl State {
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
+        state.mode_ceiling = self.mode_ceiling.clone().map(|mut ceiling| {
+            ceiling.reopened();
+            ceiling
+        });
         state.next_message_seq = self.next_message_seq;
         for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
             if let Some(value) = value {
@@ -314,6 +327,18 @@ impl State {
             }
         }
         Ok(state)
+    }
+
+    /// Whether options still wait to be applied, or the mode the session runs has yet to be
+    /// checked against the ceiling of the agent that started the pane.
+    /// A mode the agent moved to by itself is put back only once its turn has ended.
+    pub(crate) fn needs_configuration(&self) -> bool {
+        !self.requested_options.is_empty()
+            || (self.active.is_none()
+                && self
+                    .mode_ceiling
+                    .as_ref()
+                    .is_some_and(super::mode_ceiling::ModeCeiling::pending))
     }
 
     pub fn public(&self, now_ms: i64) -> AgentSession {

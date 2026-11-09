@@ -68,7 +68,7 @@ Each layer depends only on the layers listed above it.
    Android core uses; and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-desktop` the
-   views, and its `theme` module holds the palettes and tokens generated from
+   views, `ztracing` a no-op Apache-2.0 stand-in for Zed's GPL-3.0 crate of that name (ADR 0149), and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
    Three seams belong to the window, each the same on every system: the log also goes to a
    rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
@@ -111,7 +111,8 @@ ADR when you change a boundary.
   frame, popup gaps, glyph sizes and the sizes of views the Mac does not have. A size both
   clients draw (a sheet, a popover, a field, a column) is a token of a shared section
   (`layout`, `composer`, ...) that the Mac reads as `DesignTokens`; the same number as a Mac
-  literal and a `desktop` token is the copy this rule stops. `contracts/test_design_tokens.py`
+  literal and a `desktop` token is the copy this rule stops. The `eink` section and `einkPalette` (the
+  Android e-ink mode, ADR 0155) are read by the Kotlin output alone. `contracts/test_design_tokens.py`
   proves a token that replaces a Mac literal against the pre-generation Mac source
   (`INLINE_LITERALS`), and a token with no such source is listed in `ADDED_AFTER_GENERATION`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
@@ -130,14 +131,19 @@ ADR when you change a boundary.
   the engine sends against the contract; the merge gate builds and tests with it, so a field
   the contract does not have fails the request or, for a background publication, the engine
   integration rig and the end-to-end run that read the engine log.
+- A handler reads the parameters of its request through the generated `...Params` type of the
+  method (deserialize once, then read typed fields), never `params["field"]` on a `Value`: an
+  optional field that changes then fails to compile instead of at run time.
+  `scripts/check_params_reads.py` holds the count of those reads down.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
 - The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
-  request, greeting and reconnect timings, the terminal input chunk, the `caps` (waiting messages
-  read, links found in one text, pages of a model catalogue, tool calls the ticker lists), the
-  usage and context band thresholds and ring opacities, the weekly-window rule, provider names and which
-  configuration selector is the model, effort or permission one. Use `ClientPolicy` and
+  request, greeting and reconnect timings, the web read's settle poll and deadline share, the
+  terminal input chunk, the `caps` (waiting messages read, links found in one text, pages of a model
+  catalogue, tool calls the ticker lists), the usage and context band thresholds and ring opacities,
+  the weekly-window rule, provider names and which configuration selector is the model, effort or
+  permission one. Use `ClientPolicy` and
   `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
   `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately
   (the usage presentation, the pane layout and each kind of pane's floor, of which the desktop
@@ -158,6 +164,11 @@ ADR when you change a boundary.
   `contracts/vectors/update.json`; change the vectors first
   (`uv run python contracts/test_update_manifest.py --write`). The private signing key never
   enters the repository: `scripts/release_manifest.py` reads it from the environment.
+- Third-party notices: `THIRD-PARTY-NOTICES.txt` is generated from the lock files by
+  `uv run python scripts/third_party_notices.py generate` (ADR 0149) and ships in every package
+  (`package_common.LICENSE_DOCUMENTS`). A change to `Cargo.lock`, a `Package.resolved` or the Android
+  `build.gradle.kts` commits the regenerated file with it, and a dependency whose license is outside
+  `scripts/third_party/policy.json` (no GPL, AGPL or LGPL alone) fails `third-party-notices:check`.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
   `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
   `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.

@@ -44,15 +44,21 @@ private func expectPolicyScrollback(_ terminal: Terminal) throws {
 }
 
 #if os(macOS)
+  /// A surface with the bundled mono face, registered from the repository as the app bundles it.
+  @MainActor private func macSurface() -> TerminalSurface {
+    PaneInteriorRendering.registerFonts()
+    return TerminalSurface(font: MacTerminalFont.active())
+  }
+
   @MainActor @Test func theMacTerminalSurfaceStartsWithTheScrollbackOfThePolicy() throws {
-    let surface = TerminalSurface(font: MacTerminalFont.active())
+    let surface = macSurface()
     let terminal = surface.getTerminal()
     #expect(terminal.options.scrollback == ClientPolicy.terminalScrollbackLines)
     try expectPolicyScrollback(terminal)
   }
 
   @MainActor @Test func aResetOfTheMacTerminalSurfaceKeepsTheScrollbackOfThePolicy() throws {
-    let surface = TerminalSurface(font: MacTerminalFont.active())
+    let surface = macSurface()
     let bytes = Data("row\r\n".utf8)
     surface.receive(bytes, reset: false)
     surface.receive(bytes, reset: true)

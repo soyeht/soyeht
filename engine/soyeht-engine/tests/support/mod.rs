@@ -21,6 +21,9 @@ use std::{
 };
 use uuid::Uuid;
 
+mod language_servers;
+mod locked_adapter;
+mod search_path;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use ticker::{Ticker, longest_gap};
@@ -66,7 +69,7 @@ impl Rig {
         let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
-        install_fake_lsp(&path);
+        language_servers::install(&path);
         let ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
@@ -155,18 +158,14 @@ impl Rig {
         )
         .unwrap();
     }
-    /// An `npx` that starts the fake agent, which the registry's package runner launches.
-    #[cfg(unix)]
-    pub fn install_fake_claude_runner(&self) {
-        let binary = sibling_binary("soyeht-fake-acp");
-        write_script(
-            &self.path.join("bin/npx"),
-            &format!(
-                "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
-                binary.display(),
-                self.path.join("claude-native").display()
-            ),
-        );
+    /// A program named `name` on the engine's search path that exists but is never run.
+    pub fn install_stub_executable(&self, name: &str) {
+        let bin = self.path.join("bin");
+        fs::create_dir_all(&bin).unwrap();
+        #[cfg(unix)]
+        write_script(&bin.join(name), "#!/bin/sh\nexit 0\n");
+        #[cfg(windows)]
+        fs::write(bin.join(format!("{name}.exe")), "MZ").unwrap();
     }
     pub fn install_switch_harnesses(&self) {
         let binary = sibling_binary("soyeht-fake-acp");
@@ -424,10 +423,6 @@ fn install_fake(root: &Path, binary: &str, name: &str) {
     std::os::unix::fs::symlink(binary, bin.join(name)).unwrap();
     #[cfg(windows)]
     fs::copy(binary, bin.join(format!("{name}.exe"))).unwrap();
-}
-
-pub fn install_fake_lsp(root: &Path) {
-    install_fake(root, "soyeht-fake-lsp", "rust-analyzer");
 }
 
 pub fn install_fake_worktrunk(root: &Path) {

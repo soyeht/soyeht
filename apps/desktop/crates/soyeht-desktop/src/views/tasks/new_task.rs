@@ -3,13 +3,14 @@
 
 use crate::composer_field::ComposerField;
 use crate::{
-    neo, shortcuts,
+    shortcuts,
     tasks_ui::NewChoice,
-    theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
+    theme::{Palette, desktop, layout, pane_interior, space, type_scale},
     views::{
         menus,
         prelude::*,
-        ui::{caption, field_well, option_pill, switch},
+        sheet,
+        ui::{close_button, field_well, option_pill, switch},
     },
 };
 use gpui::Entity;
@@ -103,20 +104,13 @@ impl Workbench {
             ),
         ];
         Some(
-            neo::raised(palette, radius::CARD, elevation::PANEL)
-                .id("new-task-sheet")
+            sheet::card(palette, "new-task-sheet")
                 .absolute()
                 .top(px(space::X8 + space::X18))
                 .left_0()
                 .right_0()
                 .mx_auto()
-                .w(px(desktop::NEW_TASK_SHEET_WIDTH))
-                .flex()
-                .flex_col()
-                .gap(px(space::X14))
-                .px(px(space::X18 + space::X4))
-                .py(px(space::X18))
-                .occlude()
+                .w(px(layout::NEW_TASK_SHEET_WIDTH))
                 .child(sheet_header(palette, cx))
                 .child(fields_section(palette, &fields))
                 .child(
@@ -340,72 +334,30 @@ fn action(
     enabled: bool,
     cx: &mut Context<Workbench>,
 ) -> AnyElement {
-    let base = if dispatch {
-        div()
-            .bg(rgb(palette.accent))
-            .text_color(rgb(palette.on_accent))
-    } else {
-        neo::raised(palette, radius::PILL, elevation::ACTION).text_color(rgb(palette.ink))
-    };
-    base.id(id("action", key))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(space::X6))
-        .px(px(space::X14))
-        .py(px(space::X6))
-        .rounded_full()
-        .chrome()
-        .font_weight(FontWeight::BOLD)
-        .text_size(px(type_scale::CONTROL))
+    sheet::button(palette, id("action", key), dispatch)
         .when(!enabled, |button| {
             button.opacity(pane_interior::DISABLED_OPACITY)
         })
         .when(enabled, |button| button.cursor_pointer())
-        .own_press()
         .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
             if enabled {
                 this.submit_new_task(dispatch, cx);
             }
         }))
-        .children(dispatch.then(|| {
-            icon(
-                Icon::Send,
-                desktop::INLINE_GLYPH,
-                if dispatch {
-                    palette.on_accent
-                } else {
-                    palette.ink
-                },
-            )
-        }))
+        .children(dispatch.then(|| icon(Icon::Send, desktop::INLINE_GLYPH, palette.on_accent)))
         .child(SharedString::from(text.to_owned()))
         .into_any_element()
 }
 
 /// The title of the panel and the way to close it.
 fn sheet_header(palette: &'static Palette, cx: &mut Context<Workbench>) -> AnyElement {
-    row()
-        .items_start()
-        .child(
-            column()
-                .gap(px(space::X3))
-                .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(TITLE))
-                .child(caption(palette).child(SUBTITLE)),
-        )
-        .child(spacer())
-        .child(
-            row()
-                .id("new-task-close")
-                .cursor_pointer()
-                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_new_task(cx)))
-                .child(icon(
-                    Icon::Close,
-                    desktop::HEADER_ACTION_GLYPH,
-                    palette.muted,
-                )),
-        )
-        .into_any_element()
+    sheet::header(
+        palette,
+        TITLE,
+        SUBTITLE,
+        close_button("new-task-close", palette)
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_new_task(cx))),
+    )
 }
 
 /// The title, the description and what must not change, each in a well.
@@ -424,12 +376,12 @@ fn fields_section(
                 .gap(px(space::X8))
                 .child(label(palette, "TITLE \u{b7} REQUIRED"))
                 .child(
-                    field_well(palette, &fields.0, desktop::TASK_FIELD_HEIGHT)
+                    field_well(palette, &fields.0, layout::TASK_FIELD_HEIGHT)
                         .px(px(space::X14))
                         .flex()
                         .items_center()
                         .font_weight(FontWeight::SEMIBOLD)
-                        .text_size(px(desktop::TASK_FIELD_TEXT_SIZE))
+                        .text_size(px(type_scale::LABEL))
                         .child(fields.0.clone()),
                 ),
         )
@@ -437,13 +389,13 @@ fn fields_section(
             palette,
             "DESCRIPTION \u{b7} REQUIRED",
             &fields.1,
-            desktop::TASK_EDITOR_HEIGHT,
+            layout::TASK_EDITOR_HEIGHT,
         ))
         .child(editor(
             palette,
             "MUST NOT CHANGE \u{b7} REQUIRED",
             &fields.2,
-            desktop::TASK_EDITOR_HEIGHT,
+            layout::TASK_EDITOR_HEIGHT,
         ))
 }
 
@@ -459,9 +411,7 @@ fn footer(
         .gap(px(space::X10))
         .pt(px(space::X6))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .truncate()
                 .chrome()
                 .font_weight(FontWeight::MEDIUM)

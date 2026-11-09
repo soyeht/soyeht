@@ -37,6 +37,7 @@ pub(crate) mod test_fixture;
 mod test_support;
 mod text_compare;
 mod text_refusal;
+pub(crate) mod timed_files;
 mod trash;
 mod undo;
 mod write_lock;

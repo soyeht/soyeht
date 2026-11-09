@@ -154,6 +154,7 @@ impl State {
             return Err(blocker.explanation());
         }
         let harness = form.harness.clone();
+        let acknowledged = self.acknowledged_package(&harness);
         match self
             .open_folder(&form.directory)
             .map_err(FolderPathProblem::explanation)?
@@ -169,6 +170,7 @@ impl State {
                     effects: vec![Effect::Send(Command::CreateAgent {
                         workspace_id,
                         harness,
+                        acknowledged,
                         cwd: None,
                         ticket,
                     })],
@@ -186,6 +188,14 @@ impl State {
                 })
             }
         }
+    }
+
+    /// The package the person acknowledges by starting `harness` from the picker that showed its
+    /// notice (see `harness_picker::acknowledged_package`).
+    pub fn acknowledged_package(&self, harness: &str) -> Option<String> {
+        crate::harness_picker::acknowledged_package(
+            self.harnesses.iter().find(|item| item.id == harness),
+        )
     }
 
     /// The requests in flight are lost with the connection; an agent that was starting is kept
@@ -230,12 +240,14 @@ impl State {
         let command = match self.starts.remove(&ticket) {
             Some(start) => {
                 let harness = start.harness.clone();
+                let acknowledged = self.acknowledged_package(&harness);
                 if let Some(expected) = self.expected.last_mut() {
                     expected.start = Some(start);
                 }
                 Command::CreateAgent {
                     workspace_id,
                     harness,
+                    acknowledged,
                     cwd,
                     ticket,
                 }

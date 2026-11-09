@@ -8,7 +8,7 @@ use super::{
     revision::RevisionSnapshot,
 };
 use crate::{
-    agents::{Running, state::State},
+    agents::{Running, mode_ceiling::ModeCeiling, state::State},
     core::Core,
     errors::{self, Result},
     model::{self, PaneSetup as _, RunningPane, StoredPane},
@@ -564,11 +564,13 @@ fn prepare_reviewer(
         .as_deref()
         .ok_or_else(|| errors::stale_attempt("Task has no executor"))?;
     let executor = core.agent_state(executor_id)?;
+    let ceiling = ModeCeiling::of(&executor, true);
     let mut state = State::new(
         executor.launch.clone(),
         executor.binary_digest.clone(),
-        reviewer_mode(&executor.options),
+        reviewer_mode(&executor, &ceiling),
     )?;
+    state.mode_ceiling = Some(ceiling);
     copy_review_options(&executor, &mut state);
     state.disable_mcp();
     let repository = review_repository(core, task)?;
@@ -598,14 +600,18 @@ fn prepare_reviewer(
     })
 }
 
-/// A reviewer only reads: it starts in the harness's plan mode, else its first
-/// standard mode, and never in a mode that approves everything.
-fn reviewer_mode(options: &soyeht_acp::config::Options) -> Option<String> {
-    let modes = &options.mode()?.options;
+/// A reviewer only reads: it starts in the harness's plan mode, else its first standard mode,
+/// never in a mode that approves everything and never in a mode above its executor's, which the
+/// `ceiling` holds.
+fn reviewer_mode(executor: &State, ceiling: &ModeCeiling) -> Option<String> {
+    let modes = &executor.options.mode()?.options;
     ["plan", "standard"].iter().find_map(|kind| {
         modes
             .iter()
-            .find(|choice| choice.kind.as_deref() == Some(*kind))
+            .filter(|choice| choice.kind.as_deref() == Some(*kind))
+            .find(|choice| {
+                ceiling.allows(&executor.launch.id, &choice.value, choice.kind.as_deref())
+            })
             .map(|choice| choice.value.clone())
     })
 }
@@ -741,36 +747,4 @@ fn malformed_finding() -> DriftFinding {
 }
 
 #[cfg(test)]
-mod reviewer_mode_tests {
-    use super::reviewer_mode;
-    use serde_json::json;
-    use soyeht_acp::config::Options;
-
-    fn modes(choices: &[(&str, &str)]) -> Options {
-        let options: Vec<_> = choices
-            .iter()
-            .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
-            .collect();
-        Options::from_response(&json!({"configOptions":[{"id":"mode","name":"Mode",
-            "category":"mode","type":"select","currentValue":choices[0].0,"options":options}]}))
-        .unwrap()
-    }
-
-    #[test]
-    fn reviewers_prefer_plan_then_standard_and_never_full_access() {
-        let claude = modes(&[
-            ("bypassPermissions", "full_access"),
-            ("default", "standard"),
-            ("plan", "plan"),
-        ]);
-        assert_eq!(reviewer_mode(&claude).as_deref(), Some("plan"));
-        let codex = modes(&[
-            ("agent-full-access", "full_access"),
-            ("agent", "auto_review"),
-            ("read-only", "standard"),
-        ]);
-        assert_eq!(reviewer_mode(&codex).as_deref(), Some("read-only"));
-        let open = modes(&[("everything", "full_access"), ("auto", "auto_review")]);
-        assert_eq!(reviewer_mode(&open), None);
-    }
-}
+mod reviewer_mode_tests;
