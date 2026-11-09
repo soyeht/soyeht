@@ -201,6 +201,29 @@ impl Core {
         }
         let defaults = pane_defaults(&self.store)?;
         let agent = new_agent(&self.directory, &self.store, params)?;
+        // An agent that downloads a package unchecked starts only once a person acknowledged
+        // that exact package (ADR 0143): this request's own acknowledgement counts.
+        let acknowledging = agent
+            .as_ref()
+            .map(|agent| {
+                let typed: soyeht_protocol::PaneCreateParams =
+                    serde_json::from_value(params.clone())
+                        .map_err(|_| errors::invalid("Invalid pane parameters"))?;
+                let package = self.acknowledgement_of(
+                    connection,
+                    typed.acknowledged_package.as_deref(),
+                    &agent.launch,
+                )?;
+                crate::agents::adapter_consent::require(
+                    &self.store,
+                    &agent.launch,
+                    package.as_deref(),
+                )?;
+                Ok::<_, errors::Error>(package)
+            })
+            .transpose()?
+            .flatten();
+        let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
             self.prepare_process_pane(params, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
@@ -211,6 +234,9 @@ impl Core {
         let created = pane_created(&saved)?;
         let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
+            if let Some(package) = &acknowledging {
+                soyeht_store::adapter_acknowledgement::acknowledge(tx, package, acknowledged_at)?;
+            }
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }

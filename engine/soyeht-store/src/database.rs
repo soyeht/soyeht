@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 mod migrations;
 
-pub const SCHEMA_VERSION: u32 = 34;
+pub const SCHEMA_VERSION: u32 = 35;
 
 #[derive(Debug)]
 pub enum Error {
@@ -97,6 +97,7 @@ pub enum Error {
     InvalidWritingCreateIntent,
     InvalidAgentModelRefusal,
     InvalidHarnessSignIn,
+    InvalidAdapterAcknowledgement,
     InvalidProjectTrust,
     TestFixture(&'static str),
 }
@@ -201,6 +202,7 @@ impl fmt::Display for Error {
             Self::InvalidWritingCreateIntent => f.write_str("invalid writing create intent"),
             Self::InvalidAgentModelRefusal => f.write_str("invalid agent model refusal"),
             Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
+            Self::InvalidAdapterAcknowledgement => f.write_str("invalid adapter acknowledgement"),
             Self::InvalidProjectTrust => f.write_str("invalid project trust"),
             Self::TestFixture(message) => f.write_str(message),
         }

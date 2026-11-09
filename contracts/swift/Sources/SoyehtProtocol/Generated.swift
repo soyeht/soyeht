@@ -106,6 +106,7 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `git_unavailable` = "git_unavailable"
     case `file_not_text` = "file_not_text"
     case `file_too_large` = "file_too_large"
+    case `adapter_not_acknowledged` = "adapter_not_acknowledged"
     case `workspace_folder_missing` = "workspace_folder_missing"
 }
 
@@ -572,12 +573,13 @@ public struct PaneCreateParams: Codable, Sendable {
     public var `model`: String?
     public var `effort`: String?
     public var `permissionMode`: Id?
+    public var `acknowledgedPackage`: String?
     public var `url`: String?
     public var `incognito`: Bool?
     public var `path`: String?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public init(`workspaceId`: Id, `mode`: PaneMode, `cwd`: String? = nil, `name`: String? = nil, `cols`: UInt32? = nil, `rows`: UInt32? = nil, `idempotencyKey`: Id, `harness`: Id? = nil, `model`: String? = nil, `effort`: String? = nil, `permissionMode`: Id? = nil, `acknowledgedPackage`: String? = nil, `url`: String? = nil, `incognito`: Bool? = nil, `path`: String? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`workspaceId` = `workspaceId`
         self.`mode` = `mode`
         self.`cwd` = `cwd`
@@ -589,6 +591,7 @@ public struct PaneCreateParams: Codable, Sendable {
         self.`model` = `model`
         self.`effort` = `effort`
         self.`permissionMode` = `permissionMode`
+        self.`acknowledgedPackage` = `acknowledgedPackage`
         self.`url` = `url`
         self.`incognito` = `incognito`
         self.`path` = `path`
@@ -2113,7 +2116,9 @@ public struct HarnessInfo: Codable, Sendable {
     public var `setupState`: HarnessSetupState?
     public var `setupReason`: HarnessSetupReason?
     public var `lastReadyAtMs`: Decimal?
-    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil) {
+    public var `package`: String?
+    public var `packageLocked`: Bool?
+    public init(`id`: Id, `name`: String, `available`: Bool, `installed`: Bool? = nil, `version`: String? = nil, `fingerprint`: String? = nil, `capabilities`: [ProbeCapability], `options`: [ConfigOption], `authMethods`: [AuthMethod], `source`: HarnessSource? = nil, `setupState`: HarnessSetupState? = nil, `setupReason`: HarnessSetupReason? = nil, `lastReadyAtMs`: Decimal? = nil, `package`: String? = nil, `packageLocked`: Bool? = nil) {
         self.`id` = `id`
         self.`name` = `name`
         self.`available` = `available`
@@ -2127,6 +2132,8 @@ public struct HarnessInfo: Codable, Sendable {
         self.`setupState` = `setupState`
         self.`setupReason` = `setupReason`
         self.`lastReadyAtMs` = `lastReadyAtMs`
+        self.`package` = `package`
+        self.`packageLocked` = `packageLocked`
     }
 }
 
@@ -2521,12 +2528,14 @@ public struct PaneHarnessSwitchParams: Codable, Sendable {
     public var `harness`: Id
     public var `model`: String?
     public var `effort`: String?
+    public var `acknowledgedPackage`: String?
     public var `idempotencyKey`: Id
-    public init(`paneId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `idempotencyKey`: Id) {
+    public init(`paneId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `acknowledgedPackage`: String? = nil, `idempotencyKey`: Id) {
         self.`paneId` = `paneId`
         self.`harness` = `harness`
         self.`model` = `model`
         self.`effort` = `effort`
+        self.`acknowledgedPackage` = `acknowledgedPackage`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }

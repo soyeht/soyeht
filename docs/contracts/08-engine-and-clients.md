@@ -427,7 +427,11 @@ what is missing and that nothing was installed. Features that do not need Git ke
 and a later request succeeds once Git is installed),
 `file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
-(ADR 0094).
+(ADR 0094),
+`adapter_not_acknowledged` (a built-in agent that its package runner downloads unchecked,
+`HarnessInfo.package` with `packageLocked` false, was asked to start without a person's
+acknowledgement of that exact `name@version`: `pane.create` and `pane.harness.switch` carry it as
+`acknowledgedPackage`, from the notice the picker shows; ADR 0143).
 `workspace_folder_missing` (the folder of a workspace is not on the disk any more: a request that
 reads the workspace, such as `project.tree.list`, `file.open` or `file.diff`, answers it, with the
 message "The workspace folder is missing" and no path); a client shows it as a standing state of

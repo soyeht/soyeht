@@ -48,6 +48,11 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
         }
         tx.execute_batch("PRAGMA user_version = 34;")?;
     }
+    if version < 35 {
+        tx.execute_batch(include_str!(
+            "../../migrations/035-adapter-acknowledgements.sql"
+        ))?;
+    }
     Ok(())
 }
 

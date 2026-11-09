@@ -2,21 +2,16 @@
 
 use super::*;
 
-/// An `npx` that writes the Claude Code executable its adapter was told to drive (nothing when it
-/// was told none) to the returned file, then starts the fake agent as the registry's package
-/// runner would.
+/// The `node` that runs the installed Claude adapter (the first start installs it with the rig's
+/// `npm`). It writes the Claude Code executable its adapter was told to drive (nothing when it
+/// was told none) to the returned file, then starts the fake agent.
 #[cfg(unix)]
 fn install_recording_runner(rig: &Rig) -> PathBuf {
     let seen = rig.path.join("claude-executable-seen");
-    write_script(
-        &rig.path.join("bin/npx"),
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$CLAUDE_CODE_EXECUTABLE\" > '{}'\nexec '{}' --state-dir '{}'\n",
-            seen.display(),
-            sibling_binary("soyeht-fake-acp").display(),
-            rig.path.join("claude-native").display()
-        ),
-    );
+    rig.install_fake_locked_adapter_runner(&format!(
+        "printf '%s' \"$CLAUDE_CODE_EXECUTABLE\" > '{}'",
+        seen.display()
+    ));
     seen
 }
 

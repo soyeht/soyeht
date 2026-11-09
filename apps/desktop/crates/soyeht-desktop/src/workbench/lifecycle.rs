@@ -155,6 +155,7 @@ impl Workbench {
             match harness {
                 Some(harness) => Command::CreateAgent {
                     workspace_id,
+                    acknowledged: self.state.acknowledged_package(&harness),
                     harness,
                     cwd,
                     ticket,

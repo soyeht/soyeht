@@ -179,6 +179,8 @@ pub enum ErrorKind {
     FileNotText,
     #[serde(rename = "file_too_large")]
     FileTooLarge,
+    #[serde(rename = "adapter_not_acknowledged")]
+    AdapterNotAcknowledged,
     #[serde(rename = "workspace_folder_missing")]
     WorkspaceFolderMissing,
 }
@@ -568,6 +570,11 @@ pub struct PaneCreateParams {
     pub effort: Option<String>,
     #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<Id>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
@@ -1923,6 +1930,10 @@ pub struct HarnessInfo {
     pub setup_reason: Option<HarnessSetupReason>,
     #[serde(rename = "lastReadyAtMs", skip_serializing_if = "Option::is_none")]
     pub last_ready_at_ms: Option<Decimal>,
+    #[serde(rename = "package", skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(rename = "packageLocked", skip_serializing_if = "Option::is_none")]
+    pub package_locked: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelRefusal {
@@ -2278,6 +2289,11 @@ pub struct PaneHarnessSwitchParams {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -9126,6 +9142,7 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::GitUnavailable => -32038,
         ErrorKind::FileNotText => -32039,
         ErrorKind::FileTooLarge => -32040,
+        ErrorKind::AdapterNotAcknowledged => -32041,
         ErrorKind::WorkspaceFolderMissing => -32042,
     }
 }

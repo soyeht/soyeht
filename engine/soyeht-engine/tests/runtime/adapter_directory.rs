@@ -2,10 +2,12 @@
 
 use super::*;
 
-/// A package runner that writes the folder it was started in to `seen`, then starts the fake
-/// agent as the registry's runner would.
+/// The programs that write the folder they were started in to `seen`, then start the fake agent:
+/// the package runner of a custom entry, and the `node` that runs a locked adapter's installed
+/// script (the first start installs it with the rig's `npm`).
 #[cfg(unix)]
 fn install_recording_runner(rig: &Rig, seen: &Path) {
+    rig.install_fake_locked_adapter_runner(&format!("pwd -P > '{}'", seen.display()));
     write_script(
         &rig.path.join("bin/npx"),
         &format!(

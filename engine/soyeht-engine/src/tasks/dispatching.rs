@@ -622,6 +622,7 @@ impl Core {
         let preset = self.effective_task_preset(task, Some(pane_id))?;
         let (launch, digest) =
             crate::agents::registry::prepare(&self.directory, required_harness(&preset)?)?;
+        crate::agents::adapter_consent::require(&self.store, &launch, None)?;
         let state = old_state.restart_for_task(launch, digest, &preset)?;
         let old_instance = existing.stored.instance_id.clone();
         let old_supervisor = existing.stored.supervisor_id.clone();
@@ -749,6 +750,8 @@ fn prepare_new_pane(
 ) -> Result<(StoredPane, State, Screen)> {
     let (launch, digest) =
         crate::agents::registry::prepare(&core.directory, required_harness(preset)?)?;
+    // A task is started by an agent or a rule, never by the person who reads the notice.
+    crate::agents::adapter_consent::require(&core.store, &launch, None)?;
     let mode = core.new_pane_mode(preset)?;
     let mut state = State::new(launch, digest, mode)?;
     state.mode_ceiling = ceiling;

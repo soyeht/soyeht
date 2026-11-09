@@ -100,6 +100,14 @@ impl Core {
             }
             Err(error) => error,
         };
+        // A package nobody acknowledged will not be started by trying again: the pane stops at
+        // once and says which package, so the person knows to acknowledge it (ADR 0143).
+        if let Some(reason) = error.unacknowledged_reason().map(str::to_owned) {
+            self.supervisor_retry.spawn_retries.0.remove(id);
+            Line::new("engine.pane_not_acknowledged").emit();
+            let stopped = self.stop_pane(id, &reason);
+            return self.settle_supervisor_call(SPAWN_FAILED_EVENT, stopped);
+        }
         if self.refused_by_supervisor(&error) {
             self.supervisor_retry.spawn_retries.0.remove(id);
             let stopped = self.stop_unrestartable_pane(id, error);
@@ -321,6 +329,22 @@ mod tests {
             kind: wire_kind::SPAWN_FAILED.into(),
             message: "no pty".into(),
         })
+    }
+
+    /// A pane whose package nobody acknowledged is not tried again: it stops at once, and the
+    /// reason beside its dead state names the package (ADR 0143).
+    #[test]
+    fn a_pane_refused_for_an_unacknowledged_package_stops_at_once_and_names_it() {
+        let (mut core, directory, id, _calls) = core_with_unstarted_pane(Vec::new());
+        let refusal = errors::adapter_not_acknowledged(
+            "Acknowledge @google/gemini-cli@0.59.0 to start this agent",
+        );
+        core.settle_spawn(&id, Err(refusal));
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 0);
+        let stopped = &core.panes[&id].stored.pane;
+        assert_eq!(stopped.state, PaneState::Dead);
+        assert!(stopped.phrase.contains("@google/gemini-cli@0.59.0"));
+        crate::test_paths::remove_after(core, directory);
     }
 
     fn started() -> [soyeht_ptyd::Result<Response>; 2] {

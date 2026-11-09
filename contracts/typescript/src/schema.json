@@ -130,6 +130,7 @@
         "git_unavailable",
         "file_not_text",
         "file_too_large",
+        "adapter_not_acknowledged",
         "workspace_folder_missing"
       ]
     },
@@ -942,6 +943,11 @@
         },
         "permissionMode": {
           "$ref": "#/$defs/Id"
+        },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
         },
         "url": {
           "type": "string",
@@ -3682,6 +3688,14 @@
         },
         "lastReadyAtMs": {
           "$ref": "#/$defs/Decimal"
+        },
+        "package": {
+          "type": "string",
+          "description": "The package a built-in adapter downloads and runs through a package runner, as `name@version`; absent for any other harness (ADR 0143)."
+        },
+        "packageLocked": {
+          "type": "boolean",
+          "description": "True when the engine installs that package once from a lockfile it carries, with every dependency checked by integrity; false when the runner downloads it and its dependencies on the first start, unchecked."
         }
       },
       "required": [
@@ -4421,6 +4435,11 @@
         "effort": {
           "type": "string",
           "maxLength": 256
+        },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
         },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
@@ -14971,6 +14990,7 @@
     "git_unavailable": -32038,
     "file_not_text": -32039,
     "file_too_large": -32040,
+    "adapter_not_acknowledged": -32041,
     "workspace_folder_missing": -32042
   },
   "x-clientPolicy": {
