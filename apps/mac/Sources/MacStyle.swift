@@ -163,8 +163,8 @@ extension LocalizedStringKey.StringInterpolation {
 
   private static func proseFamily(_ family: WritingFont) -> String {
     switch family {
-    case .reading_serif: "Newsreader"
-    case .classic_serif: "Times New Roman"
+    case .reading_serif: DesignTokens.Fonts.reading
+    case .classic_serif: DesignTokens.Fonts.classicSerif
     case .sans: chromeFamily
     }
   }

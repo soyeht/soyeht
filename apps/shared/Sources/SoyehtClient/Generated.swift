@@ -161,6 +161,7 @@ public enum DesignTokens {
   public enum Radius {
     public static let compact: CGFloat = 10
     public static let control: CGFloat = 12
+    public static let panel: CGFloat = 18
     public static let card: CGFloat = 20
     public static let pill: CGFloat = 999
   }
@@ -391,6 +392,9 @@ public enum DesignTokens {
     public static let ui = "Inter"
     public static let mono = "JetBrains Mono"
     public static let screenplay = "Courier Prime"
+    public static let reading = "Newsreader"
+    public static let classicSerif = "Times New Roman"
+    public static let classicSerifPostScript = "TimesNewRomanPSMT"
   }
 
   /// An outer shadow pair of a raised surface: light up and left, dark down and right.
