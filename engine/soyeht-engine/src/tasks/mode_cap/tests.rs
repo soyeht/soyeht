@@ -772,3 +772,5 @@ fn a_person_cancelling_a_turn_keeps_the_usual_transcript_line() {
             .any(|line| line == "Turn cancelled by the user.")
     );
 }
+
+mod message;

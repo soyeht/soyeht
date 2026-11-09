@@ -201,6 +201,30 @@
       "ansi": ["#192A30", "#F15D5D", "#00D9A3", "#F59E0B", "#8280FF", "#FB00FA", "#00A5B2", "#AEBCC0", "#8C9DA3", "#F15D5D", "#00D9A3", "#FFAA00", "#8380FF", "#FB00FA", "#00E5E5", "#E9F0F2"]
     }
   },
+  "einkPalette": {
+    "displayName": "E-ink",
+    "screen": "#FFFFFF",
+    "canvas": "#E8EDF4",
+    "face": "#FFFFFF",
+    "hover": "#D1D9DB",
+    "well": "#B8C0C2",
+    "ink": "#0C1012",
+    "secondary": "#37464C",
+    "muted": "#37464C",
+    "accent": "#004497",
+    "onAccent": "#FFFFFF",
+    "shadowDark": "#8C9395",
+    "shadowLight": "#FFFFFF",
+    "wellShadow": "#8C9395",
+    "wellRim": "#FFFFFF",
+    "wellLip": null,
+    "selection": "#99B2CC",
+    "presentationLetterbox": "#0B151A",
+    "border": "#37464C",
+    "dim": "#6E7A96",
+    "agents": ["#C3A2D1", "#E19BA9", "#94B88A", "#68BCB3", "#91AAC4"],
+    "ansi": ["#0C1012", "#9C2336", "#3F9C6A", "#876422", "#004497", "#9A6BD0", "#298192", "#4A626B", "#37464C", "#9C2336", "#3F9C6A", "#876422", "#004497", "#9A6BD0", "#298192", "#0C1012"]
+  },
   "fonts": {
     "chrome": "Nunito",
     "ui": "Inter",
@@ -433,6 +457,21 @@
     "previewWidth": 360,
     "previewMaxWidth": 460,
     "previewHeaderHeight": 26
+  },
+  "eink": {
+    "bodyTextSize": 18,
+    "captionTextSize": 16,
+    "smallTextSize": 16,
+    "subheadingTextSize": 22,
+    "headingTextSize": 24,
+    "titleTextSize": 32,
+    "terminalFontSize": 16,
+    "terminalFontSizeMaximum": 28,
+    "touchTarget": 56,
+    "readingColumnWidth": 640,
+    "borderWidth": 2,
+    "redrawIntervalMs": 250,
+    "settleDelayMs": 400
   },
   "desktop": {
     "windowWidth": 1280,

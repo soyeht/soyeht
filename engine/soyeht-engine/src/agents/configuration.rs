@@ -396,6 +396,15 @@ impl Core {
             })
     }
 
+    /// Whether the pane's agent is in a mode that approves everything now: the mode it runs
+    /// in, or the one it was asked to start in while its modes are not announced yet.
+    pub(crate) fn agent_in_full_access(&self, state: &State) -> bool {
+        [state.options.current_mode(), state.mode.as_deref()]
+            .into_iter()
+            .flatten()
+            .any(|mode| self.is_full_access_mode(mode))
+    }
+
     /// Only a person may start work in a mode that approves everything; a
     /// chief agent writing tasks cannot grant it to itself or other agents.
     pub(crate) fn require_person_for_full_access<'a>(

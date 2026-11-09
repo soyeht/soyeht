@@ -7,7 +7,7 @@ use soyeht_protocol::ErrorKind;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 33;
+pub const SCHEMA_VERSION: u32 = 34;
 
 #[derive(Debug)]
 pub enum Error {
@@ -95,6 +95,7 @@ pub enum Error {
     InvalidWritingCreateIntent,
     InvalidAgentModelRefusal,
     InvalidHarnessSignIn,
+    InvalidProjectTrust,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -198,6 +199,7 @@ impl fmt::Display for Error {
             Self::InvalidWritingCreateIntent => f.write_str("invalid writing create intent"),
             Self::InvalidAgentModelRefusal => f.write_str("invalid agent model refusal"),
             Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
+            Self::InvalidProjectTrust => f.write_str("invalid project trust"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -358,10 +360,13 @@ fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
         tx.execute_batch(include_str!("../migrations/032-usage-opencode.sql"))?;
     }
     if version < 33 {
+        tx.execute_batch(include_str!("../migrations/033-project-trust.sql"))?;
+    }
+    if version < 34 {
         if lacks_column(tx, "input_intents", "created_unix")? {
-            tx.execute_batch(include_str!("../migrations/033-input-intent-time.sql"))?;
+            tx.execute_batch(include_str!("../migrations/034-input-intent-time.sql"))?;
         }
-        tx.execute_batch("PRAGMA user_version = 33;")?;
+        tx.execute_batch("PRAGMA user_version = 34;")?;
     }
     Ok(())
 }
