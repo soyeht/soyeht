@@ -298,9 +298,7 @@ public final class EngineClient {
     else {
       throw ClientFailure.invalidFrame
     }
-    connectionActor = Actor(
-      role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
-    engineCapabilities = Set(welcome.capabilities)
+    recordWelcome(welcome, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request(.stateSnapshot, .object([:]))
     try await loadPreferredHarness()
     _ = try await request(.eventsSubscribe, .object(["since": .string(String(cursor))]))
