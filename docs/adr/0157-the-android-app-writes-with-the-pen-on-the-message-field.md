@@ -29,10 +29,13 @@ scribble, what a scribble covers and the text edits are pure code with unit test
 - **Below Android 14:** ML Kit's Digital Ink Recognition (`com.google.mlkit:digital-ink-recognition` 18.1.0) reads
   the strokes with a language model. The model follows the system language: its tag, then its base language, then
   English (`HandwritingLanguage`), so Portuguese and English are covered, as are the other languages the recognizer has.
-- **The model is opt-in, as the dictation engines are (AGENTS.md).** Nothing is downloaded before the person presses
-  **Install** in Settings, whose row says where the model is (checking, not installed, installing, installed, failed,
-  none for this language) and can remove it. Until it is installed a stylus touches the field as a finger does.
-  The state of the model is read from the model manager (nothing is downloaded to read it).
+- **ML Kit is opt-in twice, and off by default.** The default recognition is meant to be the paired computer's
+  (designed separately); ML Kit is the on-device alternative. In Settings the person turns "Handwriting on this device"
+  on (it says that it uses Google ML Kit and what ML Kit sends to Google), and only then **Install** downloads the
+  language model, as the dictation engines do (AGENTS.md). While it is off ML Kit is not called at all (no model check,
+  no download, no recognizer) and a stylus touches the field as a finger does; it does so too until a model is
+  installed. Once on, the row shows where the model is (checking, not installed, installing, installed, failed, none
+  for this language) and Remove deletes it.
 
 **The license of ML Kit, and what the gate does with it.** The repository is Apache-2.0, and the gate allows only
 permissive licenses (ADR 0149). The libraries ML Kit brings are not open source:
@@ -54,8 +57,8 @@ accepted at all (`load_policy` refuses it). There is no blanket bypass: an accep
 license, and a new exception is refused by a release until the owner accepts it the same way.
 
 **What the person is told.** The ML Kit terms require telling users that ML Kit sends performance and usage metrics
-to Google; the input and the output of the recognizer stay on the device. The Settings row says it where Install is
-pressed, and `PRIVACY.md` says it (the exception to "no analytics library", the list of what leaves the device, and a
+to Google (the device model, the system and app version, latency, events, errors and languages); the input and the
+output of the recognizer stay on the device. The Settings row says it where the person turns the recognizer on, and `PRIVACY.md` says it (the exception to "no analytics library", the list of what leaves the device, and a
 note that a Google Play data-safety form declares these metrics). The SDK's logging transport (Datatransport) is what
 sends them; the app sends neither the strokes nor the recognized text.
 

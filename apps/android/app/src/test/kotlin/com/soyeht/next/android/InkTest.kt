@@ -2,7 +2,10 @@ package com.soyeht.next.android
 
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import com.soyeht.next.android.ink.Handwriting
+import com.soyeht.next.android.ink.HandwritingChoice
 import com.soyeht.next.android.ink.HandwritingLanguage
+import com.soyeht.next.android.ink.ModelState
 import com.soyeht.next.android.ink.InkOutcome
 import com.soyeht.next.android.ink.InkPoint
 import com.soyeht.next.android.ink.InkSession
@@ -99,5 +102,33 @@ class InkTest {
         assertEquals(listOf("pt-PT", "pt", "en"), HandwritingLanguage.tags(Locale.forLanguageTag("pt-PT")))
         assertEquals(listOf("en-US", "en"), HandwritingLanguage.tags(Locale.forLanguageTag("en-US")))
         assertEquals(listOf("pt", "en"), HandwritingLanguage.tags(Locale.forLanguageTag("pt")))
+    }
+
+    private class Remembered(var on: Boolean = false) : HandwritingChoice {
+        override fun saved() = on
+
+        override fun save(on: Boolean) {
+            this.on = on
+        }
+    }
+
+    @Test
+    fun theRecognizerIsOffUntilThePersonTurnsItOnAndWhileOffNothingIsCalled() {
+        val handwriting = Handwriting(Remembered(), sdk = 32)
+        assertFalse(handwriting.enabled)
+        assertFalse(handwriting.ready)
+        // Off, looking for a model and installing one do nothing: ML Kit is not called and nothing is downloaded.
+        handwriting.refresh()
+        handwriting.install()
+        assertEquals(ModelState.Checking, handwriting.state)
+        assertFalse(handwriting.platformHandles)
+    }
+
+    @Test
+    fun theChoiceIsKeptAndTheRecognizerIsNotUsedWhereThePlatformWritesItself() {
+        assertTrue(Handwriting(Remembered(), sdk = 34).platformHandles)
+        assertTrue(Handwriting(Remembered(on = true), sdk = 32).enabled)
+        // Turned on but with no model yet, the pen still behaves as a finger.
+        assertFalse(Handwriting(Remembered(on = true), sdk = 32).ready)
     }
 }

@@ -57,22 +57,30 @@ fun SettingsSheet(model: AppModel) {
 private const val SheetWidth = 520f
 
 /**
- * Handwriting with the pen (below Android 14, where the keyboard does it): the language model downloads only when the
- * person presses Install, and the state says where it is. The words are read on the device.
+ * Handwriting with the pen (below Android 14, where the keyboard does it). It is off until the person turns it on, and
+ * only then Install can download the language model; nothing is downloaded before. The row says what it uses and what
+ * ML Kit sends to Google, and the state says where the model is.
  */
 @Composable
 private fun HandwritingRow(handwriting: Handwriting) {
     LaunchedEffect(Unit) { handwriting.refresh() }
     val language = Locale.getDefault().displayLanguage
+    SettingRow(
+        "Handwriting on this device",
+        "Write with the pen in the message field, read on this device by Google ML Kit. ML Kit sends usage metrics to " +
+            "Google (device model, system and app version, speed, events, errors, languages), never what you write. " +
+            "Off, the pen works as a finger.",
+    ) { Pill(if (handwriting.enabled) "On" else "Off", { handwriting.enable(!handwriting.enabled) }, tone = if (handwriting.enabled) Tone.Primary else Tone.Neutral, description = "Switch handwriting on this device") }
+    if (!handwriting.enabled) return
     val (detail, action) = when (val state = handwriting.state) {
         ModelState.Checking -> "Looking for the $language model…" to null
-        ModelState.NotInstalled -> "Write with the pen in the message field. It is read on this device, and the $language model downloads once, when you press Install. Google ML Kit sends usage metrics to Google, never what you write." to ("Install" to handwriting::install)
+        ModelState.NotInstalled -> "The $language model downloads once, when you press Install." to ("Install" to handwriting::install)
         ModelState.Downloading -> "Installing the $language model…" to ("Installing…" to {})
-        ModelState.Installed -> "The $language model is installed. Write with the pen in the message field." to ("Remove" to handwriting::remove)
+        ModelState.Installed -> "The $language model is installed." to ("Remove" to handwriting::remove)
         is ModelState.Failed -> "Could not ${state.kind} the $language model. Try again." to ("Retry" to handwriting::install)
         ModelState.NoModel -> "There is no handwriting model for $language." to null
     }
-    SettingRow("Handwriting", detail) {
+    SettingRow("Language model", detail) {
         action?.let { (label, run) -> Pill(label, run, tone = if (label == "Install") Tone.Primary else Tone.Neutral) }
     }
 }

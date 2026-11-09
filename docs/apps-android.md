@@ -42,8 +42,10 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   strokes as they come, and after a 1.2 s pause reads them and inserts the text at the cursor; a scribble over the
   writing takes it away, a scribble over nothing deletes the word before the cursor, and a tap ends the writing. A
   finger still scrolls and types. From Android 14 the platform's own stylus handwriting does it through the keyboard and
-  the app does nothing; below it, ML Kit's recognizer reads the strokes on the device with a language model that follows
-  the system language, which the person installs from Settings (nothing is downloaded before Install). The ML Kit
+  the app does nothing; below it, ML Kit's recognizer reads the strokes on the device, but only when the person turns
+  "Handwriting on this device" on in Settings (off by default, and while off ML Kit is not called and the pen works as
+  a finger), with a language model that follows the system language, which they then install (nothing is downloaded
+  before Install). The ML Kit
   libraries are proprietary Google binaries, free of charge, that the owner accepted on 2026-11-08 (the policy lists
   them as accepted exceptions); ML Kit sends performance and usage metrics to Google, which the Settings row and
   `PRIVACY.md` say, and the strokes and the text stay on the device.

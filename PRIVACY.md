@@ -15,8 +15,8 @@ against the source in that repository.
 - **No analytics, no advertising, no tracking.** None of the apps contains an analytics,
   advertising or crash-reporting library, and the iPhone and iPad app declares in its privacy
   manifest that it does not track you and collects no data. The one exception is Google's ML Kit
-  in the Android app, which sends performance and usage metrics to Google (see "Handwriting on
-  Android" below); what you write never leaves the device.
+  in the Android app, only if you turn on handwriting on the device: it sends performance and usage metrics to
+  Google (see "Handwriting on Android" below); what you write never leaves the device.
 - **Your work stays on your computer.** Terminals, prompts, agent conversations, files and settings
   live on the computer that runs the engine. Your iPhone, iPad or Android phone talks only to that
   computer, over your own private network.
@@ -108,15 +108,17 @@ Preferences. It is fetched from the Hugging Face model hub (`huggingface.co`) an
 entirely on your device; nothing about you is sent beyond what any download request reveals, such as
 the IP address. You can delete it again with "Remove download" in Preferences. Nothing is downloaded before you ask.
 
-### Handwriting on Android (optional)
+### Handwriting on Android (optional, off by default)
 
-On Android 13 and older, writing with a pen in the message field is read by Google's ML Kit Digital Ink
-Recognition, on the device. The language model is downloaded from Google's servers only after you press Install in
-Settings, and you can remove it there. **ML Kit sends performance and usage metrics to Google**, as the
-[ML Kit terms](https://developers.google.com/ml-kit/terms) require us to tell you; the input (your strokes) and
-the output (the recognized text) stay on the device and are not sent. Soyeht itself sends nothing. On Android 14
-and later the system's own handwriting is used and ML Kit is not involved. If the app is listed on Google Play, its
-data-safety form declares these metrics (`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).
+On Android 13 and older you can turn on "Handwriting on this device" in Settings: the pen then writes in the message
+field, read on the device by Google's ML Kit Digital Ink Recognition. It is off until you turn it on, and nothing is
+downloaded until you then press Install, which fetches the language model from Google's servers (you can remove it
+there). **ML Kit sends performance and usage metrics to Google** (the device model, the system and app version,
+latency, events, errors and languages), as the [ML Kit terms](https://developers.google.com/ml-kit/terms) require us to
+tell you; the input (your strokes) and the output (the recognized text) stay on the device and are not sent. Soyeht
+itself sends nothing. While it is off the pen works as a finger. On Android 14 and later the system's own handwriting is
+used and ML Kit is not involved. If the app is listed on Google Play, its data-safety form declares these metrics
+(`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).
 
 ### The agents you run
 

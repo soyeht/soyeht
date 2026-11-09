@@ -1,5 +1,6 @@
 package com.soyeht.next.android.ink
 
+import android.content.Context
 import android.os.Build
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -46,26 +47,75 @@ sealed interface ModelState {
     data object NoModel : ModelState
 }
 
+/** Whether the person turned the on-device recognizer on: kept across launches, off until they choose. */
+interface HandwritingChoice {
+    fun saved(): Boolean
+
+    fun save(on: Boolean)
+}
+
+/** The choice, in the app's private storage. */
+class StoredHandwritingChoice(context: Context) : HandwritingChoice {
+    private val preferences = context.getSharedPreferences("handwriting", Context.MODE_PRIVATE)
+
+    override fun saved() = preferences.getBoolean(ON, false)
+
+    override fun save(on: Boolean) {
+        preferences.edit().putBoolean(ON, on).apply()
+    }
+
+    private companion object {
+        const val ON = "on"
+    }
+}
+
 /**
  * Handwriting on the message field, recognized on the device (ADR 0157). From Android 14 the platform handles a stylus in
  * a text field itself, through the keyboard, and this is not used. Below it, ML Kit's digital ink recognizer reads the
  * strokes with a language model the person installs from Settings: the model follows the system language, and is
  * downloaded once, when asked for, and not before.
  */
-class Handwriting(private val locale: () -> Locale = { Locale.getDefault() }, sdk: Int = Build.VERSION.SDK_INT) {
+class Handwriting(
+    private val choice: HandwritingChoice,
+    private val locale: () -> Locale = { Locale.getDefault() },
+    sdk: Int = Build.VERSION.SDK_INT,
+) {
     /** The platform writes in text fields itself: no ink area, no model. */
     val platformHandles = sdk >= PLATFORM_HANDWRITING_SDK
 
     var state: ModelState by mutableStateOf(ModelState.Checking)
         private set
 
+    /**
+     * The person turned the on-device recognizer on. It is off until they do: while it is off ML Kit is not called at
+     * all (no check, no download, no recognizer), and a stylus touches the field as a finger does.
+     */
+    var enabled by mutableStateOf(choice.saved())
+        private set
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    private val models = RemoteModelManager.getInstance()
+
+    // Not made until ML Kit is first needed, so that an app with the recognizer off never calls it.
+    private val models by lazy(LazyThreadSafetyMode.NONE) { RemoteModelManager.getInstance() }
     private var recognizer: DigitalInkRecognizer? = null
     private var model: DigitalInkRecognitionModel? = null
 
     /** Strokes are taken, and the model is ready: the composer lets the pen write. */
-    val ready get() = !platformHandles && state == ModelState.Installed
+    val ready get() = !platformHandles && enabled && state == ModelState.Installed
+
+    /** The person turned the recognizer on or off in Settings. Turning it on only looks for a model; Install downloads one. */
+    fun enable(on: Boolean) {
+        if (on == enabled) return
+        enabled = on
+        choice.save(on)
+        if (on) {
+            state = ModelState.Checking
+            refresh()
+        } else {
+            recognizer?.close()
+            recognizer = null
+        }
+    }
 
     /** The model of the system language, or of its base language, or English: the first the recognizer has. */
     private fun modelOf(): DigitalInkRecognitionModel? {
@@ -84,7 +134,7 @@ class Handwriting(private val locale: () -> Locale = { Locale.getDefault() }, sd
 
     /** Asks the model manager whether the model is on the device. Nothing is downloaded. */
     fun refresh() {
-        if (platformHandles) return
+        if (platformHandles || !enabled) return
         val wanted = modelOf() ?: run {
             state = ModelState.NoModel
             return
@@ -100,6 +150,7 @@ class Handwriting(private val locale: () -> Locale = { Locale.getDefault() }, sd
 
     /** The person pressed Install: the model downloads, once. */
     fun install() {
+        if (!enabled) return
         val wanted = modelOf() ?: return
         if (state == ModelState.Downloading) return
         state = ModelState.Downloading
