@@ -1,8 +1,8 @@
 //! The names and calls that `gpui_linux` makes on the blur module, and the promise that blur stays off.
 
-use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::globals::GlobalList;
-use wayland_client::{delegate_noop, Dispatch, Proxy, QueueHandle};
+use wayland_client::protocol::wl_surface::WlSurface;
+use wayland_client::{Dispatch, Proxy, QueueHandle, delegate_noop};
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur_manager::OrgKdeKwinBlurManager;
 
@@ -34,6 +34,9 @@ fn bind_manager(globals: &GlobalList, queue: &QueueHandle<State>) -> Option<OrgK
 fn no_compositor_advertises_the_manager() {
     let name = OrgKdeKwinBlurManager::interface().name;
     assert_eq!(name, "soyeht_unadvertised_blur_manager");
-    assert!(!name.contains("kwin"), "a compositor that offered the KDE name would be bound");
+    assert!(
+        !name.contains("kwin"),
+        "a compositor that offered the KDE name would be bound"
+    );
     assert_eq!(OrgKdeKwinBlur::interface().name, "soyeht_unadvertised_blur");
 }
