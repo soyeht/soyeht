@@ -6,28 +6,21 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.google.android.gms.tasks.Task
-import com.google.mlkit.common.MlKitException
-import com.google.mlkit.common.model.DownloadConditions
-import com.google.mlkit.common.model.RemoteModelManager
-import com.google.mlkit.vision.digitalink.DigitalInkRecognition
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModel
-import com.google.mlkit.vision.digitalink.DigitalInkRecognitionModelIdentifier
-import com.google.mlkit.vision.digitalink.DigitalInkRecognizer
-import com.google.mlkit.vision.digitalink.DigitalInkRecognizerOptions
-import com.google.mlkit.vision.digitalink.Ink
-import com.google.mlkit.vision.digitalink.RecognitionContext
-import com.google.mlkit.vision.digitalink.WritingArea
 import java.util.Locale
-import kotlin.coroutines.resume
-import kotlin.coroutines.resumeWithException
-import kotlinx.coroutines.CancellableContinuation
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
+
+/** What the recognizer was doing when it failed: [verb] finishes "Could not ... the model". */
+enum class Step(val verb: String) {
+    Check("check"),
+    Download("download"),
+    Remove("remove"),
+}
 
 /** Where the language model of the handwriting recognizer is. Nothing is downloaded before the person asks (Install). */
 sealed interface ModelState {
@@ -40,8 +33,8 @@ sealed interface ModelState {
 
     data object Installed : ModelState
 
-    /** The last install or removal failed; [kind] is the kind of failure, never its message. */
-    data class Failed(val kind: String) : ModelState
+    /** The last [step] failed; what failed is logged by its kind, never its message. */
+    data class Failed(val step: Step) : ModelState
 
     /** The device has no language model for this language. */
     data object NoModel : ModelState
@@ -71,14 +64,19 @@ class StoredHandwritingChoice(context: Context) : HandwritingChoice {
 
 /**
  * Handwriting on the message field, recognized on the device (ADR 0157). From Android 14 the platform handles a stylus in
- * a text field itself, through the keyboard, and this is not used. Below it, ML Kit's digital ink recognizer reads the
- * strokes with a language model the person installs from Settings: the model follows the system language, and is
- * downloaded once, when asked for, and not before.
+ * a text field itself, through the keyboard, and this is not used. Below it, ML Kit's digital ink recognizer (behind
+ * [engine]) reads the strokes with a language model the person installs from Settings: the model follows the system
+ * language, and is downloaded once, when asked for, and not before.
+ *
+ * While the recognizer is off, nothing here calls [engine]: not at construction, not to look for a model, not to
+ * install, recognize or remove one. [engine] is started when the person turns it on, or at launch if they had.
  */
 class Handwriting(
     private val choice: HandwritingChoice,
+    private val engine: InkEngine,
     private val locale: () -> Locale = { Locale.getDefault() },
     sdk: Int = Build.VERSION.SDK_INT,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main),
 ) {
     /** The platform writes in text fields itself: no ink area, no model. */
     val platformHandles = sdk >= PLATFORM_HANDWRITING_SDK
@@ -93,15 +91,21 @@ class Handwriting(
     var enabled by mutableStateOf(choice.saved())
         private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    // The model in use, once ML Kit was asked: the system language's, its base language's, or English (the first the recognizer has).
+    private var model: InkModel? by mutableStateOf(null)
+    private var reader: InkReader? = null
+    private var started = false
 
-    // Not made until ML Kit is first needed, so that an app with the recognizer off never calls it.
-    private val models by lazy(LazyThreadSafetyMode.NONE) { RemoteModelManager.getInstance() }
-    private var recognizer: DigitalInkRecognizer? = null
-    private var model: DigitalInkRecognitionModel? = null
+    // The check, install or removal in flight: turning the recognizer off cancels it, so a late result sets nothing.
+    private var job: Job? = null
 
     /** Strokes are taken, and the model is ready: the composer lets the pen write. */
     val ready get() = !platformHandles && enabled && state == ModelState.Installed
+
+    /** The language of the model in use, or of the system when there is none, as the system names it. */
+    val language: String get() = Locale.forLanguageTag(model?.tag ?: locale().toLanguageTag()).getDisplayLanguage(locale())
+
+    private val active get() = !platformHandles && enabled
 
     /** The person turned the recognizer on or off in Settings. Turning it on only looks for a model; Install downloads one. */
     fun enable(on: Boolean) {
@@ -112,70 +116,96 @@ class Handwriting(
             state = ModelState.Checking
             refresh()
         } else {
-            recognizer?.close()
-            recognizer = null
+            job?.cancel()
+            job = null
+            reader?.close()
+            reader = null
+            state = ModelState.Checking
         }
     }
 
-    /** The model of the system language, or of its base language, or English: the first the recognizer has. */
-    private fun modelOf(): DigitalInkRecognitionModel? {
-        model?.let { return it }
-        for (tag in HandwritingLanguage.tags(locale())) {
-            val identifier = try {
-                DigitalInkRecognitionModelIdentifier.fromLanguageTag(tag)
-            } catch (failure: MlKitException) {
-                // This tag has no model: the next one is tried.
-                continue
-            } ?: continue
-            return DigitalInkRecognitionModel.builder(identifier).build().also { model = it }
+    private fun live(): InkEngine {
+        if (!started) {
+            engine.start()
+            started = true
         }
-        return null
+        return engine
+    }
+
+    private fun resolve(): InkModel? {
+        model?.let { return it }
+        val library = live()
+        return HandwritingLanguage.tags(locale()).firstNotNullOfOrNull { library.modelFor(it) }?.also { model = it }
+    }
+
+    /** Runs [found] with the model in use; with none for this language the state says so, and when ML Kit cannot start it says [step] failed. */
+    private inline fun withModel(step: Step, found: (InkModel) -> Unit) {
+        val wanted = try {
+            resolve()
+        } catch (failure: Exception) {
+            state = failed(step, failure)
+            return
+        }
+        if (wanted == null) state = ModelState.NoModel else found(wanted)
+    }
+
+    private fun launchStep(step: Step, work: suspend (InkEngine) -> ModelState) {
+        job?.cancel()
+        job = scope.launch {
+            val result = try {
+                work(engine)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                failed(step, failure)
+            }
+            state = result
+        }
     }
 
     /** Asks the model manager whether the model is on the device. Nothing is downloaded. */
     fun refresh() {
-        if (platformHandles || !enabled) return
-        val wanted = modelOf() ?: run {
-            state = ModelState.NoModel
-            return
-        }
-        scope.launch {
-            state = try {
-                if (models.isModelDownloaded(wanted).await()) ModelState.Installed else ModelState.NotInstalled
-            } catch (failure: Exception) {
-                failed("check", failure)
-            }
+        if (!active || job?.isActive == true) return
+        withModel(Step.Check) { wanted ->
+            launchStep(Step.Check) { if (it.isDownloaded(wanted)) ModelState.Installed else ModelState.NotInstalled }
         }
     }
 
     /** The person pressed Install: the model downloads, once. */
     fun install() {
-        if (!enabled) return
-        val wanted = modelOf() ?: return
-        if (state == ModelState.Downloading) return
-        state = ModelState.Downloading
-        scope.launch {
-            state = try {
-                models.download(wanted, DownloadConditions.Builder().build()).await()
+        if (!active || state == ModelState.Downloading) return
+        withModel(Step.Download) { wanted ->
+            state = ModelState.Downloading
+            launchStep(Step.Download) {
+                it.download(wanted)
                 ModelState.Installed
-            } catch (failure: Exception) {
-                failed("download", failure)
             }
         }
     }
 
     /** The person removed the model: the recognizer is closed and the files go. */
     fun remove() {
-        val wanted = modelOf() ?: return
-        recognizer?.close()
-        recognizer = null
-        scope.launch {
-            state = try {
-                models.deleteDownloadedModel(wanted).await()
+        if (!active) return
+        withModel(Step.Remove) { wanted ->
+            reader?.close()
+            reader = null
+            launchStep(Step.Remove) {
+                it.delete(wanted)
                 ModelState.NotInstalled
-            } catch (failure: Exception) {
-                failed("remove", failure)
             }
+        }
+    }
+
+    /** The person pressed Retry after a failure: the step that failed is tried again, and no other. */
+    fun retry() {
+        val failure = state as? ModelState.Failed ?: return
+        when (failure.step) {
+            Step.Check -> {
+                state = ModelState.Checking
+                refresh()
+            }
+            Step.Download -> install()
+            Step.Remove -> remove()
         }
     }
 
@@ -185,49 +215,39 @@ class Handwriting(
      */
     suspend fun recognize(strokes: List<InkStroke>, before: String, width: Float, height: Float): String? {
         if (!ready || strokes.isEmpty()) return null
-        val wanted = modelOf() ?: return null
-        val client = recognizer ?: DigitalInkRecognition.getClient(DigitalInkRecognizerOptions.builder(wanted).build()).also { recognizer = it }
-        val ink = Ink.builder().apply {
-            for (stroke in strokes) {
-                addStroke(
-                    Ink.Stroke.builder().apply {
-                        for (point in stroke.points) addPoint(Ink.Point.create(point.x, point.y, point.time))
-                    }.build(),
-                )
-            }
-        }.build()
-        val context = RecognitionContext.builder().setPreContext(before.takeLast(PRE_CONTEXT)).setWritingArea(WritingArea(width, height)).build()
+        val wanted = model ?: return null
         return try {
-            client.recognize(ink, context).await().candidates.firstOrNull()?.text?.takeIf { it.isNotBlank() }
+            val current = reader ?: live().reader(wanted).also { reader = it }
+            current.read(strokes, before, width, height)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (failure: Exception) {
-            failed("recognize", failure)
+            log("recognize", failure)
             null
         }
     }
 
     /** Ends the engine's work and closes the recognizer. */
     fun close() {
-        recognizer?.close()
+        reader?.close()
+        reader = null
         scope.cancel()
     }
 
-    /** Says which step failed and with what kind of exception, never its message (it can carry paths). */
-    private fun failed(step: String, failure: Exception): ModelState {
-        Log.w(TAG, "handwriting $step failed: ${failure.javaClass.simpleName}")
+    private fun failed(step: Step, failure: Exception): ModelState {
+        log(step.verb, failure)
         return ModelState.Failed(step)
+    }
+
+    /** Logs which step failed and with what kind of exception, never its message (it can carry paths). */
+    private fun log(what: String, failure: Exception) {
+        Log.w(TAG, "handwriting $what failed: ${failure.javaClass.simpleName}")
     }
 
     companion object {
         private const val TAG = "Handwriting"
-        private const val PRE_CONTEXT = 20
 
         /** The first Android with the platform's own stylus handwriting in text fields. */
         const val PLATFORM_HANDWRITING_SDK = 34
     }
-}
-
-/** A Google task as a suspending call. */
-private suspend fun <T> Task<T>.await(): T = suspendCancellableCoroutine { continuation: CancellableContinuation<T> ->
-    addOnSuccessListener { continuation.resume(it) }
-    addOnFailureListener { continuation.resumeWithException(it) }
 }

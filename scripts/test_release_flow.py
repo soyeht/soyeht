@@ -330,28 +330,87 @@ class ExceptionProblemTests(unittest.TestCase):
         self.assertEqual(len(lines), 1)
         self.assertIn("other is under LicenseRef-Other", lines[0])
 
-    def test_an_acceptance_needs_who_and_a_date_and_never_covers_copyleft(self):
+    @staticmethod
+    def load(entry):
         import json
         import tempfile
         from pathlib import Path
 
         import third_party_licenses as licenses
 
-        def load(entry):
-            with tempfile.TemporaryDirectory() as folder:
-                path = Path(folder) / "policy.json"
-                path.write_text(json.dumps({"allowed": [], "prefer": [], "clarify": {}, "exceptions": [entry]}))
-                return licenses.load_policy(path)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy.json"
+            path.write_text(json.dumps({"allowed": [], "prefer": [], "clarify": {}, "exceptions": [entry]}))
+            return licenses.load_policy(path)
+
+    def test_an_acceptance_names_who_from_the_list_and_a_real_date(self):
+        import third_party_licenses as licenses
 
         base = {"package": "kit", "license": "LicenseRef-Terms", "reason": "why"}
-        self.assertEqual(load({**base, "accepted": {"by": "owner", "date": "2026-11-08"}}).accepted, {("kit", "LicenseRef-Terms"): "owner, 2026-11-08"})
-        for bad in ({"by": "", "date": "2026-11-08"}, {"by": "owner", "date": "yesterday"}, {"by": "owner"}):
-            with self.assertRaises(licenses.LicenseError):
-                load({**base, "accepted": bad})
-        with self.assertRaisesRegex(licenses.LicenseError, "copyleft"):
-            load({**base, "license": "GPL-3.0-or-later", "accepted": {"by": "owner", "date": "2026-11-08"}})
+        good = self.load({**base, "accepted": {"by": "owner", "date": "2026-11-08"}})
+        self.assertEqual(good.accepted, {("kit", "LicenseRef-Terms"): "owner, 2026-11-08"})
+        self.assertEqual(licenses.ACCEPTERS, frozenset({"owner"}))
+        refused = (
+            {"by": "", "date": "2026-11-08"},
+            {"by": "somebody", "date": "2026-11-08"},
+            {"by": "Owner", "date": "2026-11-08"},
+            {"by": "owner", "date": "yesterday"},
+            {"by": "owner", "date": "2026-02-30"},
+            {"by": "owner", "date": "2026-13-01"},
+            {"by": "owner", "date": "2026-1-8"},
+            {"by": "owner"},
+            "owner",
+        )
+        for bad in refused:
+            with self.subTest(bad=bad), self.assertRaises(licenses.LicenseError):
+                self.load({**base, "accepted": bad})
         # An exception with no acceptance is not accepted.
-        self.assertEqual(load(base).accepted, {})
+        self.assertEqual(self.load(base).accepted, {})
+
+    def test_a_copyleft_exception_is_never_accepted(self):
+        import third_party_licenses as licenses
+
+        accepted = {"by": "owner", "date": "2026-11-08"}
+        copyleft = (
+            "GPL-3.0-or-later", "AGPL-3.0-only", "LGPL-2.1-only", "MPL-2.0", "EPL-2.0", "CDDL-1.0", "EUPL-1.2",
+            "SSPL-1.0", "CC-BY-SA-4.0", "Apache-2.0 AND LGPL-2.1-or-later", "LicenseRef-GPL-note",
+        )
+        for license in copyleft:
+            with self.subTest(license=license), self.assertRaisesRegex(licenses.LicenseError, "copyleft"):
+                self.load({"package": "kit", "license": license, "reason": "why", "accepted": accepted})
+        for license in ("LicenseRef-ML-Kit-Terms", "LicenseRef-Android-SDK-License", "Apache-2.0", "MIT", "BSD-3-Clause"):
+            with self.subTest(license=license):
+                self.load({"package": "kit", "license": license, "reason": "why", "accepted": accepted})
+
+    def test_the_real_policy_fails_a_release_for_an_exception_nobody_accepted(self):
+        import json
+        import tempfile
+        from pathlib import Path
+
+        import third_party_licenses as licenses
+
+        # As committed, every exception is accepted by the owner, so a release passes them.
+        real = licenses.load_policy()
+        self.assertTrue(real.exceptions)
+        self.assertEqual(release_checks.exception_problems(real), [])
+        # The same file without the acceptance of one exception stops the release at exactly that one.
+        data = json.loads(licenses.POLICY.read_text())
+        dropped = data["exceptions"][0]
+        del dropped["accepted"]
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy.json"
+            path.write_text(json.dumps(data))
+            problems = release_checks.exception_problems(licenses.load_policy(path))
+        self.assertEqual(len(problems), 1)
+        self.assertIn(f"{dropped['package']} is under {dropped['license']}", problems[0])
+        self.assertIn("have the owner accept it", problems[0])
+        # With every acceptance removed, every exception stops it.
+        for entry in data["exceptions"]:
+            entry.pop("accepted", None)
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "policy.json"
+            path.write_text(json.dumps(data))
+            self.assertEqual(len(release_checks.exception_problems(licenses.load_policy(path))), len(data["exceptions"]))
 
 
 class PublishTests(FlowCase):

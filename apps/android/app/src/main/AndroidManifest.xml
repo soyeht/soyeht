@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Asked for when the person taps Scan, never before. A phone without a camera still pairs by link. -->
@@ -29,5 +30,16 @@
                 <data android:scheme="soyeht-next" android:host="pair" />
             </intent-filter>
         </activity>
+
+        <!--
+            Google ML Kit (handwriting on this device, off by default, ADR 0157) starts itself at launch through this
+            provider. It is removed: the app starts ML Kit (MlKit.initialize) only after the person turns the
+            recognizer on. The service that lists ML Kit's components stays, because ML Kit reads it when it starts;
+            nothing runs it.
+        -->
+        <provider
+            android:name="com.google.mlkit.common.internal.MlKitInitProvider"
+            android:authorities="${applicationId}.mlkitinitprovider"
+            tools:node="remove" />
     </application>
 </manifest>

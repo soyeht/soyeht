@@ -79,14 +79,35 @@
       "url": "https://developers.google.com/ml-kit/vision/digital-ink-recognition"
     },
     {
-      "coordinate": "ML Kit's runtime libraries: ML Kit common, Google Play services base, basement and tasks (transitive)",
-      "version": "",
-      "license": "LicenseRef-ML-Kit-Terms AND LicenseRef-Android-SDK-License",
+      "coordinate": "com.google.mlkit:common",
+      "version": "18.6.0",
+      "license": "LicenseRef-ML-Kit-Terms",
       "url": "https://developers.google.com/ml-kit/terms",
       "transitive": true
     },
     {
-      "coordinate": "Kotlin standard library, AndroidX, WorkManager, Firebase components, Datatransport, OkHttp and Okio libraries (transitive)",
+      "coordinate": "com.google.android.gms:play-services-base",
+      "version": "18.1.0",
+      "license": "LicenseRef-Android-SDK-License",
+      "url": "https://developer.android.com/studio/terms",
+      "transitive": true
+    },
+    {
+      "coordinate": "com.google.android.gms:play-services-basement",
+      "version": "18.1.0",
+      "license": "LicenseRef-Android-SDK-License",
+      "url": "https://developer.android.com/studio/terms",
+      "transitive": true
+    },
+    {
+      "coordinate": "com.google.android.gms:play-services-tasks",
+      "version": "18.0.2",
+      "license": "LicenseRef-Android-SDK-License",
+      "url": "https://developer.android.com/studio/terms",
+      "transitive": true
+    },
+    {
+      "coordinate": "Kotlin standard library, AndroidX, Firebase components, Datatransport, OkHttp and Okio libraries (transitive)",
       "version": "",
       "license": "Apache-2.0",
       "url": "https://developer.android.com/jetpack/androidx",

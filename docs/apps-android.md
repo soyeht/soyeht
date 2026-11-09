@@ -43,12 +43,16 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   writing takes it away, a scribble over nothing deletes the word before the cursor, and a tap ends the writing. A
   finger still scrolls and types. From Android 14 the platform's own stylus handwriting does it through the keyboard and
   the app does nothing; below it, ML Kit's recognizer reads the strokes on the device, but only when the person turns
-  "Handwriting on this device" on in Settings (off by default, and while off ML Kit is not called and the pen works as
-  a finger), with a language model that follows the system language, which they then install (nothing is downloaded
-  before Install). The ML Kit
-  libraries are proprietary Google binaries, free of charge, that the owner accepted on 2026-11-08 (the policy lists
-  them as accepted exceptions); ML Kit sends performance and usage metrics to Google, which the Settings row and
-  `PRIVACY.md` say, and the strokes and the text stay on the device.
+  "Handwriting on this device" on in Settings (off by default). While it is off the app never starts or calls ML Kit
+  (the library's start-up provider and the WorkManager it declares are removed from the manifest, and the pen works as a
+  finger); turning it on starts ML Kit and then Install downloads a language model that follows the system language
+  (nothing is downloaded before Install; Remove deletes it). Turning it on makes ML Kit send diagnostics and usage
+  metrics to Google (the data Google's disclosure lists: device, system and app version, API configuration, sizes,
+  latency, events, errors, languages and per-installation identifiers), and the model download shows the device's IP
+  address to Google; the content of what is written is not in that data. The Settings row and `PRIVACY.md` say so. The
+  ML Kit libraries are proprietary Google binaries, free of charge, that the owner accepted on 2026-11-08 (one accepted
+  exception per library in `scripts/third_party/policy.json`); the APK contains them, and ADR 0157 lists what they
+  leave in the manifest.
 - **Forget this computer** removes the credential. The credential (the phone's key and the token) is
   kept encrypted with an Android Keystore key, in storage that is not backed up and does not move to
   another phone.

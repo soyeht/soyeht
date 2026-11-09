@@ -293,14 +293,34 @@ class RepositoryTests(unittest.TestCase):
         for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:  # FTL has its own file
             licenses.spdx_text(identifier)
 
-    def test_the_only_exceptions_are_the_ml_kit_libraries_and_no_copyleft_one_is_among_them(self):
+    def test_the_only_exceptions_are_the_ml_kit_libraries_each_with_its_own_license_and_none_is_copyleft(self):
         # A GPL crate that comes back must fail the gate, so no exception may name one; the ML Kit libraries (ADR 0157)
-        # are proprietary binaries that the owner accepted on 2026-11-08 (`accepted` in the policy).
+        # are proprietary binaries that the owner accepted on 2026-11-08 (`accepted` in the policy), one entry each.
+        self.assertEqual(
+            dict(POLICY.exceptions.keys()),
+            {
+                "com.google.mlkit:digital-ink-recognition": "LicenseRef-ML-Kit-Terms",
+                "com.google.mlkit:common": "LicenseRef-ML-Kit-Terms",
+                "com.google.android.gms:play-services-base": "LicenseRef-Android-SDK-License",
+                "com.google.android.gms:play-services-basement": "LicenseRef-Android-SDK-License",
+                "com.google.android.gms:play-services-tasks": "LicenseRef-Android-SDK-License",
+            },
+        )
         for package, license in POLICY.exceptions:
-            self.assertTrue(package.startswith(("com.google.mlkit:", "ML Kit's runtime libraries")), package)
-            self.assertNotRegex(license, r"GPL|AGPL|LGPL")
+            self.assertIsNone(licenses.COPYLEFT.search(license), license)
         # The owner accepted them (2026-11-08): a release passes them, and only them.
         self.assertEqual(set(POLICY.accepted), set(POLICY.exceptions))
+
+    def test_each_exception_is_one_library_of_gradle_json_with_that_license(self):
+        data = json.loads(sources.GRADLE_DATA.read_text())["libraries"]
+        recorded = {(l["coordinate"], l["license"]) for l in data}
+        for key in POLICY.exceptions:
+            self.assertIn(key, recorded)
+        # An exception is one library and one license: no entry of the proprietary ones groups libraries or licenses.
+        for library in data:
+            if library["license"].startswith("LicenseRef-"):
+                self.assertNotRegex(library["license"], r" (AND|OR) ")
+                self.assertTrue(library["coordinate"].startswith("com."), library["coordinate"])
 
     def test_a_swift_license_file_is_never_a_source_file(self):
         data = json.loads(sources.SWIFT_DATA.read_text())["packages"]

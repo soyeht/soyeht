@@ -101,7 +101,11 @@ dependencies {
     implementation("androidx.camera:camera-view:$camera")
     implementation("com.google.zxing:core:3.5.3")
     // Handwriting recognition on the device, below Android 14 (ADR 0157): the language model is downloaded only when asked for.
-    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    // It declares WorkManager, which neither it nor ML Kit's common library calls; leaving it out keeps the boot
+    // receiver, the wake lock, the foreground service and the job services it would add to the manifest out of the app.
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0") {
+        exclude(group = "androidx.work")
+    }
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.java.dev.jna:jna:5.14.0")
     testImplementation("org.json:json:20240303")

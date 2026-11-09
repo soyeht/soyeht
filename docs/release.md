@@ -143,6 +143,10 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    `update-manifest.json` and `SHA256SUMS`. The manifest offers each Linux architecture its own AppImage, and its
    sequence is the clock, checked against the manifest the clients read now (below).
 
+   While the Android app depends on Google's ML Kit (ADR 0157), the release notes say that the APK contains
+   proprietary runtime libraries (ML Kit and Google Play services, under Google's terms, not open source): the
+   changelog section carries that line, and the policy's accepted exceptions are what lets the checks pass it.
+
 5. **Publish, as a draft.** First look at it:
 
    ```sh

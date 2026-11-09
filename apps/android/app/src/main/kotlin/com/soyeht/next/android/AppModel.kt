@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import com.soyeht.next.android.ink.Handwriting
+import com.soyeht.next.android.ink.MlKitInkEngine
 import com.soyeht.next.android.ink.StoredHandwritingChoice
 import com.soyeht.next.android.scan.CameraProblem
 import com.soyeht.next.android.theme.Eink
@@ -62,7 +63,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val pending = AtomicBoolean(false)
 
     /** Handwriting on the message field, below Android 14 (ADR 0157). */
-    val handwriting = Handwriting(StoredHandwritingChoice(application))
+    val handwriting = Handwriting(StoredHandwritingChoice(application), MlKitInkEngine(application))
 
     private val saved = credentials.load()
     private val display = DisplaySettings(application)

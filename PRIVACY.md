@@ -15,13 +15,13 @@ against the source in that repository.
 - **No analytics, no advertising, no tracking.** None of the apps contains an analytics,
   advertising or crash-reporting library, and the iPhone and iPad app declares in its privacy
   manifest that it does not track you and collects no data. The one exception is Google's ML Kit
-  in the Android app, only if you turn on handwriting on the device: it sends performance and usage metrics to
-  Google (see "Handwriting on Android" below); what you write never leaves the device.
+  in the Android app, only if you turn on handwriting on the device: it sends diagnostics and usage metrics to
+  Google (see "Handwriting on Android" below). What you write is not among the data Google lists.
 - **Your work stays on your computer.** Terminals, prompts, agent conversations, files and settings
   live on the computer that runs the engine. Your iPhone, iPad or Android phone talks only to that
   computer, over your own private network.
 - **A few requests leave your devices, and each one is listed in this document**: the update check,
-  push alerts through Apple, dictation, optional model downloads (and, on Android, the metrics of Google's handwriting library), the usage meters, and the agents
+  push alerts through Apple, dictation, optional model downloads (and, on Android, the diagnostics and usage metrics of Google's handwriting library), the usage meters, and the agents
   and web pages you choose to run. None of them goes to a server run by Soyeht.
 
 ## What stays on your devices
@@ -111,13 +111,23 @@ the IP address. You can delete it again with "Remove download" in Preferences. N
 ### Handwriting on Android (optional, off by default)
 
 On Android 13 and older you can turn on "Handwriting on this device" in Settings: the pen then writes in the message
-field, read on the device by Google's ML Kit Digital Ink Recognition. It is off until you turn it on, and nothing is
-downloaded until you then press Install, which fetches the language model from Google's servers (you can remove it
-there). **ML Kit sends performance and usage metrics to Google** (the device model, the system and app version,
-latency, events, errors and languages), as the [ML Kit terms](https://developers.google.com/ml-kit/terms) require us to
-tell you; the input (your strokes) and the output (the recognized text) stay on the device and are not sent. Soyeht
-itself sends nothing. While it is off the pen works as a finger. On Android 14 and later the system's own handwriting is
-used and ML Kit is not involved. If the app is listed on Google Play, its data-safety form declares these metrics
+field, read on the device by Google's ML Kit Digital Ink Recognition. It is off until you turn it on. While it is off,
+the app never starts ML Kit: the component that would start it at launch is removed from the app, and nothing is sent
+to Google. Turning it on starts ML Kit, and from then on **ML Kit sends diagnostics and usage metrics to Google**. The
+[ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure) lists them as: the device's
+manufacturer, model, system version and build, and the machine-learning hardware accelerators it has; the app's package
+name and version; the API configuration; the size of the input and of the output; the feature version; performance
+metrics such as latency; events (feature initializations, model downloads, recognitions, resource releases) and their
+error codes; the languages configured; and per-installation identifiers, which Google says are not intended to uniquely
+identify a user or a physical device. Google says it encrypts this data in transit (HTTPS) and does not transfer it to
+third parties. The [ML Kit terms](https://developers.google.com/ml-kit/terms) require us to tell you this.
+
+The content of what you write (your strokes, and the text read from them) is not in the data Google lists, and
+Soyeht sends it nowhere; we cannot speak for more than Google publishes. After you turn it on, nothing is downloaded
+until you press Install, which fetches the language model from Google's servers; like the download above, that shows
+your device's IP address to Google. You can remove the model there. Soyeht itself sends nothing. While it is off the pen
+works as a finger. On Android 14 and later the system's own handwriting is used and ML Kit is not involved. If the app
+is listed on Google Play, its data-safety form declares these data
 (`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).
 
 ### The agents you run

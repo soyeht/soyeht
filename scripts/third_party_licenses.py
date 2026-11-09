@@ -7,6 +7,7 @@ without a build or a network."""
 
 from __future__ import annotations
 
+import datetime
 import itertools
 import json
 import re
@@ -88,17 +89,31 @@ def load_policy(path=POLICY):
     return Policy(frozenset(data["allowed"]), tuple(data["prefer"]), data["clarify"], exceptions, data.get("bundled", {}), accepted)
 
 
-COPYLEFT = re.compile(r"GPL|AGPL|LGPL", re.IGNORECASE)
+# A copyleft license is never accepted as an exception: a package under one stays refused whatever its entry says.
+# The names are matched at the start of a word, so `LicenseRef-GPL-note` and `Apache-2.0 AND LGPL-2.1-only` match
+# and `Apache-2.0` does not.
+COPYLEFT = re.compile(r"(?<![A-Z0-9])(GPL|AGPL|LGPL|MPL|EPL|CDDL|EUPL|SSPL|CC-BY-SA)", re.IGNORECASE)
+
+# Who may accept an exception: only these names are taken as an acceptance.
+ACCEPTERS = frozenset({"owner"})
 
 
 def acceptance(entry):
     """"By whom, on what date" of an exception the owner accepted (`"accepted": {"by": "owner", "date": "2026-11-08"}`).
-    A release stops at an exception nobody accepted; one that is accepted passes it. Copyleft is never accepted: a
-    GPL, AGPL or LGPL package stays refused whatever the entry says."""
+    A release stops at an exception nobody accepted; one that is accepted passes it. `by` is one of `ACCEPTERS`, the
+    date is a real date, and a copyleft license (`COPYLEFT`) is never accepted."""
     accepted = entry["accepted"]
+    if not isinstance(accepted, dict):
+        raise LicenseError(f"the acceptance of the exception for {entry['package']} must be an object with `by` and `date`")
     who, date = str(accepted.get("by", "")).strip(), str(accepted.get("date", "")).strip()
-    if not who or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
-        raise LicenseError(f"the acceptance of the exception for {entry['package']} needs `by` and a `date` (YYYY-MM-DD)")
+    if who not in ACCEPTERS:
+        raise LicenseError(f"the acceptance of the exception for {entry['package']} is by {who!r}: `by` must be one of {sorted(ACCEPTERS)}")
+    try:
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            raise ValueError(date)
+        datetime.date.fromisoformat(date)
+    except ValueError:
+        raise LicenseError(f"the acceptance of the exception for {entry['package']} needs a real `date` (YYYY-MM-DD), not {date!r}") from None
     if COPYLEFT.search(entry["license"]):
         raise LicenseError(f"{entry['package']} is under {entry['license']}: a copyleft exception is never accepted")
     return f"{who}, {date}"
