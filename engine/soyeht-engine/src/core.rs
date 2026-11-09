@@ -68,6 +68,8 @@ pub struct Core {
     /// for them (see `read_ahead`).
     pub(crate) reads: crate::read_ahead::Reads,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
+    /// What the supervisor says about its processes' output (ADR 0147, step 1a).
+    pub(crate) watch: crate::supervisor_watch::Watch,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
     pub hooks: Arc<dyn Hooks>,
@@ -202,6 +204,7 @@ impl Core {
             send_turns: BTreeMap::new(),
             reads: Default::default(),
             supervisor_retry: Default::default(),
+            watch: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
             revision: SharedPort::new(Box::new(GitRevision)),
@@ -439,6 +442,7 @@ impl Core {
     /// recorded must at least reach the log.
     pub(crate) fn lose_supervisor_link(&mut self) {
         self.ptyd = None;
+        self.watch.stop();
         self.supervisor_later.clear();
         self.forget_all_reads();
         if let Err(error) = self.system_event(
@@ -476,6 +480,7 @@ impl Core {
         if result.is_err() {
             self.ptyd = None;
         } else {
+            self.watch.link_made();
             let generation = errors::invariant(
                 self.ptyd.as_ref(),
                 "Supervisor disappeared after registry reconciliation",
@@ -710,6 +715,7 @@ impl Core {
     /// Moves new terminal and agent output from the supervisor into each
     /// pane's screen. This is the terminal path.
     pub(crate) fn drain_panes(&mut self) -> Result<()> {
+        self.sweep_watch();
         let ids: Vec<_> = self
             .panes
             .iter()
@@ -721,8 +727,8 @@ impl Core {
             if self.capture_restore_pending(&id) {
                 continue;
             }
-            // A tick woken by a read polls the agents only.
-            if self.polling_woken() && !self.agents.contains_key(&id) {
+            // A tick woken by a read polls the agents and the panes a notice marked.
+            if self.polling_woken() && !self.agents.contains_key(&id) && !self.pane_marked(&id) {
                 continue;
             }
             if self.agents.contains_key(&id) {

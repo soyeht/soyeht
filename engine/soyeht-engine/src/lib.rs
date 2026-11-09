@@ -47,6 +47,7 @@ pub mod streak;
 pub mod streams;
 pub mod supervisor_handle;
 mod supervisor_link;
+mod supervisor_watch;
 pub mod tasks;
 mod terminal_capture;
 mod terminal_drain;
