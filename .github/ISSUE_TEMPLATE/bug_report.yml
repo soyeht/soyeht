@@ -30,12 +30,19 @@ body:
     validations:
       required: true
   - type: input
-    id: commit
+    id: version
     attributes:
-      label: Commit
-      description: Output of `git rev-parse HEAD`.
+      label: App version
+      description: The version of the Soyeht app or program you ran. It is the first line of the diagnostics report below; on a phone, the version the App Store or TestFlight shows; for the command line, `soyeht --version`.
+      placeholder: 0.1.0
     validations:
       required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics report
+      description: Paste the report from "Copy diagnostics" (Preferences on the Mac, Setup on the Windows and Linux app), or the output of `soyeht diagnostics`. It removes paths, tokens and addresses; read it before you paste.
+      render: markdown
   - type: textarea
     id: steps
     attributes:

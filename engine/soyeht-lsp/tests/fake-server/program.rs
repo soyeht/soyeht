@@ -4,7 +4,24 @@ use serde_json::{Value, json};
 use soyeht_lsp::{Decoder, encode};
 use std::io::{self, Read, Write};
 
+/// Where the fake server writes what it was started with, in its working directory (the project
+/// folder), so a test reads the arguments, the environment and the `initializationOptions` the
+/// engine gave it for the trust of the folder.
+const RECORD: &str = ".soyeht-fake-lsp-record.json";
+
+fn record(initialized: bool, options: Option<&Value>) -> io::Result<()> {
+    let argv: Vec<String> = std::env::args().collect();
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let record =
+        json!({"argv":argv,"env":env,"initialized":initialized,"initializationOptions":options});
+    std::fs::write(
+        RECORD,
+        serde_json::to_vec(&record).map_err(io::Error::other)?,
+    )
+}
+
 fn main() -> io::Result<()> {
+    record(false, None)?;
     let mut decoder = Decoder::default();
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
@@ -16,6 +33,9 @@ fn main() -> io::Result<()> {
         }
         let messages = decoder.push(&bytes[..count]).map_err(io::Error::other)?;
         for message in messages {
+            if message.get("method").and_then(Value::as_str) == Some("initialize") {
+                record(true, message.pointer("/params/initializationOptions"))?;
+            }
             for response in respond(&message) {
                 output.write_all(&encode(&response).map_err(io::Error::other)?)?;
                 output.flush()?;

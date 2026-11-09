@@ -54,6 +54,43 @@ fn parent(root: &Path, path: &Path) -> Result<(Directory, Name)> {
     Ok((directory, system::name(leaf)?))
 }
 
+/// Whether `path` lies in a repository's own control folder (`.git`, at any depth, in any case).
+/// An agent that may edit the project's files may not edit these: a hook, a setting that names a
+/// program, or the file that points a worktree at its repository run code the next time git is
+/// started, outside every permission the agent was given. Windows reads `.git.` and `GIT~1` as
+/// the same folder, and an NTFS name may carry a stream (`.git::$INDEX_ALLOCATION` is the folder
+/// itself), so a component is cut at its first `:` before it is compared, and on Windows any name
+/// with a `:` is refused.
+///
+/// What this does not cover: files written by the agent's own tools (a shell, an adapter's editor),
+/// which the engine does not see; a control folder with another name (`GIT_DIR`, a separate git
+/// directory inside the root); and a hook folder that is tracked in the repository (`.githooks`,
+/// `.husky`) which a setting points git to.
+pub fn is_repository_control(root: &Path, path: &Path) -> bool {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    relative.components().any(|part| match part {
+        Component::Normal(name) => {
+            let name = name.to_string_lossy();
+            if cfg!(windows) && name.contains(':') {
+                return true;
+            }
+            let base = name.split(':').next().unwrap_or_default();
+            let base = base.trim_end_matches(['.', ' ']);
+            base.eq_ignore_ascii_case(".git") || base.eq_ignore_ascii_case("git~1")
+        }
+        _ => false,
+    })
+}
+
+/// What a write into a repository's control folder is told. Kept apart so that the effect answers
+/// the agent with the same code whichever of the two checks refused.
+const CONTROL_REFUSAL: &str = "A repository's .git folder is not written by an agent";
+
+/// Whether `error` is the refusal of a write into a repository's control folder.
+pub fn is_control_refusal(error: &Error) -> bool {
+    matches!(error, Error::InvalidParams(message) if message == CONTROL_REFUSAL)
+}
+
 pub fn read(root: &Path, path: &Path) -> Result<String> {
     let (directory, leaf) = parent(root, path)?;
     let file = system::open_file(&directory, &leaf)?;
@@ -70,6 +107,9 @@ pub fn read(root: &Path, path: &Path) -> Result<String> {
 }
 
 pub fn permits_edit(root: &Path, path: &Path) -> bool {
+    if is_repository_control(root, path) {
+        return false;
+    }
     let Ok((directory, leaf)) = parent(root, path) else {
         return false;
     };
@@ -86,6 +126,10 @@ pub fn write(root: &Path, path: &Path, content: &str) -> Result<()> {
 }
 
 pub fn write_with_key(root: &Path, path: &Path, content: &str, operation: &str) -> Result<()> {
+    // The effect refuses these first; this is the check that holds for any other caller.
+    if is_repository_control(root, path) {
+        return Err(invalid(CONTROL_REFUSAL));
+    }
     let operation =
         Uuid::parse_str(operation).map_err(|_| invalid("invalid write operation identity"))?;
     if content.len() > limits::ACP_MESSAGE_BYTES {
@@ -166,6 +210,64 @@ mod tests {
         let (_fixture, root, outside) = fixture();
         assert_refused(&root, &[&outside, &root.join("../outside")]);
         assert_eq!(fs::read_to_string(&outside).unwrap(), "private");
+    }
+
+    #[test]
+    fn a_repository_control_folder_is_never_written() {
+        let (_fixture, root, _) = fixture();
+        fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        fs::create_dir_all(root.join("vendor/inner/.git")).unwrap();
+        fs::create_dir_all(root.join("linked")).unwrap();
+        fs::write(root.join("linked/.git"), "gitdir: elsewhere\n").unwrap();
+        let hook = root.join(".git/hooks/pre-commit");
+        for path in [
+            root.join(".git/config"),
+            hook.clone(),
+            root.join(".GIT/config"),
+            root.join(".git."),
+            root.join("GIT~1/config"),
+            root.join(".git::$INDEX_ALLOCATION/config"),
+            root.join(".git:stream"),
+            root.join("sub/.GIT::$DATA"),
+            root.join("vendor/inner/.git/config"),
+            root.join("linked/.git"),
+        ] {
+            assert!(is_repository_control(&root, &path), "{}", path.display());
+            assert!(!permits_edit(&root, &path), "{}", path.display());
+        }
+        assert!(!hook.exists());
+        assert_eq!(
+            fs::read_to_string(root.join("linked/.git")).unwrap(),
+            "gitdir: elsewhere\n"
+        );
+        // Files that only look like it are ordinary files.
+        for name in [".gitignore", ".github", "git", "legit.rs"] {
+            assert!(permits_edit(&root, &root.join(name)), "{name}");
+        }
+        write(&root, &root.join(".gitignore"), "target\n").unwrap();
+    }
+
+    #[test]
+    fn the_write_itself_refuses_a_repository_control_folder() {
+        let (_fixture, root, _) = fixture();
+        fs::create_dir_all(root.join(".git/hooks")).unwrap();
+        for path in [
+            root.join(".git/hooks/pre-commit"),
+            root.join("sub/.GIT/config"),
+            root.join(".git::$INDEX_ALLOCATION/config"),
+        ] {
+            let refused = write(&root, &path, "#!/bin/sh\n").unwrap_err();
+            assert!(
+                is_control_refusal(&refused),
+                "{}: {refused}",
+                path.display()
+            );
+            assert!(!path.exists(), "{}", path.display());
+        }
+        assert!(!is_control_refusal(&invalid(
+            "path is outside the worktree"
+        )));
+        assert_no_temporary_left(&root);
     }
 
     #[test]

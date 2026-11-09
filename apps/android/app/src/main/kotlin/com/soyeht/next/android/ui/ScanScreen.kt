@@ -19,15 +19,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.*
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import com.soyeht.next.android.AppModel
+import com.soyeht.next.android.scan.CameraProblem
 import com.soyeht.next.android.scan.QrDecoder
 import com.soyeht.next.android.scan.RepeatFilter
 import com.soyeht.next.android.theme.*
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 /**
@@ -39,7 +42,7 @@ fun ColumnScope.ScanScreen(model: AppModel) {
     val roles = LocalRoles.current
     TopBar("Scan the code", "On the computer, choose “Pair phone”", onBack = model::stopScanning)
     Box(Modifier.weight(1f).fillMaxWidth().background(roles.well)) {
-        CameraPreview(onText = model::scanned)
+        CameraPreview(onText = model::scanned, onFailure = model::cameraFailed)
     }
     Text(
         model.scanProblem ?: "Point the camera at the QR code on the computer.",
@@ -50,10 +53,11 @@ fun ColumnScope.ScanScreen(model: AppModel) {
 }
 
 @Composable
-private fun CameraPreview(onText: (String) -> Unit) {
+private fun CameraPreview(onText: (String) -> Unit, onFailure: () -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current
     val latest by rememberUpdatedState(onText)
+    val failed by rememberUpdatedState(onFailure)
     val preview = remember { PreviewView(context).apply { scaleType = PreviewView.ScaleType.FILL_CENTER } }
     DisposableEffect(lifecycle) {
         // Made here and ended with the effect: a restart of the effect starts a fresh one, never a dead one.
@@ -63,26 +67,36 @@ private fun CameraPreview(onText: (String) -> Unit) {
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         providerFuture.addListener({
-            val camera = providerFuture.get()
-            provider = camera
-            val frames = ImageAnalysis.Builder()
-                .setResolutionSelector(
-                    ResolutionSelector.Builder()
-                        .setResolutionStrategy(
-                            ResolutionStrategy(Size(WIDTH, HEIGHT), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
-                        ).build(),
-                )
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-            frames.setAnalyzer(analysis) { frame ->
-                val text = read(decoder, frame)
-                if (text != null && repeats.accept(text, System.currentTimeMillis())) {
-                    ContextCompat.getMainExecutor(context).execute { latest(text) }
+            // No camera on the device (an e-reader), the camera in use, or a camera that broke: the person is told
+            // in words, never a crash. Everything the provider can refuse is raised here, so it is caught here.
+            try {
+                val camera = providerFuture.get()
+                provider = camera
+                val frames = ImageAnalysis.Builder()
+                    .setResolutionSelector(
+                        ResolutionSelector.Builder()
+                            .setResolutionStrategy(
+                                ResolutionStrategy(Size(WIDTH, HEIGHT), ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER),
+                            ).build(),
+                    )
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                frames.setAnalyzer(analysis) { frame ->
+                    val text = read(decoder, frame)
+                    if (text != null && repeats.accept(text, System.currentTimeMillis())) {
+                        ContextCompat.getMainExecutor(context).execute { latest(text) }
+                    }
                 }
+                val view = Preview.Builder().build().also { it.surfaceProvider = preview.surfaceProvider }
+                camera.unbindAll()
+                camera.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, view, frames)
+            } catch (failure: ExecutionException) {
+                failed()
+            } catch (failure: IllegalArgumentException) {
+                failed()
+            } catch (failure: IllegalStateException) {
+                failed()
             }
-            val view = Preview.Builder().build().also { it.surfaceProvider = preview.surfaceProvider }
-            camera.unbindAll()
-            camera.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, view, frames)
         }, ContextCompat.getMainExecutor(context))
         onDispose {
             provider?.unbindAll()
@@ -117,12 +131,19 @@ fun rememberStartScan(model: AppModel): () -> Unit {
     }
 }
 
-/** What the pair screen says when the camera cannot be used, and where else to pair. */
+/** Whether this device has a camera at all: a tablet or an e-reader may have none, and then Scan is not offered. */
 @Composable
-fun CameraDenied() {
+fun rememberHasCamera(): Boolean {
+    val context = LocalContext.current
+    return remember { context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) }
+}
+
+/** What the screen says when the camera cannot be used, and where else to pair. */
+@Composable
+fun CameraNotice(problem: CameraProblem) {
     val roles = LocalRoles.current
     Text(
-        "The camera is off for Soyeht. Allow it in the phone’s settings to scan, or open the pairing link on this phone.",
+        problem.words,
         color = roles.secondary,
         fontSize = TypeScale.caption.sp,
         modifier = Modifier
@@ -130,6 +151,14 @@ fun CameraDenied() {
             .background(roles.well, RoundedCornerShape(Radius.control.dp))
             .padding(PaneInterior.cardPadding.dp),
     )
+}
+
+/** The pill that takes the pairing link from the clipboard, for a device with no camera to scan with. */
+@Composable
+fun rememberPasteLink(onLink: (String) -> Unit): () -> Unit {
+    val clipboard = LocalClipboardManager.current
+    val latest by rememberUpdatedState(onLink)
+    return { latest(clipboard.getText()?.text.orEmpty().trim()) }
 }
 
 private const val WIDTH = 1280

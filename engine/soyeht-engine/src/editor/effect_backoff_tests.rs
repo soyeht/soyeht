@@ -56,7 +56,7 @@ async fn a_watch_on_a_vanished_file_backs_off_and_logs_few_times() {
     let first = failed[0];
     assert_eq!(first["action"], "watch");
     assert_eq!(first["fileId"], file_id.as_str());
-    assert_eq!(first["kind"], "io:NotFound");
+    assert_eq!(first["kind"], "workspace_folder_missing");
     assert_eq!(first["attempts"], "1");
     assert_eq!(first["retryInMs"], "500");
 }

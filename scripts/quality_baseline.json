@@ -13,36 +13,36 @@
       "duplicated_lines": 0
     },
     "desktop_views": {
-      "clones": 126,
-      "duplicated_lines": 576
+      "clones": 111,
+      "duplicated_lines": 506
     },
     "dictation": {
       "clones": 0,
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 267,
-      "duplicated_lines": 2013
+      "clones": 264,
+      "duplicated_lines": 1988
     },
     "ios": {
       "clones": 4,
       "duplicated_lines": 31
     },
     "mac": {
-      "clones": 24,
-      "duplicated_lines": 169
+      "clones": 23,
+      "duplicated_lines": 150
     },
     "python": {
       "clones": 14,
-      "duplicated_lines": 127
+      "duplicated_lines": 124
     },
     "shared": {
-      "clones": 63,
-      "duplicated_lines": 468
+      "clones": 62,
+      "duplicated_lines": 448
     },
     "swift_all": {
-      "clones": 97,
-      "duplicated_lines": 704
+      "clones": 95,
+      "duplicated_lines": 665
     }
   },
   "engine_production_panics": 0,
@@ -98,11 +98,6 @@
       "padding": 5,
       "system_font_size": 5
     },
-    "apps/mac/Sources/TaskWorkspaceViews.swift": {
-      "corner_radius": 1,
-      "padding": 37,
-      "system_font_size": 21
-    },
     "apps/mac/Sources/UsageViews.swift": {
       "padding": 1
     },
@@ -110,7 +105,7 @@
       "system_font_size": 2
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
-      "padding": 4,
+      "padding": 3,
       "system_font_size": 2
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
@@ -223,8 +218,7 @@
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
     "apps/mac/Sources/PreferencesPanel.swift": 832,
-    "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 896,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 867,
     "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 828,
     "engine/soyeht-store/tests/agents.rs": 976,

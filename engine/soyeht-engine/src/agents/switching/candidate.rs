@@ -171,6 +171,7 @@ impl Core {
         saved.sequence_base = self.panes[pane].screen.next_offset();
         let mut state = State::new(launch.clone(), binary_digest.to_owned(), None)?;
         state.mode = original.mode.clone();
+        state.mode_ceiling = original.mode_ceiling.clone();
         state.internal_continuation = Some(InternalContinuation::default());
         state.binding = original.binding.clone();
         state.mcp_role = original.mcp_role.clone();
@@ -214,7 +215,7 @@ impl Core {
         Ok((draft, spawn))
     }
 
-    fn send_next_candidate_option(
+    pub(super) fn send_next_candidate_option(
         &mut self,
         candidate: &mut Candidate,
         mut requested: Vec<(String, String)>,

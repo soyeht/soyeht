@@ -78,9 +78,11 @@ address holds at most 16 of the listeners' (ADR 0129).
 **2.2 iPhone pairing (the path to a `deviceToken`).**
 Only on the WebSocket connection, before authenticated `hello`, and only
 while the Mac's “Add iPhone” window is open:
-1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri,
-   reachability?}`; the app displays a QR with `uri` (engine id, address, `code` and
-   `engineKey`, the engine's Ed25519 public key in URL-safe base64) and,
+1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri, qr?,
+   reachability?}`; the app displays a QR with `qr` (`uri` when an older engine sends no `qr`): the same
+   fields, engine id, address, `code` and `engineKey`, the engine's Ed25519 public key in URL-safe
+   base64, behind the prefix `SOYEHT-PAIR 1 ` instead of `soyeht-next://pair?`, so the
+   system camera cannot hand them to another app (ADR 0153). The in-app scanners read both forms. The app also shows,
    when `reachability.remote` is false, why devices cannot reach the Mac.
 2. iPhone: `pair.begin {code, deviceName, devicePublicKey (Ed25519, 32
    bytes, base64)}` → `{requestId, challenge (32 random bytes, base64),
@@ -91,7 +93,7 @@ while the Mac's “Add iPhone” window is open:
 3. iPhone: `pair.prove {requestId, proof}` with `proof = HMAC-SHA-256(key,
    challenge || deviceName)`, `key = SHA-256(code || devicePublicKey)` →
    `{status: "pending"}`; Mac receives `device.pair_requested {requestId,
-   deviceName, fingerprint = SHA-256(devicePublicKey) in short hex}`.
+   deviceName, fingerprint = SHA-256(devicePublicKey) in short hex}`. Both screens show the same short comparison code, the first sixteen hexadecimal digits of that fingerprint in four groups of four, and the Mac asks the person to allow only if the device shows the same one. Every place the Mac can approve a request shows the code beside Allow, and a fingerprint with no code can only be denied (ADR 0152; `contracts/vectors/pairing-comparison.json`).
 4. Mac: `device.pair.decide {requestId, approve: true|false}`. The engine waits
    for consent until the code deadline (10 min); this pre-pairing dialogue
    is NOT subject to `hello`'s 5 s limit.
@@ -156,6 +158,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.*`, `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
+| `project.trust.set` (trust a folder, contract 18) | yes, in the signed Mac app on macOS | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 **2.5 The local endpoint on Windows (ADR 0086).** Windows has no Unix socket in the
@@ -424,7 +427,15 @@ what is missing and that nothing was installed. Features that do not need Git ke
 and a later request succeeds once Git is installed),
 `file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
-(ADR 0094).
+(ADR 0094),
+`adapter_not_acknowledged` (a built-in agent that its package runner downloads unchecked,
+`HarnessInfo.package` with `packageLocked` false, was asked to start without a person's
+acknowledgement of that exact `name@version`: `pane.create` and `pane.harness.switch` carry it as
+`acknowledgedPackage`, from the notice the picker shows; ADR 0143).
+`workspace_folder_missing` (the folder of a workspace is not on the disk any more: a request that
+reads the workspace, such as `project.tree.list`, `file.open` or `file.diff`, answers it, with the
+message "The workspace folder is missing" and no path); a client shows it as a standing state of
+that workspace with a way to close it, not as a dialog (ADR 0154).
 
 ## 8. Limits (R20) — single table, overrides every other mention
 | Item | Limit |
