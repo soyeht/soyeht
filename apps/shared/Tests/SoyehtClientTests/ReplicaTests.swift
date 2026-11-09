@@ -23,7 +23,7 @@ import Testing
     try assembly.finish(StateSnapshotResult(snapshotId: "s", cursor: "3", parts: 2)).count == 2)
 }
 
-private func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UInt64, bytes: Data)
+func terminal(reference: UInt32 = 2, generation: UInt32 = 1, offset: UInt64, bytes: Data)
   -> Frame
 {
   var header = Data()

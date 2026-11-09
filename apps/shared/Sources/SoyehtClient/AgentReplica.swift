@@ -652,19 +652,17 @@ extension EngineClient {
   /// engine apply the harness's preferred mode.
   public func createAgentPaneNow(
     directory: URL, harness: String, model: String?, effort: String?,
-    permissionMode: String? = nil, selectPane: Bool = true
+    permissionMode: String? = nil, selectPane: Bool = true, workspaceId pinned: String? = nil
   ) async throws -> String {
-    let path = directory.standardizedFileURL.path
-    let workspaceId = try await workspaceId(for: directory, path: path)
-    let result = try await mutation(
-      .paneCreate,
+    try await createPaneNow(
+      directory: directory, workspaceId: pinned, selecting: selectPane
+    ) { workspaceId, path in
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
-        effort: effort, permissionMode: permissionMode))
-    let paneId = try result.decoded(PaneCreateResult.self).paneId
-    if selectPane { select(paneId) }
-    return paneId
+        effort: effort, permissionMode: permissionMode,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness)))
+    }
   }
 
   public func sendPrompt(
@@ -759,6 +757,7 @@ extension EngineClient {
       .paneHarnessSwitch,
       PaneHarnessSwitchParams(
         paneId: paneId, harness: harness, model: model, effort: effort,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness)),
         idempotencyKey: UUID().uuidString),
       timeoutSeconds: engineDeadlineTimeout(ProtocolLimits.harnessSwitchTimeoutSec)
     ).decoded(PaneHarnessSwitchResult.self)

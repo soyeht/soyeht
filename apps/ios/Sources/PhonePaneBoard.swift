@@ -68,6 +68,11 @@ struct PhonePaneBoardView: View {
       .ignoresSafeArea(.keyboard, edges: .bottom)
     }
     .background(PhonePalette.canvas)
+    .overlay(alignment: .top) {
+      if let missing = client.missingWorkspaceFolder(in: workspaceId) {
+        PhoneMissingFolderBanner(state: missing) { action = .closeWorkspace(workspaceId) }
+      }
+    }
     .overlay(alignment: .bottom) {
       if TerminalCopyNotice.shared.visible { PhoneCopyNotice() }
     }
@@ -183,5 +188,30 @@ private struct PhonePaneTabStrip: View {
     }
     .buttonStyle(.plain)
     .accessibilityAddTraits(isShown ? .isSelected : [])
+  }
+}
+
+/// The state of a workspace whose folder is gone: where it was, and the one choice there is, to
+/// close the workspace (which asks first, as any close does). It is not an alert, so it does not
+/// come back at every launch.
+private struct PhoneMissingFolderBanner: View {
+  let state: MissingWorkspaceFolder
+  let close: () -> Void
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: PaneInteriorMetrics.compactSpacing) {
+      Text(state.text)
+        .font(PaneInteriorFont.ui(PaneInteriorMetrics.bodyPointSize))
+        .foregroundStyle(PhonePalette.ink)
+      Button(state.closeTitle, action: close)
+        .font(PaneInteriorFont.ui(PaneInteriorMetrics.bodyPointSize, weight: .heavy))
+        .foregroundStyle(PhonePalette.ink)
+        .accessibilityIdentifier("missing-folder-close")
+    }
+    .padding(PaneInteriorMetrics.phoneInset)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(PhonePalette.face)
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("missing-folder")
   }
 }

@@ -156,19 +156,23 @@ fn kill_twice(client: &mut Client, instance: &Instance) {
     }
 }
 
+/// What the supervisor holds of the process from `from_seq`.
+pub fn drain(client: &mut Client, id: &str, from_seq: u64) -> Output {
+    let request = Request::Drain {
+        instance_id: id.into(),
+        from_seq,
+    };
+    match client.request(request).unwrap() {
+        Response::Output(output) => output,
+        response => panic!("expected output: {response:?}"),
+    }
+}
+
 /// Waits for the process to be reported ended, checking its retained output each time.
 fn drain_until_exited(client: &mut Client, instance: &Instance, check: impl Fn(&[u8])) {
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
     loop {
-        let Response::Output(output) = client
-            .request(Request::Drain {
-                instance_id: instance.instance_id.clone(),
-                from_seq: 0,
-            })
-            .unwrap()
-        else {
-            panic!("retained output required");
-        };
+        let output = drain(client, &instance.instance_id, 0);
         check(&STANDARD.decode(output.bytes).unwrap());
         if output.exited {
             return;

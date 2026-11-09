@@ -21,7 +21,7 @@ impl Core {
         params: &Value,
     ) -> Result<Outcome> {
         let (file, query, context) = self.prepare_language_format(connection, params)?;
-        let key = self.ensure_language_server(&file)?;
+        let key = self.require_language_server(&file)?;
         if let Some(result) = self.complete_language_format(&key, &context)? {
             return Ok(Outcome::Reply(result));
         }
