@@ -44,7 +44,7 @@ keeps. The application id of the Dev profile is `com.soyeht.next.dev.android`.
   finger still scrolls and types. From Android 14 the platform's own stylus handwriting does it through the keyboard and
   the app does nothing; below it, ML Kit's recognizer reads the strokes on the device, but only when the person turns
   "Handwriting on this device" on in Settings (off by default). While it is off the app never starts or calls ML Kit
-  (the library's start-up provider and the WorkManager it declares are removed from the manifest, and the pen works as a
+  (the library's start-up provider and WorkManager's are removed from the manifest, and the pen works as a
   finger); turning it on starts ML Kit and then Install downloads a language model that follows the system language
   (nothing is downloaded before Install; Remove deletes it). Turning it on makes ML Kit send diagnostics and usage
   metrics to Google (the data Google's disclosure lists: device, system and app version, API configuration, sizes,

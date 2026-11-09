@@ -32,14 +32,25 @@
         </activity>
 
         <!--
-            Google ML Kit (handwriting on this device, off by default, ADR 0157) starts itself at launch through this
-            provider. It is removed: the app starts ML Kit (MlKit.initialize) only after the person turns the
-            recognizer on. The service that lists ML Kit's components stays, because ML Kit reads it when it starts;
-            nothing runs it.
+            Google ML Kit (handwriting on this device, off by default, ADR 0157) starts itself at launch through its
+            provider, and its model download runs on WorkManager, which starts itself at launch through an entry of
+            androidx.startup. Both are removed: the app starts ML Kit and WorkManager (MlKitInkEngine.start) only after
+            the person turns the recognizer on. The services that only list ML Kit's components stay, because ML Kit
+            reads them when it starts; nothing runs them.
         -->
         <provider
             android:name="com.google.mlkit.common.internal.MlKitInitProvider"
             android:authorities="${applicationId}.mlkitinitprovider"
             tools:node="remove" />
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
     </application>
 </manifest>

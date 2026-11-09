@@ -47,6 +47,51 @@ scribble, what a scribble covers and the text edits are pure code with unit test
   unit test counts them with a fake: construction, refresh, install, recognize, remove and retry make none while it is
   off.
 
+**What ships in the manifest.** The libraries ML Kit brings declare entries that would start in the process whether or
+not the person ever turns the recognizer on. The app's manifest removes the two that start code at launch, and the
+merged manifest of the debug build was read to check it:
+
+- Removed: `com.google.mlkit.common.internal.MlKitInitProvider`, the content provider that starts ML Kit when the
+  process starts, and the `androidx.work.WorkManagerInitializer` entry of `androidx.startup.InitializationProvider`,
+  which starts WorkManager (which ML Kit's model download needs) when the process starts (both `tools:node="remove"` in
+  `AndroidManifest.xml`). The app starts ML Kit (`MlKit.initialize`) and WorkManager (`WorkManager.initialize`) itself,
+  in `MlKitInkEngine.start`, after the person turned the recognizer on, or at launch if it was already on.
+- Still there, because ML Kit, WorkManager or Datatransport use them once they run, and nothing starts them before:
+  the permissions `ACCESS_NETWORK_STATE` (the recognizer and Datatransport declare it, "for downloading"),
+  `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` and `FOREGROUND_SERVICE` (WorkManager's); `MlKitComponentDiscoveryService`
+  (not exported), which ML Kit reads for the registrars of the common library and of digital ink when it is started;
+  WorkManager's three services (`SystemAlarmService`, `SystemJobService`, `SystemForegroundService`), its eight
+  receivers (most are disabled until WorkManager enables them, and none is started by the app) and Room's
+  `MultiInstanceInvalidationService`; Datatransport's `TransportBackendDiscovery`, `JobInfoSchedulerService` and
+  `AlarmManagerSchedulerBroadcastReceiver`; and `GoogleApiActivity` with the `com.google.android.gms.version` entry of
+  Google Play services' base library. They are declarations: Android runs a service, receiver or activity only when
+  something calls it, and these are called by the libraries after they ran. The three permissions of WorkManager are
+  kept because removing them was not tested on every Android version the app supports (from 8.0).
+- `androidx.startup.InitializationProvider` stays for the app's own libraries (`EmojiCompatInitializer`,
+  `ProcessLifecycleInitializer`, `ProfileInstallerInitializer`), none of them ML Kit's.
+- A first attempt excluded WorkManager from the build, believing that ML Kit did not call it; turning the recognizer
+  on then crashed the app (`NoClassDefFoundError: androidx.work.WorkManager` from the model manager), found on a
+  headless emulator, so it is a dependency again, started late.
+
+**Checked on a device.** On an Android 13 emulator (the Boox was not connected when this was written): with the
+recognizer off the app starts with no ML Kit, WorkManager or Datatransport file, database or job (`dumpsys` shows no
+provider but `androidx.startup`'s, and the app's files and databases have no ML Kit entry, and `handwriting.xml` is not
+written); turning it on starts ML Kit, finds the model absent, Install downloads the English model, the row shows
+Installed and keeps it after the app is stopped and started again; turning it off saves the choice. Recognizing a word
+with the pen needs a paired computer's message field and was not run there.
+
+**The license of ML Kit, and what the gate does with it.** The repository is Apache-2.0, and the gate allows only
+permissive licenses (ADR 0149). The libraries ML Kit brings are not open source:
+
+| Library | License |
+| --- | --- |
+| `com.google.mlkit:digital-ink-recognition` 18.1.0, `com.google.mlkit:common` 18.6.0 | ML Kit Terms of Service (Google's, proprietary; free to use in an app; no source) |
+| `com.google.android.gms:play-services-base` 18.1.0, `-basement` 18.1.0, `-tasks` 18.0.2 | Android Software Development Kit License (Google's, proprietary) |
+| Firebase components and encoders, Datatransport, OkHttp, Okio | Apache-2.0 |
+
+ML Kit's model download runs on WorkManager (`androidx.work:work-runtime` 2.7.0, Apache-2.0, declared in
+`build.gradle.kts` at the version ML Kit brings, so that the app can start it).
+
 **What ships in the manifest.** The libraries ML Kit brings declare components that would run in the process whether
 or not the person ever turns the recognizer on. The app's manifest and build remove what ML Kit does not need to
 download a model and read strokes, and the merged manifest of the debug build was read to check it:

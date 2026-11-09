@@ -1,6 +1,8 @@
 package com.soyeht.next.android.ink
 
 import android.content.Context
+import androidx.work.Configuration
+import androidx.work.WorkManager
 import com.google.android.gms.tasks.Task
 import com.google.mlkit.common.MlKit
 import com.google.mlkit.common.MlKitException
@@ -20,15 +22,22 @@ import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * ML Kit's Digital Ink Recognition behind [InkEngine]. The library's start-up provider is removed from the manifest
- * (ADR 0157), so nothing of it runs until [start]; constructing this calls nothing.
+ * ML Kit's Digital Ink Recognition behind [InkEngine]. The library's start-up provider and WorkManager's are removed
+ * from the manifest (ADR 0157), so nothing of them runs until [start]; constructing this calls nothing.
  */
 class MlKitInkEngine(private val context: Context) : InkEngine {
     private val models by lazy(LazyThreadSafetyMode.NONE) { RemoteModelManager.getInstance() }
     private val known = HashMap<String, DigitalInkRecognitionModel>()
 
     override fun start() {
-        MlKit.initialize(context.applicationContext)
+        val application = context.applicationContext
+        // ML Kit's model download runs on WorkManager, whose start-up entry the manifest removes.
+        try {
+            WorkManager.initialize(application, Configuration.Builder().build())
+        } catch (initialized: IllegalStateException) {
+            // Started already (by this app's earlier call): it is kept.
+        }
+        MlKit.initialize(application)
     }
 
     override fun modelFor(tag: String): InkModel? {
