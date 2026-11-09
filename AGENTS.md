@@ -43,6 +43,9 @@ Each layer depends only on the layers listed above it.
      `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
      canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
+   - `soyeht-ink`: handwriting recognition (ADR 0158): limits, the rasterizer and the recognizer
+     trait, with Apple Vision on the Mac and a typed refusal elsewhere. It depends on
+     `soyeht-protocol` and `soyeht-process` only.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself, and the Mac app
