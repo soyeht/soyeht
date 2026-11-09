@@ -262,7 +262,7 @@ impl Core {
             protocol_version: limits::PROTOCOL_VERSION,
             connection_id: connection.into(),
             role,
-            capabilities: capabilities(),
+            capabilities: capabilities(self.ink.available()),
             db_id: self.store.db_id.clone(),
             engine_proof,
         })
@@ -455,6 +455,7 @@ impl Core {
             method::USAGE_LIST => self.usage_list()?,
             method::USAGE_REFRESH => return self.usage_refresh(connection, params),
             method::SERVERS_LOCAL_LIST => return self.local_servers_list(),
+            method::INK_RECOGNIZE => return self.ink_recognize(params),
             method::ENGINE_READINESS => return self.engine_readiness(),
             method::WEB_OPEN => return self.web_open(connection, request_id, params),
             method::WEB_NAVIGATE => return self.web_navigate(connection, request_id, params),
@@ -639,7 +640,10 @@ impl Core {
         } else {
             sections.push(("requests".into(), pairing));
         }
-        sections.push(("capabilities".into(), json!(capabilities())));
+        sections.push((
+            "capabilities".into(),
+            json!(capabilities(self.ink.available())),
+        ));
         sections.push(("writing".into(), self.writing_snapshot()?));
         sections.push(("trust".into(), self.project_trust_snapshot()?));
         let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed && p.stored.pane.mode == soyeht_protocol::PaneMode::Terminal).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
@@ -707,8 +711,10 @@ impl Core {
     }
 }
 
-pub fn capabilities() -> Vec<String> {
-    vec![
+/// What this engine does, as `hello` and the state snapshot tell it. Recognition of handwriting
+/// is listed only where the system has a recognizer (ADR 0158).
+pub fn capabilities(ink_recognition: bool) -> Vec<String> {
+    let mut all = vec![
         "terminal".into(),
         "workspaces".into(),
         "snapshot-parts".into(),
@@ -717,7 +723,11 @@ pub fn capabilities() -> Vec<String> {
         "device-pairing".into(),
         "workspace-tasks".into(),
         "subscription-usage".into(),
-    ]
+    ];
+    if ink_recognition {
+        all.push("ink-recognition".into());
+    }
+    all
 }
 
 #[cfg(test)]

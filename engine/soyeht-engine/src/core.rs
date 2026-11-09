@@ -86,6 +86,7 @@ pub struct Core {
     pub(crate) background: crate::offload::Background,
     pub usage: crate::usage::Service,
     pub web: crate::web::Service,
+    pub ink: crate::ink::Service,
     pub vcs: soyeht_vcs::Service,
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
@@ -223,6 +224,9 @@ impl Core {
             background: Default::default(),
             usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
+            ink: crate::ink::Service::new(
+                hooks.ink_recognizer().map_or_else(soyeht_ink::system, Ok),
+            ),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
             editor: crate::editor::Service::new(Box::new(crate::editor::timed_files::TimedFiles(
                 hooks

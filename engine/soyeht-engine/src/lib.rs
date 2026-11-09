@@ -17,6 +17,7 @@ mod file_events;
 mod frames;
 pub mod hooks;
 mod immutable_file;
+pub mod ink;
 pub mod input;
 mod input_receipts;
 pub mod languages;
