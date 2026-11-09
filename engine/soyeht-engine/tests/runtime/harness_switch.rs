@@ -587,5 +587,5 @@ fn harness_switch_retry_returns_the_same_session_without_spawning_again() {
         client.pane(&pane)["agent"]["sessionId"],
         first["newSessionId"]
     );
-    assert_eq!(process_instances(&rig).len(), 1);
+    wait_for_open_processes(&rig, 1);
 }

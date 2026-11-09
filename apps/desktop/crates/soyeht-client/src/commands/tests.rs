@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::Value;
+use soyeht_protocol::ProjectTrust;
 use std::sync::mpsc;
 
 fn input(pane: &str, text: &str) -> Command {
@@ -557,4 +558,62 @@ fn a_rescan_and_a_model_page_are_ordinary_requests() {
     .unwrap();
     assert_eq!(page["method"], "model.list");
     assert_eq!(page["params"]["cursor"], "c2");
+}
+
+#[test]
+fn the_answer_to_the_trust_question_is_the_contracts_request_with_a_fresh_key() {
+    let ask = |trust| Command::SetProjectTrust {
+        workspace_id: "w1".into(),
+        trust,
+    };
+    let body =
+        |command: &Command| -> Value { serde_json::to_value(request(command).unwrap()).unwrap() };
+    let trusted = body(&ask(ProjectTrustChoice::Trusted));
+    assert_eq!(
+        trusted["method"],
+        soyeht_protocol::method::PROJECT_TRUST_SET
+    );
+    assert_eq!(trusted["params"]["workspaceId"], "w1");
+    assert_eq!(trusted["params"]["trust"], "trusted");
+    let restricted = body(&ask(ProjectTrustChoice::Restricted));
+    assert_eq!(restricted["params"]["trust"], "restricted");
+    assert_ne!(
+        trusted["params"]["idempotencyKey"], restricted["params"]["idempotencyKey"],
+        "each request is its own"
+    );
+    assert!(!ask(ProjectTrustChoice::Trusted).is_background());
+    assert_eq!(ask(ProjectTrustChoice::Trusted).ticket(), None);
+}
+
+#[test]
+fn the_engines_result_of_the_trust_request_is_what_the_application_learns() {
+    let command = Command::SetProjectTrust {
+        workspace_id: "w1".into(),
+        trust: ProjectTrustChoice::Trusted,
+    };
+    let event = outcome(
+        &command,
+        serde_json::json!({"workspaceIds": ["w1", "w2"], "trust": "trusted"}),
+    )
+    .unwrap();
+    assert!(matches!(
+        event,
+        Some(Event::ProjectTrust { workspace_ids, trust: ProjectTrust::Trusted })
+            if workspace_ids == ["w1", "w2"]
+    ));
+    assert!(outcome(&command, serde_json::json!({"trust": "trusted"})).is_err());
+}
+
+#[test]
+fn a_trust_request_that_fails_says_so_in_place_and_adds_no_second_banner() {
+    let command = Command::SetProjectTrust {
+        workspace_id: "w1".into(),
+        trust: ProjectTrustChoice::Restricted,
+    };
+    let error = crate::Error::Disconnected;
+    assert!(matches!(
+        command.failure(&error),
+        Some(Event::ProjectTrustFailed)
+    ));
+    assert!(command.failure_is_shown_in_place(&error));
 }

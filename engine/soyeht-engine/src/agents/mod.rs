@@ -24,6 +24,7 @@ pub mod idle;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
+pub(crate) mod mode_ceiling;
 pub mod naming;
 pub mod opening;
 pub mod orphans;

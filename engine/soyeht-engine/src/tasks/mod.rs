@@ -8,6 +8,7 @@ mod events;
 pub mod feedback;
 mod lifecycle;
 pub(crate) mod looping;
+mod mode_cap;
 mod movement;
 mod phrase;
 pub mod ports;

@@ -13,8 +13,8 @@ use std::{
 use windows_sys::Win32::Networking::WinSock::{
     AF_INET, AF_INET6, IN_ADDR, IN_ADDR_0, IN6_ADDR, IN6_ADDR_0, INVALID_SOCKET, IPPROTO_TCP,
     SO_EXCLUSIVEADDRUSE, SOCK_STREAM, SOCKADDR, SOCKADDR_IN, SOCKADDR_IN6, SOCKADDR_IN6_0,
-    SOL_SOCKET, WSA_FLAG_NO_HANDLE_INHERIT, WSA_FLAG_OVERLAPPED, WSADATA, WSASocketW, WSAStartup,
-    bind, listen, setsockopt,
+    SOL_SOCKET, WSA_FLAG_NO_HANDLE_INHERIT, WSA_FLAG_OVERLAPPED, WSADATA, WSAEACCES, WSASocketW,
+    WSAStartup, bind, listen, setsockopt,
 };
 
 const BACKLOG: i32 = 128;
@@ -76,6 +76,18 @@ fn bind_to(socket: usize, address: SocketAddr) -> io::Result<()> {
     }
 }
 
+/// What a failed bind of an exclusive socket means. When another socket holds the address and
+/// the port, with `SO_REUSEADDR` or not, Winsock answers `WSAEACCES`, which the standard library
+/// reads as `PermissionDenied`; the port is in use, and callers that tell the person so look for
+/// `AddrInUse`, as they do on the systems where the bind says it.
+fn bind_error(error: io::Error) -> io::Error {
+    if error.raw_os_error() == Some(WSAEACCES) {
+        io::Error::new(io::ErrorKind::AddrInUse, error)
+    } else {
+        error
+    }
+}
+
 /// A listening socket on `address` that no other socket can share, whatever it asks for.
 pub(super) fn exclusive_listener(address: SocketAddr) -> io::Result<TcpListener> {
     // SAFETY: WSADATA is plain data that the call fills; Winsock keeps a count of startups, so
@@ -114,7 +126,7 @@ pub(super) fn exclusive_listener(address: SocketAddr) -> io::Result<TcpListener>
             size_of::<u32>() as i32,
         )
     })?;
-    bind_to(raw, address)?;
+    bind_to(raw, address).map_err(bind_error)?;
     // SAFETY: the socket is open and bound.
     check(unsafe { listen(raw, BACKLOG) })?;
     Ok(TcpListener::from(socket))
@@ -157,6 +169,21 @@ mod tests {
         // SAFETY: the socket is open and nothing else owns it.
         unsafe { closesocket(raw) };
         taken
+    }
+
+    #[test]
+    fn a_bind_refused_with_access_denied_is_a_port_in_use() {
+        let refused = bind_error(io::Error::from_raw_os_error(WSAEACCES));
+        assert_eq!(refused.kind(), io::ErrorKind::AddrInUse);
+        let other = bind_error(io::Error::from_raw_os_error(10049));
+        assert_ne!(other.kind(), io::ErrorKind::AddrInUse);
+    }
+
+    #[test]
+    fn a_second_exclusive_listener_on_the_address_is_a_port_in_use() {
+        let first = exclusive_listener("127.0.0.1:0".parse().unwrap()).unwrap();
+        let error = exclusive_listener(first.local_addr().unwrap()).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::AddrInUse);
     }
 
     #[test]

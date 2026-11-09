@@ -4,7 +4,8 @@
 use crate::{Error, Result};
 use serde_json::Value;
 use soyeht_protocol::{
-    ClientFocus, FileDocument, Pane, SnapshotSection, Workspace, WritingDocument, snapshot,
+    ClientFocus, FileDocument, Pane, ProjectTrustEntry, SnapshotSection, Workspace,
+    WritingDocument, snapshot,
 };
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -24,6 +25,8 @@ pub struct Snapshot {
     pub files: Vec<FileDocument>,
     /// The documents open in writing panes: what a writing document has besides its file.
     pub writing: Vec<WritingDocument>,
+    /// Whether the person trusts the folder of each open workspace.
+    pub trust: Vec<ProjectTrustEntry>,
     /// The event cursor to subscribe from.
     pub cursor: u64,
 }
@@ -44,6 +47,7 @@ impl Snapshot {
             attention: pages.take(&SnapshotSection::Attention),
             files: decode(pages.take(&SnapshotSection::Files))?,
             writing: decode(pages.take(&SnapshotSection::Writing))?,
+            trust: decode(pages.take(&SnapshotSection::Trust))?,
             focus: pages.metadata.focus,
             cursor,
         })
@@ -62,25 +66,30 @@ mod tests {
     use super::*;
     use crate::testing::{pane_json, workspace_json};
     use serde_json::json;
-    use soyeht_protocol::snapshot::SnapshotAssembler;
+    use soyeht_protocol::{ProjectTrust, snapshot::SnapshotAssembler};
 
     fn pages(cursor: &str) -> snapshot::Snapshot {
+        pages_with(cursor, &[])
+    }
+
+    /// The workspace and pane sections, and then `extra` sections.
+    fn pages_with(cursor: &str, extra: &[(&str, Value)]) -> snapshot::Snapshot {
         let mut assembler = SnapshotAssembler::default();
-        for (index, (section, data)) in [
+        let mut sections = vec![
             ("workspaces", json!([workspace_json("w1")])),
             ("panes", json!([pane_json("p1", "w1", "terminal")])),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        ];
+        sections.extend(extra.iter().cloned());
+        let of = sections.len();
+        for (index, (section, data)) in sections.into_iter().enumerate() {
             let part = serde_json::from_value(json!({
-                "snapshotId": "s", "index": index, "of": 2, "section": section, "data": data
+                "snapshotId": "s", "index": index, "of": of, "section": section, "data": data
             }))
             .unwrap();
             assembler.push(part).unwrap();
         }
         let result = serde_json::from_value(json!({
-            "snapshotId": "s", "cursor": cursor, "parts": 2
+            "snapshotId": "s", "cursor": cursor, "parts": of
         }))
         .unwrap();
         assembler.finish(result).unwrap()
@@ -92,6 +101,26 @@ mod tests {
         assert_eq!(snapshot.cursor, 41);
         assert_eq!(snapshot.workspaces[0].workspace_id, "w1");
         assert_eq!(snapshot.panes[0].pane_id, "p1");
+    }
+
+    #[test]
+    fn the_trust_section_lists_the_trust_of_each_open_workspace() {
+        let trust = json!([{"workspaceId": "w1", "trust": "undecided"}]);
+        let snapshot = Snapshot::from_pages(pages_with("1", &[("trust", trust)])).unwrap();
+        assert_eq!(
+            snapshot.trust,
+            vec![ProjectTrustEntry {
+                workspace_id: "w1".into(),
+                trust: ProjectTrust::Undecided
+            }]
+        );
+        assert!(Snapshot::from_pages(pages("1")).unwrap().trust.is_empty());
+    }
+
+    #[test]
+    fn a_trust_the_contract_does_not_have_is_refused() {
+        let trust = json!([{"workspaceId": "w1", "trust": "maybe"}]);
+        assert!(Snapshot::from_pages(pages_with("1", &[("trust", trust)])).is_err());
     }
 
     #[test]

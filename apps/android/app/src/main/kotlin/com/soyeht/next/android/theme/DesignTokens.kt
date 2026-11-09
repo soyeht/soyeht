@@ -25,6 +25,9 @@ class Palette(
     val ansi: List<Long>,
     val syntaxType: Long,
     val diffAdded: Long,
+    /** The edge of a card, well, pill or modal, and the ink of dimmed text: the e-ink palette's own. */
+    val border: Long?,
+    val dim: Long?,
 )
 
 object Palettes {
@@ -51,6 +54,8 @@ object Palettes {
         ansi = listOf(0xFF1F2633, 0xFFD9556A, 0xFF2E9A73, 0xFFB98A2E, 0xFF3D7DD9, 0xFF9A6BD0, 0xFF2E93A6, 0xFF8E9AB3, 0xFF6E7A96, 0xFFED6F86, 0xFF3FB68B, 0xFFE9B04E, 0xFF5B9DF5, 0xFFB08CFF, 0xFF3FB6C8, 0xFF263043),
         syntaxType = 0xFF8E5BFA,
         diffAdded = 0xFF3F9C6A,
+        border = null,
+        dim = null,
     )
 
     val paleMist = Palette(
@@ -76,6 +81,8 @@ object Palettes {
         ansi = listOf(0xFF1F2F33, 0xFFCE2E48, 0xFF257C5C, 0xFF8B6823, 0xFF286CCD, 0xFF8952C8, 0xFF257887, 0xFF4B6268, 0xFF5E8089, 0xFFD71B3D, 0xFF2B7B5E, 0xFF946412, 0xFF0E68E2, 0xFF7E42FF, 0xFF267885, 0xFF25363B),
         syntaxType = 0xFF7E42FF,
         diffAdded = 0xFF2B7B5E,
+        border = null,
+        dim = null,
     )
 
     val mistyBlue = Palette(
@@ -101,6 +108,8 @@ object Palettes {
         ansi = listOf(0xFF1F2E33, 0xFF9C2336, 0xFF1C5D46, 0xFF694E1A, 0xFF1E519B, 0xFF6B35A8, 0xFF1C5A66, 0xFF37464C, 0xFF4A626B, 0xFFA3142F, 0xFF205C47, 0xFF6F4C0E, 0xFF0A4FAA, 0xFF4E00FB, 0xFF1D5A64, 0xFF0C1012),
         syntaxType = 0xFF4E00FB,
         diffAdded = 0xFF205C47,
+        border = null,
+        dim = null,
     )
 
     val sunlitChartreuse = Palette(
@@ -126,6 +135,8 @@ object Palettes {
         ansi = listOf(0xFF33321F, 0xFFD44158, 0xFF288664, 0xFF977026, 0xFF3275D7, 0xFF915ECC, 0xFF298192, 0xFF6A684C, 0xFF88865E, 0xFFE4274A, 0xFF2E8566, 0xFFA06D14, 0xFF1271F1, 0xFF854DFF, 0xFF298290, 0xFF3E3D28),
         syntaxType = 0xFF854DFF,
         diffAdded = 0xFF2E8566,
+        border = null,
+        dim = null,
     )
 
     val sunriseGold = Palette(
@@ -151,6 +162,8 @@ object Palettes {
         ansi = listOf(0xFF332B1F, 0xFFC72D45, 0xFF247859, 0xFF876422, 0xFF2768C7, 0xFF864DC7, 0xFF247484, 0xFF645948, 0xFF84755B, 0xFFD01A3B, 0xFF29775B, 0xFF906112, 0xFF0D65DB, 0xFF793CFF, 0xFF257481, 0xFF362E22),
         syntaxType = 0xFF793CFF,
         diffAdded = 0xFF29775B,
+        border = null,
+        dim = null,
     )
 
     val deepVine = Palette(
@@ -176,6 +189,8 @@ object Palettes {
         ansi = listOf(0xFF1D1E12, 0xFFEF4747, 0xFF00D9A3, 0xFFF59E0B, 0xFF7573FF, 0xFFEA00E9, 0xFF00A5B2, 0xFFBFC0AE, 0xFFA1A38C, 0xFFEF4747, 0xFF00D9A3, 0xFFFFAA00, 0xFF7673FF, 0xFFEA00E9, 0xFF00E5E5, 0xFFF1F2E9),
         syntaxType = 0xFFEA00E9,
         diffAdded = 0xFF00D9A3,
+        border = null,
+        dim = null,
     )
 
     val deepForest = Palette(
@@ -201,6 +216,8 @@ object Palettes {
         ansi = listOf(0xFF101C10, 0xFFEF4444, 0xFF00D9A3, 0xFFF59E0B, 0xFF6F6DFF, 0xFFE100E0, 0xFF00A5B2, 0xFFAEC0AE, 0xFF8CA38C, 0xFFEF4444, 0xFF00D9A3, 0xFFFFAA00, 0xFF706CFF, 0xFFE500E5, 0xFF00E5E5, 0xFFE9F2E9),
         syntaxType = 0xFFE500E5,
         diffAdded = 0xFF00D9A3,
+        border = null,
+        dim = null,
     )
 
     val midnightTeal = Palette(
@@ -226,6 +243,8 @@ object Palettes {
         ansi = listOf(0xFF010507, 0xFFEF4444, 0xFF00D9A3, 0xFFF59E0B, 0xFF5452FF, 0xFFC100C0, 0xFF00A5B2, 0xFFAEBAC0, 0xFF8C9CA3, 0xFFEF4444, 0xFF00D9A3, 0xFFFFAA00, 0xFF5651FF, 0xFFE500E5, 0xFF00E5E5, 0xFFE9EFF2),
         syntaxType = 0xFFE500E5,
         diffAdded = 0xFF00D9A3,
+        border = null,
+        dim = null,
     )
 
     val deepHarbor = Palette(
@@ -251,6 +270,36 @@ object Palettes {
         ansi = listOf(0xFF192A30, 0xFFF15D5D, 0xFF00D9A3, 0xFFF59E0B, 0xFF8280FF, 0xFFFB00FA, 0xFF00A5B2, 0xFFAEBCC0, 0xFF8C9DA3, 0xFFF15D5D, 0xFF00D9A3, 0xFFFFAA00, 0xFF8380FF, 0xFFFB00FA, 0xFF00E5E5, 0xFFE9F0F2),
         syntaxType = 0xFFFB00FA,
         diffAdded = 0xFF00D9A3,
+        border = null,
+        dim = null,
+    )
+
+    /** The palette of the e-ink mode: not a theme the person picks, so it is not in [all]. */
+    val eink = Palette(
+        displayName = "E-ink",
+        screen = 0xFFFFFFFF,
+        canvas = 0xFFE8EDF4,
+        face = 0xFFFFFFFF,
+        hover = 0xFFD1D9DB,
+        well = 0xFFB8C0C2,
+        ink = 0xFF0C1012,
+        secondary = 0xFF37464C,
+        muted = 0xFF37464C,
+        accent = 0xFF004497,
+        onAccent = 0xFFFFFFFF,
+        shadowDark = 0xFF8C9395,
+        shadowLight = 0xFFFFFFFF,
+        wellShadow = 0xFF8C9395,
+        wellRim = 0xFFFFFFFF,
+        selection = 0xFF99B2CC,
+        presentationLetterbox = 0xFF0B151A,
+        wellLip = null,
+        agents = listOf(0xFFC3A2D1, 0xFFE19BA9, 0xFF94B88A, 0xFF68BCB3, 0xFF91AAC4),
+        ansi = listOf(0xFF0C1012, 0xFF9C2336, 0xFF3F9C6A, 0xFF876422, 0xFF004497, 0xFF9A6BD0, 0xFF298192, 0xFF4A626B, 0xFF37464C, 0xFF9C2336, 0xFF3F9C6A, 0xFF876422, 0xFF004497, 0xFF9A6BD0, 0xFF298192, 0xFF0C1012),
+        syntaxType = 0xFF9A6BD0,
+        diffAdded = 0xFF3F9C6A,
+        border = 0xFF37464C,
+        dim = 0xFF6E7A96,
     )
 
     /** The themes by name, in the order of the token file; the first is the default. */
@@ -483,6 +532,22 @@ object Editor {
     const val previewWidth: Float = 360.0f
     const val previewMaxWidth: Float = 460.0f
     const val previewHeaderHeight: Float = 26.0f
+}
+
+object Eink {
+    const val bodyTextSize: Float = 18.0f
+    const val captionTextSize: Float = 16.0f
+    const val smallTextSize: Float = 16.0f
+    const val subheadingTextSize: Float = 22.0f
+    const val headingTextSize: Float = 24.0f
+    const val titleTextSize: Float = 32.0f
+    const val terminalFontSize: Float = 16.0f
+    const val terminalFontSizeMaximum: Float = 28.0f
+    const val touchTarget: Float = 56.0f
+    const val readingColumnWidth: Float = 640.0f
+    const val borderWidth: Float = 2.0f
+    const val redrawIntervalMs: Float = 250.0f
+    const val settleDelayMs: Float = 400.0f
 }
 
 object Fonts {

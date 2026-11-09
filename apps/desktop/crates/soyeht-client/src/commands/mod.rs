@@ -18,8 +18,9 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentPaneRole, LoopStopWhen, PaneInputParams, Request, TaskExecutor, TaskPriority, TaskState,
-    UsageProvider, WebNavigationAction, WorkspacePaneLayoutEnvelope, client_policy,
+    AgentPaneRole, LoopStopWhen, PaneInputParams, ProjectTrustChoice, Request, TaskExecutor,
+    TaskPriority, TaskState, UsageProvider, WebNavigationAction, WorkspacePaneLayoutEnvelope,
+    client_policy,
 };
 use uuid::Uuid;
 
@@ -276,6 +277,12 @@ pub enum Command {
     CloseWorkspace {
         workspace_id: String,
     },
+    /// The person's answer to "Trust this folder?": the engine sets it for every workspace that
+    /// shares the folder and tells each (`Event::ProjectTrust`).
+    SetProjectTrust {
+        workspace_id: String,
+        trust: ProjectTrustChoice,
+    },
     /// What the person does in an editor pane.
     Editor(EditorCommand),
     /// What a writing pane and the lists of the sections ask of the engine.
@@ -352,6 +359,7 @@ impl Command {
             Self::Editor(editor) => crate::editor::commands::refused(editor, error)
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
             Self::Writing(writing) => writing.failure(),
+            Self::SetProjectTrust { .. } => Some(Event::ProjectTrustFailed),
             // The arrangement on screen goes back to the stored one, and the person is told.
             Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
                 workspace_id: workspace_id.clone(),
@@ -364,7 +372,7 @@ impl Command {
     /// its own: in the pane of a file the engine refused as text, or by the command's own
     /// failure event (a layout the engine refused says so in its message).
     pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
-        matches!(self, Self::SetLayout { .. })
+        matches!(self, Self::SetLayout { .. } | Self::SetProjectTrust { .. })
             || matches!(self, Self::Writing(writing) if writing.failure_is_shown_in_place())
             || matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }

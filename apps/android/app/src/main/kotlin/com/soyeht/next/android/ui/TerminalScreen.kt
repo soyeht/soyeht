@@ -1,19 +1,16 @@
 package com.soyeht.next.android.ui
 
-import android.graphics.Paint
-import android.graphics.Typeface
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
@@ -22,94 +19,35 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.utf16CodePoint
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.*
 import com.soyeht.next.android.AppModel
+import com.soyeht.next.android.eink.ScreenRefresh
+import com.soyeht.next.android.theme.LocalMetrics
 import com.soyeht.next.android.theme.LocalRoles
 import com.soyeht.next.android.theme.PaneInterior
-import com.soyeht.next.android.theme.resolve
+import com.soyeht.next.android.theme.Radius
 import uniffi.soyeht_android.PaneRow
-import uniffi.soyeht_android.TermColor
 import uniffi.soyeht_android.TerminalKey
 
 @Composable
 fun ColumnScope.TerminalScreen(model: AppModel, pane: PaneRow) {
     val roles = LocalRoles.current
-    TopBar(pane.name, pane.status, onBack = model::close)
+    val metrics = LocalMetrics.current
+    val view = LocalView.current
+    val refresh = remember(view) { ScreenRefresh.forView(view) }
+    TerminalRefresh(model.terminal, refresh, metrics.eink)
+    TopBar(pane.name, pane.status, onBack = model::close) {
+        if (metrics.eink && refresh.available) Pill("Refresh screen", refresh::fullRefresh)
+    }
     var control by remember { mutableStateOf(false) }
-    Box(Modifier.weight(1f).fillMaxWidth().background(roles.well)) {
-        TerminalView(model)
+    Box(Modifier.weight(1f).fillMaxWidth().panel(roles.terminalWell, RoundedCornerShape(Radius.compact.dp))) {
+        model.terminal?.let { TerminalGrid(it) }
         KeyCatcher(model, control) { control = false }
     }
     KeyRow(model, control) { control = !control }
-}
-
-/** The grid the computer has, painted run by run. The phone never resizes it; a wide pane scrolls sideways. */
-@Composable
-private fun TerminalView(model: AppModel) {
-    val roles = LocalRoles.current
-    val frame = model.terminal ?: return
-    val density = LocalDensity.current
-    val paint = remember(density) {
-        Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = with(density) { PaneInterior.monoPointSize.sp.toPx() }
-        }
-    }
-    // The monospace family in each style, so that bold and italic are the font's own.
-    val faces = remember { (0..3).map { style -> Typeface.create(Typeface.MONOSPACE, style) } }
-    val cellWidth = paint.measureText("M")
-    val metrics = paint.fontMetrics
-    val cellHeight = metrics.descent - metrics.ascent
-    val vertical = rememberScrollState()
-    val horizontal = rememberScrollState()
-    val cursorRow = frame.cursor?.row?.toInt() ?: (frame.rows.toInt() - 1)
-    LaunchedEffect(cursorRow, frame.rows) {
-        // Keep the line being typed in view: scroll down to it when it is below the screen.
-        val bottom = ((cursorRow + 1) * cellHeight).toInt()
-        if (bottom > vertical.value + vertical.viewportSize) vertical.scrollTo(bottom - vertical.viewportSize)
-    }
-    val palette = roles.palette
-    Box(Modifier.fillMaxSize().verticalScroll(vertical).horizontalScroll(horizontal)) {
-        Canvas(
-            Modifier.size(
-                with(density) { (cellWidth * frame.columns.toInt()).toDp() },
-                with(density) { (cellHeight * frame.rows.toInt()).toDp() },
-            ),
-        ) {
-            drawIntoCanvas { canvas ->
-                frame.lines.forEachIndexed { row, runs ->
-                    val top = row * cellHeight
-                    runs.forEach { run ->
-                        val left = run.column.toInt() * cellWidth
-                        val background = resolve(run.background, palette, roles.ink, roles.well)
-                        if (run.background !is TermColor.DefaultBackground) {
-                            drawRect(background, Offset(left, top), Size(run.columns.toInt() * cellWidth, cellHeight))
-                        }
-                        val foreground = resolve(run.foreground, palette, roles.ink, roles.well)
-                        paint.color = foreground.copy(alpha = if (run.dim) frame.dimOpacity else 1f).toArgb()
-                        paint.typeface = faces[(if (run.bold) Typeface.BOLD else 0) or (if (run.italic) Typeface.ITALIC else 0)]
-                        paint.isUnderlineText = run.underline
-                        canvas.nativeCanvas.drawText(run.text, left, top - metrics.ascent, paint)
-                    }
-                }
-            }
-            frame.cursor?.let { cursor ->
-                // As the desktop draws a focused cursor: an accent block with the glyph in the on-accent color.
-                val left = cursor.column.toInt() * cellWidth
-                val top = cursor.row.toInt() * cellHeight
-                drawRect(roles.accent, Offset(left, top), Size(cellWidth, cellHeight))
-                drawIntoCanvas { canvas ->
-                    paint.color = roles.onAccent.toArgb()
-                    paint.typeface = faces[0]
-                    paint.isUnderlineText = false
-                    canvas.nativeCanvas.drawText(cursor.glyph, left, top - metrics.ascent, paint)
-                }
-            }
-        }
-    }
 }
 
 /**
@@ -140,6 +78,8 @@ private fun KeyCatcher(model: AppModel, control: Boolean, release: () -> Unit) {
             autoCorrectEnabled = false,
         ),
         keyboardActions = KeyboardActions(onSend = { model.press(TerminalKey.Enter) }),
+        // The field is invisible, so its caret is too, and no brush means no blink: an idle terminal draws no frames.
+        cursorBrush = SolidColor(Color.Unspecified),
         modifier = Modifier
             .size(1.dp)
             .alpha(0f)

@@ -43,6 +43,7 @@ pub enum Error {
     FileNotText(String),
     FileTooLarge(String),
     AdapterNotAcknowledged(String),
+    WorkspaceFolderMissing(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -119,7 +120,7 @@ constructor!(git_unavailable, GitUnavailable);
 /// has no usable `git`, `worktree_unavailable` for any other reason.
 pub fn worktree_process(error: soyeht_process::Error) -> Error {
     match error {
-        soyeht_process::Error::GitUnavailable => git_unavailable(error.to_string()),
+        problem if problem.git_is_unusable() => git_unavailable(problem.to_string()),
         other => worktree_unavailable(other.to_string()),
     }
 }
@@ -130,6 +131,20 @@ constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
 constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
+constructor!(workspace_folder_missing, WorkspaceFolderMissing);
+
+/// The failure to open a workspace's root folder: `workspace_folder_missing` when the folder is gone
+/// (deleted, moved or on a disk that is not mounted), so a client says so instead of reporting
+/// "I/O operation failed"; any other failure stays an I/O error. The message names no path,
+/// which the client already has from the workspace.
+pub fn workspace_root(error: io::Error) -> Error {
+    match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            workspace_folder_missing("The workspace folder is missing")
+        }
+        _ => io(error),
+    }
+}
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -281,6 +296,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
         Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
+        Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -395,6 +411,7 @@ fn message(error: &Error) -> String {
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
         | Error::AdapterNotAcknowledged(message)
+        | Error::WorkspaceFolderMissing(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),

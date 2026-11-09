@@ -91,6 +91,7 @@ struct PhoneHome: View {
       } options: {
         macOptions
       }
+      .projectTrustSheet(client: client)
     } else {
       NavigationStack {
         Group {
@@ -173,7 +174,9 @@ struct PhoneHome: View {
       ProgressView()
       Text("Confirm on the Mac").font(.system(.title2, design: .rounded, weight: .bold))
       Text(session.status).multilineTextAlignment(.center)
-      Text(session.fingerprint).font(.system(size: 14, design: .monospaced))
+      Text(PairingCopy.compareOnDevice).font(.footnote).foregroundStyle(PhonePalette.secondary)
+        .multilineTextAlignment(.center)
+      Text(session.comparisonCode).font(.system(size: 28, design: .monospaced))
         .textSelection(.enabled).padding(18).background(
           PhonePalette.face, in: RoundedRectangle(cornerRadius: 16))
       Button("Cancel", role: .cancel) { model.cancelPairing() }

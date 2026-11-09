@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soyeht.next.android.theme.LocalMetrics
 import com.soyeht.next.android.theme.LocalRoles
 import com.soyeht.next.android.theme.UsageRing
 import uniffi.soyeht_android.GaugeBand
@@ -30,6 +31,8 @@ import uniffi.soyeht_android.UsageGauge
 @Composable
 fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
     val roles = LocalRoles.current
+    // The ring's fading is opacity, which on e-ink is a grey the page nearly hides: it draws at full ink.
+    val faded = !LocalMetrics.current.eink
     val arc = when (gauge.band) {
         GaugeBand.SUCCESS -> roles.success
         GaugeBand.WARNING -> roles.warning
@@ -39,7 +42,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
     Box(
         modifier
             .size(UsageRing.diameter.dp)
-            .alpha(gauge.ringOpacity)
+            .alpha(if (faded) gauge.ringOpacity else 1f)
             .semantics { contentDescription = "${gauge.provider} usage ${gauge.percentage}" },
         contentAlignment = Alignment.Center,
     ) {
@@ -52,7 +55,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
             drawArc(roles.well, 0f, 360f, false, corner, Size(side, side), style = Stroke(track))
             gauge.fraction?.let { fraction ->
                 drawArc(
-                    arc.copy(alpha = gauge.arcOpacity),
+                    arc.copy(alpha = if (faded) gauge.arcOpacity else 1f),
                     -90f,
                     (fraction * 360.0).toFloat(),
                     false,

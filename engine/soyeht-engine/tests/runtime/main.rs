@@ -50,6 +50,7 @@ mod task_dispatch;
 mod terminal_hooks_and_phone;
 mod terminal_replay_and_capture;
 mod workspace_and_writing;
+mod workspace_trust;
 mod writing_documents;
 
 /// Polls `observe` until it returns `Ok`; at the deadline the test fails with `what` and the
@@ -496,6 +497,14 @@ fn wait_for_editor_file(
 
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
     process_instances_at(rig, u64::MAX)
+}
+
+/// Waits until `count` processes of the rig are open. A harness switch retires the old process
+/// and the engine closes it on its next tick, so a test that counts right after a switch waits.
+fn wait_for_open_processes(rig: &Rig, count: usize) {
+    wait_until("the retired process was not closed", || {
+        process_instances(rig).len() == count
+    });
 }
 
 fn process_registry_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {

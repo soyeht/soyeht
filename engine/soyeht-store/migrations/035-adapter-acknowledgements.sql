@@ -6,4 +6,4 @@ CREATE TABLE IF NOT EXISTS adapter_acknowledgements (
   acknowledged_ms INTEGER NOT NULL
 );
 
-PRAGMA user_version = 33;
+PRAGMA user_version = 35;

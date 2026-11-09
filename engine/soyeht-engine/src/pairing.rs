@@ -343,16 +343,14 @@ impl Core {
         let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
         let expires_at = chrono::DateTime::from_timestamp(expires, 0)
             .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
-        let uri = pairing_link::uri(
-            self.store.store_id(),
-            &self.pair_address,
-            &code,
-            &auth::engine_key_text(&self.engine_key),
-        );
+        let key = auth::engine_key_text(&self.engine_key);
+        let uri = pairing_link::uri(self.store.store_id(), &self.pair_address, &code, &key);
+        let qr = pairing_link::qr(self.store.store_id(), &self.pair_address, &code, &key);
         let started = model::to_value(&DevicePairStartResult {
             code: code.clone(),
             expires_at: expires_at.to_rfc3339_opts(SecondsFormat::Secs, true),
             uri,
+            qr: Some(qr),
             reachability: None,
         })?;
         let result = self

@@ -22,7 +22,7 @@ fn install_recording_runner(rig: &Rig, seen: &Path) {
 #[cfg(unix)]
 #[test]
 fn a_package_runner_adapter_starts_in_the_engines_folder_and_works_in_the_workspace() {
-    let rig = Rig::new();
+    let rig = Rig::with_own_search_path();
     let seen = rig.path.join("adapter-started-in");
     install_recording_runner(&rig, &seen);
     let repository = rig.path.join("repository");
@@ -78,7 +78,7 @@ fn a_package_runner_adapter_starts_in_the_engines_folder_and_works_in_the_worksp
 #[cfg(unix)]
 #[test]
 fn a_custom_harness_that_runs_npx_keeps_the_panes_folder() {
-    let rig = Rig::new();
+    let rig = Rig::with_own_search_path();
     let seen = rig.path.join("custom-started-in");
     install_recording_runner(&rig, &seen);
     rig.write_harnesses(&json!([{

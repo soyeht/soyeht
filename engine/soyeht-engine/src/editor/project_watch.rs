@@ -388,7 +388,7 @@ pub(super) struct Prepared {
 /// folder's first listing. The source goes live before the first listing is fingerprinted:
 /// a change after that fingerprint is then always an event, never lost between the two.
 pub(super) fn prepare_watch(root: &Path, paths: &[String], plan: Plan) -> Result<Prepared> {
-    let project = ProjectRoot::open(root).map_err(errors::io)?;
+    let project = ProjectRoot::open(root).map_err(errors::workspace_root)?;
     for path in paths {
         project.directory(path).map_err(project_error)?;
     }
