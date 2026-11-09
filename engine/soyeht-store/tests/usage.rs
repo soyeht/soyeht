@@ -91,6 +91,38 @@ fn one_last_reading_per_provider_replaces_atomically_and_survives_reopen() {
 }
 
 #[test]
+fn readings_list_in_provider_order_whatever_order_they_were_saved_in() {
+    let mut store = Profile::new().store();
+    let all = [
+        reading(
+            UsageProvider::Opencode,
+            UsageSource::OpencodeGoAllowance,
+            0.4,
+        ),
+        reading(UsageProvider::Cursor, UsageSource::CursorCurrentPeriod, 0.3),
+        reading(UsageProvider::Codex, UsageSource::CodexAppServer, 0.2),
+        reading(UsageProvider::Claude, UsageSource::ClaudeCliUsage, 0.1),
+    ];
+    for (index, item) in all.iter().enumerate() {
+        save(
+            &mut store,
+            item,
+            100 + index as i64,
+            &format!("save-{index}"),
+        );
+    }
+
+    let listed: Vec<UsageReading> = store
+        .usage_readings()
+        .unwrap()
+        .into_iter()
+        .map(|stored| stored.reading)
+        .collect();
+    let expected: Vec<UsageReading> = all.into_iter().rev().collect();
+    assert_eq!(listed, expected);
+}
+
+#[test]
 fn invalid_source_state_window_and_timestamp_are_rejected_before_sql() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -241,6 +273,7 @@ fn migration_from_v31_keeps_the_readings_and_accepts_opencode() {
              );
              INSERT INTO usage_readings SELECT * FROM current_readings;
              DROP TABLE current_readings;
+             DROP TABLE project_trust;
              PRAGMA user_version = 31;",
         )
         .unwrap();

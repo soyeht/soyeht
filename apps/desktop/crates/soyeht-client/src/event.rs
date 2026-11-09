@@ -4,8 +4,8 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentCommand, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, PromptItem,
-    SkillsListResult, Task, TranscriptMessage, UsageReading, Workspace,
+    AgentCommand, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, ProjectTrust,
+    PromptItem, SkillsListResult, Task, TranscriptMessage, UsageReading, Workspace,
 };
 
 /// What the connection tells the application, in the order it happened.
@@ -82,6 +82,13 @@ pub enum Event {
     Supervisor { connected: bool },
     /// The settings Preferences shows.
     Preferences(Preferences),
+    /// The engine's answer to a request to trust, or restrict, the folder of a workspace.
+    ProjectTrust {
+        workspace_ids: Vec<String>,
+        trust: ProjectTrust,
+    },
+    /// The request to set the trust of a folder failed.
+    ProjectTrustFailed,
     /// What the engine told an editor pane.
     Editor(EditorEvent),
     /// What the engine told the writing panes and the lists of their sections.

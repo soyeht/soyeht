@@ -59,11 +59,13 @@ extension LocalizedStringKey.StringInterpolation {
     static let x6: CGFloat = DesignTokens.Space.x6
     static let x7: CGFloat = DesignTokens.Space.x7
     static let x8: CGFloat = DesignTokens.Space.x8
+    static let x9: CGFloat = DesignTokens.Space.x9
     static let x10: CGFloat = DesignTokens.Space.x10
     static let x12: CGFloat = DesignTokens.Space.x12
     static let x14: CGFloat = DesignTokens.Space.x14
     static let x16: CGFloat = DesignTokens.Space.x16
     static let x18: CGFloat = DesignTokens.Space.x18
+    static let x20: CGFloat = DesignTokens.Space.x20
     static let x22: CGFloat = DesignTokens.Space.x22
   }
 

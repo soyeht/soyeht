@@ -6,11 +6,11 @@ use super::{
     worktree::{self, PreparedWorktree, WorktreePort},
 };
 use crate::{
-    agents::{Changes, Running, state::State},
+    agents::{Changes, Running, mode_ceiling::ModeCeiling, state::State},
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     offload::{Offload, SharedPort},
     panes::persist_new_pane,
     ports::StorePort,
@@ -18,8 +18,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    Actor, Pane, PaneMode, PaneState, PromptOrigin, Role, StateSource, Task, TaskDispatchParams,
-    TaskExecutor, TaskMove, TaskNextParams, TaskState, TaskWorktree, method,
+    Actor, PaneMode, PaneState, PromptOrigin, Role, Task, TaskDispatchParams, TaskExecutor,
+    TaskMove, TaskNextParams, TaskState, TaskWorktree, method,
 };
 use soyeht_store::{
     database::Change,
@@ -30,6 +30,15 @@ use std::{
     time::Duration,
 };
 use uuid::Uuid;
+
+/// The executor a dispatch reserves: its preset, its pane, who dispatched it and the mode
+/// ceiling that dispatcher puts on the pane.
+struct NewExecutor {
+    preset: TaskExecutor,
+    pane_id: String,
+    actor: String,
+    ceiling: Option<ModeCeiling>,
+}
 
 /// A `wt list` and a `wt switch`, plus a wait behind other `wt` users.
 const WORKTREE_TIMEOUT: Duration = Duration::from_secs(300);
@@ -80,11 +89,24 @@ impl Core {
         )?;
         let current = super::api::task(&self.store, &params.workspace_id, &params.task_id)?;
         ensure_dependencies_closed(self, &current)?;
-        let preset = self.resolve_new_preset(&params.preset)?;
+        let mut preset = self.resolve_new_preset(&params.preset)?;
+        let ceiling = self.cap_preset_mode(&actor, &mut preset)?;
+        // The mode the executor takes from its dispatcher is full access only if the
+        // dispatcher is in full access, which is a person's decision to give, not an agent's.
+        self.require_person_for_full_access(&actor.role, [preset.permission_mode.as_deref()])?;
         let pane_id = Uuid::new_v4().to_string();
         let actor_name = self.actor_name(&actor)?;
-        let result =
-            self.reserve_selected(connection, raw, current, preset, pane_id, actor_name)?;
+        let result = self.reserve_selected(
+            connection,
+            raw,
+            current,
+            NewExecutor {
+                preset,
+                pane_id,
+                actor: actor_name,
+                ceiling,
+            },
+        )?;
         self.continue_dispatch(&params.workspace_id, &params.task_id, result)
     }
 
@@ -160,10 +182,14 @@ impl Core {
         connection: &str,
         raw: &Value,
         current: Task,
-        preset: TaskExecutor,
-        pane_id: String,
-        actor: String,
+        executor: NewExecutor,
     ) -> Result<Value> {
+        let NewExecutor {
+            preset,
+            pane_id,
+            actor,
+            ceiling,
+        } = executor;
         if current.owner_pane_id.is_some() {
             return Err(errors::task_has_owner("Task is unavailable for dispatch"));
         }
@@ -192,6 +218,7 @@ impl Core {
                 .to_str()
                 .ok_or_else(|| errors::invalid("Workspace path must be UTF-8"))?,
             &preset,
+            ceiling,
         )?;
         let saved = prepared.0.clone();
         let state = prepared.1.clone();
@@ -460,7 +487,15 @@ fn selected_option(state: &State, name: &str) -> Option<String> {
 }
 
 impl Core {
-    fn resolve_new_preset(&self, requested: &TaskExecutor) -> Result<TaskExecutor> {
+    /// The permission mode a new task pane requests: the preset's, else the harness's default.
+    pub(super) fn new_pane_mode(&self, preset: &TaskExecutor) -> Result<Option<String>> {
+        match &preset.permission_mode {
+            Some(mode) => Ok(Some(mode.clone())),
+            None => crate::settings::default_agent_mode(&self.store, required_harness(preset)?),
+        }
+    }
+
+    pub(super) fn resolve_new_preset(&self, requested: &TaskExecutor) -> Result<TaskExecutor> {
         let mut preset = requested.clone();
         if preset.harness.is_none() {
             preset.harness = crate::agents::registry::entries(&self.directory)?
@@ -522,7 +557,7 @@ impl Core {
             return self.restart_task_pane(task, pane_id, cwd);
         }
         let preset = self.effective_task_preset(task, None)?;
-        let prepared = prepare_new_pane(self, task, pane_id, cwd, &preset)?;
+        let prepared = prepare_new_pane(self, task, pane_id, cwd, &preset, None)?;
         let saved = prepared.0.clone();
         let state = prepared.1.clone();
         let screen = prepared.2;
@@ -587,6 +622,7 @@ impl Core {
         let preset = self.effective_task_preset(task, Some(pane_id))?;
         let (launch, digest) =
             crate::agents::registry::prepare(&self.directory, required_harness(&preset)?)?;
+        crate::agents::adapter_consent::require(&self.store, &launch, None)?;
         let state = old_state.restart_for_task(launch, digest, &preset)?;
         let old_instance = existing.stored.instance_id.clone();
         let old_supervisor = existing.stored.supervisor_id.clone();
@@ -710,15 +746,15 @@ fn prepare_new_pane(
     pane_id: &str,
     cwd: &str,
     preset: &TaskExecutor,
+    ceiling: Option<ModeCeiling>,
 ) -> Result<(StoredPane, State, Screen)> {
     let (launch, digest) =
         crate::agents::registry::prepare(&core.directory, required_harness(preset)?)?;
-    let harness = launch.id.clone();
-    let mode = match &preset.permission_mode {
-        Some(mode) => Some(mode.clone()),
-        None => crate::settings::default_agent_mode(&core.store, &harness)?,
-    };
+    // A task is started by an agent or a rule, never by the person who reads the notice.
+    crate::agents::adapter_consent::require(&core.store, &launch, None)?;
+    let mode = core.new_pane_mode(preset)?;
     let mut state = State::new(launch, digest, mode)?;
+    state.mode_ceiling = ceiling;
     for (name, value) in [("model", &preset.model), ("effort", &preset.effort)] {
         if let Some(value) = value {
             state
@@ -726,36 +762,15 @@ fn prepare_new_pane(
                 .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.clone()));
         }
     }
-    let pane = Pane {
-        pane_id: pane_id.into(),
-        workspace_id: task.workspace_id.clone(),
-        name: task.title.clone(),
-        cwd: cwd.into(),
-        mode: PaneMode::Agent,
-        state: PaneState::Starting,
-        source: StateSource::Protocol,
-        confidence: 1.0,
-        phrase: "Starting task session".into(),
-        generation: 1,
-        cols: 80,
-        rows: 24,
-        record: true,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: Some(state.public(core.now_ms())),
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
-        web_session: None,
-    };
+    let pane = model::new_pane(
+        PaneMode::Agent,
+        task.workspace_id.clone(),
+        task.title.clone(),
+        cwd,
+    )
+    .with_id(pane_id)
+    .starting("Starting task session")
+    .recorded_agent(state.public(core.now_ms()), 80, 24);
     let saved = StoredPane {
         pane,
         closed: false,

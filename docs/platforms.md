@@ -329,7 +329,7 @@ open a console.
 | | |
 | --- | --- |
 | Needs | no administrator. An x64 installer also opens on Windows on Arm (it runs the x64 programs); an Arm64 one opens only on Arm |
-| Programs | `%LOCALAPPDATA%\Programs\Soyeht Next\`: `soyeht-desktop.exe` (no console), `soyeht-engine.exe`, `soyeht-ptyd.exe`, `soyeht-mcp.exe`, `soyeht.exe` (the command line) and `soyeht-service-host.exe`, with `LICENSE` and `NOTICE` |
+| Programs | `%LOCALAPPDATA%\Programs\Soyeht Next\`: `soyeht-desktop.exe` (no console), `soyeht-engine.exe`, `soyeht-ptyd.exe`, `soyeht-mcp.exe`, `soyeht.exe` (the command line) and `soyeht-service-host.exe`, with `LICENSE`, `NOTICE` and `THIRD-PARTY-NOTICES.txt` |
 | Start menu | one shortcut, "Soyeht" |
 | Add or remove programs | "Soyeht", under `HKCU`, key `com.soyeht.next_is1` (`appIds.windows`) |
 | Data | `%LOCALAPPDATA%\Soyeht.next`, outside the install folder; install, upgrade and removal keep it unless the person says otherwise |

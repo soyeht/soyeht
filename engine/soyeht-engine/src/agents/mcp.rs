@@ -100,7 +100,7 @@ fn path_text(path: &Path) -> Result<String> {
 mod tests {
     use super::*;
     use crate::tasks::{ports::testing::MemoryTaskStore, task_fixture};
-    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState, StateSource, TaskState};
+    use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, TaskState};
     use soyeht_store::domain::PaneRecord;
 
     fn fixture() -> (MemoryTaskStore, State, PaneRecord) {
@@ -119,31 +119,11 @@ mod tests {
         .unwrap();
         let saved = PaneRecord {
             pane: Pane {
-                pane_id: "pane-1".into(),
-                workspace_id: "workspace-1".into(),
                 name: "Agent".into(),
-                cwd: "/tmp/worktree".into(),
-                mode: PaneMode::Agent,
-                state: PaneState::Idle,
-                source: StateSource::Protocol,
-                confidence: 1.0,
                 phrase: "Ready".into(),
                 generation: 7,
-                cols: 80,
-                rows: 24,
                 record: true,
-                experiment_capture: None,
-                pid: None,
-                stream_id: None,
-                agent: None,
-                url: None,
-                title: None,
-                viewport: None,
-                incognito: None,
-                writing_kind: None,
-                writing_section: None,
-                exit_code: None,
-                web_session: None,
+                ..crate::test_panes::pane("pane-1", "workspace-1", PaneMode::Agent, "/tmp/worktree")
             },
             closed: false,
             instance_key: "instance".into(),

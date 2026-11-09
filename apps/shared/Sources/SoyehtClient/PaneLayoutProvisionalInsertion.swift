@@ -21,6 +21,14 @@ public struct PaneLayoutProvisionalInsertion: Equatable, Sendable {
     self.placement = placement
   }
 
+  /// Whether the pane being configured fills a slot beside an existing pane (a split) rather than
+  /// joining wherever the arrangement puts it. Its pane must then be made in the workspace that
+  /// owns the layout, or the slot could never be filled (`NewPaneForm.workspaceId`).
+  public var fillsSlot: Bool {
+    if case .split = placement { return true }
+    return false
+  }
+
   public func previewTree(sizing: PaneLayoutSizingPolicy) throws -> PaneLayoutTree {
     try inserting(placeholder, sizing: sizing)
   }

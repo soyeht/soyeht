@@ -13,36 +13,36 @@
       "duplicated_lines": 0
     },
     "desktop_views": {
-      "clones": 126,
-      "duplicated_lines": 576
+      "clones": 111,
+      "duplicated_lines": 506
     },
     "dictation": {
       "clones": 0,
       "duplicated_lines": 0
     },
     "engine": {
-      "clones": 271,
-      "duplicated_lines": 2086
+      "clones": 264,
+      "duplicated_lines": 1988
     },
     "ios": {
       "clones": 4,
       "duplicated_lines": 31
     },
     "mac": {
-      "clones": 23,
-      "duplicated_lines": 162
+      "clones": 22,
+      "duplicated_lines": 143
     },
     "python": {
-      "clones": 15,
-      "duplicated_lines": 133
+      "clones": 14,
+      "duplicated_lines": 124
     },
     "shared": {
-      "clones": 63,
-      "duplicated_lines": 468
+      "clones": 62,
+      "duplicated_lines": 448
     },
     "swift_all": {
-      "clones": 96,
-      "duplicated_lines": 697
+      "clones": 94,
+      "duplicated_lines": 658
     }
   },
   "engine_production_panics": 0,
@@ -94,11 +94,6 @@
       "padding": 3,
       "system_font_size": 4
     },
-    "apps/mac/Sources/TaskWorkspaceViews.swift": {
-      "corner_radius": 1,
-      "padding": 37,
-      "system_font_size": 21
-    },
     "apps/mac/Sources/UsageViews.swift": {
       "padding": 1
     },
@@ -106,7 +101,7 @@
       "system_font_size": 2
     },
     "apps/mac/Sources/WorkspaceWindow.swift": {
-      "padding": 4,
+      "padding": 3,
       "system_font_size": 2
     },
     "apps/mac/Sources/WritingBeatBoardPane.swift": {
@@ -197,9 +192,6 @@
     "engine/soyeht-store/src/web.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-store/src/writing.rs": {
-      "rust_limits": 3
-    },
     "engine/soyeht-store/tests/storage.rs": {
       "rust_limits": 1
     },
@@ -212,14 +204,8 @@
     "engine/soyeht-web/src/snapshot.rs": {
       "rust_limits": 1
     },
-    "engine/soyeht-writing/src/beats.rs": {
-      "rust_limits": 1
-    },
     "engine/soyeht-writing/src/markdown.rs": {
       "rust_limits": 1
-    },
-    "engine/soyeht-writing/src/sections.rs": {
-      "rust_limits": 3
     },
     "engine/soyeht-writing/src/slides.rs": {
       "rust_limits": 2
@@ -227,8 +213,7 @@
   },
   "oversized_files": {
     "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
-    "apps/mac/Sources/TaskWorkspaceViews.swift": 1204,
-    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 896,
+    "apps/shared/Sources/SoyehtClient/EngineClient.swift": 867,
     "engine/soyeht-store/src/editor.rs": 828,
     "engine/soyeht-store/tests/agents.rs": 976,
     "engine/soyeht-store/tests/tasks.rs": 887

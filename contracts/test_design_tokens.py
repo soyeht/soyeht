@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from design_tokens import (
+    ANDROID_SECTIONS,
     DESKTOP_SECTION,
     FALLBACKS,
     KOTLIN_OUTPUT,
@@ -17,8 +18,10 @@ from design_tokens import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-# The last commit before the tokens were generated: the Mac values it holds are the contract.
-BASE = "0d33cdd483697fbc35495221023886dd34c90355"
+# A commit of the public history whose Mac sources are byte-for-byte the ones of the last commit
+# before the tokens were generated (0d33cdd4, which the public history does not hold): every file
+# this test reads has the same blob there. The Mac values it holds are the contract.
+BASE = "8351bb6f9fc94a3a44d1efc5b076b718dd91bba3"
 SHARED = "apps/shared/Sources/SoyehtClient/"
 MAC = "apps/mac/Sources/"
 # Tokens added after the tokens were generated: no pre-generation Mac literal exists to prove
@@ -40,9 +43,11 @@ ADDED_AFTER_GENERATION = {
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
-    # Steps of the scale the preferences and task sheets drew inline (a 1 and 22 point inset, a
-    # 14 point label), now named so no view types them.
+    # Steps of the scale the preferences and task sheets drew inline (a 1, 9, 20 and 22 point
+    # inset, a 14 point label), now named so no view types them.
     ("space", "x1"),
+    ("space", "x9"),
+    ("space", "x20"),
     ("space", "x22"),
     ("typeScale", "label"),
 }
@@ -160,11 +165,38 @@ class TokenGenerationTests(unittest.TestCase):
             self.assertIn(f"    val {name} = Palette(", kotlin)
             for role in ("ink", "accent", "well"):
                 self.assertIn(f"{role} = 0xFF{palette[role][1:]},", kotlin)
-        for key, title in NUMERIC_SECTIONS.items():
+        for key, title in {**NUMERIC_SECTIONS, **ANDROID_SECTIONS}.items():
             self.assertIn(f"object {title} {{", kotlin)
             for name, value in document[key].items():
                 self.assertIn(f"const val {name}: Float = {float(value)!r}f", kotlin)
         self.assertNotIn("windowWidth", kotlin)  # the desktop section is Rust-only
+
+    def test_the_eink_palette_has_no_color_the_other_palettes_lack(self):
+        """"No new colours": every value of the e-ink palette is one an existing palette already uses."""
+        document = tokens()
+
+        def colors(palette):
+            found = {v for v in palette.values() if isinstance(v, str) and v.startswith("#")}
+            return found | set(palette["agents"]) | set(palette["ansi"])
+
+        existing = set().union(*(colors(p) for p in document["palettes"].values()))
+        self.assertEqual(colors(document["einkPalette"]) - existing, set())
+
+    def test_the_eink_palette_is_not_a_theme_and_needs_its_own_roles(self):
+        document = tokens()
+        outputs = render_tokens(document)
+        self.assertNotIn("E-ink", outputs[SWIFT_OUTPUT])
+        self.assertNotIn("E-ink", outputs[RUST_OUTPUT])
+        self.assertIn('displayName = "E-ink"', outputs[KOTLIN_OUTPUT])
+        # The e-ink sizes are the Android app's alone: no other client carries an unused name.
+        self.assertIn("object Eink {", outputs[KOTLIN_OUTPUT])
+        self.assertNotIn("Eink", outputs[SWIFT_OUTPUT])
+        self.assertNotIn("pub mod eink", outputs[RUST_OUTPUT])
+        for role in ("border", "dim"):
+            missing = copy.deepcopy(document)
+            del missing["einkPalette"][role]
+            with self.assertRaises(ValueError):
+                validate_tokens(missing)
 
     def test_generated_swift_palettes_read_back_as_the_json(self):
         swift = render_tokens(tokens())[SWIFT_OUTPUT]
@@ -558,6 +590,87 @@ INLINE_LITERALS = [
         ".frame(width: 460, height: {}, alignment: .topLeading)",
         "layout",
         "taskSheetHeight",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", ".padding(.top, {})", "layout", "newTaskSheetTopInset"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        "Circle().fill(indicatorColor).frame(width: {0}, height: {0})",
+        "layout",
+        "taskDot",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(width: {}).foregroundStyle(MacTheme.ink)",
+        "layout",
+        "newTaskSheetWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        "minWidth: max({}, geometry.size.width)",
+        "layout",
+        "taskListMinimumWidth",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", 'heading("KEY", width: {})', "layout", "taskListKeyWidth"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("STATE", width: {})',
+        "layout",
+        "taskListStateWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("PRIORITY", width: {})',
+        "layout",
+        "taskListPriorityWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("OWNER", width: {})',
+        "layout",
+        "taskListOwnerWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("WORKTREE", width: {})',
+        "layout",
+        "taskListWorktreeWidth",
+    ),
+    (MAC + "TaskWorkspaceViews.swift", 'heading("", width: {})', "layout", "taskListCommentsWidth"),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'heading("UPDATED", width: {})',
+        "layout",
+        "taskListUpdatedWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(minWidth: {}, maxWidth: .infinity, alignment: .leading)",
+        "layout",
+        "taskListTitleMinimumWidth",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(height: {}).neoWell(radius: MacTheme.Radius.control)",
+        "layout",
+        "taskEditorHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".padding(.horizontal, 14).frame(height: {})",
+        "layout",
+        "taskFieldHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        ".frame(maxWidth: .infinity, minHeight: {})",
+        "layout",
+        "taskToolbarHeight",
+    ),
+    (
+        MAC + "TaskWorkspaceViews.swift",
+        'Image(systemName: "ellipsis").font(.system(size: {}, weight: .medium))',
+        "glyph",
+        "taskSheetMore",
     ),
     (
         MAC + "PreferencesPanel.swift",

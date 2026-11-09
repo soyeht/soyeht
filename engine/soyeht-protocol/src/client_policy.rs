@@ -12,8 +12,16 @@ pub const AGENT_PARTIAL_FLUSH_MS: u64 = 16;
 pub const DIAGNOSTICS_MS: u64 = 30000;
 pub const COPIED_FEEDBACK_MS: u64 = 1500;
 pub const SERVICE_COMMAND_MS: u64 = 60000;
+pub const WEB_READ_SETTLE_POLL_MS: u64 = 80;
+pub const WEB_READ_DEADLINE_SHARE: f64 = 0.8;
 pub const TERMINAL_INPUT_CHUNK_BYTES: usize = 16384;
+pub const TERMINAL_INPUT_QUEUE_BYTES: usize = 1048576;
 pub const TERMINAL_SCROLLBACK_LINES: usize = 10000;
+pub const TERMINAL_OUTPUT_FLUSH_MS: u64 = 16;
+pub const TERMINAL_OUTPUT_FLOOD_MS: u64 = 50;
+pub const TERMINAL_OUTPUT_FLOOD_BYTES: usize = 8192;
+pub const TERMINAL_INTERACTIVE_WINDOW_MS: u64 = 150;
+pub const TERMINAL_OUTPUT_FLUSH_BYTES: usize = 1048576;
 pub const CAPS_WAITING_MESSAGES: usize = 1000;
 pub const CAPS_FILE_LINKS: usize = 128;
 pub const CAPS_WEB_LINKS: usize = 128;
@@ -37,6 +45,7 @@ pub const TASK_MOVE_REASON: &str = "Moved on the workspace board";
 pub const EDITOR_NO_FILE: &str = "The engine has no file for this editor tab.";
 pub const EDITOR_FILE_NOT_TEXT: &str = "Binary file, can't be shown.";
 pub const EDITOR_FILE_TOO_LARGE: &str = "This file is too large to open in the editor.";
+pub const WORKSPACE_FOLDER_GONE: &str = "This workspace's folder is gone:";
 pub const EDITOR_SAVE_MISSING: &str =
     "Couldn't save: this file was deleted from the disk. Save again to create it.";
 pub const EDITOR_SAVE_DENIED: &str =
@@ -65,8 +74,48 @@ pub const LOGIN_START_SUMMARY: &str = "Soyeht's engine keeps your terminals and 
 pub const LOGIN_START_LATER: &str = "You can turn it on later from Preferences.";
 pub const LOGIN_START_TURN_ON: &str = "Turn on";
 pub const LOGIN_START_NOT_NOW: &str = "Not now";
+pub const TRY_AGAIN: &str = "Try again";
+pub const OK: &str = "OK";
+pub const APP_MOVE_QUESTION: &str = "Move Soyeht to Applications?";
+pub const APP_MOVE_SUMMARY: &str = "Soyeht's engine needs the app in your Applications folder so macOS remembers the permissions you give it. Soyeht copies itself there and opens again. If it runs from a disk image, you can eject the image afterwards.";
+pub const APP_MOVE_ACTION: &str = "Move to Applications";
+pub const APP_MOVE_MENU: &str = "Move to Applications…";
+pub const APP_MOVE_EXPLANATION: &str = "The engine is off. It needs Soyeht in your Applications folder so macOS remembers its permissions.";
+pub const APP_MOVE_REPLACE_QUESTION: &str = "Replace the app in Applications?";
+pub const APP_MOVE_REPLACE_SUMMARY: &str =
+    "Soyeht is already in Applications. The old copy goes to the Trash.";
+pub const APP_MOVE_REPLACE: &str = "Replace";
+pub const APP_MOVE_FAILED_TITLE: &str = "Soyeht could not move itself";
+pub const APP_MOVE_FAILED_LATER: &str = "The engine stays off until Soyeht is in Applications. You can drag it there yourself, or choose Move to Applications again.";
+pub const APP_MOVE_RELAUNCH_FAILED_TITLE: &str = "Soyeht is now in Applications";
+pub const APP_MOVE_RELAUNCH_FAILED: &str =
+    "Soyeht was moved to Applications but could not open there. Open it from Applications.";
+pub const APP_MOVE_NOT_THIS_APP: &str =
+    "This copy is not the app Soyeht expected, so nothing was changed.";
+pub const APP_MOVE_ANOTHER_APP: &str =
+    "A different app with the same name is in Applications. Soyeht did not touch it.";
+pub const APP_MOVE_NO_WRITABLE_FOLDER: &str =
+    "Neither the Applications folder nor your own Applications folder can be written to.";
+pub const APP_MOVE_CHANGED: &str =
+    "Applications changed while Soyeht was moving. Nothing was replaced.";
+pub const APP_MOVE_NOT_FINISHED: &str =
+    "The copy did not finish. The app that was there is unchanged.";
+pub const APP_MOVE_NOT_SIGNED: &str = "The copy is not signed like this app, so it was not installed. The app that was there is unchanged.";
+pub const APP_MOVE_ALREADY_THERE: &str =
+    "This is the copy that is in Applications. Open it from there.";
+pub const APP_MOVE_RUNNING: &str =
+    "Soyeht is running from Applications. Quit it there, then move this copy.";
+pub const APP_MOVE_COPY_LOCKED: &str = "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.";
+pub const APP_MOVE_OLD_IN_TRASH: &str = "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.";
 pub const PUSH_NEEDS_YOU_TITLE: &str = "An agent needs you";
 pub const PUSH_NEEDS_YOU_BODY: &str = "Open Soyeht to see what it asks.";
+pub const PROJECT_TRUST_TITLE: &str = "Trust this folder?";
+pub const PROJECT_TRUST_SUMMARY: &str = "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from.";
+pub const PROJECT_TRUST_TRUST: &str = "Trust folder";
+pub const PROJECT_TRUST_RESTRICT: &str = "Keep restricted";
+pub const PROJECT_TRUST_RESTRICTED_NOTE: &str =
+    "This folder is restricted: language servers run with code execution off, or do not start.";
+pub const PROJECT_TRUST_FAILED: &str = "Soyeht could not save this choice.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";

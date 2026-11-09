@@ -2,6 +2,7 @@
 //! left and the open one beside them, as the Mac's sheet is. Each panel is a flat page on the
 //! panel's face; only the panel itself and the rows and chips on it are raised.
 
+use super::sheet;
 use super::ui::{OwnPress, Typeface, chrome_text, column, icon, id, row};
 use crate::{
     assets::Icon,
@@ -35,14 +36,7 @@ impl Workbench {
             Section::Skills => self.skills_page(palette, cx),
         };
         let sidebar = self.sidebar(section, palette, cx);
-        div()
-            .absolute()
-            .top_0()
-            .left_0()
-            .size_full()
-            .flex()
-            .items_center()
-            .justify_center()
+        sheet::centered_layer()
             .child(
                 neo::raised(palette, radius::CARD, elevation::PANEL)
                     .id("preferences")

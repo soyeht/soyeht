@@ -35,6 +35,7 @@ struct WorkspaceWindow: View {
     )
     .environment(\.askToClosePane, askToClosePane)
     .sheet(isPresented: $showPairing, onDismiss: { client.clearPairCode() }) { pairing }
+    .projectTrustSheet(client: client, selectedWorkspaceId: selectedTaskWorkspaceId)
     .modifier(
       CloseAlerts(
         paneToClose: $paneToClose, workspaceToClose: $workspaceToClose,
@@ -50,28 +51,25 @@ struct WorkspaceWindow: View {
     } message: {
       Text(client.problem ?? "")
     }
+    .overlay(alignment: .top) {
+      if let workspaceId = selectedTaskWorkspaceId,
+        let missing = client.missingWorkspaceFolder(in: workspaceId)
+      {
+        MissingWorkspaceFolderBanner(state: missing) { askToCloseWorkspace(workspaceId) }
+          .padding(.top, DesignTokens.Layout.topBarHeight + MacTheme.Space.x16)
+      }
+    }
     .overlay(alignment: .bottomTrailing) {
       if crashNotice.isShowing {
         CrashNoticeView().padding(MacTheme.Space.x18)
       }
     }
     .overlay(alignment: .bottom) {
-      if let request = client.pairRequests.first {
-        VStack(alignment: .leading, spacing: 12) {
-          Text("Allow access for \(request.deviceName)?")
-            .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-          Text("Compare this fingerprint on the iPhone:")
-            .font(MacTheme.chrome(MacTheme.TypeScale.caption))
-          Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.control))
-            .textSelection(.enabled)
-          HStack {
-            Button("Deny") { client.decidePairing(request, approve: false) }
-              .buttonStyle(.paneSecondary)
-            Spacer()
-            Button("Allow") { client.decidePairing(request, approve: true) }
-              .buttonStyle(.panePrimary)
-          }
-        }.padding(22).frame(width: 420).neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
+      // The pairing sheet shows the same approval itself while it is open.
+      if let request = client.pairRequests.first, !showPairing {
+        PairApprovalView(request: request) { client.decidePairing(request, approve: $0) }
+          .padding(MacTheme.Space.x20).frame(width: 420)
+          .neoRaised(radius: MacTheme.Radius.card, elevation: .panel)
           .padding(.bottom, 40)
       }
     }
@@ -196,6 +194,22 @@ struct WorkspaceWindow: View {
     .padding(.bottom, CGFloat(policy.paneVerticalInset))
     .padding(.horizontal, CGFloat(horizontalInset))
     .frame(width: windowSize.width, height: windowSize.height)
+    .onReceive(NotificationCenter.default.publisher(for: .splitSoyehtPane)) { note in
+      guard navigation.destination == .agents, let axis = note.object as? PaneSplitAxis,
+        let paneId = client.selectedPaneId
+      else { return }
+      presentSplit(paneId, axis)
+    }
+    .onReceive(NotificationCenter.default.publisher(for: .moveSoyehtPaneFocus)) { note in
+      guard navigation.destination == .agents, let move = note.object as? PaneFocusMove,
+        let workspaceId = selectedTaskWorkspaceId,
+        let paneId = client.paneToFocus(
+          move, workspaceId: workspaceId,
+          viewport: PaneLayoutSize(width: contentSize.width, height: contentSize.height),
+          sizing: MacPaneLayoutMetrics.sizing)
+      else { return }
+      client.select(paneId)
+    }
   }
 
   private var appRail: some View {
@@ -344,8 +358,27 @@ struct WorkspaceWindow: View {
       client.problem = "Couldn't open the new pane chooser. The layout was not changed."
     }
   }
+  /// A split opens a pane beside the pane at once, as tmux does (`PaneSplitPolicy`); only a
+  /// writing pane asks what its companion is.
   private func presentSplit(_ paneId: String, _ axis: PaneSplitAxis) {
     guard let anchor = client.panes.first(where: { $0.paneId == paneId }) else { return }
+    guard PaneSplitPolicy.kind(splitting: anchor) != .chooser else {
+      presentSplitChooser(anchor, axis)
+      return
+    }
+    newPaneDraft = nil
+    Task { @MainActor in
+      do {
+        try await client.split(
+          paneId, axis: axis == .columns ? .horizontal : .vertical,
+          sizing: MacPaneLayoutMetrics.sizing)
+      } catch {
+        client.problem = "Couldn't split the pane. The layout was not changed."
+      }
+    }
+  }
+  private func presentSplitChooser(_ anchor: Pane, _ axis: PaneSplitAxis) {
+    let paneId = anchor.paneId
     do {
       let snapshot = try layoutSnapshot(anchor.workspaceId)
       newPaneDraft = NewPaneDraft(
@@ -501,7 +534,7 @@ struct WorkspaceWindow: View {
       Text(guidance.text)
         .multilineTextAlignment(.center)
         .foregroundStyle(guidance.isProblem ? MacTheme.danger : MacTheme.secondary)
-      if let code = client.pairCode, let image = qr(code.uri) {
+      if let code = client.pairCode, let image = qr(code.qr ?? code.uri) {
         Image(nsImage: image).interpolation(.none).resizable().frame(width: 260, height: 260)
           .padding(MacTheme.Space.x16)
           .background(
@@ -512,18 +545,9 @@ struct WorkspaceWindow: View {
         ProgressView().frame(width: 292, height: 292)
       }
       if let request = client.pairRequests.first {
-        Text(request.deviceName)
-          .font(MacTheme.chrome(MacTheme.TypeScale.subheading, weight: .bold))
-        Text(request.fingerprint).font(MacTheme.mono(MacTheme.TypeScale.small))
-          .textSelection(.enabled)
-        HStack {
-          Button("Deny") { client.decidePairing(request, approve: false) }
-            .buttonStyle(.paneSecondary)
-          Button("Allow") {
-            client.decidePairing(request, approve: true)
-            showPairing = false
-          }
-          .buttonStyle(.panePrimary)
+        PairApprovalView(request: request) { approve in
+          client.decidePairing(request, approve: approve)
+          if approve { showPairing = false }
         }
       }
       if !client.devices.isEmpty {

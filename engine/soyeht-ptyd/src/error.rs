@@ -1,3 +1,4 @@
+use soyeht_protocol::ErrorKind;
 use std::{fmt, io};
 
 /// What the supervisor says when it refuses an environment variable of a spawn. An engine that
@@ -15,6 +16,8 @@ pub enum Error {
         message: String,
     },
     InvalidWelcome,
+    /// The supervisor does not know the watch role.
+    WatchUnavailable,
     InvalidResponse,
     ZeroRetentionLimit,
     OutputOffsetExhausted,
@@ -116,6 +119,7 @@ impl fmt::Display for Error {
             Self::Base64(error) => write!(formatter, "base64: {error}"),
             Self::Remote { kind, message } => write!(formatter, "{kind}: {message}"),
             Self::InvalidWelcome => formatter.write_str("invalid ptyd welcome"),
+            Self::WatchUnavailable => formatter.write_str("ptyd does not know the watch role"),
             Self::InvalidResponse => formatter.write_str("invalid ptyd response"),
             Self::ZeroRetentionLimit => formatter.write_str("retention limit is zero"),
             Self::OutputOffsetExhausted => formatter.write_str("output offset exhausted"),
@@ -200,6 +204,26 @@ impl From<io::Error> for Error {
 impl From<soyeht_protocol::Error> for Error {
     fn from(error: soyeht_protocol::Error) -> Self {
         Self::Protocol(error)
+    }
+}
+
+/// The protocol kind the engine presents for a failure of the supervisor. A remote failure that
+/// names a stale engine generation or a refused spawn keeps that meaning; every other failure
+/// means the supervisor is unavailable.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::Remote { kind, .. } if kind == crate::wire_kind::STALE_ENGINE_GENERATION => {
+                ErrorKind::StaleEngineGeneration
+            }
+            Error::Remote { kind, .. }
+                if kind == crate::wire_kind::SPAWN_FAILED
+                    || kind == crate::wire_kind::SPAWN_REFUSED =>
+            {
+                ErrorKind::HarnessUnavailable
+            }
+            _ => ErrorKind::PtydUnavailable,
+        }
     }
 }
 

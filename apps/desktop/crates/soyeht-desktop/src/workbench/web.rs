@@ -32,7 +32,10 @@ impl Workbench {
     /// Whether something of the window is drawn over the panes: a menu or a popover, or a divider
     /// being dragged. A page that is a window of its own would show above it.
     pub(crate) fn web_covered(&self) -> bool {
-        self.menus.any_open() || self.switch.is_some() || self.stage.gestures.dragging_divider()
+        self.menus.any_open()
+            || self.switch.is_some()
+            || self.state.trust_prompt().is_some()
+            || self.stage.gestures.dragging_divider()
     }
 
     /// Takes the pages of the panes the last frame did not draw off the screen.

@@ -70,11 +70,11 @@ An agent pane is created from the same new-pane sheet by selecting agent mode,
 an installed harness, its advertised model and effort, a permission mode and a
 working directory. The conversation view renders normalized messages, thoughts,
 tool calls, plans, inline terminal results, questions, queue state and confirmed
-configuration. See [the real ACP procedure](manual-acceptance-slice-2.md) for the
+configuration. See [the real ACP procedure](archive/manual-acceptance-slice-2.md) for the
 authenticated adapter and physical-device checks.
 
 Open a terminal by choosing a directory. The list and screen follow the engine.
-Use “Add iPhone” to display the QR; compare the fingerprint on the phone before
+Use “Add iPhone” to display the QR; compare the comparison code on the phone before
 allowing access. The code expires in ten minutes. Pairing requires the engine
 to have a tailnet address; loopback is only for local tests. Without one, the
 pairing sheet says “Not reachable from your devices” and why, and it refreshes

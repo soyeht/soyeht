@@ -8,10 +8,10 @@ use super::{
     revision::RevisionSnapshot,
 };
 use crate::{
-    agents::{Running, state::State},
+    agents::{Running, mode_ceiling::ModeCeiling, state::State},
     core::Core,
     errors::{self, Result},
-    model::{self, RunningPane, StoredPane},
+    model::{self, PaneSetup as _, RunningPane, StoredPane},
     panes::persist_new_pane,
     ports::StorePort,
     screen::Screen,
@@ -19,8 +19,8 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    AttemptResult, Comment, Pane, PaneMode, PaneState, PromptOrigin, StateSource, Task,
-    TaskCompleteParams, TaskMove, TaskState, TranscriptKind, TranscriptRole, limits, method,
+    AttemptResult, Comment, PaneMode, PaneState, PromptOrigin, Task, TaskCompleteParams, TaskMove,
+    TaskState, TranscriptKind, TranscriptRole, limits, method,
 };
 use soyeht_store::{
     agents,
@@ -564,11 +564,13 @@ fn prepare_reviewer(
         .as_deref()
         .ok_or_else(|| errors::stale_attempt("Task has no executor"))?;
     let executor = core.agent_state(executor_id)?;
+    let ceiling = ModeCeiling::of(&executor, true);
     let mut state = State::new(
         executor.launch.clone(),
         executor.binary_digest.clone(),
-        reviewer_mode(&executor.options),
+        reviewer_mode(&executor, &ceiling),
     )?;
+    state.mode_ceiling = Some(ceiling);
     copy_review_options(&executor, &mut state);
     state.disable_mcp();
     let repository = review_repository(core, task)?;
@@ -598,14 +600,18 @@ fn prepare_reviewer(
     })
 }
 
-/// A reviewer only reads: it starts in the harness's plan mode, else its first
-/// standard mode, and never in a mode that approves everything.
-fn reviewer_mode(options: &soyeht_acp::config::Options) -> Option<String> {
-    let modes = &options.mode()?.options;
+/// A reviewer only reads: it starts in the harness's plan mode, else its first standard mode,
+/// never in a mode that approves everything and never in a mode above its executor's, which the
+/// `ceiling` holds.
+fn reviewer_mode(executor: &State, ceiling: &ModeCeiling) -> Option<String> {
+    let modes = &executor.options.mode()?.options;
     ["plan", "standard"].iter().find_map(|kind| {
         modes
             .iter()
-            .find(|choice| choice.kind.as_deref() == Some(*kind))
+            .filter(|choice| choice.kind.as_deref() == Some(*kind))
+            .find(|choice| {
+                ceiling.allows(&executor.launch.id, &choice.value, choice.kind.as_deref())
+            })
             .map(|choice| choice.value.clone())
     })
 }
@@ -628,36 +634,18 @@ fn reviewer_pane(core: &Core, task: &Task, state: &State, repository: &Path) -> 
     let cwd = repository
         .to_str()
         .ok_or_else(|| errors::invalid("Review directory must be UTF-8"))?;
-    let pane = Pane {
-        pane_id: Uuid::new_v4().to_string(),
-        workspace_id: task.workspace_id.clone(),
-        cwd: cwd.into(),
-        name: format!("Review {}", task.task_id),
-        mode: PaneMode::Agent,
-        state: PaneState::Starting,
-        source: StateSource::Protocol,
-        confidence: 1.0,
-        phrase: "Starting contract-drift review".into(),
-        generation: 1,
-        cols: executor.stored.pane.cols,
-        rows: executor.stored.pane.rows,
-        record: true,
-        experiment_capture: Some(soyeht_protocol::PaneExperimentCapture {
-            on: false,
-            failure: None,
-        }),
-        pid: None,
-        stream_id: None,
-        agent: Some(state.public(core.now_ms())),
-        url: None,
-        title: None,
-        viewport: None,
-        incognito: None,
-        writing_kind: None,
-        writing_section: None,
-        exit_code: None,
-        web_session: None,
-    };
+    let pane = model::new_pane(
+        PaneMode::Agent,
+        task.workspace_id.clone(),
+        format!("Review {}", task.task_id),
+        cwd,
+    )
+    .starting("Starting contract-drift review")
+    .recorded_agent(
+        state.public(core.now_ms()),
+        executor.stored.pane.cols,
+        executor.stored.pane.rows,
+    );
     Ok(StoredPane {
         pane,
         closed: false,
@@ -759,36 +747,4 @@ fn malformed_finding() -> DriftFinding {
 }
 
 #[cfg(test)]
-mod reviewer_mode_tests {
-    use super::reviewer_mode;
-    use serde_json::json;
-    use soyeht_acp::config::Options;
-
-    fn modes(choices: &[(&str, &str)]) -> Options {
-        let options: Vec<_> = choices
-            .iter()
-            .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
-            .collect();
-        Options::from_response(&json!({"configOptions":[{"id":"mode","name":"Mode",
-            "category":"mode","type":"select","currentValue":choices[0].0,"options":options}]}))
-        .unwrap()
-    }
-
-    #[test]
-    fn reviewers_prefer_plan_then_standard_and_never_full_access() {
-        let claude = modes(&[
-            ("bypassPermissions", "full_access"),
-            ("default", "standard"),
-            ("plan", "plan"),
-        ]);
-        assert_eq!(reviewer_mode(&claude).as_deref(), Some("plan"));
-        let codex = modes(&[
-            ("agent-full-access", "full_access"),
-            ("agent", "auto_review"),
-            ("read-only", "standard"),
-        ]);
-        assert_eq!(reviewer_mode(&codex).as_deref(), Some("read-only"));
-        let open = modes(&[("everything", "full_access"), ("auto", "auto_review")]);
-        assert_eq!(reviewer_mode(&open), None);
-    }
-}
+mod reviewer_mode_tests;
