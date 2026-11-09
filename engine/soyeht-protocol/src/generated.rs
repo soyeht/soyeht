@@ -183,6 +183,8 @@ pub enum ErrorKind {
     AdapterNotAcknowledged,
     #[serde(rename = "workspace_folder_missing")]
     WorkspaceFolderMissing,
+    #[serde(rename = "push_unavailable")]
+    PushUnavailable,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -9165,5 +9167,6 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::FileTooLarge => -32040,
         ErrorKind::AdapterNotAcknowledged => -32041,
         ErrorKind::WorkspaceFolderMissing => -32042,
+        ErrorKind::PushUnavailable => -32043,
     }
 }

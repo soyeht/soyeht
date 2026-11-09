@@ -25,8 +25,13 @@ extension EngineClient {
     engineCapabilities.contains(capability.rawValue)
   }
 
-  /// Registers this device's APNs token; registering again replaces it.
+  /// Registers this device's APNs token; registering again replaces it. An engine that does not
+  /// offer `push` is not asked: it would refuse (`push_unavailable`) and keep nothing.
   public func registerPush(token: String, environment: PushEnvironment) async throws {
+    guard engineOffers(.push) else {
+      throw ClientFailure.remote(
+        ErrorKind.push_unavailable.rawValue, "This engine does not send push notifications")
+    }
     _ = try await mutation(
       .pushRegister,
       PushRegisterParams(

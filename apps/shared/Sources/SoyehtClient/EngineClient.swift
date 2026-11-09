@@ -295,7 +295,9 @@ public final class EngineClient {
     try verification?.check(welcome)
     guard welcome.role == (pairedDevice ? .human_device : .human_local),
       welcome.protocolVersion == ProtocolVersion.current
-    else { throw ClientFailure.invalidFrame }
+    else {
+      throw ClientFailure.invalidFrame
+    }
     connectionActor = Actor(
       role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
     engineCapabilities = Set(welcome.capabilities)

@@ -131,7 +131,8 @@
         "file_not_text",
         "file_too_large",
         "adapter_not_acknowledged",
-        "workspace_folder_missing"
+        "workspace_folder_missing",
+        "push_unavailable"
       ]
     },
     "RpcError": {
@@ -15006,7 +15007,8 @@
     "file_not_text": -32039,
     "file_too_large": -32040,
     "adapter_not_acknowledged": -32041,
-    "workspace_folder_missing": -32042
+    "workspace_folder_missing": -32042,
+    "push_unavailable": -32043
   },
   "x-clientPolicy": {
     "timeouts": {

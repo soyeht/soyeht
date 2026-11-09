@@ -79,11 +79,12 @@ privacy statement applies to that download.
 ### Push notifications (iPhone and iPad)
 
 **Push notifications are not part of Soyeht 0.1.0.** The iPhone and iPad app does not ask for
-notification permission and does not register a push token, and the engine on your computer sends
-nothing to Apple's push service (APNs). The app asks for permission only when the engine it is
-paired with says it can send push alerts, and an engine says so only when it has been given Apple
-push credentials (`docs/push-notifications.md`), which only works for an app build you sign
-yourself. The release engine has none.
+notification permission, does not ask Apple for a push token and does not send one to your
+computer, and the engine on your computer sends nothing to Apple's push service (APNs). The app
+does these things only when the engine it is paired with says it can send push alerts, and an
+engine says so only when it has been given Apple push credentials (`docs/push-notifications.md`),
+which only works for an app build you sign yourself. The release engine has none. An engine
+without them also refuses a token if a program sends one (`push_unavailable`) and keeps nothing.
 
 Push is meant to return through a relay. Until then, if you turn it on for your own build, this is
 what happens: when an agent stops to ask you something and a phone is paired, the engine sends an

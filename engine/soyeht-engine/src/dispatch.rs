@@ -262,7 +262,7 @@ impl Core {
             protocol_version: limits::PROTOCOL_VERSION,
             connection_id: connection.into(),
             role,
-            capabilities: self.capabilities()?,
+            capabilities: self.capabilities(),
             db_id: self.store.db_id.clone(),
             engine_proof,
         })
@@ -639,7 +639,7 @@ impl Core {
         } else {
             sections.push(("requests".into(), pairing));
         }
-        sections.push(("capabilities".into(), json!(self.capabilities()?)));
+        sections.push(("capabilities".into(), json!(self.capabilities())));
         sections.push(("writing".into(), self.writing_snapshot()?));
         sections.push(("trust".into(), self.project_trust_snapshot()?));
         let streams:Vec<_>=self.panes.values().filter(|p|!p.stored.closed && p.stored.pane.mode == soyeht_protocol::PaneMode::Terminal).map(|p|json!({"paneId":p.stored.pane.pane_id,"streamId":p.stored.pane.stream_id,"generation":p.stored.pane.generation,"firstRetainedOffset":p.screen.first_offset().to_string(),"nextOffset":p.screen.next_offset().to_string(),"binaryPaneRef":0})).collect();
@@ -708,7 +708,7 @@ impl Core {
 
     /// What the engine offers, by wire name. `push` is offered only while the engine can send
     /// alerts, so a phone asks for notification permission only when an alert could reach it.
-    pub(crate) fn capabilities(&self) -> Result<Vec<String>> {
+    pub(crate) fn capabilities(&self) -> Vec<String> {
         let mut offered = vec![
             EngineCapability::Terminal,
             EngineCapability::Workspaces,
@@ -722,13 +722,7 @@ impl Core {
         if self.push.enabled() {
             offered.push(EngineCapability::Push);
         }
-        offered
-            .iter()
-            .map(|capability| match serde_json::to_value(capability) {
-                Ok(Value::String(name)) => Ok(name),
-                _ => Err(errors::internal("Capability serialization failed")),
-            })
-            .collect()
+        offered.iter().map(errors::wire_name).collect()
     }
 }
 

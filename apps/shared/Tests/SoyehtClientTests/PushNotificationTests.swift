@@ -138,3 +138,18 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
   client.engineCapabilities.insert(EngineCapability.push.rawValue)
   #expect(client.engineOffers(.push))
 }
+
+@MainActor @Test func aTokenIsNotSentToAnEngineThatDoesNotOfferPush() async {
+  let client = EngineClient(socket: "/tmp/push-register.sock")
+  client.engineCapabilities = [EngineCapability.terminal.rawValue]
+  do {
+    try await client.registerPush(token: "ab12", environment: .production)
+    Issue.record("registerPush sent a token to an engine without push")
+  } catch let ClientFailure.remote(kind, _, _) {
+    // The refusal is raised before a request is made, so a client that is not even connected
+    // still names the engine's own answer.
+    #expect(kind == ErrorKind.push_unavailable.rawValue)
+  } catch {
+    Issue.record("unexpected failure: \(error)")
+  }
+}

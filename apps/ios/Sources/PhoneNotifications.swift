@@ -19,11 +19,8 @@ final class PhoneAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificatio
     let center = UNUserNotificationCenter.current()
     center.delegate = self
     center.setNotificationCategories(PushCategory.categories())
-    Task {
-      // Refresh the token on every launch once the person has allowed notifications.
-      let status = await center.notificationSettings().authorizationStatus
-      if PhonePush.allowed(status) { application.registerForRemoteNotifications() }
-    }
+    // No token is requested here: `PhonePush.connected` asks Apple for one, on each connection to
+    // an engine that offers push. An engine without push gets nothing, and Apple is not asked.
     return true
   }
 
@@ -112,9 +109,9 @@ final class PhonePush {
   }
 
   private func register(_ client: EngineClient) async {
-    guard let token, client.connected, registeredConnection != client.connectionRevision else {
-      return
-    }
+    guard let token, client.connected, client.engineOffers(.push),
+      registeredConnection != client.connectionRevision
+    else { return }
     #if targetEnvironment(simulator)
       let simulator = true
     #else

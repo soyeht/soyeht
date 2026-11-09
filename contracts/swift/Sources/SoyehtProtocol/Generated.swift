@@ -108,6 +108,7 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `file_too_large` = "file_too_large"
     case `adapter_not_acknowledged` = "adapter_not_acknowledged"
     case `workspace_folder_missing` = "workspace_folder_missing"
+    case `push_unavailable` = "push_unavailable"
 }
 
 public struct RpcError: Codable, Sendable {

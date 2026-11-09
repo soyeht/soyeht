@@ -8,8 +8,11 @@ maintainers' key. Until then:
 
 - The engine offers the `push` capability in `welcome` (contract 08 §2.3) only while its APNs
   credentials loaded (`engine.push_enabled`). The release engine has none, so it does not offer it.
-- The iPhone and iPad app asks for notification permission, and registers a token, only when the
-  engine offers `push`. With the release engine it asks for nothing. The Android app never asks.
+- The iPhone and iPad app asks for notification permission, asks Apple for a token and registers it
+  (`push.register`) only when the engine offers `push`. With the release engine it does none of
+  these. The Android app never asks.
+- An engine that does not offer `push` answers `push.register` with `push_unavailable` and stores
+  nothing. `push.unregister` still works, so a token stored by an earlier run can be removed.
 - The code and the tests below stay as they are. Someone who builds the app with their own team
   and gives the engine their own key, as described here, gets push on that build.
 
