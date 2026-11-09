@@ -612,7 +612,7 @@ mod tests {
 
     #[test]
     fn an_intent_is_forgotten_only_when_it_was_recorded_long_enough_ago() {
-        let (mut store, directory) = store_with_intent_a();
+        let (store, directory) = store_with_intent_a();
         let recorded = chrono::Utc::now().timestamp();
 
         // A grace that has not passed since the record leaves it; one that has, drops it.
