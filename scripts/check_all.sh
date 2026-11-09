@@ -286,6 +286,8 @@ step always both params-reads:unit uv run python -m unittest discover -s scripts
 step always both params-reads:check uv run python scripts/check_params_reads.py
 step always both legacy-isolation:unit uv run python -m unittest discover -s scripts -p 'test_check_legacy_isolation.py'
 step always both legacy-isolation:check uv run python scripts/check_legacy_isolation.py
+step always both xcode-project-ids:unit uv run python -m unittest discover -s scripts -p 'test_check_xcode_project_ids.py'
+step always both xcode-project-ids:check uv run python scripts/check_xcode_project_ids.py
 
 step always both contracts:generate-check uv run python contracts/generate.py --check
 step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'

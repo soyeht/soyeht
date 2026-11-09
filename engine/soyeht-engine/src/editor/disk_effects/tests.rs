@@ -649,3 +649,24 @@ async fn deleting_a_folder_saves_every_draft_under_it_and_then_deletes_it() {
 }
 
 mod races;
+
+#[test]
+fn the_folder_of_a_workspace_is_read_from_the_database_once() {
+    let (mut core, root) = crate::test_panes::core_with_agent(&[]);
+    let first = core.workspace_root("workspace").unwrap();
+    assert_eq!(first, root);
+
+    let statements = soyeht_store::test_support::statements_started();
+    for _ in 0..100 {
+        assert_eq!(core.workspace_root("workspace").unwrap(), first);
+    }
+
+    assert_eq!(
+        soyeht_store::test_support::statements_started() - statements,
+        0,
+        "the disk watch asked the database for the folder again"
+    );
+    // A workspace that does not exist is not remembered.
+    assert!(core.workspace_root("missing").is_err());
+    assert!(!core.workspace_roots.contains_key("missing"));
+}

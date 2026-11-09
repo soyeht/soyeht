@@ -1,7 +1,8 @@
 name: check-all
-# GitHub Actions is disabled by project decision; this file only keeps hosted CI
-# on the same step list as the local merge gate. Add gate steps to
-# scripts/check_all.sh, never here (scripts/test_gate_list.py enforces it).
+# Hosted CI runs the merge gate's fast tier, the same steps the local merge gate runs
+# before a merge. The full tier needs the VM1 editor measurement and the owner's hosts and
+# runs after the merge (scripts/main_watch.py). Add gate steps to scripts/check_all.sh,
+# never here (scripts/test_gate_list.py enforces it).
 on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
@@ -40,7 +41,7 @@ jobs:
           BASE_OID: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ -n "$BASE_OID" ]; then
-            bash scripts/check_all.sh --base "$BASE_OID" --event-file "$GITHUB_EVENT_PATH"
+            bash scripts/check_all.sh --tier fast --base "$BASE_OID" --event-file "$GITHUB_EVENT_PATH"
           else
-            bash scripts/check_all.sh
+            bash scripts/check_all.sh --tier fast
           fi

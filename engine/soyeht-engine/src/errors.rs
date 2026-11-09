@@ -42,6 +42,8 @@ pub enum Error {
     PlatformUnsupported(String),
     FileNotText(String),
     FileTooLarge(String),
+    AdapterNotAcknowledged(String),
+    WorkspaceFolderMissing(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -128,6 +130,21 @@ constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
 constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
+constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
+constructor!(workspace_folder_missing, WorkspaceFolderMissing);
+
+/// The failure to open a workspace's root folder: `workspace_folder_missing` when the folder is gone
+/// (deleted, moved or on a disk that is not mounted), so a client says so instead of reporting
+/// "I/O operation failed"; any other failure stays an I/O error. The message names no path,
+/// which the client already has from the workspace.
+pub fn workspace_root(error: io::Error) -> Error {
+    match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            workspace_folder_missing("The workspace folder is missing")
+        }
+        _ => io(error),
+    }
+}
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -223,6 +240,17 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
 
 /// The single translation from engine failures to the public protocol. A failure of a domain
 /// crate already names its kind where the failure is defined; this names the engine's own.
+impl Error {
+    /// What a pane that cannot start says when it is a package nobody acknowledged (ADR 0143):
+    /// it names the package, so the person knows to acknowledge it. `None` for any other error.
+    pub(crate) fn unacknowledged_reason(&self) -> Option<&str> {
+        match self {
+            Error::AdapterNotAcknowledged(message) => Some(message),
+            _ => None,
+        }
+    }
+}
+
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
         Error::RecordedRpc(error) => error.data.kind.clone(),
@@ -267,6 +295,8 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
+        Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
+        Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -380,6 +410,8 @@ fn message(error: &Error) -> String {
         | Error::PlatformUnsupported(message)
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
+        | Error::AdapterNotAcknowledged(message)
+        | Error::WorkspaceFolderMissing(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),

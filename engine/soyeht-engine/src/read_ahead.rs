@@ -17,6 +17,7 @@ use crate::{
     core::Core,
     errors::Result,
     supervisor_handle::Supervisor,
+    supervisor_watch::ReadSummary,
     terminal_drain::{Read, read_output},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -81,6 +82,16 @@ fn wakes(owner: &str) -> bool {
     !owner.starts_with("language:")
 }
 
+/// What the watch needs to know of a read that ended.
+fn summary_of(read: &Read) -> ReadSummary {
+    ReadSummary {
+        next_seq: read.output.next_seq,
+        end_seq: read.output.end_seq,
+        exited: read.output.exited,
+        found: !read.output.bytes.is_empty() || read.output.gap.is_some(),
+    }
+}
+
 /// A read that never wakes the tick.
 fn quiet(_: &Result<Read>) -> bool {
     false
@@ -102,7 +113,10 @@ impl Core {
         look_up_exit: bool,
     ) -> Result<()> {
         let job = job(owner);
-        if self.reads.polling_woken || !self.background.accepts(&job) {
+        // A tick woken by a notice starts the read of the process the notice marked, and no other.
+        if (self.reads.polling_woken && !self.watch.should_read(instance_id, true))
+            || !self.background.accepts(&job)
+        {
             return Ok(());
         }
         let supervisor = self.supervisor()?;
@@ -122,6 +136,9 @@ impl Core {
                     Ok(None) => return Ok(()),
                     Err(error) => Err(error),
                 };
+                if let Ok(read) = &settled {
+                    core.watch.note_read(&instance_id, &summary_of(read));
+                }
                 if !core.reads.live.contains(&owner) {
                     return Ok(());
                 }

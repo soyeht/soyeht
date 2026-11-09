@@ -25,6 +25,8 @@ fun SettingsSheet(model: AppModel) {
     val roles = LocalRoles.current
     val metrics = LocalMetrics.current
     val startScan = rememberStartScan(model)
+    val paste = rememberPasteLink(model::offer)
+    val hasCamera = rememberHasCamera()
     Dialog(onDismissRequest = model::closeSettings, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
@@ -42,9 +44,9 @@ fun SettingsSheet(model: AppModel) {
             if (!model.handwriting.platformHandles) HandwritingRow(model.handwriting)
             if (model.paired) {
                 SettingRow("Another computer", "Pairing replaces the computer this device controls.") {
-                    Pill("Pair another", { model.closeSettings(); startScan() })
+                    if (hasCamera) Pill("Pair another", { model.closeSettings(); startScan() }) else Pill("Paste a link", { model.closeSettings(); paste() })
                 }
-                if (model.cameraDenied) CameraDenied()
+                model.cameraProblem?.let { CameraNotice(it) }
                 SettingRow("This computer", "This device stops controlling it.") {
                     Pill("Forget", { model.closeSettings(); model.askToForget() }, tone = Tone.Danger, description = "Forget this computer")
                 }

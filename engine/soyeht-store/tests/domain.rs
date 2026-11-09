@@ -9,7 +9,7 @@ use soyeht_protocol::{
 use soyeht_store::{
     agents::{self, Outgoing},
     database::Store,
-    domain::{InputIntent, PaneRecord},
+    domain::{FinishedInput, InputIntent, PaneRecord},
 };
 use support::{Profile, commit};
 
@@ -284,16 +284,36 @@ fn input_intent_and_idempotency_operations_keep_their_durable_identity() {
         supervisor_id: "supervisor-1".into(),
         instance_id: "instance-1".into(),
     };
-    store.record_input_intent("client", "key", &intent).unwrap();
-    assert_eq!(store.input_intent("client", "key").unwrap(), Some(intent));
+    store
+        .finish_inputs(&[], Some(("client", "key", &intent)))
+        .unwrap();
+    assert_eq!(
+        store.input_intent("client", "key").unwrap().as_ref(),
+        Some(&intent)
+    );
     assert!(store.input_intent_operation_pending("operation-1").unwrap());
 
+    // The outcome is recorded with the next write of inputs, here one that records another intent.
+    let next = InputIntent {
+        operation_key: "operation-2".into(),
+        ..intent.clone()
+    };
+    let finished = FinishedInput {
+        scope: "client".into(),
+        key: "key".into(),
+        fingerprint: "input-fingerprint".into(),
+        result: json!({"status":"pending"}),
+        actor: json!({"role":"human_local"}),
+    };
     store
-        .mutate("client", "key", "input-fingerprint", |change| {
-            change.remove_input_intent("client", "key")?;
-            Ok((json!({"status":"pending"}), vec![]))
-        })
+        .finish_inputs(
+            std::slice::from_ref(&finished),
+            Some(("client", "next", &next)),
+        )
         .unwrap();
+    assert_eq!(store.input_intent("client", "next").unwrap(), Some(next));
+    // Recording it again changes nothing.
+    store.finish_inputs(&[finished], None).unwrap();
     assert!(store.input_intent("client", "key").unwrap().is_none());
     assert!(!store.input_intent_operation_pending("operation-1").unwrap());
     let receipt = store.idempotency_receipt("client", "key").unwrap().unwrap();

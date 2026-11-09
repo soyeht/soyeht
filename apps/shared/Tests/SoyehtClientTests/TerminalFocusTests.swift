@@ -5,22 +5,31 @@
   import Testing
   @testable import SoyehtClient
 
-  @MainActor @Test func terminalOwnsKeyboardFocusAfterAttachment() async throws {
+  /// A window for a Mac terminal. The app bundles its faces; the test registers them from the
+  /// repository, so a machine without them installed still finds the terminal's mono face.
+  @MainActor private func terminalWindow() -> NSWindow {
+    PaneInteriorRendering.registerFonts()
     _ = NSApplication.shared
     let window = NSWindow(
       contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
       styleMask: [.titled, .resizable], backing: .buffered, defer: false)
     window.isReleasedWhenClosed = false
+    return window
+  }
+
+  private func terminal(in view: NSView) -> TerminalView? {
+    if let terminal = view as? TerminalView { return terminal }
+    return view.subviews.lazy.compactMap { terminal(in: $0) }.first
+  }
+
+  @MainActor @Test func terminalOwnsKeyboardFocusAfterAttachment() async throws {
+    let window = terminalWindow()
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
     let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
     window.contentView = host
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
-    func terminal(in view: NSView) -> TerminalView? {
-      if let terminal = view as? TerminalView { return terminal }
-      return view.subviews.lazy.compactMap { terminal(in: $0) }.first
-    }
     let view = try #require(terminal(in: host))
     #expect(window.firstResponder === view)
     let cols = view.getTerminal().cols
@@ -60,11 +69,7 @@
   }
 
   @MainActor @Test func terminalLifecycleUpdateDoesNotStealFieldFocus() async throws {
-    _ = NSApplication.shared
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
+    let window = terminalWindow()
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
     let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
@@ -73,10 +78,6 @@
     host.addSubview(field)
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
-    func terminal(in view: NSView) -> TerminalView? {
-      if let terminal = view as? TerminalView { return terminal }
-      return view.subviews.lazy.compactMap { terminal(in: $0) }.first
-    }
     let view = try #require(terminal(in: host))
     #expect(window.makeFirstResponder(field))
     #expect(window.firstResponder is NSTextView)
@@ -87,11 +88,7 @@
   }
 
   @MainActor @Test func fieldKeepsEveryKeyAcrossTerminalLifecycleUpdate() async throws {
-    _ = NSApplication.shared
-    let window = NSWindow(
-      contentRect: NSRect(x: 0, y: 0, width: 800, height: 400),
-      styleMask: [.titled, .resizable], backing: .buffered, defer: false)
-    window.isReleasedWhenClosed = false
+    let window = terminalWindow()
     defer { window.close() }
     let client = EngineClient(socket: "/tmp/sn-render-only/engine.sock")
     let host = NSHostingView(rootView: MacTerminal(client: client, paneId: "pane-a"))
@@ -100,10 +97,6 @@
     host.addSubview(field)
     host.layoutSubtreeIfNeeded()
     try await Task.sleep(for: .milliseconds(100))
-    func terminal(in view: NSView) -> TerminalView? {
-      if let terminal = view as? TerminalView { return terminal }
-      return view.subviews.lazy.compactMap { terminal(in: $0) }.first
-    }
     let view = try #require(terminal(in: host))
     #expect(window.makeFirstResponder(field))
     view.viewDidMoveToWindow()

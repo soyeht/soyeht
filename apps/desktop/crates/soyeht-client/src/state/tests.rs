@@ -3,7 +3,7 @@ use crate::commands::Command;
 use crate::screen::TerminalScreen;
 use crate::testing::{pane, pane_json, workspace, workspace_json};
 use serde_json::json;
-use soyeht_protocol::ClientFocus;
+use soyeht_protocol::{ClientFocus, ProjectTrust, ProjectTrustEntry};
 
 fn problem_event(message: &str) -> Event {
     Event::Problem {
@@ -437,4 +437,207 @@ fn an_effect_that_only_asks_the_engine_is_its_requests_and_the_others_are_not() 
     );
     assert!(Effect::Resync.commands().is_empty());
     assert!(Effect::FocusPane("p".to_owned()).commands().is_empty());
+}
+
+fn with_trust(workspaces: &[&str], trust: &[(&str, ProjectTrust)]) -> Snapshot {
+    Snapshot {
+        trust: trust
+            .iter()
+            .map(|(id, trust)| ProjectTrustEntry {
+                workspace_id: (*id).to_owned(),
+                trust: trust.clone(),
+            })
+            .collect(),
+        ..snapshot(workspaces, &[])
+    }
+}
+
+fn trust_changed(ids: &[&str], trust: &str) -> Event {
+    notification(
+        EventName::ProjectTrustChanged,
+        json!({"eventId": "7", "at": "now", "workspaceIds": ids, "trust": trust}),
+    )
+}
+
+fn prompt_for(state: &State) -> Option<&str> {
+    state
+        .trust_prompt()
+        .map(|workspace| workspace.workspace_id.as_str())
+}
+
+#[test]
+fn the_first_undecided_workspace_that_is_selected_is_asked_about() {
+    let (mut state, _) = connected(with_trust(
+        &["w1", "w2"],
+        &[
+            ("w1", ProjectTrust::Trusted),
+            ("w2", ProjectTrust::Undecided),
+        ],
+    ));
+    assert_eq!(prompt_for(&state), None, "the selected one is trusted");
+    state.select_workspace("w2");
+    assert_eq!(prompt_for(&state), Some("w2"));
+    state.select_workspace("w1");
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn a_snapshot_without_the_trust_section_asks_nothing() {
+    let (state, _) = connected(snapshot(&["w1"], &[]));
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn putting_the_question_off_keeps_it_away_until_the_application_restarts() {
+    let undecided = || with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]);
+    let (mut state, _) = connected(undecided());
+    assert_eq!(prompt_for(&state), Some("w1"));
+    state.defer_trust_prompt();
+    assert_eq!(prompt_for(&state), None);
+    // A lost and restored connection does not ask again.
+    state.apply(Event::Disconnected("gone".into()));
+    state.apply(Event::Connected(undecided()));
+    assert_eq!(prompt_for(&state), None);
+}
+
+/// Two workspaces over one folder, neither answered for.
+fn two_undecided_workspaces() -> (State, Vec<Effect>) {
+    connected(with_trust(
+        &["w1", "w2"],
+        &[
+            ("w1", ProjectTrust::Undecided),
+            ("w2", ProjectTrust::Undecided),
+        ],
+    ))
+}
+
+#[test]
+fn the_engines_event_answers_the_question_for_every_workspace_of_the_folder() {
+    let (mut state, _) = two_undecided_workspaces();
+    assert!(
+        state
+            .apply(trust_changed(&["w1", "w2"], "trusted"))
+            .is_empty()
+    );
+    assert_eq!(prompt_for(&state), None);
+    state.select_workspace("w2");
+    assert_eq!(prompt_for(&state), None);
+    assert!(state.problem().is_none());
+}
+
+#[test]
+fn an_event_that_is_not_a_trust_is_unreadable_and_asks_for_a_fresh_snapshot() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    let effects = state.apply(trust_changed(&["w1"], "maybe"));
+    assert!(matches!(effects.as_slice(), [Effect::Resync]));
+}
+
+#[test]
+fn an_event_for_a_workspace_the_snapshot_did_not_list_is_kept() {
+    // A workspace announced a moment before its trust: the answer arrives with the event.
+    let (mut state, _) = connected(snapshot(&["w1"], &[]));
+    state.apply(trust_changed(&["w1"], "undecided"));
+    assert_eq!(prompt_for(&state), Some("w1"));
+}
+
+#[test]
+fn the_answer_to_the_request_updates_the_trust_like_the_event_does() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    state.apply(Event::ProjectTrust {
+        workspace_ids: vec!["w1".to_owned()],
+        trust: ProjectTrust::Restricted,
+    });
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn a_disconnect_forgets_the_trust_and_a_reconnect_brings_the_engines_back() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    state.apply(Event::Disconnected("gone".into()));
+    assert_eq!(prompt_for(&state), None);
+    state.apply(Event::Connected(with_trust(
+        &["w1"],
+        &[("w1", ProjectTrust::Trusted)],
+    )));
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn a_trust_the_engine_could_not_save_is_told_in_the_policy_words() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    state.apply(Event::ProjectTrustFailed);
+    assert_eq!(
+        state.problem(),
+        Some(soyeht_protocol::client_policy::PROJECT_TRUST_FAILED)
+    );
+    assert_eq!(prompt_for(&state), Some("w1"), "the question stays");
+}
+
+#[test]
+fn a_closed_workspace_is_no_longer_asked_about() {
+    let (mut state, _) = two_undecided_workspaces();
+    state.apply(notification(
+        EventName::WorkspaceClosed,
+        json!({"eventId": "8", "at": "now", "workspaceId": "w1"}),
+    ));
+    assert_eq!(prompt_for(&state), Some("w2"));
+}
+
+fn create_workspace(state: &mut State, id: &str) {
+    state.apply(notification(
+        EventName::WorkspaceCreated,
+        json!({"eventId": "9", "at": "now", "workspace": workspace_json(id)}),
+    ));
+}
+
+#[test]
+fn a_workspace_created_during_the_session_is_asked_about_when_the_engine_says_undecided() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Trusted)]));
+    create_workspace(&mut state, "w2");
+    state.apply(trust_changed(&["w2"], "undecided"));
+    assert_eq!(prompt_for(&state), None, "w1 is still the selected one");
+    state.select_workspace("w2");
+    assert_eq!(prompt_for(&state), Some("w2"));
+    state.apply(trust_changed(&["w2"], "trusted"));
+    assert_eq!(prompt_for(&state), None);
+}
+
+#[test]
+fn a_workspace_created_on_an_engine_with_no_trust_section_asks_nothing() {
+    let (mut state, _) = connected(snapshot(&[], &[]));
+    create_workspace(&mut state, "w1");
+    assert_eq!(prompt_for(&state), None);
+    assert_eq!(state.trust_marker(), None);
+}
+
+#[test]
+fn a_restricted_or_undecided_workspace_is_marked_and_can_be_asked_about_again() {
+    let (mut state, _) = connected(with_trust(
+        &["w1", "w2"],
+        &[
+            ("w1", ProjectTrust::Restricted),
+            ("w2", ProjectTrust::Trusted),
+        ],
+    ));
+    let note = Some(soyeht_protocol::client_policy::PROJECT_TRUST_RESTRICTED_NOTE);
+    assert_eq!(state.trust_marker(), note);
+    assert_eq!(prompt_for(&state), None, "the person already answered");
+    state.reopen_trust_prompt();
+    assert_eq!(prompt_for(&state), Some("w1"));
+    state.defer_trust_prompt();
+    assert_eq!(prompt_for(&state), None);
+    assert_eq!(state.trust_marker(), note, "the marker stays");
+    state.apply(trust_changed(&["w1"], "trusted"));
+    assert_eq!(state.trust_marker(), None);
+    state.select_workspace("w2");
+    assert_eq!(state.trust_marker(), None);
+}
+
+#[test]
+fn a_question_put_off_comes_back_when_the_person_asks_for_it() {
+    let (mut state, _) = connected(with_trust(&["w1"], &[("w1", ProjectTrust::Undecided)]));
+    state.defer_trust_prompt();
+    assert_eq!(prompt_for(&state), None);
+    state.reopen_trust_prompt();
+    assert_eq!(prompt_for(&state), Some("w1"));
 }

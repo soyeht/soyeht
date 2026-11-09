@@ -28,6 +28,14 @@ public enum ClientPolicy {
     public static let terminalInputChunkBytes = 16384
     public static let terminalInputQueueBytes = 1048576
     public static let terminalScrollbackLines = 10000
+    public static let terminalOutputFlushMs = 16
+    public static let terminalOutputFlushSeconds: Double = 0.016
+    public static let terminalOutputFloodMs = 50
+    public static let terminalOutputFloodSeconds: Double = 0.05
+    public static let terminalOutputFloodBytes = 8192
+    public static let terminalInteractiveWindowMs = 150
+    public static let terminalInteractiveWindowSeconds: Double = 0.15
+    public static let terminalOutputFlushBytes = 1048576
     public static let capsWaitingMessages = 1000
     public static let capsFileLinks = 128
     public static let capsWebLinks = 128
@@ -51,6 +59,7 @@ public enum ClientPolicy {
     public static let editorNoFile = "The engine has no file for this editor tab."
     public static let editorFileNotText = "Binary file, can't be shown."
     public static let editorFileTooLarge = "This file is too large to open in the editor."
+    public static let workspaceFolderGone = "This workspace's folder is gone:"
     public static let editorSaveMissing = "Couldn't save: this file was deleted from the disk. Save again to create it."
     public static let editorSaveDenied = "Couldn't save: permission denied. Fix the permissions, then save again."
     public static let editorSaveFull = "Couldn't save: the disk is full. Free some space, then save again."
@@ -100,6 +109,12 @@ public enum ClientPolicy {
     public static let appMoveOldInTrash = "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it."
     public static let pushNeedsYouTitle = "An agent needs you"
     public static let pushNeedsYouBody = "Open Soyeht to see what it asks."
+    public static let projectTrustTitle = "Trust this folder?"
+    public static let projectTrustSummary = "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from."
+    public static let projectTrustTrust = "Trust folder"
+    public static let projectTrustRestrict = "Keep restricted"
+    public static let projectTrustRestrictedNote = "This folder is restricted: language servers run with code execution off, or do not start."
+    public static let projectTrustFailed = "Soyeht could not save this choice."
     public static let clientNameMac = "mac"
     public static let clientNameMacDev = "mac-dev"
     public static let clientNameIphone = "iphone"

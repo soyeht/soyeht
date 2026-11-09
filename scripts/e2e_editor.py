@@ -166,6 +166,11 @@ def open_editor(client, repository):
         "workspace.create", name="Editor acceptance", path=str(repository),
         idempotencyKey="editor-workspace",
     )["workspace"]["workspaceId"]
+    # The person trusts the folder (contract 18); until then no Rust server runs in it.
+    client.mutate(
+        "project.trust.set", workspaceId=workspace, trust="trusted",
+        idempotencyKey="editor-trust",
+    )
     opened = client.mutate(
         "file.open", workspaceId=workspace, path="src/main.rs",
         idempotencyKey="editor-open",
@@ -289,6 +294,8 @@ def acceptance_usage(services, client, results):
 
 def run_acceptances(services, results):
     repository = create_repository(services)
+    # This client stands for the signed app, the only one that may trust a folder on a Mac.
+    (services.data / "test-attest-local-ui").write_text("")
     client = services.client("editor-e2e")
     workspace, file_id = open_editor(client, repository)
     wait_lsp(client, workspace, 1)

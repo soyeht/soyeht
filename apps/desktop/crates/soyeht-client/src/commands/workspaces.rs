@@ -1,9 +1,10 @@
-//! The requests that make a workspace of a folder, name it, arrange its panes and close it.
+//! The requests that make a workspace of a folder, name it, arrange its panes, close it and say
+//! whether its folder is trusted.
 
 use super::{Command, key};
 use soyeht_protocol::{
-    Request, WorkspaceCloseParams, WorkspaceCreateParams, WorkspaceLayoutSetParams,
-    WorkspaceRenameParams,
+    ProjectTrustSetParams, Request, WorkspaceCloseParams, WorkspaceCreateParams,
+    WorkspaceLayoutSetParams, WorkspaceRenameParams,
 };
 
 /// The request a command of a workspace needs, or `None` when it is not one of these.
@@ -35,6 +36,14 @@ pub(super) fn request(command: &Command) -> Option<Request> {
                 idempotency_key: key(),
             })
         }
+        Command::SetProjectTrust {
+            workspace_id,
+            trust,
+        } => Request::ProjectTrustSet(ProjectTrustSetParams {
+            workspace_id: workspace_id.clone(),
+            trust: trust.clone(),
+            idempotency_key: key(),
+        }),
         _ => return None,
     })
 }

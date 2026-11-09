@@ -33,7 +33,9 @@ pub(super) fn list_project_files(
     files: &dyn FileSystemPort,
     workspace_root: &Path,
 ) -> Result<Vec<ProjectFile>> {
-    let root = files.canonicalize(workspace_root).map_err(errors::io)?;
+    let root = files
+        .canonicalize(workspace_root)
+        .map_err(errors::workspace_root)?;
     files.project_files(&root).map_err(errors::io)
 }
 

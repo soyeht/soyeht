@@ -53,7 +53,7 @@ mod tests {
     #[test]
     fn memory_transport_proves_framing_and_correlation_without_io() {
         let mut client = Client::default();
-        let request = client.initialize("file:///workspace").unwrap();
+        let request = client.initialize("file:///workspace", None).unwrap();
         let mut transport = MemoryTransport {
             received: vec![encode(&json!({"jsonrpc":"2.0","id":1,"result":{}})).unwrap()],
             ..MemoryTransport::default()
