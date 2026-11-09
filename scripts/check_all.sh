@@ -90,7 +90,10 @@ fi
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
 GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
-GATE_ENGINE_TEST_ARGS="--workspace"
+# The engine crates `engine:test-changed` tests. The plan sets them from the changed paths; a
+# `--only` run has no plan, so a caller that ran the plan elsewhere (scripts/gate_remote.py, whose
+# remote half is a `--only` run) hands the result over.
+GATE_ENGINE_TEST_ARGS="${SOYEHT_GATE_ENGINE_TEST_ARGS:---workspace}"
 matched=0
 
 finish() {
@@ -283,6 +286,8 @@ step always both params-reads:unit uv run python -m unittest discover -s scripts
 step always both params-reads:check uv run python scripts/check_params_reads.py
 step always both legacy-isolation:unit uv run python -m unittest discover -s scripts -p 'test_check_legacy_isolation.py'
 step always both legacy-isolation:check uv run python scripts/check_legacy_isolation.py
+step always both xcode-project-ids:unit uv run python -m unittest discover -s scripts -p 'test_check_xcode_project_ids.py'
+step always both xcode-project-ids:check uv run python scripts/check_xcode_project_ids.py
 
 step always both contracts:generate-check uv run python contracts/generate.py --check
 step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'

@@ -25,6 +25,8 @@ pub struct Listener {
     token: Token,
     handshakes: JoinSet<io::Result<Stream>>,
     pending: Admission<AbortHandle>,
+    /// The errors about one connection since the last one accepted.
+    errors: crate::net::ConnectionErrors,
     /// Marks the endpoint file as live while this listener is.
     _alive: endpoint::Alive,
 }
@@ -47,6 +49,7 @@ impl Listener {
             token,
             handshakes: JoinSet::new(),
             pending: Admission::new(capacity),
+            errors: crate::net::ConnectionErrors::default(),
             _alive: alive,
         })
     }
@@ -59,9 +62,12 @@ impl Listener {
             tokio::select! {
                 accepted = self.tcp.accept() => {
                     match accepted {
-                        Ok((stream, _)) => self.admit(stream),
+                        Ok((stream, _)) => {
+                            self.errors.accepted();
+                            self.admit(stream);
+                        }
                         Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {
-                            tokio::time::sleep(crate::net::ACCEPT_ERROR_FLOOR).await;
+                            tokio::time::sleep(self.errors.failed()?).await;
                         }
                         Err(error) => return Err(error),
                     }

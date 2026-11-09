@@ -53,7 +53,7 @@ private struct PhonePane: View {
           PhoneTerminal(
             client: client, claimsKeyboardFocus: terminalClaimsKeyboard, fontStore: fontStore,
             sizeMode: sizeModes.mode(for: paneId))
-          if let gap = client.gapText {
+          if let gap = client.gapText(for: paneId) {
             Label(gap, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(
               PhonePalette.warning
             ).padding(12)

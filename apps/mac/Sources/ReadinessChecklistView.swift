@@ -134,6 +134,7 @@ private struct ReadinessRowView: View {
 /// background start (or whose start failed). It is a button, never an automatic registration.
 private struct EngineStartRow: View {
   let setup: EngineServiceSetup
+  @Environment(AppRelocation.self) private var relocation
 
   var body: some View {
     HStack(spacing: MacTheme.Space.x10) {
@@ -142,7 +143,13 @@ private struct EngineStartRow: View {
         .foregroundStyle(MacTheme.secondary)
         .fixedSize(horizontal: false, vertical: true)
       Spacer(minLength: MacTheme.Space.x10)
-      if setup.phase != .moveFirst {
+      if setup.phase == .moveFirst {
+        if relocation.canMove {
+          Button(ClientPolicy.appMoveAction) { Task { await relocation.move() } }
+            .buttonStyle(.paneSecondary)
+            .accessibilityIdentifier("engine-service-move")
+        }
+      } else {
         Button(buttonTitle) { Task { await setup.enable() } }
           .buttonStyle(.paneSecondary)
           .accessibilityIdentifier("engine-service-start")
@@ -154,7 +161,7 @@ private struct EngineStartRow: View {
   private var message: String {
     switch setup.phase {
     case .moveFirst:
-      "Move Soyeht Next to your Applications folder and open it from there to start the engine."
+      relocation.explanation ?? ClientPolicy.appMoveExplanation
     case .failed(let detail): detail
     case .ready: "Soyeht's engine is set up to start at login, but it is not running now."
     default: "Start the engine now and keep it running whenever you are logged in."

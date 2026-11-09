@@ -70,7 +70,7 @@ Each layer depends only on the layers listed above it.
    Android core uses; and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-desktop` the
-   views, and its `theme` module holds the palettes and tokens generated from
+   views, `ztracing` a no-op Apache-2.0 stand-in for Zed's GPL-3.0 crate of that name (ADR 0149), and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from.
    Three seams belong to the window, each the same on every system: the log also goes to a
    rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
@@ -113,7 +113,8 @@ ADR when you change a boundary.
   frame, popup gaps, glyph sizes and the sizes of views the Mac does not have. A size both
   clients draw (a sheet, a popover, a field, a column) is a token of a shared section
   (`layout`, `composer`, ...) that the Mac reads as `DesignTokens`; the same number as a Mac
-  literal and a `desktop` token is the copy this rule stops. `contracts/test_design_tokens.py`
+  literal and a `desktop` token is the copy this rule stops. The `eink` section and `einkPalette` (the
+  Android e-ink mode, ADR 0155) are read by the Kotlin output alone. `contracts/test_design_tokens.py`
   proves a token that replaces a Mac literal against the pre-generation Mac source
   (`INLINE_LITERALS`), and a token with no such source is listed in `ADDED_AFTER_GENERATION`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,

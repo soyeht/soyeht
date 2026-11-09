@@ -17,7 +17,7 @@ impl Core {
     pub(crate) fn pane_role_set(&mut self, connection: &str, raw: &Value) -> Result<Value> {
         let params: PaneRoleSetParams = parameters(raw)?;
         let actor = self.task_actor(connection)?;
-        if !matches!(actor.role, Role::HumanLocal | Role::HumanDevice) {
+        if !actor.role.is_person() {
             return Err(errors::forbidden_role(
                 "Only a person may assign an agent role",
             ));

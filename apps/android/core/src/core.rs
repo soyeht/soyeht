@@ -16,7 +16,7 @@ use soyeht_client::{
 };
 use soyeht_protocol::{
     client_policy::{CLIENT_NAME_ANDROID, CLIENT_NAME_ANDROID_DEV},
-    limits,
+    limits, pairing_link,
 };
 use std::sync::{
     Arc, Mutex, PoisonError,
@@ -36,7 +36,8 @@ const CLIENT: &str = if cfg!(debug_assertions) {
 pub trait Listener: Send + Sync {
     /// The replica changed: ask for what is on screen again.
     fn changed(&self);
-    /// The fingerprint of this device's key, to compare with the one the computer shows.
+    /// The code of this device's key, to compare with the one the computer shows (the short
+    /// comparison code, ADR 0152; the whole fingerprint when it has none).
     fn fingerprint(&self, fingerprint: String);
     /// The computer has the proof and waits for the person to allow access.
     fn waiting_for_approval(&self);
@@ -99,7 +100,12 @@ impl Core {
             &link,
             &device_name,
             &mut |progress| match progress {
-                device::Progress::Fingerprint(fingerprint) => listener.fingerprint(fingerprint),
+                device::Progress::Fingerprint(fingerprint) => {
+                    // The short code the Mac shows too (ADR 0152); the whole fingerprint when it
+                    // has none.
+                    let code = pairing_link::comparison_code(&fingerprint);
+                    listener.fingerprint(code.unwrap_or(fingerprint));
+                }
                 device::Progress::WaitingForApproval => listener.waiting_for_approval(),
             },
             &cancel,
@@ -241,6 +247,11 @@ impl Core {
     /// The usage ring of an agent pane: the meter of the provider that reads its harness.
     pub fn usage_gauge(&self, pane_id: String) -> Option<UsageGauge> {
         usage::gauge(&lock(&self.replica).state, &pane_id)
+    }
+
+    /// The usage ring of every provider the engine meters: the rings of the app rail.
+    pub fn usage_gauges(&self) -> Vec<UsageGauge> {
+        usage::gauges(&lock(&self.replica).state)
     }
 
     /// The controls under the message field of an agent pane: the harness chip, and the model, effort

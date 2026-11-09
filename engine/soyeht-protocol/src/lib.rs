@@ -30,3 +30,10 @@ pub mod web;
 
 /// The wire schema is embedded for tooling and compatibility diagnostics.
 pub const SCHEMA: &str = include_str!("../../../contracts/protocol.json");
+
+impl Role {
+    /// Whether the actor is a person, at this machine or on a paired device, and not an agent.
+    pub fn is_person(&self) -> bool {
+        matches!(self, Self::HumanLocal | Self::HumanDevice)
+    }
+}

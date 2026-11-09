@@ -14,8 +14,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.soyeht.next.android.theme.LocalMetrics
 import com.soyeht.next.android.theme.LocalRoles
 import com.soyeht.next.android.theme.UsageRing
 import uniffi.soyeht_android.GaugeBand
@@ -28,8 +30,10 @@ import uniffi.soyeht_android.UsageGauge
  * neither is cut at the edge of the box.
  */
 @Composable
-fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
+fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier, logo: Boolean = false) {
     val roles = LocalRoles.current
+    // The ring's fading is opacity, which on e-ink is a grey the page nearly hides: it draws at full ink.
+    val faded = !LocalMetrics.current.eink
     val arc = when (gauge.band) {
         GaugeBand.SUCCESS -> roles.success
         GaugeBand.WARNING -> roles.warning
@@ -39,7 +43,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
     Box(
         modifier
             .size(UsageRing.diameter.dp)
-            .alpha(gauge.ringOpacity)
+            .alpha(if (faded) gauge.ringOpacity else 1f)
             .semantics { contentDescription = "${gauge.provider} usage ${gauge.percentage}" },
         contentAlignment = Alignment.Center,
     ) {
@@ -52,7 +56,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
             drawArc(roles.well, 0f, 360f, false, corner, Size(side, side), style = Stroke(track))
             gauge.fraction?.let { fraction ->
                 drawArc(
-                    arc.copy(alpha = gauge.arcOpacity),
+                    arc.copy(alpha = if (faded) gauge.arcOpacity else 1f),
                     -90f,
                     (fraction * 360.0).toFloat(),
                     false,
@@ -62,6 +66,7 @@ fun UsageRingView(gauge: UsageGauge, modifier: Modifier = Modifier) {
                 )
             }
         }
-        Text(gauge.percentage, color = roles.ink, fontSize = UsageRing.percentageSize.sp)
+        // The rail's ring holds the provider's logo; a ring with none holds its percentage.
+        if (logo) ProviderLogo(gauge.icon, roles.ink, UsageRing.glyphSize) else Text(gauge.percentage, color = roles.ink, fontSize = UsageRing.percentageSize.sp, fontWeight = FontWeight.Bold)
     }
 }

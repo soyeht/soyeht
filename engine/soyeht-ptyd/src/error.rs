@@ -16,6 +16,8 @@ pub enum Error {
         message: String,
     },
     InvalidWelcome,
+    /// The supervisor does not know the watch role.
+    WatchUnavailable,
     InvalidResponse,
     ZeroRetentionLimit,
     OutputOffsetExhausted,
@@ -117,6 +119,7 @@ impl fmt::Display for Error {
             Self::Base64(error) => write!(formatter, "base64: {error}"),
             Self::Remote { kind, message } => write!(formatter, "{kind}: {message}"),
             Self::InvalidWelcome => formatter.write_str("invalid ptyd welcome"),
+            Self::WatchUnavailable => formatter.write_str("ptyd does not know the watch role"),
             Self::InvalidResponse => formatter.write_str("invalid ptyd response"),
             Self::ZeroRetentionLimit => formatter.write_str("retention limit is zero"),
             Self::OutputOffsetExhausted => formatter.write_str("output offset exhausted"),
