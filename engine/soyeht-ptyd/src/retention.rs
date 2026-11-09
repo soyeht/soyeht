@@ -70,6 +70,11 @@ impl Retention {
         Ok(())
     }
 
+    /// The end of what has been appended.
+    pub fn end_seq(&self) -> u64 {
+        self.next
+    }
+
     /// `start..end` of the ring, copied out in at most two slices.
     fn copy_range(&self, start: usize, end: usize) -> Vec<u8> {
         let end = end.min(self.bytes.len());
