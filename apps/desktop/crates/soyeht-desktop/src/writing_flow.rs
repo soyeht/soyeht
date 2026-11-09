@@ -302,7 +302,7 @@ impl Workbench {
             self.state
                 .expect_split(ticket, pane_id, WorkspacePaneLayoutAxis::Horizontal)
         {
-            self.request_pane(workspace_id, Some(harness), ticket, cx);
+            self.request_pane(workspace_id, Some(harness), None, ticket, cx);
         }
     }
 

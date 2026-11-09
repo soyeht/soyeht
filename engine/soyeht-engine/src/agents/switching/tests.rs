@@ -31,6 +31,7 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
                 harness: "other".into(),
                 model: None,
                 effort: None,
+                acknowledged_package: None,
                 idempotency_key: "key".into(),
             },
             launch: HarnessLaunch {

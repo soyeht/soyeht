@@ -68,6 +68,16 @@ private func catalogue(_ vector: [String: Any], _ keys: Any?) throws -> [Harness
     #expect(HarnessPickerModel.pickerNotice(for: harness) == entry["notice"] as? String)
     #expect(HarnessPickerModel.isInstalled(harness) == entry["installed"] as? Bool)
   }
+  // The package a person acknowledges by starting a harness: the one the runner downloads
+  // unchecked, never one the engine installs from its lockfile.
+  for entry in try cases(vector, "acknowledgements") {
+    let harness = try decode(
+      HarnessInfo.self, try #require(known[entry["harness"] as? String ?? ""]))
+    #expect(
+      HarnessPickerModel.acknowledgedPackage(for: harness) == entry["package"] as? String,
+      "\(entry["harness"] ?? "")")
+  }
+  #expect(HarnessPickerModel.acknowledgedPackage(for: nil) == nil)
   for entry in try cases(vector, "reasons") {
     var tool = try #require(known["tool"] as? [String: Any])
     tool["setupReason"] = entry["setupReason"]

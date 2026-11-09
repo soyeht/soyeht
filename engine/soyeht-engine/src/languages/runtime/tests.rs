@@ -12,7 +12,9 @@ use std::sync::{
 fn core_with_a_pending_write() -> (Core, std::path::PathBuf, String) {
     let (mut core, directory) = core_with_agent(&[]);
     let path = directory.to_string_lossy().into_owned();
-    let server = Server::new("workspace", &path, EditorLanguage::Rust).unwrap();
+    // Started for a trusted folder, by an engine that recorded no trust (see `trust_recorded`).
+    let mut server = Server::new("workspace", &path, EditorLanguage::Rust).unwrap();
+    server.trusted = true;
     let key = core.languages.insert(server).unwrap();
     let spawn = language(&core.languages, &key).unwrap().spawn().unwrap();
     let instance = Instance {
@@ -24,7 +26,7 @@ fn core_with_a_pending_write() -> (Core, std::path::PathBuf, String) {
         exit_code: None,
     };
     let server = language_mut(&mut core.languages, &key).unwrap();
-    server.adopt(&instance).unwrap();
+    server.adopt(&instance, &instance.spawn).unwrap();
     server
         .pending_writes
         .insert("op".into(), STANDARD.encode("abcd"));
@@ -104,6 +106,12 @@ type Closed = Arc<std::sync::Mutex<Vec<String>>>;
 /// for; jobs run on the pool.
 fn core_recording_closes() -> (Core, std::path::PathBuf, String, Closed) {
     let (mut core, directory, key) = core_with_a_pending_write();
+    let closed = link_recording_closes(&mut core);
+    (core, directory, key, closed)
+}
+
+/// Links a supervisor that records the closes it is asked for; jobs run on the pool.
+fn link_recording_closes(core: &mut Core) -> Closed {
     core.background = crate::offload::Background::default();
     let closed = Closed::default();
     let record = Arc::clone(&closed);
@@ -113,7 +121,7 @@ fn core_recording_closes() -> (Core, std::path::PathBuf, String, Closed) {
         }
         Ok(Response::Ok)
     })));
-    (core, directory, key, closed)
+    closed
 }
 
 fn language_process(core: &Core, key: &str, id: &str) -> Instance {
@@ -238,4 +246,154 @@ fn diagnostic_publication_is_bounded_after_wire_expansion() {
         serde_json::to_vec(&event).unwrap().len() <= soyeht_protocol::limits::JSON_BYTES - 1024
     );
     assert!(omitted > 0);
+}
+
+#[test]
+fn a_server_an_earlier_engine_started_is_closed_and_started_again_once() {
+    // The checkpoint of an engine that did not know project trust says nothing about it.
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    assert!(!language(&core.languages, &key).unwrap().trust_recorded);
+
+    assert!(core.follow_language_trust(&key, None).unwrap());
+    apply_until_idle(&mut core);
+    assert_eq!(*closed.lock().unwrap(), ["language-process"]);
+    let server = language(&core.languages, &key).unwrap();
+    assert!(server.trust_recorded);
+    assert_eq!(server.generation, 2);
+    assert!(server.instance_id.is_none());
+
+    // Once: the second look finds it up to date.
+    assert!(!core.follow_language_trust(&key, None).unwrap());
+}
+
+#[test]
+fn revoking_trust_closes_the_process_with_the_close_that_is_retried() {
+    let (mut core, _directory, key) = core_with_a_pending_write();
+    core.background = crate::offload::Background::default();
+    core.link_supervisor(Box::new(Answering(|request| match request {
+        Request::Close { .. } => Err(remote_close_failure()),
+        _ => Ok(Response::Ok),
+    })));
+    let server = language_mut(&mut core.languages, &key).unwrap();
+    server.trusted = true;
+    server.trust_recorded = true;
+
+    // The folder has no answer in the store: the server started for a trusted folder is closed.
+    assert!(core.follow_language_trust(&key, None).unwrap());
+    apply_until_idle(&mut core);
+    assert_eq!(
+        core.supervisor_retry
+            .close_retries
+            .attempts("language-process"),
+        1,
+        "a close that failed is tried again by the tick"
+    );
+    assert_eq!(
+        language(&core.languages, &key).unwrap().state,
+        soyeht_protocol::LspState::Restricted
+    );
+}
+
+fn remote_close_failure() -> soyeht_ptyd::Error {
+    soyeht_ptyd::Error::Remote {
+        kind: soyeht_ptyd::wire_kind::OPERATION_FAILED.into(),
+        message: "registry".into(),
+    }
+}
+
+#[test]
+fn a_language_server_process_no_server_owns_is_closed_when_the_supervisor_returns() {
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    let owned = language_process(&core, &key, "owned");
+    let mut stale = language_process(&core, &key, "stale");
+    stale.spawn.instance_key = "replaced-by-a-restart".into();
+
+    core.close_orphaned_agent_processes(&[owned, stale])
+        .unwrap();
+    apply_until_idle(&mut core);
+
+    assert_eq!(*closed.lock().unwrap(), ["stale"]);
+}
+
+/// A search path with no language server on it: a folder of the test that holds nothing.
+fn empty_search_path(directory: &std::path::Path) -> std::ffi::OsString {
+    let empty = directory.join("empty-tools");
+    std::fs::create_dir_all(&empty).unwrap();
+    empty.into_os_string()
+}
+
+/// A process the supervisor holds for `server`, started as `argv`.
+fn process_of(server: &Server, id: &str, argv: &[&str]) -> Instance {
+    Instance {
+        instance_id: id.into(),
+        supervisor_id: "answering".into(),
+        spawn: soyeht_ptyd::wire::Spawn {
+            instance_key: server.instance_key.clone(),
+            generation: server.generation,
+            kind: soyeht_ptyd::wire::ProcessKind::PipesLsp,
+            cwd: server.root.clone(),
+            argv: argv.iter().map(|value| (*value).to_owned()).collect(),
+            env: Default::default(),
+            cols: 80,
+            rows: 24,
+        },
+        pid: 9,
+        closed: false,
+        exit_code: None,
+    }
+}
+
+#[test]
+fn a_server_that_cannot_start_for_its_folders_trust_is_left_unavailable_and_keeps_the_link() {
+    let (mut core, directory) = core_with_agent(&[]);
+    let closed = link_recording_closes(&mut core);
+    // A search path with no TypeScript server on it, whatever this machine has installed.
+    core.language_search_path = Some(empty_search_path(&directory));
+    let path = directory.to_string_lossy().into_owned();
+    let server = Server::new("workspace", &path, EditorLanguage::Typescript)
+        .unwrap()
+        .with_trust(false);
+    let instance = process_of(
+        &server,
+        "typescript-process",
+        &["typescript-language-server"],
+    );
+    let key = core.languages.insert(server).unwrap();
+    language_mut(&mut core.languages, &key)
+        .unwrap()
+        .pending_writes
+        .insert("op".into(), STANDARD.encode("abcd"));
+
+    core.reconcile_language_servers(&[instance]).unwrap();
+    apply_until_idle(&mut core);
+
+    assert_eq!(
+        language(&core.languages, &key).unwrap().state,
+        soyeht_protocol::LspState::Unavailable
+    );
+    assert_eq!(*closed.lock().unwrap(), ["typescript-process"]);
+}
+
+#[test]
+fn a_process_started_under_another_identity_is_replaced_and_keeps_the_link() {
+    // A trusted server whose process was started with other arguments (another build of the
+    // engine, another search path): adopting it would fail, and that must not drop the link.
+    let (mut core, _directory, key, closed) = core_recording_closes();
+    let stranger = {
+        let server = language(&core.languages, &key).unwrap();
+        process_of(server, "stranger", &["rust-analyzer", "--other"])
+    };
+
+    core.reconcile_language_servers(&[stranger]).unwrap();
+    apply_until_idle(&mut core);
+
+    // The stranger is closed, and so is the process the server had before.
+    assert!(closed.lock().unwrap().contains(&"stranger".to_owned()));
+    assert!(
+        language(&core.languages, &key)
+            .unwrap()
+            .instance_id
+            .is_none()
+    );
+    assert!(core.ptyd.is_some());
 }

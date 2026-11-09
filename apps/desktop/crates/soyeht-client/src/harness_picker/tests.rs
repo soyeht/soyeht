@@ -93,7 +93,7 @@ fn statuses_follow_the_shared_vectors() {
             case["harness"]
         );
         assert_eq!(
-            picker_notice(&harness),
+            picker_notice(&harness).as_deref(),
             case["notice"].as_str(),
             "{}",
             case["harness"]
@@ -105,6 +105,21 @@ fn statuses_follow_the_shared_vectors() {
             case["harness"]
         );
     }
+}
+
+#[test]
+fn the_acknowledged_package_follows_the_shared_vectors() {
+    let vectors = vectors();
+    for case in vectors["acknowledgements"].as_array().unwrap() {
+        let harness = harness_named(&vectors, case["harness"].as_str().unwrap());
+        assert_eq!(
+            acknowledged_package(Some(&harness)).as_deref(),
+            case["package"].as_str(),
+            "{}",
+            case["harness"]
+        );
+    }
+    assert_eq!(acknowledged_package(None), None);
 }
 
 #[test]

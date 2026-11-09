@@ -3,6 +3,27 @@ use std::collections::BTreeMap;
 
 pub const VERSION: u32 = 5;
 
+/// What a connection is for. The default is the request connection, the only one older engines and
+/// supervisors know, so a hello without a role is the one of today.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    #[default]
+    Request,
+    /// A connection that only receives notices: `Watch` once, then `Readable` as processes have
+    /// output. It is not the engine's request connection and does not evict it.
+    Watch,
+}
+
+impl Role {
+    fn is_request(&self) -> bool {
+        *self == Self::Request
+    }
+}
+
+/// A feature a supervisor lists in its welcome. An engine that does not find it does not use it.
+pub const FEATURE_WATCH: &str = "watch";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessKind {
@@ -39,6 +60,15 @@ pub enum Request {
     Hello {
         version: u32,
         engine_generation: u64,
+        /// Left out when it is the default, so a request hello is byte for byte the one an older
+        /// supervisor reads.
+        #[serde(default, skip_serializing_if = "Role::is_request")]
+        role: Role,
+    },
+    /// On a watch connection: the processes the engine has read to, so the supervisor answers
+    /// with those that already have more (level before edge).
+    Watch {
+        instances: Vec<Watched>,
     },
     List,
     Spawn(Spawn),
@@ -88,7 +118,15 @@ pub enum Response {
         version: u32,
         supervisor_id: String,
         supervisor_generation: u32,
+        /// What this supervisor can do beyond the first protocol. An older one sends none.
+        #[serde(default)]
+        features: Vec<String>,
     },
+    /// The answer to `Watch`: the processes that have output past what the engine said it had
+    /// read, or have exited.
+    Watching(Vec<Readable>),
+    /// Pushed on a watch connection: a process has output the engine has not read.
+    Readable(Readable),
     Instances(Vec<Instance>),
     Instance(Instance),
     Output(Output),
@@ -106,6 +144,22 @@ pub enum Response {
         kind: String,
         message: String,
     },
+}
+
+/// A process the engine has read to a point.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Watched {
+    pub instance_id: String,
+    pub from_seq: u64,
+}
+
+/// A process with output to read, or that has exited and has no more.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Readable {
+    pub instance_id: String,
+    /// The end of what the supervisor holds for it.
+    pub end_seq: u64,
+    pub exited: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

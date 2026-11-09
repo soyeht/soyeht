@@ -185,6 +185,7 @@ pub(crate) fn switch_command(state: &State, pane_id: &str, harness: &str) -> Opt
         || Command::SwitchHarness {
             pane_id: pane_id.to_owned(),
             harness: harness.to_owned(),
+            acknowledged: state.acknowledged_package(harness),
             model: None,
             effort: None,
         },
@@ -335,6 +336,7 @@ mod tests {
             Some(Command::SwitchHarness {
                 pane_id: "a".into(),
                 harness: "registry.codex-acp".into(),
+                acknowledged: None,
                 model: None,
                 effort: None,
             })

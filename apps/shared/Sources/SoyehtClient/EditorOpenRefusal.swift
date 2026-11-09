@@ -41,6 +41,8 @@ extension EngineClient {
   /// Reports a failed open of `path`. A refusal is shown in the editor of the workspace until
   /// another file opens or a tab is chosen; any other failure is the dialog.
   public func reportEditorOpenFailure(_ error: Error, workspaceId: String, path: String) {
+    // The folder of the workspace is gone: the workspace says so, and nothing needs confirming.
+    if noteMissingWorkspaceFolder(error, workspaceId: workspaceId) { return }
     guard let refusal = EditorOpenRefusal(error: error, path: path) else {
       // The dialog is about this open now; an earlier refusal described another file.
       editorWorkspace.refusals[workspaceId] = nil

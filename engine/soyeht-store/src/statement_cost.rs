@@ -20,6 +20,10 @@ fn trace(event: TraceEvent<'_>) {
         TraceEvent::Stmt(_, sql) => {
             #[cfg(feature = "test-support")]
             crate::test_support::statement_started();
+            #[cfg(test)]
+            if is_commit(sql) {
+                tests::COMMITS.with(|count| count.set(count.get() + 1));
+            }
             soyeht_platform::hold_cost::statement_started(is_commit(sql));
         }
         TraceEvent::Profile(..) => soyeht_platform::hold_cost::statement_ended(),
@@ -36,8 +40,14 @@ fn is_commit(sql: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::is_commit;
+    use std::cell::Cell;
+
+    thread_local! {
+        /// The `COMMIT`s started on this thread.
+        pub(crate) static COMMITS: Cell<u64> = const { Cell::new(0) };
+    }
 
     #[test]
     fn only_a_commit_is_a_commit() {

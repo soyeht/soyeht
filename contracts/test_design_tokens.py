@@ -18,8 +18,10 @@ from design_tokens import (
 )
 
 ROOT = Path(__file__).resolve().parent.parent
-# The last commit before the tokens were generated: the Mac values it holds are the contract.
-BASE = "0d33cdd483697fbc35495221023886dd34c90355"
+# A commit of the public history whose Mac sources are byte-for-byte the ones of the last commit
+# before the tokens were generated (0d33cdd4, which the public history does not hold): every file
+# this test reads has the same blob there. The Mac values it holds are the contract.
+BASE = "8351bb6f9fc94a3a44d1efc5b076b718dd91bba3"
 SHARED = "apps/shared/Sources/SoyehtClient/"
 MAC = "apps/mac/Sources/"
 # Tokens added after the tokens were generated: no pre-generation Mac literal exists to prove
