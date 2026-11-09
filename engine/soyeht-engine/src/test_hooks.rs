@@ -76,15 +76,18 @@ impl FileHooks {
         {
             crate::file_events::slow_start::set(pause);
         }
+        let mut ink_pause = None;
+        if let Ok(value) = std::env::var(INK_RECOGNIZER_VARIABLE)
+            && let Ok(pause) = value.parse()
+        {
+            ink_pause = Some(std::time::Duration::from_millis(pause));
+        }
         Self {
             directory: directory.into(),
             slow_disk,
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
-            ink_pause: std::env::var(INK_RECOGNIZER_VARIABLE)
-                .ok()
-                .and_then(|value| value.parse().ok())
-                .map(std::time::Duration::from_millis),
+            ink_pause,
         }
     }
 

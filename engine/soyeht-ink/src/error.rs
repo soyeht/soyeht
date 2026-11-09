@@ -1,5 +1,5 @@
 use soyeht_protocol::{ErrorKind, InkUnsupportedReason};
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 /// Why handwriting was not read. No variant holds the writing or the text it reads: an error is
 /// answered to the person who asked and may be logged by its kind, and ink is neither (ADR 0158).
@@ -20,32 +20,38 @@ pub enum Error {
     UnderLock(&'static str),
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Invalid(what) | Self::LimitExceeded(what) | Self::Failed(what) => {
-                formatter.write_str(what)
-            }
+impl Error {
+    /// What a person reads: a sentence per kind, never data.
+    fn sentence(&self) -> Cow<'static, str> {
+        let text = match self {
+            Self::Invalid(what) | Self::LimitExceeded(what) | Self::Failed(what) => what,
             Self::Unsupported(InkUnsupportedReason::NoOsSupport) => {
-                formatter.write_str("This system has no handwriting recognizer")
+                "This system has no handwriting recognizer"
             }
             Self::Unsupported(InkUnsupportedReason::LanguagePackMissing) => {
-                formatter.write_str("The handwriting recognizer's language data is not installed")
+                "The handwriting recognizer's language data is not installed"
             }
             Self::Unsupported(InkUnsupportedReason::ModelNotInstalled) => {
-                formatter.write_str("The handwriting recognizer's model is not installed")
+                "The handwriting recognizer's model is not installed"
             }
             Self::LanguageUnavailable => {
-                formatter.write_str("The handwriting recognizer reads none of the languages asked")
+                "The handwriting recognizer reads none of the languages asked"
             }
             Self::UnderLock(holder) => {
-                write!(formatter, "Handwriting is not read while {holder} is held")
+                return Cow::Owned(format!("Handwriting is not read while {holder} is held"));
             }
-        }
+        };
+        Cow::Borrowed(text)
     }
 }
 
 impl std::error::Error for Error {}
+
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.sentence())
+    }
+}
 
 impl Error {
     /// The reason a client reads in `data.detail` of an `ink_unsupported` error.

@@ -473,8 +473,10 @@ fn detail(error: &Error) -> Option<String> {
     let Error::Ink(error) = error else {
         return None;
     };
-    let reason = serde_json::to_value(error.unsupported_reason()?).ok()?;
-    reason.as_str().map(str::to_owned)
+    match serde_json::to_value(error.unsupported_reason()?) {
+        Ok(serde_json::Value::String(reason)) => Some(reason),
+        _ => None,
+    }
 }
 
 pub fn wire(error: Error) -> RpcError {

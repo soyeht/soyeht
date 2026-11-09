@@ -504,10 +504,7 @@ impl Core {
             method::ENGINE_STATUS => {
                 json!({"version":env!("CARGO_PKG_VERSION"),"generation":self.generation,"ptyd":{"connected":self.ptyd.is_some(),"version":soyeht_ptyd::wire::VERSION,"generation":self.ptyd.as_ref().map_or(0,|p|p.supervisor_generation())},"db":{"id":self.store.db_id,"schemaVersion":soyeht_store::database::SCHEMA_VERSION},"reachability":self.reachability})
             }
-            method::SETTINGS_GET => {
-                let key = errors::param_str(params, "key")?;
-                json!({"key":params["key"],"value":self.setting(key)?})
-            }
+            method::SETTINGS_GET => self.setting_get(params)?,
             method::SETTINGS_SET => self.setting_set(connection, params)?,
             method::DEVICE_LIST => json!({"items":self.snapshot_section("devices")?}),
             method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
@@ -522,6 +519,11 @@ impl Core {
             return self.native_rpc_result(connection, request_id, method, params, result);
         }
         Ok(Outcome::Reply(result))
+    }
+
+    fn setting_get(&self, params: &Value) -> Result<Value> {
+        let key = errors::param_str(params, "key")?;
+        Ok(json!({"key":params["key"],"value":self.setting(key)?}))
     }
 
     fn permission_answer(

@@ -4,7 +4,6 @@ use crate::{
     model::{self, Connected, RunningPane, StoredPane, Waiter},
     offload::SharedPort,
     ports::{Clock, StorePort, SystemClock},
-    screen::Screen,
     supervisor_handle::Supervisor,
     tasks::{revision::GitRevision, worktree::CommandWorktree},
 };
@@ -135,18 +134,6 @@ fn log_stale_export_cleanup(directory: &Path) {
     }
 }
 
-/// The screen of a pane read from the database. Nobody reads the output of a closed pane, so its
-/// segment files are not opened.
-fn restored_screen(directory: &Path, stored: &StoredPane) -> Result<Screen> {
-    if stored.closed {
-        return Ok(Screen::closed());
-    }
-    Screen::open(
-        &directory.join("sessions").join(&stored.pane.pane_id),
-        stored.pane.record,
-    )
-}
-
 /// The address a paired device reaches the engine at before the listeners say otherwise.
 fn loopback_address(profile: &Profile) -> String {
     format!("127.0.0.1:{}", profile.tcp_port)
@@ -255,36 +242,7 @@ impl Core {
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
-        for stored in model::panes(&core.store)? {
-            if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
-                let state = core.restore_agent(&stored)?;
-                core.agents.insert(
-                    stored.pane.pane_id.clone(),
-                    crate::agents::Running::new(state),
-                );
-            }
-            if stored.pane.mode == soyeht_protocol::PaneMode::Terminal
-                && let Some(value) = core
-                    .store
-                    .pane_launch::<Value>(&stored.pane.pane_id)
-                    .map_err(errors::storage)?
-                && let Some(session) =
-                    crate::terminal_harness::TerminalHarnessSession::decode(value)?
-            {
-                if session.spawn.instance_key != stored.instance_key
-                    || session.spawn.generation != stored.pane.generation
-                {
-                    return Err(errors::internal(
-                        "Stored terminal harness session does not match its pane generation",
-                    ));
-                }
-                core.terminal_harnesses
-                    .insert(stored.pane.pane_id.clone(), session);
-            }
-            let screen = restored_screen(directory, &stored)?;
-            core.panes
-                .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
-        }
+        core.restore_panes(directory)?;
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.
@@ -303,7 +261,10 @@ impl Core {
         Ok(core)
     }
 
-    fn restore_agent(&mut self, stored: &StoredPane) -> Result<crate::agents::state::State> {
+    pub(crate) fn restore_agent(
+        &mut self,
+        stored: &StoredPane,
+    ) -> Result<crate::agents::state::State> {
         let pane = &stored.pane.pane_id;
         let mut state: crate::agents::state::State = self
             .store
