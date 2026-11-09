@@ -103,5 +103,15 @@ export const limits = {
   "modelRefusalReasonBytes": 4096,
   "experimentExportPanes": 64,
   "experimentExportRows": 100000,
-  "experimentExportBytes": 67108864
+  "experimentExportBytes": 67108864,
+  "inkStrokes": 64,
+  "inkStrokePoints": 2000,
+  "inkTotalPoints": 8000,
+  "inkCandidates": 10,
+  "inkCandidatesDefault": 5,
+  "inkLanguages": 8,
+  "inkLanguageBytes": 35,
+  "inkCoordinate": 1000000,
+  "inkDurationMs": 3600000,
+  "inkCandidateBytes": 2048
 } as const;

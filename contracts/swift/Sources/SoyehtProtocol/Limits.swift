@@ -108,6 +108,26 @@ public enum ProtocolLimits {
     public static let experimentExportPanes = 64
     public static let experimentExportRows = 100000
     public static let experimentExportBytes = 67108864
+    /// The most strokes one `ink.recognize` request carries.
+    public static let inkStrokes = 64
+    /// The most points one stroke of an `ink.recognize` request carries.
+    public static let inkStrokePoints = 2000
+    /// The most points all the strokes of one `ink.recognize` request carry together.
+    public static let inkTotalPoints = 8000
+    /// The most candidates an `ink.recognize` request may ask for and the engine answers with.
+    public static let inkCandidates = 10
+    /// How many candidates an `ink.recognize` request without `maxCandidates` gets.
+    public static let inkCandidatesDefault = 5
+    /// The most language tags one `ink.recognize` request names.
+    public static let inkLanguages = 8
+    /// The longest language tag (in UTF-8 bytes) of an `ink.recognize` request; the length a BCP 47 tag may have.
+    public static let inkLanguageBytes = 35
+    /// The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).
+    public static let inkCoordinate = 1000000
+    /// The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.
+    public static let inkDurationMs = 3600000
+    /// The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.
+    public static let inkCandidateBytes = 2048
 }
 
 public enum ProtocolVersion {

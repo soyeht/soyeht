@@ -108,6 +108,10 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `file_too_large` = "file_too_large"
     case `adapter_not_acknowledged` = "adapter_not_acknowledged"
     case `workspace_folder_missing` = "workspace_folder_missing"
+    case `ink_unsupported` = "ink_unsupported"
+    case `ink_language_unavailable` = "ink_language_unavailable"
+    case `ink_limit_exceeded` = "ink_limit_exceeded"
+    case `ink_recognition_failed` = "ink_recognition_failed"
 }
 
 public struct RpcError: Codable, Sendable {
@@ -7050,6 +7054,56 @@ public struct PaneExperimentHookResult: Codable, Sendable {
     }
 }
 
+public struct InkPoint: Codable, Sendable {
+    public var `x`: Double
+    public var `y`: Double
+    public var `t`: UInt32
+    public init(`x`: Double, `y`: Double, `t`: UInt32) {
+        self.`x` = `x`
+        self.`y` = `y`
+        self.`t` = `t`
+    }
+}
+
+public typealias InkStroke = [InkPoint]
+
+public struct InkRecognizeParams: Codable, Sendable {
+    public var `strokes`: [InkStroke]
+    public var `languages`: [String]
+    public var `maxCandidates`: UInt32?
+    public init(`strokes`: [InkStroke], `languages`: [String], `maxCandidates`: UInt32? = nil) {
+        self.`strokes` = `strokes`
+        self.`languages` = `languages`
+        self.`maxCandidates` = `maxCandidates`
+    }
+}
+
+public struct InkCandidate: Codable, Sendable {
+    public var `text`: String
+    public var `score`: Double?
+    public init(`text`: String, `score`: Double? = nil) {
+        self.`text` = `text`
+        self.`score` = `score`
+    }
+}
+
+public struct InkRecognizeResult: Codable, Sendable {
+    public var `candidates`: [InkCandidate]
+    public var `recognizer`: String
+    public var `language`: String
+    public init(`candidates`: [InkCandidate], `recognizer`: String, `language`: String) {
+        self.`candidates` = `candidates`
+        self.`recognizer` = `recognizer`
+        self.`language` = `language`
+    }
+}
+
+public enum InkUnsupportedReason: String, Codable, Sendable, CaseIterable {
+    case `no_os_support` = "no_os_support"
+    case `language_pack_missing` = "language_pack_missing"
+    case `model_not_installed` = "model_not_installed"
+}
+
 public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case hello = "hello"
     case stateSnapshot = "state.snapshot"
@@ -7199,6 +7253,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case writingBeatPut = "writing.beat.put"
     case writingBeatDelete = "writing.beat.delete"
     case paneExperimentHook = "pane.experiment.hook"
+    case inkRecognize = "ink.recognize"
 }
 
 public enum EventName: String, Codable, Sendable, CaseIterable {

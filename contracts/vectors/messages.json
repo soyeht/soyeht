@@ -13895,5 +13895,13 @@
   {"name": "ProjectTrustSetResult", "type": "ProjectTrustSetResult", "value": {"workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "trusted"}},
   {"name": "ProjectTrustChangedEvent", "type": "ProjectTrustChangedEvent", "value": {"eventId": "1", "at": "2026-09-11T00:00:00Z", "workspaceIds": ["00000000-0000-4000-8000-000000000002"], "trust": "restricted"}},
   {"name": "SnapshotSection:trust", "type": "SnapshotSection", "value": "trust"},
-  {"name": "LspState:restricted", "type": "LspState", "value": "restricted"}
+  {"name": "LspState:restricted", "type": "LspState", "value": "restricted"},
+  {"name": "request:ink.recognize", "type": "RequestEnvelope", "value": {"jsonrpc": "2.0", "id": "ink-1", "method": "ink.recognize", "params": {"strokes": [[{"x": 10.5, "y": 20, "t": 0}, {"x": 14.25, "y": 31, "t": 16}, {"x": 18, "y": 20, "t": 33}], [{"x": 12, "y": 27, "t": 120}, {"x": 16.5, "y": 27, "t": 150}]], "languages": ["pt-BR", "en-US"], "maxCandidates": 3}}},
+  {"name": "response:ink.recognize", "type": "SuccessEnvelope", "value": {"jsonrpc": "2.0", "id": "ink-1", "result": {"candidates": [{"text": "ola", "score": 0.5}, {"text": "ala"}], "recognizer": "apple-vision", "language": "pt-BR"}}},
+  {"name": "InkPoint", "type": "InkPoint", "value": {"x": 1.5, "y": -2, "t": 0}},
+  {"name": "InkStroke", "type": "InkStroke", "value": [{"x": 0, "y": 0, "t": 0}, {"x": 3, "y": 4, "t": 7}]},
+  {"name": "InkRecognizeParams-defaults", "type": "InkRecognizeParams", "value": {"strokes": [[{"x": 0, "y": 0, "t": 0}]], "languages": ["en-US"]}},
+  {"name": "InkCandidate", "type": "InkCandidate", "value": {"text": "word", "score": 1}},
+  {"name": "InkUnsupportedReason", "type": "InkUnsupportedReason", "value": "language_pack_missing"},
+  {"name": "ErrorEnvelope:ink_unsupported", "type": "ErrorEnvelope", "value": {"jsonrpc": "2.0", "id": "ink-1", "error": {"code": -32043, "message": "This system has no handwriting recognizer", "data": {"kind": "ink_unsupported", "detail": "no_os_support"}}}}
 ]

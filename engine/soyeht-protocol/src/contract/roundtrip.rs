@@ -600,6 +600,12 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "ExperimentHookEvent" => decode_encode::<ExperimentHookEvent>(name, value),
         "PaneExperimentHookParams" => decode_encode::<PaneExperimentHookParams>(name, value),
         "PaneExperimentHookResult" => decode_encode::<PaneExperimentHookResult>(name, value),
+        "InkPoint" => decode_encode::<InkPoint>(name, value),
+        "InkStroke" => decode_encode::<InkStroke>(name, value),
+        "InkRecognizeParams" => decode_encode::<InkRecognizeParams>(name, value),
+        "InkCandidate" => decode_encode::<InkCandidate>(name, value),
+        "InkRecognizeResult" => decode_encode::<InkRecognizeResult>(name, value),
+        "InkUnsupportedReason" => decode_encode::<InkUnsupportedReason>(name, value),
         _ => Err(Mismatch::Unknown(name.to_owned())),
     }
 }
