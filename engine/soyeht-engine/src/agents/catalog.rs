@@ -750,6 +750,60 @@ mod tests {
         std::fs::remove_dir_all(directory).unwrap();
     }
 
+    /// `harness.list` lists only the checked harnesses, so only a test reaches the catalogue
+    /// item of one it does not check: the package its first start downloads unchecked, and the
+    /// stored acknowledgement that ends the notice about it.
+    #[test]
+    fn harness_info_shows_an_unacknowledged_registry_package_and_the_acknowledgement_ends_it() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-harness-package-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let mut core = Core::open(&directory).unwrap();
+        let entry = registry::builtin_entries()
+            .unwrap()
+            .into_iter()
+            .find(|entry| entry.launch.id == "registry.gemini")
+            .unwrap();
+        let (package, locked) =
+            super::super::adapter_install::runner_package(&entry.launch).unwrap();
+        assert!(!locked);
+        // `prepare_catalog` resolves the command on this host's `PATH`, which only decides
+        // "available"; the resolved launch is given directly so that the notice under test is
+        // exercised on a host without the package runner too.
+        let prepared = |entry: &registry::RegistryEntry| PreparedHarness {
+            entry: entry.clone(),
+            resolved: Some(entry.launch.clone()),
+            prepared: None,
+            installed_without_success: registry::locally_installed(entry, false),
+            installed_with_success: registry::locally_installed(entry, true),
+        };
+
+        let before = harness_info(&core, prepared(&entry), false).unwrap();
+        assert_eq!(before["package"], json!(&package));
+        assert_eq!(before["packageLocked"], json!(false));
+        assert_eq!(
+            before["setupReason"],
+            json!(HarnessSetupReason::RegistryPackageUnverified)
+        );
+
+        crate::ports::StorePort::mutate(&mut core.store, "test", &package, &package, |change| {
+            soyeht_store::adapter_acknowledgement::acknowledge(change, &package, 1)?;
+            Ok((json!({}), Vec::new()))
+        })
+        .unwrap();
+
+        let after = harness_info(&core, prepared(&entry), false).unwrap();
+        assert_eq!(after["package"], json!(&package));
+        assert_eq!(after["packageLocked"], json!(false));
+        // With the exact package acknowledged, the unacknowledged download no longer is what
+        // the item reports: nothing was recorded about this harness yet, so it is only unchecked.
+        assert_eq!(
+            after["setupReason"],
+            json!(HarnessSetupReason::NeverStarted)
+        );
+        crate::test_paths::remove_after(core, directory);
+    }
+
     #[test]
     fn only_the_four_checked_harnesses_are_supported_and_they_are_the_readiness_table() {
         let supported = registry::builtin_entries()
