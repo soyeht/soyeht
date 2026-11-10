@@ -1,6 +1,7 @@
 package com.soyeht.next.android
 
 import com.soyeht.next.android.theme.Eink
+import com.soyeht.next.android.theme.Elevation
 import com.soyeht.next.android.theme.PaneInterior
 import com.soyeht.next.android.theme.Palettes
 import com.soyeht.next.android.theme.Radius
@@ -56,5 +57,15 @@ class DesignTokensTest {
         assertEquals(tokens.getJSONObject("radius").getDouble("control").toFloat(), Radius.control)
         assertEquals(tokens.getJSONObject("paneInterior").getDouble("touchTarget").toFloat(), PaneInterior.touchTarget)
         assertTrue(PaneInterior.touchTarget >= 44f)
+    }
+
+    @Test
+    fun aRaisedSurfaceTakesItsShadowsFromTheFile() {
+        val pill = tokens.getJSONObject("elevation").getJSONObject("pill")
+        assertEquals(pill.getDouble("offset").toFloat(), Elevation.pill.darkOffset)
+        assertEquals(pill.getDouble("blur").toFloat(), Elevation.pill.lightBlur)
+        val balloon = tokens.getJSONObject("elevation").getJSONObject("balloon")
+        assertEquals(balloon.getDouble("lightOffset").toFloat(), Elevation.balloon.lightOffset)
+        assertEquals(balloon.getDouble("darkBlur").toFloat(), Elevation.balloon.darkBlur)
     }
 }

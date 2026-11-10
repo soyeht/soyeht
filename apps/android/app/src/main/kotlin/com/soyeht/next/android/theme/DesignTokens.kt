@@ -309,6 +309,7 @@ object Palettes {
 object Radius {
     const val compact: Float = 10.0f
     const val control: Float = 12.0f
+    const val panel: Float = 18.0f
     const val card: Float = 20.0f
     const val pill: Float = 999.0f
 }
@@ -552,9 +553,26 @@ object Eink {
     const val settleDelayMs: Float = 400.0f
 }
 
+/** The two shadows of a raised surface, as offsets and blurs: a light one and a dark one. */
+class Shadow(val lightOffset: Float, val lightBlur: Float, val darkOffset: Float, val darkBlur: Float)
+
+object Elevation {
+    val chip = Shadow(3.0f, 5.0f, 3.0f, 5.0f)
+    val toggle = Shadow(2.0f, 4.0f, 2.0f, 4.0f)
+    val taskCard = Shadow(3.0f, 6.0f, 3.0f, 6.0f)
+    val action = Shadow(4.0f, 8.0f, 4.0f, 8.0f)
+    val card = Shadow(4.0f, 9.0f, 4.0f, 9.0f)
+    val pill = Shadow(6.0f, 10.0f, 6.0f, 10.0f)
+    val panel = Shadow(9.0f, 18.0f, 9.0f, 18.0f)
+    val balloon = Shadow(4.0f, 10.0f, 6.0f, 14.0f)
+}
+
 object Fonts {
     const val chrome: String = "Nunito"
     const val ui: String = "Inter"
     const val mono: String = "JetBrains Mono"
     const val screenplay: String = "Courier Prime"
+    const val reading: String = "Newsreader"
+    const val classicSerif: String = "Times New Roman"
+    const val classicSerifPostScript: String = "TimesNewRomanPSMT"
 }

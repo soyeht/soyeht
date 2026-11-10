@@ -68,3 +68,15 @@ ship, and nothing in the packages.
   --target all -i zlog` finds nothing. The Android workspace has no GPUI. `policy.json` has no
   `exceptions`, so a GPL crate that comes back fails the gate. When the GPUI pin moves to a revision after
   the relicense, the patch and the crate can go.
+- LGPL-2.1-or-later protocol files were in the Linux graph: the registry crate `wayland-protocols-plasma`, which
+  GPUI's Linux backend (`gpui_linux`) uses only for `blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager}`,
+  and 17 of whose 29 SPDX-tagged protocol files (`blur.xml` among them) are LGPL-2.1-or-later. Soyeht never asks
+  for a blurred window (no `WindowBackgroundAppearance::Blurred` in `apps/desktop`). `[patch.crates-io]` in
+  `apps/desktop/Cargo.toml` replaces the crate with `apps/desktop/shims/wayland-protocols-plasma` (Apache-2.0,
+  version 0.3.99 so that it satisfies the `0.3.9` GPUI asks for; it sits outside `crates/` because the release
+  check wants every crate there to take the product version). It has a protocol of our own, written from the calls
+  GPUI makes (`create`, `unset`, `commit`, `release`) and not from KDE's, and exports it under the module and type
+  names GPUI imports. Its interfaces are named `soyeht_unadvertised_blur_manager` and `soyeht_unadvertised_blur`,
+  which no compositor offers: GPUI looks for the manager global, finds none, and blur stays off. A test of the
+  shim holds the names and the calls. `cargo tree --target x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
+  resolve to the shim, and no `0.3.12` of the registry crate remains in the lockfile.

@@ -229,11 +229,15 @@
     "chrome": "Nunito",
     "ui": "Inter",
     "mono": "JetBrains Mono",
-    "screenplay": "Courier Prime"
+    "screenplay": "Courier Prime",
+    "reading": "Newsreader",
+    "classicSerif": "Times New Roman",
+    "classicSerifPostScript": "TimesNewRomanPSMT"
   },
   "radius": {
     "compact": 10,
     "control": 12,
+    "panel": 18,
     "card": 20,
     "pill": 999
   },

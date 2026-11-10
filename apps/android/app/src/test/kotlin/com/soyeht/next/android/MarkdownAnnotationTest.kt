@@ -6,6 +6,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import com.soyeht.next.android.theme.Faces
 import com.soyeht.next.android.ui.RunLook
 import com.soyeht.next.android.ui.annotate
 import org.junit.Assert.assertEquals
@@ -35,7 +36,7 @@ class MarkdownAnnotationTest {
     fun codeIsMonoOnTheWellColor() {
         val text = annotate(listOf(run("ls", code = true)), look) {}
         val style = text.spanStyles.single().item
-        assertEquals(FontFamily.Monospace, style.fontFamily)
+        assertEquals(Faces.mono, style.fontFamily)
         assertEquals(Color.LightGray, style.background)
     }
 

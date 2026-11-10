@@ -43,6 +43,8 @@ ADDED_AFTER_GENERATION = {
     ("layout", "readinessRowHeight"),
     # The preview rule: the width of the line between the lines and the preview.
     ("paneLayout", "editorPreviewDividerWidth"),
+    # The corner of a phone writing document's card, between the compact and the card radius.
+    ("radius", "panel"),
     # Steps of the scale the preferences and task sheets drew inline (a 1, 9, 20 and 22 point
     # inset, a 14 point label), now named so no view types them.
     ("space", "x1"),

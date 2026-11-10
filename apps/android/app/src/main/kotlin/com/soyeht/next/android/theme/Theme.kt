@@ -17,6 +17,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 
 /** The palette roles as Compose colors. Views read these and never write a color of their own. */
@@ -32,6 +34,7 @@ class Roles(val palette: Palette) {
     val accent = Color(palette.accent)
     val onAccent = Color(palette.onAccent)
     val selection = Color(palette.selection)
+    val shadowDark = Color(palette.shadowDark)
 
     /** The edge of a card, well, pill or modal, and dimmed text's ink: set by the e-ink palette only. */
     val border = palette.border?.let { Color(it) }
@@ -70,7 +73,8 @@ fun SoyehtTheme(eink: Boolean = false, content: @Composable () -> Unit) {
         LocalRoles provides roles,
         LocalMetrics provides if (eink) Metrics.eink else Metrics.standard,
     ) {
-        MaterialTheme(colorScheme = scheme, typography = if (eink) einkTypography() else Typography()) {
+        // Every text takes the UI face unless a view picks another of `Faces`.
+        MaterialTheme(colorScheme = scheme, typography = (if (eink) einkTypography() else Typography()).withFace(Faces.ui)) {
             if (eink) {
                 CompositionLocalProvider(
                     LocalIndication provides NoIndication,
@@ -83,6 +87,21 @@ fun SoyehtTheme(eink: Boolean = false, content: @Composable () -> Unit) {
             }
         }
     }
+}
+
+/**
+ * Every style takes the UI face and the font's own line height: Material fixes a line height for each style, which
+ * would space out a line set at another size (a view picks its sizes from the metrics).
+ */
+private fun Typography.withFace(face: FontFamily): Typography {
+    fun TextStyle.face() = copy(fontFamily = face, lineHeight = TextUnit.Unspecified)
+    return copy(
+        displayLarge = displayLarge.face(), displayMedium = displayMedium.face(), displaySmall = displaySmall.face(),
+        headlineLarge = headlineLarge.face(), headlineMedium = headlineMedium.face(), headlineSmall = headlineSmall.face(),
+        titleLarge = titleLarge.face(), titleMedium = titleMedium.face(), titleSmall = titleSmall.face(),
+        bodyLarge = bodyLarge.face(), bodyMedium = bodyMedium.face(), bodySmall = bodySmall.face(),
+        labelLarge = labelLarge.face(), labelMedium = labelMedium.face(), labelSmall = labelSmall.face(),
+    )
 }
 
 /** The text a Material component sets without a size of its own (a dialog, a menu, a button) takes the e-ink sizes. */

@@ -15,9 +15,15 @@ use std::{
 /// What a charged stretch of time was spent on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Cost {
-    /// A SQLite statement other than a commit.
+    /// A SQLite statement other than a `COMMIT`: its lifetime from the first step to the reset,
+    /// so it includes the Rust code that runs between its steps (a row callback, a nested query)
+    /// as well as the engine's own work. Statements that nest are summed, so their parts are
+    /// counted twice. A write outside an explicit transaction commits inside its own `INSERT`, and
+    /// that wait is charged here and not to [`Cost::Commit`]; so is a `BEGIN IMMEDIATE` that waits
+    /// for another writer.
     Sql,
-    /// A SQLite `COMMIT`: the write that waits for the disk.
+    /// A SQLite `COMMIT` statement, the write of an explicit transaction that waits for the disk.
+    /// It is the whole of the disk wait only for transactions; see [`Cost::Sql`].
     Commit,
     /// A read or an append of a terminal's segment file.
     Segment,

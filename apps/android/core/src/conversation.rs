@@ -1,7 +1,9 @@
 //! An agent pane as the view shows it: the messages, and the question the agent is waiting on.
 
 use soyeht_client::State;
-use soyeht_protocol::{TranscriptKind, TranscriptMessage, TranscriptRole};
+use soyeht_protocol::{
+    PermissionOptionKind, ToolStatus, TranscriptKind, TranscriptMessage, TranscriptRole,
+};
 
 #[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
 pub enum Speaker {
@@ -19,6 +21,15 @@ pub enum ItemKind {
     Other,
 }
 
+/// How far a tool call is, for the word and mark at the end of its row.
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum ToolState {
+    Pending,
+    Running,
+    Done,
+    Failed,
+}
+
 #[derive(uniffi::Record)]
 pub struct ConversationItem {
     pub id: String,
@@ -29,12 +40,25 @@ pub struct ConversationItem {
     pub text: String,
     /// The agent is still writing it.
     pub streaming: bool,
+    /// How far the call is, when the item is a tool call.
+    pub tool_state: Option<ToolState>,
+    /// The agent that sent the message, when it came from another agent pane and not from the person.
+    pub from_agent: Option<String>,
+}
+
+/// What an option does, so a view can tell the one that allows from the one that refuses.
+#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+pub enum OptionKind {
+    Allow,
+    AllowAlways,
+    Reject,
 }
 
 #[derive(uniffi::Record)]
 pub struct PermissionOption {
     pub option_id: String,
     pub name: String,
+    pub kind: OptionKind,
 }
 
 /// What the agent asks the person to allow.
@@ -78,6 +102,16 @@ fn item(message: &TranscriptMessage, revision: u64) -> ConversationItem {
         kind,
         text,
         streaming: !message.complete,
+        tool_state: message.tool.as_ref().map(|tool| match tool.status {
+            ToolStatus::Pending => ToolState::Pending,
+            ToolStatus::InProgress => ToolState::Running,
+            ToolStatus::Completed => ToolState::Done,
+            ToolStatus::Failed => ToolState::Failed,
+        }),
+        from_agent: message
+            .agent_message
+            .as_ref()
+            .map(|source| source.name.clone()),
     }
 }
 
@@ -99,6 +133,13 @@ pub(crate) fn conversation(state: &State, pane_id: &str) -> Option<Conversation>
                 .map(|option| PermissionOption {
                     option_id: option.option_id.clone(),
                     name: option.name.clone(),
+                    kind: match option.kind {
+                        PermissionOptionKind::AllowOnce => OptionKind::Allow,
+                        PermissionOptionKind::AllowAlways => OptionKind::AllowAlways,
+                        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
+                            OptionKind::Reject
+                        }
+                    },
                 })
                 .collect(),
         }),

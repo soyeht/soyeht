@@ -315,6 +315,7 @@ pub(super) static DEEP_HARBOR: Palette = Palette {
 pub mod radius {
     pub const COMPACT: f32 = 10.0;
     pub const CONTROL: f32 = 12.0;
+    pub const PANEL: f32 = 18.0;
     pub const CARD: f32 = 20.0;
     pub const PILL: f32 = 999.0;
 }
@@ -749,4 +750,7 @@ pub mod fonts {
     pub const UI: &str = "Inter";
     pub const MONO: &str = "JetBrains Mono";
     pub const SCREENPLAY: &str = "Courier Prime";
+    pub const READING: &str = "Newsreader";
+    pub const CLASSIC_SERIF: &str = "Times New Roman";
+    pub const CLASSIC_SERIF_POST_SCRIPT: &str = "TimesNewRomanPSMT";
 }

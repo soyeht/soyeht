@@ -22,10 +22,10 @@ import uniffi.soyeht_android.CoreException
 import uniffi.soyeht_android.HarnessChoices
 import uniffi.soyeht_android.KeyPress
 import uniffi.soyeht_android.Listener
+import uniffi.soyeht_android.Link
 import uniffi.soyeht_android.Overview
 import uniffi.soyeht_android.PaneKind
-import uniffi.soyeht_android.PaneRow
-import uniffi.soyeht_android.TerminalFrame
+import uniffi.soyeht_android.WorkspaceRow
 import uniffi.soyeht_android.TerminalKey
 import uniffi.soyeht_android.UsageGauge
 import uniffi.soyeht_android.deviceName
@@ -72,25 +72,44 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         private set
     var overview: Overview? by mutableStateOf(null)
         private set
-    var openPane: PaneRow? by mutableStateOf(null)
-        private set
-    var terminal: TerminalFrame? by mutableStateOf(null)
-        private set
-    var conversation: Conversation? by mutableStateOf(null)
+
+    /** The usage ring of every provider the engine meters: the rings of the app rail. */
+    var rings: List<UsageGauge> by mutableStateOf(emptyList())
         private set
 
-    /** The usage ring of the open agent pane's header, when a meter reads its harness. */
-    var usage: UsageGauge? by mutableStateOf(null)
+    /** The workspace of the tab on screen; the first one until the person chooses. */
+    var workspaceId: String? by mutableStateOf(null)
         private set
 
-    /** The harness chip and the model, effort and permission menus of the open agent pane. */
-    var composer: ComposerControls? by mutableStateOf(null)
+    /** What the rail shows of the workspace: the agents (every kind of pane), or one kind. */
+    var destination by mutableStateOf(Destination.Agents)
         private set
 
-    /** The harnesses the harness menu lists, kept current while the menu is open. */
+    /** The rail is on screen (a large screen); the toggle of the top bar hides it. */
+    var appBarOpen by mutableStateOf(true)
+        private set
+
+    /** The pane that has the keyboard and the outline: the one the person touched last. */
+    var focusedPaneId: String? by mutableStateOf(null)
+        private set
+
+    /** A phone: the workspace the person went into from the list, or null at the list. */
+    var phoneWorkspaceId: String? by mutableStateOf(null)
+        private set
+
+    /** The settings sheet: the display mode, and the computer this device controls. */
+    var showingSettings by mutableStateOf(false)
+        private set
+
+    /** What each pane on screen shows of itself; a pane draws only what its own data changes. */
+    private val data = HashMap<String, PaneData>()
+    private var shown: Set<String> = emptySet()
+    private var usageAsked = false
+
+    /** The pane whose harness menu is open, kept current while it is open. */
     var harnessChoices: HarnessChoices? by mutableStateOf(null)
         private set
-    private var choosingHarness = false
+    private var choosingHarness: String? = null
 
     /** The camera is looking for the pairing code. */
     var scanning by mutableStateOf(false)
@@ -157,25 +176,81 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private fun refresh() {
         val current = core.overview()
         overview = current
-        val pane = openPane ?: return
-        val row = current.workspaces.firstNotNullOfOrNull { workspace -> workspace.panes.firstOrNull { it.paneId == pane.paneId } }
-        if (row == null) {
-            // The pane closed on the computer: the list is where the person goes.
-            close()
-            return
+        if (!usageAsked && current.link == Link.Connected) {
+            // The rail's rings read the providers' meters: asked for once the connection is up.
+            usageAsked = true
+            core.loadUsage()
         }
-        // Its name and state follow the computer: a switch of harness renames the pane.
-        openPane = row
-        when (pane.kind) {
-            PaneKind.TERMINAL -> terminal = core.terminal(pane.paneId)
-            PaneKind.AGENT -> {
-                conversation = core.conversation(pane.paneId)
-                usage = core.usageGauge(pane.paneId)
-                composer = core.composer(pane.paneId)
-                if (choosingHarness) harnessChoices = core.harnessChoices(pane.paneId)
+        rings = core.usageGauges()
+        val rows = current.workspaces.flatMap { it.panes }
+        if (workspaceId != null && current.workspaces.none { it.workspaceId == workspaceId }) workspaceId = null
+        if (phoneWorkspaceId != null && current.workspaces.none { it.workspaceId == phoneWorkspaceId }) phoneWorkspaceId = null
+        // A pane that closed on the computer is dropped: the board is where the person goes.
+        if (rows.none { it.paneId == focusedPaneId }) focusedPaneId = null
+        data.keys.retainAll(rows.map { it.paneId }.toSet())
+        for (row in rows) {
+            if (row.paneId !in shown) continue
+            val pane = data(row.paneId)
+            when (row.kind) {
+                PaneKind.TERMINAL -> pane.terminal = core.terminal(row.paneId)
+                PaneKind.AGENT -> {
+                    pane.conversation = core.conversation(row.paneId)
+                    pane.usage = core.usageGauge(row.paneId)
+                    pane.composer = core.composer(row.paneId)
+                }
+                else -> Unit
             }
-            else -> Unit
         }
+        choosingHarness?.let { harnessChoices = core.harnessChoices(it) }
+    }
+
+    /** What a pane on screen shows of itself. */
+    fun data(paneId: String): PaneData = data.getOrPut(paneId) { PaneData() }
+
+    /** The panes the shell draws now: only they are read from the core, which is every redraw's work. */
+    fun present(paneIds: Set<String>) {
+        if (paneIds == shown) return
+        shown = paneIds
+        refresh()
+    }
+
+    /** The workspace on screen: the person's choice, else the first. */
+    val workspace: WorkspaceRow?
+        get() = overview?.workspaces?.let { all -> all.firstOrNull { it.workspaceId == workspaceId } ?: all.firstOrNull() }
+
+    fun selectWorkspace(id: String) {
+        workspaceId = id
+        focusedPaneId = null
+    }
+
+    fun selectDestination(next: Destination) {
+        destination = next
+    }
+
+    fun toggleAppBar() {
+        appBarOpen = !appBarOpen
+    }
+
+    /** The phone goes into a workspace from the list, or back to the list with null. */
+    fun enterWorkspace(id: String?) {
+        phoneWorkspaceId = id
+        if (id != null) selectWorkspace(id)
+        focusedPaneId = null
+    }
+
+    fun openSettings() {
+        showingSettings = true
+    }
+
+    fun closeSettings() {
+        showingSettings = false
+    }
+
+    /** The person touched a pane: it takes the keyboard here and on the computer. */
+    fun focus(paneId: String) {
+        if (focusedPaneId == paneId) return
+        focusedPaneId = paneId
+        core.focus(paneId)
     }
 
     /**
@@ -275,78 +350,51 @@ class AppModel(application: Application) : AndroidViewModel(application) {
         credentials.forget()
         paired = false
         overview = null
-        close()
-    }
-
-    fun open(pane: PaneRow) {
-        openPane = pane
-        terminal = null
-        resetAgent()
-        core.focus(pane.paneId)
-        // The chip names the harness by the engine's catalogue and the ring reads the providers' meters:
-        // both are asked for as the pane opens.
-        if (pane.kind == PaneKind.AGENT) {
-            core.loadHarnesses(false)
-            core.loadUsage()
-        }
-        refresh()
-    }
-
-    fun close() {
-        openPane = null
-        terminal = null
-        resetAgent()
-    }
-
-    private fun resetAgent() {
-        conversation = null
-        usage = null
-        composer = null
+        rings = emptyList()
+        workspaceId = null
+        phoneWorkspaceId = null
+        focusedPaneId = null
+        showingSettings = false
+        shown = emptySet()
+        usageAsked = false
+        data.clear()
         harnessChoices = null
-        choosingHarness = false
+        choosingHarness = null
     }
 
-    /** The harness menu opens: it lists what the engine has now and is kept current while it is open. */
-    fun openHarnessMenu() {
-        val pane = openPane ?: return
-        choosingHarness = true
+    /** The harness menu of a pane opens: it lists what the engine has now and is kept current while it is open. */
+    fun openHarnessMenu(paneId: String) {
+        choosingHarness = paneId
         core.loadHarnesses(false)
-        harnessChoices = core.harnessChoices(pane.paneId)
+        harnessChoices = core.harnessChoices(paneId)
     }
 
+    /** The menu closes; what it listed stays for the confirmation of a switch, which reads its words. */
     fun closeHarnessMenu() {
-        choosingHarness = false
+        choosingHarness = null
     }
 
     /** "Check agents again": the engine reads the machine's environment afresh. */
     fun rescanHarnesses() = core.loadHarnesses(true)
 
     /** Chooses a value of the model, effort or permission menu. */
-    fun choose(configId: String, value: String) {
-        openPane?.let { core.chooseOption(it.paneId, configId, value) }
-    }
+    fun choose(paneId: String, configId: String, value: String) = core.chooseOption(paneId, configId, value)
 
     /** Restarts the pane on another harness, handing the conversation over. The core refuses a switch that may not start. */
-    fun switchHarness(harnessId: String) {
-        openPane?.let { core.switchHarness(it.paneId, harnessId) }
+    fun switchHarness(paneId: String, harnessId: String) = core.switchHarness(paneId, harnessId)
+
+    fun type(paneId: String, text: String) = core.typeText(paneId, text)
+
+    fun paste(paneId: String, text: String) = core.paste(paneId, text)
+
+    fun press(paneId: String, key: TerminalKey, control: Boolean = false, alt: Boolean = false, shift: Boolean = false) =
+        core.pressKey(paneId, KeyPress(key, control, alt, shift))
+
+    fun prompt(paneId: String, text: String) {
+        if (text.isNotBlank()) core.sendPrompt(paneId, text)
     }
 
-    fun type(text: String) = openPane?.let { core.typeText(it.paneId, text) }
-
-    fun paste(text: String) = openPane?.let { core.paste(it.paneId, text) }
-
-    fun press(key: TerminalKey, control: Boolean = false, alt: Boolean = false, shift: Boolean = false) {
-        openPane?.let { core.pressKey(it.paneId, KeyPress(key, control, alt, shift)) }
-    }
-
-    fun prompt(text: String) {
-        val pane = openPane ?: return
-        if (text.isNotBlank()) core.sendPrompt(pane.paneId, text)
-    }
-
-    fun answer(requestId: String, optionId: String) {
-        openPane?.let { core.answerPermission(it.paneId, requestId, optionId) }
-    }
+    fun answer(paneId: String, requestId: String, optionId: String) = core.answerPermission(paneId, requestId, optionId)
 
     /** The phone stops being a client of the computer when the app's state goes. */
     override fun onCleared() {
