@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="soyeht_unadvertised_blur">
+  <copyright>
+    Copyright Soyeht contributors. Licensed under the Apache License, Version 2.0.
+  </copyright>
+
+  <interface name="soyeht_unadvertised_blur_manager" version="1">
+    <description summary="a blur manager that no compositor offers">
+      Written for Soyeht from the calls that GPUI makes, not from any compositor's protocol. No
+      compositor advertises this name, so a client that looks for the global finds none and never
+      sends one of these requests.
+    </description>
+
+    <request name="create">
+      <description summary="a blur object for a surface"/>
+      <arg name="id" type="new_id" interface="soyeht_unadvertised_blur"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+
+    <request name="unset">
+      <description summary="remove the blur of a surface"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+
+  <interface name="soyeht_unadvertised_blur" version="1">
+    <description summary="the blur of one surface"/>
+
+    <request name="commit">
+      <description summary="apply the pending state"/>
+    </request>
+
+    <request name="release" type="destructor">
+      <description summary="destroy the object"/>
+    </request>
+  </interface>
+</protocol>
