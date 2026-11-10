@@ -1,4 +1,10 @@
 {
+  "central_objects": {
+    "core_impl_files": 96,
+    "core_open_fields": 44,
+    "engine_client_extension_files": 41,
+    "workbench_impl_files": 77
+  },
   "duplication": {
     "android": {
       "clones": 0,
