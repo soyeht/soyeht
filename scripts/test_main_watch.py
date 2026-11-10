@@ -178,10 +178,27 @@ class RevertTests(WatchCase):
         self.assertEqual(status["result"], "host")
         self.assertIsNone(status["revert"])
         self.assertIsNone(status["culprit"])
-        self.assertEqual(status["last_sha"], head)
+        self.assertEqual(status["last_sha"], self.start, "nobody has fixed the host: the pass stays open")
         self.assertEqual(self.gh_calls(), [])
         self.assertEqual(self.origin_branches(), ["main"])
         self.assertEqual(self.origin_head(), head)
+
+    def test_a_host_result_is_tried_again_by_a_later_pass_but_not_in_a_hurry(self):
+        self.assertEqual(self.watch("--apply"), 0)
+        head = self.land("two", {"b": "2"})
+        with mock.patch.dict(os.environ, {"FAKE_HOST_BROKEN": "1"}):
+            self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+        self.assertEqual(self.status()["result"], "host")
+        runs = len(list((self.health / post_merge_records.HISTORY_DIRECTORY).glob("*.json")))
+        self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)  # the host is not fixed; not due
+        self.assertEqual(self.status()["result"], "host")
+        history = self.health / post_merge_records.HISTORY_DIRECTORY
+        self.assertEqual(len(list(history.glob("*.json"))) if history.exists() else 0, runs,
+                         "a pass that comes too soon runs no gate")
+        with mock.patch.object(post_merge_records, "HOST_RETRY_SECONDS", 0):  # due, and the host is fixed
+            self.assertEqual(self.watch("--apply"), 0)
+        status = self.status()
+        self.assertEqual((status["result"], status["last_sha"]), ("green", head))
 
     def test_an_ambiguous_culprit_is_not_reverted(self):
         self.assertEqual(self.watch("--apply"), 0)

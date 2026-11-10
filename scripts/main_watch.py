@@ -9,7 +9,7 @@ One pass: fetch `origin/main`; when it moved since the last pass recorded in
 all the new ones). The gate and the culprit search are post_merge's: a red step is rerun
 once, a pass is `flaky` and blames nobody. Otherwise the failing step runs on the last green main
 as a control: a step that fails there too is the host's or the environment's (result `host`, nothing
-is reverted), and one that passes there starts a search over the commits since, which names one
+is reverted, and the pass stays open: post_merge runs it again after `HOST_RETRY_SECONDS`), and one that passes there starts a search over the commits since, which names one
 culprit, or several candidates when commits cannot run the failing step.
 
 On a confirmed culprit, with `--apply`, it reverts that commit: a branch `main-watch/revert-<sha>`
@@ -318,8 +318,10 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         "chronic": chronic,
     }
     # A dry run leaves the pass open for a later --apply; so does a missing measurement, which
-    # runs again (cheaply, from the record) until a report for its hash is given.
-    if arguments.apply and result != post_merge_editor.NEEDS_MEASUREMENT:
+    # runs again (cheaply, from the record) until a report for its hash is given, and a `host`
+    # result, which nobody has fixed yet: post_merge runs it again after HOST_RETRY_SECONDS (until
+    # then a pass only reads the record, so passes that come round quickly run no gate).
+    if arguments.apply and result not in (post_merge_editor.NEEDS_MEASUREMENT, post_merge_records.HOST_RESULT):
         update["last_sha"] = head
     write_json(status_path, update)
     print(summary(result, head, record, revert, chronic))

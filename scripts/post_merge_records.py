@@ -5,6 +5,7 @@ go into a record, and the report printed at the end.
 
 from __future__ import annotations
 
+import calendar
 import json
 import shutil
 import time
@@ -16,11 +17,25 @@ from post_merge_editor import NEEDS_MEASUREMENT
 HISTORY_DIRECTORY = "history"
 # The result of a run whose failing step fails on the last green main too: not a commit's failure.
 HOST_RESULT = "host"
+# A `host` record is run again by a later pass, but not sooner than this after it was made: a pass
+# that comes round every few seconds must not run the whole gate again each time.
+HOST_RETRY_SECONDS = 1800
 
 
 def commit_info(root: Path, sha: str) -> dict:
     subject, author = git(root, "log", "-1", "--format=%s%x00%an", sha).split("\0")
     return {"sha": sha, "subject": subject, "author": author}
+
+
+def host_retry_due(record: dict, now: float | None = None) -> bool:
+    """A recorded `host` run is done again once `HOST_RETRY_SECONDS` have passed since it started."""
+    if record.get("result") != HOST_RESULT:
+        return False
+    try:
+        started = calendar.timegm(time.strptime(record["started_at"], "%Y-%m-%dT%H:%M:%SZ"))
+    except (KeyError, ValueError):
+        return True  # no start time to wait from
+    return (time.time() if now is None else now) - started >= HOST_RETRY_SECONDS
 
 
 def parent_of(root: Path, sha: str) -> str | None:

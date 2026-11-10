@@ -393,9 +393,10 @@ inherit the main actor.
   programs for the suites and the Swift tests, the TCC snapshot), so no commit is judged against
   programs built from another one. Before it names any commit, even when the range holds only
   one, it runs the failing step the same way on the last green main, on today's host (the control
-  run). A step that fails there too is the host's or the environment's (a network failure during
-  an install, a full disk, a toolchain update, stale programs): the run is recorded as `host`, no
-  commit is blamed and nothing is reverted. A control that cannot run blames nobody either. Only
+  run). A control that fails is run once more, as the head was. A step that fails both times is the
+  host's or the environment's (a network failure during an install, a full disk, a toolchain
+  update, stale programs): the run is recorded as `host`, no commit is blamed and nothing is
+  reverted. A control that cannot run blames nobody either, and the note keeps the commits since. Only
   a step that passes on the last green main and fails at the head can have a culprit.
   `main_watch.py --apply` then reverts a
   single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step, the
@@ -413,7 +414,10 @@ inherit the main actor.
 - Red main is fixed by the automatic revert of a confirmed culprit. Its author re-lands a
   fixed change (a new pull request through the fast gate); when the revert could not be made,
   they fix forward or revert by hand within the hour. No other change merges into the
-  affected area while main is red.
+  affected area while main is red. A `host` result has no culprit to revert: `main_watch.py`
+  exits 1 and `watch.json` says `host`, which tells the coordinator to fix the environment; the
+  pass stays open, so a later pass, or `post_merge.py --force`, runs the head again (a pass comes
+  back to it no sooner than `HOST_RETRY_SECONDS`).
 - Review: `gate_plan.py` prints `review: required` when a change touches the engine core
   (`soyeht-engine` `core*`, `dispatch*`, `server*`, `agents/`, and `soyeht-store`), the
   protocol and `contracts/profiles.json`, an editor, security-sensitive code (all of

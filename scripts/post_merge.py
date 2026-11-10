@@ -9,7 +9,7 @@ In a clean worktree of the commit (default: `origin/main` after a fetch) it runs
 `<health-dir>/<sha>.json`, the log `<sha>.log`, `latest.json` and, when green,
 `last_green.json`. A `needs-measurement` run (every step passed except the editor measurement,
 which VM1 collects separately) counts as green here: it is where the culprit search starts. A
-`flaky` or `fail` run never does. The directory is `--health-dir`, else `$SOYEHT_MAIN_HEALTH_DIR`, else
+`flaky`, `host` or `fail` run never does. The directory is `--health-dir`, else `$SOYEHT_MAIN_HEALTH_DIR`, else
 `.cache/main-health` of the main checkout (`gate_base.main_health_dir`, which the fast plan reads too).
 
 When the gate is red it first reruns the failing step once on the same commit: if that
@@ -27,7 +27,9 @@ the first run. A host still busy after the budget makes a failed rerun inconclus
 `flaky`) and a probe that fails on it is skipped, so it blames nobody. Otherwise it runs the
 failing step on the last green main itself, on this host, as a control (also when only one commit
 came since): a step that fails there too is the host's or the environment's, the record's result
-is `host`, and no commit is blamed or reverted; one that cannot run there blames nobody either.
+is `host` (a failing control is run once more first, so a flake there does not hide a regression),
+and no commit is blamed or reverted; one that cannot run there blames nobody either. A recorded `host`
+run is run again by a later pass, not sooner than `HOST_RETRY_SECONDS` after it started.
 Only when it passes there does it find the culprit among the first-parent commits since the last
 green main, running only the failing step (`check_all.sh --only STEP_ID`, with the steps it depends on) on a binary search of
 them. It never pushes, reverts or edits main: it reports the culprit commit, the failing
@@ -100,7 +102,8 @@ from post_merge_editor import (EDITOR_METER_ENV, EDITOR_STEP, GREEN_RESULTS, NEE
 from post_merge_gate import INFRASTRUCTURE_EXITS, failing_step, run_gate
 from post_merge_hosts import Remote
 from post_merge_investigate import investigate, settle_missing_measurement
-from post_merge_records import archive_previous_run, commit_info, parent_of, read_record, report, write_json
+from post_merge_records import (archive_previous_run, commit_info, host_retry_due, parent_of, read_record, report,
+                                write_json)
 
 BUSY_EXIT = 75
 # A persistent worktree (--worktree), see gate_worktree.py, keeps its cargo targets between runs.
@@ -222,8 +225,8 @@ def main(argv: list[str] | None = None) -> int:
             git(root, "fetch", "origin", "main")
         sha = git(root, "rev-parse", arguments.sha or "origin/main")
         recorded = read_record(health / f"{sha}.json")
-        if (health / f"{sha}.json").exists() and not arguments.force and not measured_since(
-                recorded, arguments.editor_meter):
+        if (health / f"{sha}.json").exists() and not arguments.force and not host_retry_due(
+                recorded) and not measured_since(recorded, arguments.editor_meter):
             print(f"post_merge: {sha[:12]} is already recorded in {health}")
             return NEEDS_MEASUREMENT_EXIT if recorded.get("result") == NEEDS_MEASUREMENT else 0
         try:

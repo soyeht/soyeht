@@ -13,7 +13,7 @@ import check_editor_performance
 import gate_flakes
 import post_merge_hosts as hosts
 from gate_worktree import InfrastructureError
-from post_merge_culprit import BAD, GOOD, last_green, locate_culprit, search_range
+from post_merge_culprit import BAD, GOOD, Search, last_green, locate_culprit, search_range
 from post_merge_editor import EDITOR_STEP, NEEDS_MEASUREMENT, lacks_measurement
 from post_merge_gate import (INFRASTRUCTURE_EXITS, UNSUPPORTED_STEP_EXIT, failing_step, gate_step_areas,
                              run_gate, step_with_prerequisites)
@@ -137,32 +137,47 @@ def blame(root: Path, worktree: Path, scratch: Path, health: Path, record: dict,
     sha, step = record["sha"], record["failed_step"]
     green = last_green(health, since)
     commits = search_range(root, green, sha)
-    if not commits:
+    if green is None:
         record["note"] = "no known green main to search from; pass --since"
+    elif not commits:
+        record["note"] = (f"no commit between the last green main {green[:12]} and this one on the "
+                          "first-parent line (is it an ancestor?), so there is nothing to search")
     else:
         # Also for one commit: the step has not been run on the last green main on this host yet.
         result = locate_culprit(root, worktree, green, commits, step, command, scratch, remote, persistent,
                                 again.measure if timing else None, budget)
-        record["control"] = {"sha": green, "result": result.control}
-        if result.control == BAD:
-            record["result"] = HOST_RESULT
-            record["note"] = (f"step {step} fails on the last green main {green[:12]} too, on this host: "
-                              "the failure is the host's or the environment's, no commit is blamed and "
-                              "nothing is reverted")
-        elif result.control != GOOD:
-            record["note"] = (f"step {step} could not be run on the last green main {green[:12]} to check "
-                              "the host, so no commit is blamed")
-        elif result.culprit:
-            record["culprit"] = commit_info(root, result.culprit)
-        else:
-            record["candidates"] = [commit_info(root, c) for c in result.candidates]
-            record["note"] = "some commits cannot run the failing step alone"
+        settle_control(root, record, green, commits, result)
     notes = [record.get("note"), f"the rerun also failed ({again.note})" if again.note else None]
     if record.get("flaky_steps"):
         flaked = ", ".join(flake["step"] for flake in record["flaky_steps"])
         notes.append(f"{flaked} flaked earlier in this run and passed when run again")
     if any(notes):
         record["note"] = "; ".join(note for note in notes if note)
+
+
+def settle_control(root: Path, record: dict, green: str, commits: list[str], result: Search) -> None:
+    """Write what the control run on the last green main decided."""
+    step = record["failed_step"]
+    record["control"] = {"sha": green, "result": result.control}
+    if result.control == BAD:
+        record["result"] = HOST_RESULT
+        record["note"] = (f"step {step} fails on the last green main {green[:12]} too, on this host (twice): "
+                          "the failure is the host's or the environment's, no commit is blamed and "
+                          "nothing is reverted")
+    elif result.control != GOOD:
+        # The search did not start, so the commits that changed since stay in the note.
+        changed = "; ".join(f"{c['sha'][:12]} {c['subject']}" for c in (commit_info(root, c) for c in commits))
+        record["note"] = (f"step {step} could not be run on the last green main {green[:12]} to check "
+                          f"the host, so no commit is blamed (commits since: {changed})")
+    elif result.culprit:
+        record["culprit"] = commit_info(root, result.culprit)
+    else:
+        record["candidates"] = [commit_info(root, c) for c in result.candidates]
+        record["note"] = "some commits cannot run the failing step alone"
+    if result.control_flaked:
+        record["control"]["flaked"] = True
+        record["note"] = "; ".join(filter(None, [record.get("note"), f"the control run of {step} on "
+                                  f"{green[:12]} failed once and passed when run again"]))
 
 
 def run_unrun_steps(worktree: Path, base: str | None, record: dict, log: Path, scratch: Path,

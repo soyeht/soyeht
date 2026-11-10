@@ -28,6 +28,7 @@ class Search:
     candidates: list[str] = field(default_factory=list)
     probes: dict[str, str] = field(default_factory=dict)
     control: str = GOOD  # the probe of the last green main: BAD is the host's failure, SKIP unknown
+    control_flaked: bool = False  # the control failed once and passed when run again
 
 
 def find_culprit(commits: list[str], probe: Callable[[str], str]) -> Search:
@@ -79,7 +80,8 @@ def locate_culprit(root: Path, worktree: Path, green: str, commits: list[str], s
                    persistent: bool = False, measure: Callable[[], Load | None] | None = None,
                    budget: WaitBudget | None = None) -> Search:
     """The control run first: `step` on `green`, the last green main, with the probe every commit
-    gets. Only when it passes there does the search over `commits` (oldest to newest, the newest
+    gets, and once more when it fails: a flake on the green commit must not hide a real regression,
+    so the host is blamed only for a failure that repeats. Only when it passes there does the search over `commits` (oldest to newest, the newest
     being the failing head) run, and only then may it name a culprit. A control that fails is the
     host's failure and one that cannot run is unknown: neither blames a commit.
 
@@ -88,9 +90,15 @@ def locate_culprit(root: Path, worktree: Path, green: str, commits: list[str], s
     never blames a commit; one that passes is good wherever it ran."""
     probe = probe_of(root, worktree, step, command, scratch, remote, persistent, measure, budget)
     control = probe(green)
+    flaked = False
+    if control == BAD:  # one rerun, as the head had: the host's failure is one that repeats
+        control = probe(green)
+        flaked = control == GOOD
     if control != GOOD:
         return Search(None, [], {green: control}, control)
-    return find_culprit(commits, probe)
+    search = find_culprit(commits, probe)
+    search.control_flaked = flaked
+    return search
 
 
 def probe_of(root: Path, worktree: Path, step: str, command: list[str], scratch: Path,
