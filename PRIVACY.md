@@ -19,14 +19,15 @@ against the source in that repository.
   live on the computer that runs the engine. Your iPhone, iPad or Android phone talks only to that
   computer, over your own private network.
 - **A few requests leave your devices, and each one is listed in this document**: the update check,
-  push alerts through Apple, dictation, optional model downloads, the usage meters, and the agents
-  and web pages you choose to run. None of them goes to a server run by Soyeht.
+  dictation, optional model downloads, the usage meters, and the agents and web pages you choose
+  to run. None of them goes to a server run by Soyeht. Push notifications are not part of this
+  release (see "Push notifications" below).
 
 ## What stays on your devices
 
 **On the computer that runs the engine** (the Mac, or the Windows or Linux computer), Soyeht keeps
 in its own data folder: your workspaces and panes, conversations and tasks, settings, the list of
-paired devices and their public keys, the push tokens your phones registered, and log files. The
+paired devices and their public keys, and log files. The
 folder and its files are readable only by your user. Nothing in it is uploaded. The logs record
 event names and failure kinds, never the text of a message, the output of a terminal or a file path
 (`docs/adr/0088-one-platform-log-and-failure-streaks.md`).
@@ -77,17 +78,24 @@ privacy statement applies to that download.
 
 ### Push notifications (iPhone and iPad)
 
-When an agent stops to ask you something and a phone is paired, the engine on your computer sends an
-alert straight to Apple's push service (APNs). There is no Soyeht server in between, and push works
-only when the engine on your computer has been given Apple push credentials
-(`docs/push-notifications.md`); without them push is off. The message the engine sends contains the
-same generic title and text for every question ("An agent needs you. Open Soyeht to see what it
-asks."), plus random identifiers of the Mac, workspace, pane and request so that a tap opens the
-right pane. It never contains what the agent asked: no command, file path or question text. The
-phone shows that detail itself, from its own private connection to your computer
-(`engine/soyeht-engine/src/push/payload.rs`, `contracts/vectors/push-permission.json`). To deliver the
-alert, your phone's push token is registered on your computer and used from there with Apple. Apple
-handles the token and the alert under its own privacy policy.
+**Push notifications are not part of Soyeht 0.1.0.** The iPhone and iPad app does not ask for
+notification permission, does not ask Apple for a push token and does not send one to your
+computer, and the engine on your computer sends nothing to Apple's push service (APNs). The app
+does these things only when the engine it is paired with says it can send push alerts, and an
+engine says so only when it has been given Apple push credentials (`docs/push-notifications.md`),
+which only works for an app build you sign yourself. The release engine has none. An engine
+without them also refuses a token if a program sends one (`push_unavailable`) and keeps nothing.
+
+Push is meant to return through a relay. Until then, if you turn it on for your own build, this is
+what happens: when an agent stops to ask you something and a phone is paired, the engine sends an
+alert straight to APNs, with no Soyeht server in between. The message contains the same generic
+title and text for every question ("An agent needs you. Open Soyeht to see what it asks."), plus
+random identifiers of the Mac, workspace, pane and request so that a tap opens the right pane. It
+never contains what the agent asked: no command, file path or question text. The phone shows that
+detail itself, from its own private connection to your computer
+(`engine/soyeht-engine/src/push/payload.rs`, `contracts/vectors/push-permission.json`). To deliver
+the alert, your phone's push token is registered on your computer and used from there with Apple.
+Apple handles the token and the alert under its own privacy policy.
 
 ### Dictation (voice to text in the message box)
 
@@ -166,8 +174,8 @@ Apple's service.
 For the App Store listing of Soyeht Next for iPhone and iPad, the data-collection answer is **Data
 Not Collected**. The app sends nothing to the developer or to any third party that the developer
 controls, and the listing's privacy manifest is `apps/ios/Resources/PrivacyInfo.xcprivacy`. The
-sections above describe the system services that act on your behalf: Apple's push and speech
-services, and downloads you start yourself.
+sections above describe the system services that act on your behalf: Apple's speech services,
+and downloads you start yourself.
 
 ## Children
 

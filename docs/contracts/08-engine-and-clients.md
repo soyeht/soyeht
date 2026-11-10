@@ -123,6 +123,16 @@ device token. The engine stores one registration per device; renewal =
 register again, and a token moves to the newest device that registers it.
 Revocation deletes the registration in the same transaction.
 
+The engine lists `push` among the `capabilities` of `welcome` (the `EngineCapability` names)
+only while it can send alerts, that is, while its APNs credentials loaded. A device that would ask
+its person for notification permission, or ask Apple for and register a token, does so only when
+`push` is offered. An engine that does not offer it answers `push.register` with
+`push_unavailable` and stores no token; `push.unregister` still works. Push is not part of
+Soyeht 0.1.0: the release engine has no credentials, so it never offers it.
+`Welcome.capabilities` stays `string[]`, not an enum, so an older client keeps working when a newer
+engine offers a capability it does not know; `EngineCapability` lists the names this version
+defines.
+
 Implemented triggers: `pane.permission_requested` and
 `pane.elicitation_requested` on agent panes, sent to every registered device.
 The alert payload carries the same title and body for every question (`pushNeedsYouTitle` and
@@ -428,6 +438,7 @@ and a later request succeeds once Git is installed),
 `file_not_text` (a file the editor was asked to open is not UTF-8 text) and `file_too_large`
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
 (ADR 0094),
+`push_unavailable` (`push.register` while the engine cannot send alerts, §2.3; nothing is stored),
 `adapter_not_acknowledged` (a built-in agent that its package runner downloads unchecked,
 `HarnessInfo.package` with `packageLocked` false, was asked to start without a person's
 acknowledgement of that exact `name@version`: `pane.create` and `pane.harness.switch` carry it as

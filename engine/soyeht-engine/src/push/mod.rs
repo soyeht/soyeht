@@ -39,6 +39,11 @@ impl Notifier {
         Self::default()
     }
 
+    /// Whether alerts can be sent: the credentials loaded and the worker runs.
+    pub fn enabled(&self) -> bool {
+        self.jobs.as_ref().is_some_and(|jobs| !jobs.is_closed())
+    }
+
     /// Runs `worker` on the current Tokio runtime.
     pub fn spawn<T: apns::Transport>(worker: Worker<T>) -> Self {
         let (jobs, receiver) = mpsc::unbounded_channel();
@@ -184,6 +189,14 @@ impl Core {
             }
         };
         let register = if method == method::PUSH_REGISTER {
+            // Without credentials no alert can be sent, so a token would only sit in the store. The
+            // engine says so instead of keeping it. `push.unregister` stays available: it removes
+            // a token an earlier run, with credentials, stored.
+            if !self.push.enabled() {
+                return Err(errors::push_unavailable(
+                    "This engine does not send push notifications",
+                ));
+            }
             let register = serde_json::from_value::<PushRegisterParams>(params.clone())
                 .map_err(|_| errors::invalid("Invalid push registration"))?;
             // The token is the hex form of the bytes APNs gave the device.

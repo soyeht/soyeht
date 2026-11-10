@@ -131,7 +131,8 @@
         "file_not_text",
         "file_too_large",
         "adapter_not_acknowledged",
-        "workspace_folder_missing"
+        "workspace_folder_missing",
+        "push_unavailable"
       ]
     },
     "RpcError": {
@@ -10450,6 +10451,21 @@
         "web_host"
       ]
     },
+    "EngineCapability": {
+      "type": "string",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered.",
+      "enum": [
+        "terminal",
+        "workspaces",
+        "snapshot-parts",
+        "event-replay",
+        "terminal-replay",
+        "device-pairing",
+        "workspace-tasks",
+        "subscription-usage",
+        "push"
+      ]
+    },
     "WebInteractionMode": {
       "type": "string",
       "enum": [
@@ -14991,7 +15007,8 @@
     "file_not_text": -32039,
     "file_too_large": -32040,
     "adapter_not_acknowledged": -32041,
-    "workspace_folder_missing": -32042
+    "workspace_folder_missing": -32042,
+    "push_unavailable": -32043
   },
   "x-clientPolicy": {
     "timeouts": {

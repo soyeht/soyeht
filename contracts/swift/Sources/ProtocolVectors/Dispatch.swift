@@ -479,6 +479,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "EditorAgentCursorEvent": return try codec(SoyehtProtocol.EditorAgentCursorEvent.self, data)
         case "EditorReviewRequestedEvent": return try codec(SoyehtProtocol.EditorReviewRequestedEvent.self, data)
         case "ClientCapability": return try codec(SoyehtProtocol.ClientCapability.self, data)
+        case "EngineCapability": return try codec(SoyehtProtocol.EngineCapability.self, data)
         case "WebInteractionMode": return try codec(SoyehtProtocol.WebInteractionMode.self, data)
         case "WebNavigationAction": return try codec(SoyehtProtocol.WebNavigationAction.self, data)
         case "WebViewportPreset": return try codec(SoyehtProtocol.WebViewportPreset.self, data)
