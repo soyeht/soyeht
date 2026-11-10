@@ -39,8 +39,11 @@ supervisor (`soyeht-ptyd`) holds the processes, and a new engine adopts them.
 failure code: launchd `KeepAlive` (any end, while the program exists), systemd `Restart=always`
 (one second later), and the Windows task's `RestartOnFailure` (a minute later, up to 999 times;
 the service host passes the program's exit code on whole, so 70 reaches Task Scheduler). Where no
-service is registered, the desktop window starts a detached engine when it finds none (ADR 0102),
-and the Mac app reconnects with its backoff. The new engine adopts the supervisor's terminals.
+service is registered, the desktop window starts a detached engine when it finds none (ADR 0102).
+The Mac app has no start of its own (contract 13 section 4): with no registered service (a
+development run, or a person who turned off the start at login) the engine stays down and the app
+shows it disconnected, where before it stayed up and failed every request. The new engine adopts
+the supervisor's terminals.
 
 ## Consequences
 
@@ -49,8 +52,10 @@ and the Mac app reconnects with its backoff. The new engine adopts the superviso
 - The state half-changed by the panic is not kept: the store commits whole transactions, so the
   next engine opens the last committed state.
 - A bug that panics under the lock on every start now restarts in a loop at the service manager's
-  pace (one second; a minute on Windows) instead of staying up and broken. The log line and the
-  crash reports name it.
+  pace instead of staying up and broken: every second with no limit on the Mac and Linux, and
+  every minute on Windows until Task Scheduler's 999 restarts are used, after which the engine stays
+  down until the next logon. The `engine.core_poisoned` line names it; the crash report of the panic
+  is written only while the process has not used its three non-fatal reports (ADR 0127).
 - Not covered here: the places that can panic under the lock without `unwrap`, `expect` or
   `panic!` (map and slice indexing, narrowing casts). A follow-up denies `clippy::indexing_slicing`
   in the engine.
