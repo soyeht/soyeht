@@ -12,7 +12,7 @@
 //! A lock that a panic poisoned is not recovered: the state it guards may be half changed, and
 //! every request would go on failing. The first caller that finds it logs the fact and ends the
 //! process through [`crate::hooks::Hooks::end_process`], so the service manager or the window
-//! starts a new engine (ADR 0158).
+//! starts a new engine (ADR 0159).
 
 use crate::{
     core::Core,

@@ -16,7 +16,7 @@ use std::sync::Arc;
 
 pub trait Hooks: Send + Sync {
     /// Ends the process with `code`. The engine calls it when it cannot go on, for example on a
-    /// poisoned Core lock (ADR 0158), so that the service manager starts a new one. A test
+    /// poisoned Core lock (ADR 0159), so that the service manager starts a new one. A test
     /// overrides it to record the call; the default is the only place the engine exits from.
     fn end_process(&self, code: i32) {
         std::process::exit(code)

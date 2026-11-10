@@ -1,4 +1,4 @@
-# ADR 0158: A poisoned Core lock ends the engine, and the service manager starts a new one
+# ADR 0159: A poisoned Core lock ends the engine, and the service manager starts a new one
 
 - Status: accepted. Extends ADR 0079 (the Core lock), ADR 0114 (the service seam) and ADR 0127 (crash reports).
 - Date: 2026-11-10

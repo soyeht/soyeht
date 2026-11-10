@@ -181,7 +181,7 @@ with exit code 0 is not restarted until the next logon, and neither is a task wh
 restarts are spent.
 
 The engine ends itself on purpose in one case besides a failed start: it finds its Core lock poisoned
-by a panic, logs `engine.core_poisoned` and exits with code 70 (ADR 0158). Every definition above
+by a panic, logs `engine.core_poisoned` and exits with code 70 (ADR 0159). Every definition above
 restarts a program that ends with a failure code, so the engine is back after the restart delay.
 
 On the Mac, launchd can still be removing a job for a moment after `bootout`, and then refuses a
