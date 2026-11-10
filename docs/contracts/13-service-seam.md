@@ -180,6 +180,10 @@ the time to restart; the engine reconnects as it already does. On Windows a task
 with exit code 0 is not restarted until the next logon, and neither is a task whose 999
 restarts are spent.
 
+The engine ends itself on purpose in one case besides a failed start: it finds its Core lock poisoned
+by a panic, logs `engine.core_poisoned` and exits with code 70 (ADR 0159). Every definition above
+restarts a program that ends with a failure code, so the engine is back after the restart delay.
+
 On the Mac, launchd can still be removing a job for a moment after `bootout`, and then refuses a
 new `bootstrap` with error 5 ("Input/output error") or 37 ("Operation already in progress"). The
 seam tries again up to four more times, 0.2 s, 0.4 s, 0.6 s and 0.8 s apart (about two seconds),
