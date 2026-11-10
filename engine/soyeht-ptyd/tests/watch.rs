@@ -107,11 +107,18 @@ fn an_exit_is_announced_after_the_last_byte_of_output() {
 fn what_was_missed_before_the_watch_is_in_its_answer() {
     let (daemon, mut client) = Daemon::start();
     let quiet = spawn(&mut client, daemon.shell());
-    let busy = spawn(&mut client, daemon.shell());
-    input(&mut client, &busy.instance_id, "printf there\n");
+    // The command prints its last byte and then only waits, so nothing it writes can arrive
+    // between the two watches below.
+    let mut config = daemon.shell();
+    config.argv = vec![
+        "/bin/sh".into(),
+        "-c".into(),
+        "printf there; printf settled; sleep 30".into(),
+    ];
+    let busy = spawn(&mut client, config);
     // The output is in the supervisor before any watch exists: nobody was told.
     let mut offset = 0;
-    wait_text(&mut client, &busy.instance_id, &mut offset, "there");
+    wait_text(&mut client, &busy.instance_id, &mut offset, "settled");
     let mut watcher = Watcher::connect(&watch_socket(&daemon), 1).unwrap();
 
     let level = watcher

@@ -66,6 +66,7 @@ extension LocalizedStringKey.StringInterpolation {
     static let x16: CGFloat = DesignTokens.Space.x16
     static let x18: CGFloat = DesignTokens.Space.x18
     static let x20: CGFloat = DesignTokens.Space.x20
+    static let x22: CGFloat = DesignTokens.Space.x22
   }
 
   enum TypeScale {
@@ -163,8 +164,8 @@ extension LocalizedStringKey.StringInterpolation {
 
   private static func proseFamily(_ family: WritingFont) -> String {
     switch family {
-    case .reading_serif: "Newsreader"
-    case .classic_serif: "Times New Roman"
+    case .reading_serif: DesignTokens.Fonts.reading
+    case .classic_serif: DesignTokens.Fonts.classicSerif
     case .sans: chromeFamily
     }
   }

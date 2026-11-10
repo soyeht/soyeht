@@ -108,6 +108,7 @@ public enum ErrorKind: String, Codable, Sendable, CaseIterable {
     case `file_too_large` = "file_too_large"
     case `adapter_not_acknowledged` = "adapter_not_acknowledged"
     case `workspace_folder_missing` = "workspace_folder_missing"
+    case `push_unavailable` = "push_unavailable"
     case `ink_unsupported` = "ink_unsupported"
     case `ink_language_unavailable` = "ink_language_unavailable"
     case `ink_limit_exceeded` = "ink_limit_exceeded"
@@ -5755,6 +5756,19 @@ public struct EditorReviewRequestedEvent: Codable, Sendable {
 
 public enum ClientCapability: String, Codable, Sendable, CaseIterable {
     case `web_host` = "web_host"
+}
+
+public enum EngineCapability: String, Codable, Sendable, CaseIterable {
+    case `terminal` = "terminal"
+    case `workspaces` = "workspaces"
+    case `snapshot_parts` = "snapshot-parts"
+    case `event_replay` = "event-replay"
+    case `terminal_replay` = "terminal-replay"
+    case `device_pairing` = "device-pairing"
+    case `workspace_tasks` = "workspace-tasks"
+    case `subscription_usage` = "subscription-usage"
+    case `push` = "push"
+    case `ink_recognition` = "ink-recognition"
 }
 
 public enum WebInteractionMode: String, Codable, Sendable, CaseIterable {

@@ -183,6 +183,8 @@ pub enum ErrorKind {
     AdapterNotAcknowledged,
     #[serde(rename = "workspace_folder_missing")]
     WorkspaceFolderMissing,
+    #[serde(rename = "push_unavailable")]
+    PushUnavailable,
     #[serde(rename = "ink_unsupported")]
     InkUnsupported,
     #[serde(rename = "ink_language_unavailable")]
@@ -5218,6 +5220,29 @@ pub enum ClientCapability {
     WebHost,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EngineCapability {
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "workspaces")]
+    Workspaces,
+    #[serde(rename = "snapshot-parts")]
+    SnapshotParts,
+    #[serde(rename = "event-replay")]
+    EventReplay,
+    #[serde(rename = "terminal-replay")]
+    TerminalReplay,
+    #[serde(rename = "device-pairing")]
+    DevicePairing,
+    #[serde(rename = "workspace-tasks")]
+    WorkspaceTasks,
+    #[serde(rename = "subscription-usage")]
+    SubscriptionUsage,
+    #[serde(rename = "push")]
+    Push,
+    #[serde(rename = "ink-recognition")]
+    InkRecognition,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
     #[serde(rename = "structured")]
     Structured,
@@ -9205,6 +9230,7 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::FileTooLarge => -32040,
         ErrorKind::AdapterNotAcknowledged => -32041,
         ErrorKind::WorkspaceFolderMissing => -32042,
+        ErrorKind::PushUnavailable => -32043,
         ErrorKind::InkUnsupported => -32044,
         ErrorKind::InkLanguageUnavailable => -32045,
         ErrorKind::InkLimitExceeded => -32046,

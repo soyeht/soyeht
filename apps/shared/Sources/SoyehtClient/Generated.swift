@@ -161,6 +161,7 @@ public enum DesignTokens {
   public enum Radius {
     public static let compact: CGFloat = 10
     public static let control: CGFloat = 12
+    public static let panel: CGFloat = 18
     public static let card: CGFloat = 20
     public static let pill: CGFloat = 999
   }
@@ -181,6 +182,7 @@ public enum DesignTokens {
     public static let x16: CGFloat = 16
     public static let x18: CGFloat = 18
     public static let x20: CGFloat = 20
+    public static let x22: CGFloat = 22
   }
 
   public enum TypeScale {
@@ -308,6 +310,7 @@ public enum DesignTokens {
     public static let taskToolbarIcon: CGFloat = 13
     public static let taskToolbarChevron: CGFloat = 10
     public static let taskSheetMore: CGFloat = 16
+    public static let chipChevron: CGFloat = 8
   }
 
   public enum UsageRing {
@@ -391,6 +394,9 @@ public enum DesignTokens {
     public static let ui = "Inter"
     public static let mono = "JetBrains Mono"
     public static let screenplay = "Courier Prime"
+    public static let reading = "Newsreader"
+    public static let classicSerif = "Times New Roman"
+    public static let classicSerifPostScript = "TimesNewRomanPSMT"
   }
 
   /// An outer shadow pair of a raised surface: light up and left, dark down and right.

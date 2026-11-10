@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview", "crates/ztracing"]
+members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview", "crates/ztracing", "shims/wayland-protocols-plasma"]
 resolver = "3"
 
 [workspace.package]
@@ -54,6 +54,10 @@ calloop = { git = "https://github.com/zed-industries/calloop", rev = "eb6b4fd17b
 # any output (ADR 0144). The fork is upstream's 0.16.2 with those changes, on the branch
 # `panic-fixes` (tag `soyeht-0.16.2-2`).
 vt100 = { git = "https://github.com/soyeht/vt100-rust", rev = "1f53820f0959c977c7cbc360b87dba4dc8a1df8e" }
+# GPUI's Linux backend names the blur module of this crate, whose protocol files are LGPL-2.1-or-later.
+# Soyeht never asks for a blurred window, so a stand-in of our own, with the same names, replaces it
+# (Apache-2.0, ADR 0149).
+wayland-protocols-plasma = { path = "shims/wayland-protocols-plasma" }
 
 # Zed's `ztracing`, `ztracing_macro` and `zlog`, which GPUI's `sum_tree` reaches, are GPL-3.0-or-later at
 # the pinned revision. Only the `#[instrument]` attribute is used, so this crate (Apache-2.0, ADR 0149)

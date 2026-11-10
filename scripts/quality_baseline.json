@@ -29,8 +29,8 @@
       "duplicated_lines": 31
     },
     "mac": {
-      "clones": 23,
-      "duplicated_lines": 150
+      "clones": 22,
+      "duplicated_lines": 143
     },
     "python": {
       "clones": 14,
@@ -41,8 +41,8 @@
       "duplicated_lines": 448
     },
     "swift_all": {
-      "clones": 95,
-      "duplicated_lines": 665
+      "clones": 94,
+      "duplicated_lines": 658
     }
   },
   "engine_production_panics": 0,
@@ -67,12 +67,6 @@
       "corner_radius": 5,
       "padding": 7
     },
-    "apps/ios/Sources/PhoneWritingWorkspace.swift": {
-      "corner_radius": 3,
-      "font_name": 11,
-      "padding": 1,
-      "system_font_size": 1
-    },
     "apps/mac/Sources/AgentHarnessPicker.swift": {
       "padding": 1
     },
@@ -87,16 +81,9 @@
       "corner_radius": 1,
       "system_font_size": 1
     },
-    "apps/mac/Sources/MacStyle.swift": {
-      "font_name": 1
-    },
     "apps/mac/Sources/PaneAutomationControls.swift": {
       "padding": 3,
       "system_font_size": 4
-    },
-    "apps/mac/Sources/PreferencesPanel.swift": {
-      "padding": 5,
-      "system_font_size": 5
     },
     "apps/mac/Sources/UsageViews.swift": {
       "padding": 1
@@ -117,9 +104,6 @@
     },
     "apps/shared/Sources/SoyehtClient/AgentSubagents.swift": {
       "padding": 2
-    },
-    "apps/shared/Sources/SoyehtClient/WritingDisplayText.swift": {
-      "font_name": 1
     },
     "apps/shared/Tests/SoyehtClientTests/PermissionPreviewPolicyTests.swift": {
       "padding": 1
@@ -216,10 +200,7 @@
     }
   },
   "oversized_files": {
-    "apps/ios/Sources/PhoneWritingWorkspace.swift": 1450,
-    "apps/mac/Sources/PreferencesPanel.swift": 832,
     "apps/shared/Sources/SoyehtClient/EngineClient.swift": 867,
-    "apps/shared/Sources/SoyehtClient/PhoneWritingLayoutPolicy.swift": 833,
     "engine/soyeht-store/src/editor.rs": 828,
     "engine/soyeht-store/tests/agents.rs": 976,
     "engine/soyeht-store/tests/tasks.rs": 887

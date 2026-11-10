@@ -292,9 +292,12 @@ def gradle_components(policy, root=ROOT):
     components = []
     for library in sorted(data["libraries"], key=lambda l: l["coordinate"]):
         coordinate = library["coordinate"]
-        chosen, _ = licenses.elect(library["license"], {}, policy)
+        # A library under a license outside the allow-list passes only with an entry in `exceptions`, which a release refuses.
+        exception = policy.exceptions.get((coordinate, library["license"]), "")
+        allowed = licenses.allowing(policy, library["license"]) if exception else policy
+        chosen, _ = licenses.elect(library["license"], {}, allowed)
         version = library["version"] or ("(Compose BOM)" if coordinate.startswith("androidx.compose.") else "")
-        component = Component("Android", coordinate, version, library["license"], library["url"], elected=sorted(chosen))
+        component = Component("Android", coordinate, version, library["license"], library["url"], exception=exception, elected=sorted(chosen))
         for identifier in sorted(chosen):
             add_text(component, identifier, licenses.spdx_text(identifier), standard=True)
         components.append(component)

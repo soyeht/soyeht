@@ -22,15 +22,15 @@ fn kind(response: &Value) -> &Value {
     &response["error"]["data"]["kind"]
 }
 
-fn gemini(client: &mut Client) -> Value {
+/// Whether `harness.list` offers the unchecked package's adapter. It never does (ADR 0143): the
+/// catalogue lists only the supported harnesses, and a request reaches this one by its id.
+fn listed(client: &mut Client) -> bool {
     let list = client.call("harness.list", json!({"limit":64,"rescan":true}));
     list["items"]
         .as_array()
         .unwrap()
         .iter()
-        .find(|item| item["id"] == "registry.gemini")
-        .unwrap()
-        .clone()
+        .any(|item| item["id"] == "registry.gemini")
 }
 
 fn create(client: &mut Client, workspace: &str, key: &str, extra: Value) -> Value {
@@ -50,11 +50,10 @@ fn an_unchecked_package_starts_only_for_a_person_who_acknowledged_it_and_only_th
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Repository", &rig.path, "ack-workspace");
 
-    // The catalogue says what the first start does, and keeps saying it.
-    let item = gemini(&mut client);
-    assert_eq!(item["package"], PACKAGE);
-    assert_eq!(item["packageLocked"], false);
-    assert_eq!(item["setupReason"], "registry_package_unverified");
+    // The catalogue does not offer it, so the acknowledgement below is reached by explicit id, as a
+    // person who knows the id (or the command line) would. The notice that a picker would show for
+    // an unlisted entry is covered by the unit tests of `agents::catalog`.
+    assert!(!listed(&mut client));
 
     // Without the acknowledgement, and with another version's, nothing starts and no pane is made.
     let panes = |client: &mut Client| {
@@ -77,10 +76,6 @@ fn an_unchecked_package_starts_only_for_a_person_who_acknowledged_it_and_only_th
     );
     assert_eq!(kind(&stale), "invalid_params", "{stale}");
     assert_eq!(panes(&mut client), before);
-    assert_eq!(
-        gemini(&mut client)["setupReason"],
-        "registry_package_unverified"
-    );
 
     // A person's request that carries the package starts it, and stores the acknowledgement.
     let started = create(
@@ -95,14 +90,11 @@ fn an_unchecked_package_starts_only_for_a_person_who_acknowledged_it_and_only_th
         client.pane(&pane)["agent"]["sessionId"].is_string()
     });
 
-    // The next start of the same package needs no new acknowledgement (a restart, a task), and the
-    // notice is gone.
+    // The next start of the same package needs no new acknowledgement (a restart, a task). Being
+    // acknowledged does not list it either.
     let again = create(&mut client, &workspace, "ack-again", json!({}));
     assert!(again.get("error").is_none(), "{again}");
-    assert_ne!(
-        gemini(&mut client)["setupReason"],
-        "registry_package_unverified"
-    );
+    assert!(!listed(&mut client));
 }
 
 #[cfg(unix)]

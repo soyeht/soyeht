@@ -229,11 +229,15 @@
     "chrome": "Nunito",
     "ui": "Inter",
     "mono": "JetBrains Mono",
-    "screenplay": "Courier Prime"
+    "screenplay": "Courier Prime",
+    "reading": "Newsreader",
+    "classicSerif": "Times New Roman",
+    "classicSerifPostScript": "TimesNewRomanPSMT"
   },
   "radius": {
     "compact": 10,
     "control": 12,
+    "panel": 18,
     "card": 20,
     "pill": 999
   },
@@ -252,7 +256,8 @@
     "x14": 14,
     "x16": 16,
     "x18": 18,
-    "x20": 20
+    "x20": 20,
+    "x22": 22
   },
   "typeScale": {
     "micro": 10,
@@ -384,7 +389,8 @@
     "chevron": 11,
     "taskToolbarIcon": 13,
     "taskToolbarChevron": 10,
-    "taskSheetMore": 16
+    "taskSheetMore": 16,
+    "chipChevron": 8
   },
   "usageRing": {
     "diameter": 40,

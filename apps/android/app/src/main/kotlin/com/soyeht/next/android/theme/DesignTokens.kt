@@ -309,6 +309,7 @@ object Palettes {
 object Radius {
     const val compact: Float = 10.0f
     const val control: Float = 12.0f
+    const val panel: Float = 18.0f
     const val card: Float = 20.0f
     const val pill: Float = 999.0f
 }
@@ -329,6 +330,7 @@ object Space {
     const val x16: Float = 16.0f
     const val x18: Float = 18.0f
     const val x20: Float = 20.0f
+    const val x22: Float = 22.0f
 }
 
 object TypeScale {
@@ -456,6 +458,7 @@ object Glyph {
     const val taskToolbarIcon: Float = 13.0f
     const val taskToolbarChevron: Float = 10.0f
     const val taskSheetMore: Float = 16.0f
+    const val chipChevron: Float = 8.0f
 }
 
 object UsageRing {
@@ -569,4 +572,7 @@ object Fonts {
     const val ui: String = "Inter"
     const val mono: String = "JetBrains Mono"
     const val screenplay: String = "Courier Prime"
+    const val reading: String = "Newsreader"
+    const val classicSerif: String = "Times New Roman"
+    const val classicSerifPostScript: String = "TimesNewRomanPSMT"
 }

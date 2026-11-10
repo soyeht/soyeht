@@ -13,6 +13,9 @@ import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import com.soyeht.next.android.ink.Handwriting
+import com.soyeht.next.android.ink.MlKitInkEngine
+import com.soyeht.next.android.ink.StoredHandwritingChoice
 import com.soyeht.next.android.scan.CameraProblem
 import com.soyeht.next.android.theme.Eink
 import uniffi.soyeht_android.ComposerControls
@@ -58,6 +61,9 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     private val credentials = CredentialStore(application)
     private val main = Handler(Looper.getMainLooper())
     private val pending = AtomicBoolean(false)
+
+    /** Handwriting on the message field, below Android 14 (ADR 0157). */
+    val handwriting = Handwriting(StoredHandwritingChoice(application), MlKitInkEngine(application))
 
     private val saved = credentials.load()
     private val display = DisplaySettings(application)
@@ -146,6 +152,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
 
     init {
         saved?.let { connect(it) }
+        handwriting.refresh()
     }
 
     private fun connect(credential: String) {
@@ -399,6 +406,7 @@ class AppModel(application: Application) : AndroidViewModel(application) {
     /** The phone stops being a client of the computer when the app's state goes. */
     override fun onCleared() {
         core.disconnect()
+        handwriting.close()
     }
 
     private companion object {
