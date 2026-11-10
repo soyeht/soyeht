@@ -25,6 +25,8 @@ it has been confirmed to work”. Evidence of today's behavior is in
 6. **Push**: the engine on the Mac sends directly to APNs (as today) for:
    permission requests, tasks marked “your turn”, “no signal”, pane death.
    Live Activity for “agent running” (already exists for deployment; reuse it).
+   Push is off in 0.1.0: the release engine has no APNs credentials and never
+   offers it (contract 08 §2.3).
 7. **What the iPhone and iPad do in v1**: everything the person can do at the Mac.
    A paired iPhone or iPad is a full remote control (owner decision,
    2026-09-26): view workspaces, panes and state; type into raw terminals
