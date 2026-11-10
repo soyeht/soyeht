@@ -3,6 +3,17 @@ use std::collections::BTreeMap;
 
 pub const VERSION: u32 = 5;
 
+/// How far past the generation it has recorded the supervisor lets a `hello` raise it (ADR 0160).
+///
+/// An engine takes the next number of its database each time it starts, whether or not it then
+/// reaches the supervisor, so the numbers it presents can only run ahead of the recorded one by
+/// the starts that never got through: a crash loop before the first connection, or a supervisor
+/// that was down. The step is far more than a person's restarts and far less than a number that
+/// would shut every real engine out, which is what a `hello` of `u64::MAX` did. The first engine
+/// to meet a supervisor with an empty registry (generation 0) is not held to it: there is
+/// nothing recorded to be ahead of.
+pub const MAX_GENERATION_STEP: u64 = 16;
+
 /// What a connection is for. The default is the request connection, the only one older engines and
 /// supervisors know, so a hello without a role is the one of today.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

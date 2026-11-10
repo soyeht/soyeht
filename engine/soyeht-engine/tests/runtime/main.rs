@@ -495,8 +495,10 @@ fn wait_for_editor_file(
     }
 }
 
+/// The open processes, read by taking the supervisor over from the engine.
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
-    process_instances_at(rig, u64::MAX)
+    let generation = rig.supervisor_takeover_generation().unwrap();
+    process_instances_at(rig, generation)
 }
 
 /// Waits until `count` processes of the rig are open. A harness switch retires the old process

@@ -1,5 +1,10 @@
-//! The endpoint file of the loopback flavour of the local endpoint, and the proofs a client and
-//! a listener exchange before either trusts the other.
+//! The proofs a client and a listener exchange before either trusts the other, and the endpoint
+//! file of the loopback flavour of the local endpoint.
+//!
+//! One exchange serves both flavours (ADR 0160). The loopback endpoint of Windows keeps its
+//! secret in the endpoint file; a Unix socket that asks for the proof keeps it in an owner-only
+//! file beside the socket ([`write_secret`], [`read_secret`]). The bytes on the wire are the same,
+//! and so is the code that sends and checks them ([`serve`], [`prove`]).
 //!
 //! The secret never crosses the connection. The client sends a random nonce; the listener
 //! answers with its own nonce and an HMAC of both nonces under the secret, which only a process
@@ -15,19 +20,26 @@
 //! as a client can afford to wait, so an engine that is absent looks the same as one that is
 //! slow.
 
-#![cfg_attr(not(windows), allow(dead_code))]
-
-use super::BindError;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
 use std::{
     collections::VecDeque,
-    fs::{self, File},
+    fs::File,
     io,
     io::{Read, Write},
-    net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
+    net::TcpStream,
     path::Path,
     time::{Duration, Instant},
+};
+#[cfg(any(windows, test))]
+use {
+    super::BindError,
+    std::{
+        fs,
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    },
 };
 
 pub(super) const TOKEN_BYTES: usize = 32;
@@ -39,6 +51,9 @@ pub(super) const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 /// room, so a connection that never answers cannot keep a good client out.
 pub(super) const MAX_PENDING: usize = 256;
 const MAGIC: &str = "soyeht-local-2";
+/// The second word of the secret file of a Unix socket (an endpoint file has a port there).
+#[cfg(unix)]
+const SECRET: &str = "secret";
 
 pub(super) type Token = [u8; TOKEN_BYTES];
 pub(super) type Nonce = [u8; NONCE_BYTES];
@@ -157,7 +172,7 @@ impl<T> Admission<T> {
 
     /// Forgets the connections `keep` rejects. Only the asynchronous flavour sweeps its
     /// finished handshakes this way.
-    #[cfg(feature = "tokio")]
+    #[cfg(all(feature = "tokio", any(windows, test)))]
     pub(super) fn retain(&mut self, mut keep: impl FnMut(&T) -> bool) {
         self.entries.retain(|(_, item)| keep(item));
     }
@@ -181,7 +196,169 @@ fn unhex(text: &str) -> Option<Token> {
     Some(token)
 }
 
+/// A stream the exchange runs on. Each flavour of the local endpoint has one; the exchange is
+/// written once, over this.
+pub(super) trait Proving: Sized {
+    /// Gives the next read and the next write at most `timeout`; `None` lifts the limit.
+    fn limit(&self, timeout: Option<Duration>) -> io::Result<()>;
+    /// A second handle on the same connection.
+    fn duplicate(&self) -> io::Result<Self>;
+    /// Ends the connection in both directions. The peer may have closed it already; either way it
+    /// ends here, so a failure is no news.
+    fn close(&self);
+    /// What the connection needs once the peer is proved and before the caller's traffic begins.
+    fn established(&self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// The methods of [`Proving`] that every stream has the same way.
+macro_rules! shared_proving_methods {
+    () => {
+        fn limit(&self, timeout: Option<Duration>) -> io::Result<()> {
+            self.set_read_timeout(timeout)?;
+            self.set_write_timeout(timeout)
+        }
+
+        fn duplicate(&self) -> io::Result<Self> {
+            self.try_clone()
+        }
+
+        fn close(&self) {
+            drop(self.shutdown(std::net::Shutdown::Both));
+        }
+    };
+}
+
+impl Proving for TcpStream {
+    shared_proving_methods!();
+
+    fn established(&self) -> io::Result<()> {
+        self.set_nodelay(true)
+    }
+}
+
+#[cfg(unix)]
+impl Proving for UnixStream {
+    shared_proving_methods!();
+}
+
+/// Gives the next read and write on `stream` what is left of `deadline`.
+fn within<S: Proving>(stream: &S, deadline: Instant) -> io::Result<()> {
+    let left = deadline.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        return Err(io::ErrorKind::TimedOut.into());
+    }
+    stream.limit(Some(left))
+}
+
+/// Reads `N` bytes before `deadline`.
+fn receive<S, const N: usize>(stream: &S, deadline: Instant) -> io::Result<[u8; N]>
+where
+    S: Proving,
+    for<'a> &'a S: Read,
+{
+    within(stream, deadline)?;
+    let mut bytes = [0; N];
+    (&*stream).read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Writes `bytes` before `deadline`.
+fn send<S>(stream: &S, deadline: Instant, bytes: &[u8]) -> io::Result<()>
+where
+    S: Proving,
+    for<'a> &'a S: Write,
+{
+    within(stream, deadline)?;
+    (&*stream).write_all(bytes)
+}
+
+/// The listener's half of the exchange on a new connection; on success the stream is ready for
+/// the caller's own traffic.
+pub(super) fn serve<S>(stream: &S, token: &Token) -> io::Result<()>
+where
+    S: Proving,
+    for<'a> &'a S: Read + Write,
+{
+    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    let client = receive::<S, NONCE_BYTES>(stream, deadline)?;
+    let (server, reply) = answer(token, &client)?;
+    send(stream, deadline, &reply)?;
+    let presented = receive::<S, PROOF_BYTES>(stream, deadline)?;
+    verify(token, Side::Client, &client, &server, &presented)?;
+    stream.limit(None)?;
+    stream.established()
+}
+
+/// The client's half of the exchange on a connection to a listener, finished by `deadline`. The
+/// client sends only a nonce until the listener has proved that it knows the secret, and sends
+/// nothing more to one that cannot.
+pub(super) fn prove<S>(stream: &S, token: &Token, deadline: Instant) -> io::Result<()>
+where
+    S: Proving,
+    for<'a> &'a S: Read + Write,
+{
+    let client = random::<NONCE_BYTES>()?;
+    send(stream, deadline, &client)?;
+    let server = receive::<S, NONCE_BYTES>(stream, deadline)?;
+    let presented = receive::<S, PROOF_BYTES>(stream, deadline)?;
+    verify(token, Side::Server, &client, &server, &presented)?;
+    send(
+        stream,
+        deadline,
+        &proof(token, Side::Client, &client, &server)?,
+    )?;
+    stream.limit(None)
+}
+
+/// Writes the secret of a Unix socket to the file at `path`: owner-only from its first byte,
+/// replacing the one a supervisor that is gone left. The line is `soyeht-local-2 secret <hex>`.
+#[cfg(unix)]
+pub(super) fn write_secret(path: &Path, token: &Token) -> io::Result<()> {
+    let text = format!("{MAGIC} {SECRET} {}\n", hex(token));
+    crate::fs::write_atomic(path, text.as_bytes(), crate::fs::WriteMode::OwnerOnly)
+}
+
+/// The secret in the file at `path`. A file that anyone else could read or write is refused: it
+/// proves nothing about who holds the secret.
+#[cfg(unix)]
+pub(super) fn read_secret(path: &Path) -> io::Result<Token> {
+    let mut file = File::open(path)?;
+    if !crate::fs::file_is_owner_only(&file)? {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "the secret file is not owner-only",
+        ));
+    }
+    let mut text = String::new();
+    file.read_to_string(&mut text)?;
+    let (kind, token) = parse_line(&text)?;
+    if kind == SECRET {
+        Ok(token)
+    } else {
+        Err(invalid())
+    }
+}
+
+/// The word between the magic and the secret, and the secret, of the one line of an endpoint
+/// file (a port) or of a secret file (`secret`).
+fn parse_line(text: &str) -> io::Result<(&str, Token)> {
+    let mut fields = text.split_whitespace();
+    let (Some(MAGIC), Some(middle), Some(token), None) =
+        (fields.next(), fields.next(), fields.next(), fields.next())
+    else {
+        return Err(invalid());
+    };
+    Ok((middle, unhex(token).ok_or_else(invalid)?))
+}
+
+fn invalid() -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, "not a local endpoint file")
+}
+
 /// Replaces an endpoint file left by a dead process; refuses any other file.
+#[cfg(any(windows, test))]
 fn clear_stale(path: &Path) -> Result<(), BindError> {
     super::clear_stale(path, |metadata| {
         metadata.is_file()
@@ -190,6 +367,7 @@ fn clear_stale(path: &Path) -> Result<(), BindError> {
 }
 
 /// The lock of a published endpoint file, kept for as long as its listener lives.
+#[cfg(any(windows, test))]
 #[must_use = "the endpoint reads as stale once this is dropped"]
 pub(super) struct Alive(#[allow(dead_code)] File);
 
@@ -197,6 +375,7 @@ pub(super) struct Alive(#[allow(dead_code)] File);
 /// lock is taken before the file appears under its name, so a client that can read the file
 /// and take its lock is looking at a listener that is gone. The file holds the secret, so it is
 /// owner-only from its first byte ([`crate::fs::WriteMode::OwnerOnly`]).
+#[cfg(any(windows, test))]
 pub(super) fn publish(path: &Path, port: u16, token: &Token) -> Result<Alive, BindError> {
     clear_stale(path)?;
     let text = format!("{MAGIC} {port} {}\n", hex(token));
@@ -210,20 +389,11 @@ pub(super) fn publish(path: &Path, port: u16, token: &Token) -> Result<Alive, Bi
     Ok(Alive(staged.commit()?))
 }
 
-fn invalid() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "not a local endpoint file")
-}
-
 /// The port and secret in the text of an endpoint file.
+#[cfg(any(windows, test))]
 fn parse(text: &str) -> io::Result<(SocketAddrV4, Token)> {
-    let mut fields = text.split_whitespace();
-    let (Some(MAGIC), Some(port), Some(token), None) =
-        (fields.next(), fields.next(), fields.next(), fields.next())
-    else {
-        return Err(invalid());
-    };
+    let (port, token) = parse_line(text)?;
     let port = port.parse().map_err(|_| invalid())?;
-    let token = unhex(token).ok_or_else(invalid)?;
     Ok((SocketAddrV4::new(Ipv4Addr::LOCALHOST, port), token))
 }
 
@@ -233,45 +403,13 @@ pub(super) fn read(path: &Path) -> io::Result<(SocketAddrV4, Token)> {
     parse(&fs::read_to_string(path)?)
 }
 
-/// Gives the next read and write on `stream` what is left of `deadline`.
-fn within(stream: &TcpStream, deadline: Instant) -> io::Result<()> {
-    let left = deadline.saturating_duration_since(Instant::now());
-    if left.is_zero() {
-        return Err(io::ErrorKind::TimedOut.into());
-    }
-    stream.set_read_timeout(Some(left))?;
-    stream.set_write_timeout(Some(left))
-}
-
-fn read_array<const N: usize>(mut stream: &TcpStream) -> io::Result<[u8; N]> {
-    let mut bytes = [0; N];
-    stream.read_exact(&mut bytes)?;
-    Ok(bytes)
-}
-
-/// The listener's half of the exchange on a new connection; on success the stream is ready for
-/// the caller's own traffic.
-pub(super) fn serve(stream: &TcpStream, token: &Token) -> io::Result<()> {
-    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
-    within(stream, deadline)?;
-    let client = read_array::<NONCE_BYTES>(stream)?;
-    let (server, reply) = answer(token, &client)?;
-    within(stream, deadline)?;
-    (&*stream).write_all(&reply)?;
-    within(stream, deadline)?;
-    let presented = read_array::<PROOF_BYTES>(stream)?;
-    verify(token, Side::Client, &client, &server, &presented)?;
-    stream.set_read_timeout(None)?;
-    stream.set_write_timeout(None)?;
-    stream.set_nodelay(true)
-}
-
 /// Connects to the endpoint at `path`. The client sends only a nonce until the listener has
 /// proved that it knows the secret, and refuses a listener that cannot.
 ///
 /// An endpoint file whose listener is gone is refused at once (`ConnectionRefused`), without
 /// asking the network: see the top of this file. A listener that is there but does not answer
 /// in time is `TimedOut`.
+#[cfg(any(windows, test))]
 pub(super) fn connect(path: &Path) -> io::Result<TcpStream> {
     let mut file = File::open(path)?;
     let mut text = String::new();
@@ -286,19 +424,9 @@ pub(super) fn connect(path: &Path) -> io::Result<TcpStream> {
     }
     drop(file);
     let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
-    let mut stream = TcpStream::connect_timeout(&SocketAddr::V4(address), HANDSHAKE_TIMEOUT)?;
+    let stream = TcpStream::connect_timeout(&SocketAddr::V4(address), HANDSHAKE_TIMEOUT)?;
     stream.set_nodelay(true)?;
-    let client = random::<NONCE_BYTES>()?;
-    within(&stream, deadline)?;
-    stream.write_all(&client)?;
-    within(&stream, deadline)?;
-    let server = read_array::<NONCE_BYTES>(&stream)?;
-    let presented = read_array::<PROOF_BYTES>(&stream)?;
-    verify(&token, Side::Server, &client, &server, &presented)?;
-    within(&stream, deadline)?;
-    stream.write_all(&proof(&token, Side::Client, &client, &server)?)?;
-    stream.set_read_timeout(None)?;
-    stream.set_write_timeout(None)?;
+    prove(&stream, &token, deadline)?;
     Ok(stream)
 }
 

@@ -8,7 +8,7 @@
 use super::{Live, State, lock, refuse, send};
 use crate::{
     Result,
-    wire::{FEATURE_WATCH, Readable, Request, Response, VERSION, Watched},
+    wire::{FEATURE_WATCH, MAX_GENERATION_STEP, Readable, Request, Response, VERSION, Watched},
     wire_kind,
 };
 use soyeht_platform::{local::Stream, log};
@@ -121,7 +121,8 @@ impl Live {
 }
 
 /// Why a hello of either role is turned away before the role matters: the protocol or the engine
-/// generation is not one this supervisor serves.
+/// generation is not one this supervisor serves. It reads the registry and never changes it, and
+/// it runs before anything is closed or saved, so a refused hello leaves everything as it was.
 pub(super) fn hello_refusal(
     state: &State,
     version: u32,
@@ -133,9 +134,17 @@ pub(super) fn hello_refusal(
             "incompatible supervisor protocol",
         ));
     }
-    (engine_generation < state.registry.engine_generation).then_some((
-        wire_kind::STALE_ENGINE_GENERATION,
-        "engine generation is stale",
+    let recorded = state.registry.engine_generation;
+    if engine_generation < recorded {
+        return Some((
+            wire_kind::STALE_ENGINE_GENERATION,
+            "engine generation is stale",
+        ));
+    }
+    // A registry that has recorded no engine has nothing to be ahead of.
+    (recorded != 0 && engine_generation - recorded > MAX_GENERATION_STEP).then_some((
+        wire_kind::GENERATION_JUMP,
+        "engine generation is too far ahead of the recorded one",
     ))
 }
 
