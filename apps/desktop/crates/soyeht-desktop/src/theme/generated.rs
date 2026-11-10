@@ -335,6 +335,7 @@ pub mod space {
     pub const X16: f32 = 16.0;
     pub const X18: f32 = 18.0;
     pub const X20: f32 = 20.0;
+    pub const X22: f32 = 22.0;
 }
 pub mod type_scale {
     pub const MICRO: f32 = 10.0;
@@ -457,6 +458,7 @@ pub mod glyph {
     pub const TASK_TOOLBAR_ICON: f32 = 13.0;
     pub const TASK_TOOLBAR_CHEVRON: f32 = 10.0;
     pub const TASK_SHEET_MORE: f32 = 16.0;
+    pub const CHIP_CHEVRON: f32 = 8.0;
 }
 pub mod usage_ring {
     pub const DIAMETER: f32 = 40.0;

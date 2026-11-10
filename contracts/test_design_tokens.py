@@ -45,11 +45,12 @@ ADDED_AFTER_GENERATION = {
     ("paneLayout", "editorPreviewDividerWidth"),
     # The corner of a phone writing document's card, between the compact and the card radius.
     ("radius", "panel"),
-    # Steps of the scale the task sheets drew inline (a 1, 9 and 20 point inset, a 14 point
-    # label), now named so no view types them.
+    # Steps of the scale the preferences and task sheets drew inline (a 1, 9, 20 and 22 point
+    # inset, a 14 point label), now named so no view types them.
     ("space", "x1"),
     ("space", "x9"),
     ("space", "x20"),
+    ("space", "x22"),
     ("typeScale", "label"),
 }
 
@@ -672,6 +673,12 @@ INLINE_LITERALS = [
         'Image(systemName: "ellipsis").font(.system(size: {}, weight: .medium))',
         "glyph",
         "taskSheetMore",
+    ),
+    (
+        MAC + "PreferencesPanel.swift",
+        '.font(.system(size: {}, weight: .bold))',
+        "glyph",
+        "chipChevron",
     ),
     (
         SHARED + "PaneLayoutFloors.swift",

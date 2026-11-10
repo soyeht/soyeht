@@ -256,7 +256,8 @@
     "x14": 14,
     "x16": 16,
     "x18": 18,
-    "x20": 20
+    "x20": 20,
+    "x22": 22
   },
   "typeScale": {
     "micro": 10,
@@ -388,7 +389,8 @@
     "chevron": 11,
     "taskToolbarIcon": 13,
     "taskToolbarChevron": 10,
-    "taskSheetMore": 16
+    "taskSheetMore": 16,
+    "chipChevron": 8
   },
   "usageRing": {
     "diameter": 40,

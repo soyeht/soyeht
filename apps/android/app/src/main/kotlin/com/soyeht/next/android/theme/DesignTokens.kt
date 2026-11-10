@@ -330,6 +330,7 @@ object Space {
     const val x16: Float = 16.0f
     const val x18: Float = 18.0f
     const val x20: Float = 20.0f
+    const val x22: Float = 22.0f
 }
 
 object TypeScale {
@@ -457,6 +458,7 @@ object Glyph {
     const val taskToolbarIcon: Float = 13.0f
     const val taskToolbarChevron: Float = 10.0f
     const val taskSheetMore: Float = 16.0f
+    const val chipChevron: Float = 8.0f
 }
 
 object UsageRing {
