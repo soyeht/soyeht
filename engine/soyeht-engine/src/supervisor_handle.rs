@@ -343,7 +343,9 @@ impl Core {
         started
     }
 
-    /// Takes a place in the order of the sends to `instances`.
+    /// Takes a place in the order of the sends to `instances`. A process named twice (a size and
+    /// an acknowledgement of one process in the same batch) counts once: this turn never waits for
+    /// itself, which would hold it, and every send behind it, until [`DEADLINE`].
     pub(crate) fn turn(&mut self, instances: &[&str]) -> Turn {
         self.send_turns.retain(|_, done| !done.is_ended());
         let mine = Done::new();
@@ -353,6 +355,7 @@ impl Core {
                 .send_turns
                 .insert((*instance).to_owned(), Arc::clone(&mine));
             if let Some(earlier) = earlier
+                && !Arc::ptr_eq(&earlier, &mine)
                 && !before.iter().any(|seen| Arc::ptr_eq(seen, &earlier))
             {
                 before.push(earlier);

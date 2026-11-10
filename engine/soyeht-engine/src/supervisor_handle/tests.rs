@@ -535,6 +535,18 @@ fn a_turn_that_never_ran_does_not_hold_the_ones_after_it() {
 }
 
 #[test]
+fn a_turn_for_a_process_named_twice_does_not_wait_for_itself() {
+    let (mut core, root, _) = open_core();
+    let earlier = core.turn(&[INSTANCE]);
+    let twice = core.turn(&[INSTANCE, INSTANCE]);
+
+    // It waits for the turn before it, once, and never for its own end.
+    assert_eq!(twice.before.len(), 1);
+    assert!(Arc::ptr_eq(&twice.before[0], &earlier.mine));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn typing_does_not_wait_for_a_free_worker() {
     let (mut core, root, ids) = open_core();
     let (stub, _, asked) = Stub::new(Duration::ZERO);
