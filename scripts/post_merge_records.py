@@ -5,6 +5,7 @@ go into a record, and the report printed at the end.
 
 from __future__ import annotations
 
+import calendar
 import json
 import shutil
 import time
@@ -14,11 +15,27 @@ from gate_worktree import git
 from post_merge_editor import NEEDS_MEASUREMENT
 
 HISTORY_DIRECTORY = "history"
+# The result of a run whose failing step fails on the last green main too: not a commit's failure.
+HOST_RESULT = "host"
+# A `host` record is run again by a later pass, but not sooner than this after it was made: a pass
+# that comes round every few seconds must not run the whole gate again each time.
+HOST_RETRY_SECONDS = 1800
 
 
 def commit_info(root: Path, sha: str) -> dict:
     subject, author = git(root, "log", "-1", "--format=%s%x00%an", sha).split("\0")
     return {"sha": sha, "subject": subject, "author": author}
+
+
+def host_retry_due(record: dict, now: float | None = None) -> bool:
+    """A recorded `host` run is done again once `HOST_RETRY_SECONDS` have passed since it started."""
+    if record.get("result") != HOST_RESULT:
+        return False
+    try:
+        started = calendar.timegm(time.strptime(record["started_at"], "%Y-%m-%dT%H:%M:%SZ"))
+    except (KeyError, ValueError):
+        return True  # no start time to wait from
+    return (time.time() if now is None else now) - started >= HOST_RETRY_SECONDS
 
 
 def parent_of(root: Path, sha: str) -> str | None:
@@ -73,7 +90,8 @@ def report(record: dict) -> str:
         return (f"post_merge: main {record['sha'][:12]} needs a VM1 editor measurement "
                 f"(editor tree {record['editor_tree_hash']}); main is not red\n  note: {record['note']}\n"
                 f"  log: {record['log']}")
-    state = "FLAKY (not green)" if record["result"] == "flaky" else "RED"
+    state = {"flaky": "FLAKY (not green)", HOST_RESULT: "NOT GREEN (the host, not a commit)"}.get(
+        record["result"], "RED")
     lines = [f"post_merge: main {record['sha'][:12]} is {state} (step {record['failed_step']})"]
     culprit = record.get("culprit")
     if culprit:
@@ -84,7 +102,10 @@ def report(record: dict) -> str:
     if record.get("note"):
         lines.append(f"  note: {record['note']}")
     lines.append(f"  log: {record['log']}")
-    lines.append("  Fix forward or revert the culprit within the hour; main is not touched.")
+    if record["result"] == HOST_RESULT:
+        lines.append("  No commit is blamed; fix the host and run again with --force. Main is not touched.")
+    else:
+        lines.append("  Fix forward or revert the culprit within the hour; main is not touched.")
     return "\n".join(lines)
 
 

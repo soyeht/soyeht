@@ -380,6 +380,12 @@ def main_health_warning(health: Path) -> str | None:
             f"NOTE: main is FLAKY at {head} (step {latest.get('failed_step')}): the step failed "
             "but is not proven a regression, so the commit is not proven green; take care in its area"
         )
+    if latest.get("result") == "host":
+        return (
+            f"NOTE: the post-merge gate failed at {head} (step {latest.get('failed_step')}) and the same "
+            "step fails on the last green main too: the host or its environment, not a commit; "
+            "main is not proven green"
+        )
     if latest.get("result") != "fail":
         return None
     culprit = (latest.get("culprit") or {}).get("sha", "unknown")
