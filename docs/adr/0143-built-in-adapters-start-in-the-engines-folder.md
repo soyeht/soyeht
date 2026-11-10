@@ -120,8 +120,9 @@ which code a pane runs, at each start.
   a package runner. The pickers of the Mac, the iPhone, the iPad and the Windows and Linux app show,
   for an adapter that is not locked, "Starting it downloads and runs <package> and its
   dependencies from the package registry. Soyeht has not checked them.", and for a locked one that
-  it is installed once from a lockfile Soyeht carries. A parallel change hides the adapters
-  that were not checked from the catalogue; this notice is for the ones that stay.
+  it is installed once from a lockfile Soyeht carries. The adapters that were not checked are not
+  in the catalogue at all (see "Note for 0.1.0" below), so in 0.1.0 the notice is shown for no
+  listed entry; it stays in the catalogue code for the first one that is listed unchecked.
 - **The notice is enforced by the engine, not only shown.** The first start of an adapter that the
   runner downloads unchecked (a built-in `package`, `packageLocked` false) is refused with
   `adapter_not_acknowledged` unless the request that chooses the agent (`pane.create`,
@@ -159,3 +160,38 @@ which code a pane runs, at each start.
 - `npm` must be on the launch `PATH`, as `npx` was; a person's own registry configuration still
   applies to the fetch, and the integrity check still applies to what it returns.
 - The adapter still drives the person's own CLI (ADR 0137), which is outside this install.
+
+## Note for 0.1.0: only the checked harnesses are listed
+
+The "Not checked" entries above, and every other built-in agent of the snapshot, have not been run
+against the real program the way `claude`, `codex`, `cursor` and `opencode` have
+(`scripts/e2e_real_harnesses.py`, the `harnesses` of `x-readiness`). Until one is checked, the
+engine does not offer it to a person.
+
+- **One marker, in the catalogue data.** Each entry of `acp_registry_snapshot.json` says
+  `"support": "supported"` or `"support": "experimental"`; the field is required, so a new entry has
+  to choose. The four checked harnesses are the supported ones, and a test holds them equal to the
+  harness ids of `x-readiness`. No client keeps a list.
+- **Hidden, not removed.** `harness.list` leaves out an experimental entry, so no picker of the Mac,
+  the iPhone and iPad, or the Windows and Linux app offers it for a new pane. A custom entry of
+  `harnesses.json` is always listed. Checking a harness is changing its marker (and
+  `SNAPSHOT_DIGEST`) in the same pull request that adds it to the e2e run.
+- **Panes already bound to a hidden harness keep working.** Everything that reads a harness by its id
+  (`model.list`, opening or restoring a pane, the launch of an existing session, a task preset that
+  names it) reads the whole catalogue, not the listed part. A pane bound to
+  one runs and restores as before; its header names it from the pane's own name until the person
+  switches away, and then it is no longer in the picker. Nothing is migrated or closed.
+- **Not a block.** A request that names an experimental id (the command line's `pane create
+  --agent`, a task preset) still starts it. The marker decides what is offered, not what an
+  expert may ask for.
+- **How this fits the acknowledgement of the amendment.** The two are separate gates on separate
+  questions. The marker decides whether a picker *offers* an entry; the acknowledgement decides
+  whether an unchecked package the runner downloads may *start*. Hiding an entry does not weaken
+  the acknowledgement: a request that names an unlisted `npx`/`uvx` id by hand is still refused
+  with `adapter_not_acknowledged` until it carries `acknowledgedPackage` with that exact
+  `name@version`, and it is still refused for an agent binding (`forbidden_role`). Because no
+  picker lists the entry, the notice that would show "downloads and runs <package>" is not on
+  screen for it; a person who names the id or a custom entry is the one who sends the
+  acknowledgement. The tests keep the two apart: `adapter_acknowledgement.rs` reaches the unchecked
+  package by explicit id and asserts that `harness.list` does not list it before or after it is
+  acknowledged, and `agents::catalog` tests the notice and the listing on their own.
