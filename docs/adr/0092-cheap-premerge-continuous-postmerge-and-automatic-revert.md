@@ -45,19 +45,21 @@ it tests, the script decides.
 `scripts/main_watch.py` fetches `origin/main`; when it moved since the last pass recorded in
 `.cache/main-health/watch.json`, it calls `post_merge.py` once on the newest commit, a batch
 of every commit that landed meanwhile. `post_merge.py` is unchanged in kind: it reruns a red
-step once (a pass is `flaky` and blames nobody) and otherwise searches the commits since the
-last green main. On a confirmed single culprit, `main_watch.py --apply`:
+step once (a pass is `flaky` and blames nobody) and otherwise runs the step on the last green
+main as a control: a step that fails there too is the host's (result `host`, nothing is
+reverted), and only one that passes there starts the search of the commits since. On a confirmed
+single culprit, `main_watch.py --apply`:
 
 1. creates the branch `main-watch/revert-<sha>` from `origin/main` and reverts the culprit on
    it with `git revert` (against the first parent for a merge commit);
 2. pushes the branch as a new branch, never forced;
 3. opens a pull request titled "Revert <subject>" whose body names the failing step, the
-   culprit and the end of the log;
+   commits and the log file; it holds no text of the log, which is local and unscanned;
 4. merges it with `gh pr merge --squash`. The revert skips the fast gate: it restores a state
    that was green.
 
 It does not revert, and records and reports instead, when the culprit is ambiguous (several
-candidates because some commits cannot run the failing step), when the run was flaky or the
+candidates because some commits cannot run the failing step), when the run was flaky or `host` or the
 failing step is unknown, when the culprit is itself a revert, when it was reverted already,
 when the revert does not apply cleanly, or when the pull request cannot merge (it stays
 open). It touches only its own revert branch and never rewrites history. `--dry-run` is the

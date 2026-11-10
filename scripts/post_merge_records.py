@@ -14,6 +14,8 @@ from gate_worktree import git
 from post_merge_editor import NEEDS_MEASUREMENT
 
 HISTORY_DIRECTORY = "history"
+# The result of a run whose failing step fails on the last green main too: not a commit's failure.
+HOST_RESULT = "host"
 
 
 def commit_info(root: Path, sha: str) -> dict:
@@ -73,7 +75,8 @@ def report(record: dict) -> str:
         return (f"post_merge: main {record['sha'][:12]} needs a VM1 editor measurement "
                 f"(editor tree {record['editor_tree_hash']}); main is not red\n  note: {record['note']}\n"
                 f"  log: {record['log']}")
-    state = "FLAKY (not green)" if record["result"] == "flaky" else "RED"
+    state = {"flaky": "FLAKY (not green)", HOST_RESULT: "NOT GREEN (the host, not a commit)"}.get(
+        record["result"], "RED")
     lines = [f"post_merge: main {record['sha'][:12]} is {state} (step {record['failed_step']})"]
     culprit = record.get("culprit")
     if culprit:
@@ -84,7 +87,10 @@ def report(record: dict) -> str:
     if record.get("note"):
         lines.append(f"  note: {record['note']}")
     lines.append(f"  log: {record['log']}")
-    lines.append("  Fix forward or revert the culprit within the hour; main is not touched.")
+    if record["result"] == HOST_RESULT:
+        lines.append("  No commit is blamed; fix the host and run again with --force. Main is not touched.")
+    else:
+        lines.append("  Fix forward or revert the culprit within the hour; main is not touched.")
     return "\n".join(lines)
 
 

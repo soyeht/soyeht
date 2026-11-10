@@ -139,7 +139,8 @@ class RevertTests(WatchCase):
         self.assertIn("Failing step: `unit`", body)
         self.assertIn(f"{head}.log", body)
         self.assertIn(culprit, body)
-        self.assertIn("FAILED step unit", body)
+        self.assertIn(f"`{self.start}`", body)  # the last green main, where the control run passed
+        self.assertNotIn("FAILED step", body)  # no text of the gate log reaches the public pull request
         message = (self.gh_dir / "commit.txt").read_text()
         self.assertTrue(message.startswith("Revert breaks the unit step\n"))
         self.assertIn(f"This reverts commit {culprit}.", message)
@@ -168,6 +169,19 @@ class RevertTests(WatchCase):
         self.assertEqual(len(status["reverts"]), 1)
         self.assertEqual(self.watch("--apply"), 0)
         self.assertEqual(self.status()["result"], "idle")
+
+    def test_a_step_that_fails_on_the_last_green_main_too_reverts_nothing(self):
+        culprit, head = self.red_main()
+        with mock.patch.dict(os.environ, {"FAKE_HOST_BROKEN": "1"}):  # the host fails, not the commit
+            self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+        status = self.status()
+        self.assertEqual(status["result"], "host")
+        self.assertIsNone(status["revert"])
+        self.assertIsNone(status["culprit"])
+        self.assertEqual(status["last_sha"], head)
+        self.assertEqual(self.gh_calls(), [])
+        self.assertEqual(self.origin_branches(), ["main"])
+        self.assertEqual(self.origin_head(), head)
 
     def test_an_ambiguous_culprit_is_not_reverted(self):
         self.assertEqual(self.watch("--apply"), 0)
@@ -456,14 +470,25 @@ class HelperTests(unittest.TestCase):
             "culprit",
         )
 
-    def test_the_log_excerpt_is_the_end_of_the_log(self):
-        log = Path(tempfile.mkdtemp()) / "x.log"
-        log.write_text("\n".join(f"line {i}" for i in range(500)))
-        excerpt = main_watch.log_excerpt({"log": str(log)})
-        self.assertTrue(excerpt.endswith("line 499"))
-        self.assertLessEqual(len(excerpt), main_watch.LOG_TAIL_CHARS)
-        self.assertNotIn("line 100\n", excerpt)
-        self.assertEqual(main_watch.log_excerpt({"log": str(log) + ".gone"}), "(the log is not available)")
+    def test_the_revert_body_holds_no_text_of_the_log(self):
+        log = Path(tempfile.mkdtemp()) / "abc.log"
+        log.write_text("a line with a private path /Users/someone/work\ncheck_all: FAILED step unit\n")
+        record = {"sha": "a" * 40, "log": str(log), "failed_step": "unit", "control": {"sha": "b" * 40}}
+        body = main_watch.revert_body(record, {"sha": "c" * 40, "subject": "Breaks"})
+        self.assertNotIn("private path", body)
+        self.assertNotIn("FAILED step", body)
+        self.assertNotIn(str(log.parent), body)
+        self.assertIn("Failing step: `unit`", body)
+        self.assertIn("`abc.log`", body)
+        self.assertIn("`" + "a" * 40 + "`", body)
+        self.assertIn("`" + "b" * 40 + "`", body)
+
+    def test_a_host_failure_is_its_own_class(self):
+        self.assertEqual(main_watch.classify({"result": post_merge_records.HOST_RESULT, "failed_step": "x"}),
+                         "host")
+        # Even a record that also names a culprit is not acted on.
+        self.assertEqual(main_watch.classify({"result": post_merge_records.HOST_RESULT, "culprit": {"sha": "a"}}),
+                         "host")
 
     def test_the_script_never_forces_a_push_or_touches_other_branches(self):
         source = Path(main_watch.__file__).read_text()

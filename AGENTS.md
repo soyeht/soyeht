@@ -391,16 +391,23 @@ inherit the main actor.
   and only the editor measurement on the VM is missing). A probe first runs the steps its step
   reads from earlier in the run (`PREREQUISITES` in `post_merge_gate.py`: the builds of the engine
   programs for the suites and the Swift tests, the TCC snapshot), so no commit is judged against
-  programs built from another one. `main_watch.py --apply` then reverts a
-  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
-  log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
-  a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches
+  programs built from another one. Before it names any commit, even when the range holds only
+  one, it runs the failing step the same way on the last green main, on today's host (the control
+  run). A step that fails there too is the host's or the environment's (a network failure during
+  an install, a full disk, a toolchain update, stale programs): the run is recorded as `host`, no
+  commit is blamed and nothing is reverted. A control that cannot run blames nobody either. Only
+  a step that passes on the last green main and fails at the head can have a culprit.
+  `main_watch.py --apply` then reverts a
+  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step, the
+  two commits and the log file (no text of the log, which is local and unscanned), merged with
+  `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
+  a flaky or `host` run, a revert, or a revert that does not apply, and it never forces a push or touches
   another branch; `--dry-run` is the default. It writes `watch.json` in the health directory, with
   the flaky steps that are `chronic` (2 or more flakes in the last 10 runs, from `flakes.json`): fix
   them, never skip them. With
   `--remote HOST --remote-root PATH` the engine, desktop, e2e and timing steps run on a Linux host
   through `scripts/remote_gate.sh` (`docs/dev-local.md`). The plan prints a warning while
-  `latest.json` says main is red, and a note while it says flaky. The editor measurement on the VM is collected separately,
+  `latest.json` says main is red, and a note while it says flaky or `host`. The editor measurement on the VM is collected separately,
   when the editor hash changes. Run `--tier full` yourself before a merge when you want
   certainty.
 - Red main is fixed by the automatic revert of a confirmed culprit. Its author re-lands a

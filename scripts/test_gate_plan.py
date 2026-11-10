@@ -466,6 +466,13 @@ class MainHealthTests(unittest.TestCase):
         self.assertIn("engine:test", warning)
         self.assertIn("b" * 12, warning)
 
+    def test_a_host_failure_is_a_note_that_names_no_commit(self):
+        note = gate_plan.main_health_warning(self.health(
+            {"sha": "a" * 40, "result": "host", "failed_step": "engine:test"}))
+        self.assertTrue(note.startswith("NOTE:"))
+        self.assertIn("engine:test", note)
+        self.assertIn("not a commit", note)
+
     def test_a_flaky_head_is_a_note(self):
         note = gate_plan.main_health_warning(self.health(
             {"sha": "c" * 40, "result": "flaky", "failed_step": "swift:test-shared"}))

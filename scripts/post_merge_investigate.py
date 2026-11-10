@@ -13,12 +13,12 @@ import check_editor_performance
 import gate_flakes
 import post_merge_hosts as hosts
 from gate_worktree import InfrastructureError
-from post_merge_culprit import locate_culprit, search_range
+from post_merge_culprit import BAD, GOOD, last_green, locate_culprit, search_range
 from post_merge_editor import EDITOR_STEP, NEEDS_MEASUREMENT, lacks_measurement
 from post_merge_gate import (INFRASTRUCTURE_EXITS, UNSUPPORTED_STEP_EXIT, failing_step, gate_step_areas,
                              run_gate, step_with_prerequisites)
 from post_merge_hosts import REMOTE_AREAS, Load, Remote, WaitBudget, busy_after, is_timing_sensitive
-from post_merge_records import commit_info, parent_of
+from post_merge_records import HOST_RESULT, commit_info, parent_of
 
 @dataclass
 class Rerun:
@@ -132,17 +132,27 @@ def investigate(root: Path, worktree: Path, scratch: Path, health: Path, record:
 def blame(root: Path, worktree: Path, scratch: Path, health: Path, record: dict, since: str | None,
           command: list[str], remote: Remote | None, persistent: bool, again: Rerun,
           budget: WaitBudget, timing: bool) -> None:
-    """The failing step failed again: name the commit that broke it, or the candidates."""
+    """The failing step failed again: run it on the last green main, and only when it passes there
+    name the commit that broke it, or the candidates."""
     sha, step = record["sha"], record["failed_step"]
-    commits = search_range(root, health, sha, since)
+    green = last_green(health, since)
+    commits = search_range(root, green, sha)
     if not commits:
         record["note"] = "no known green main to search from; pass --since"
-    elif len(commits) == 1:
-        record["culprit"] = commit_info(root, commits[0])
     else:
-        result = locate_culprit(root, worktree, commits, step, command, scratch, remote, persistent,
+        # Also for one commit: the step has not been run on the last green main on this host yet.
+        result = locate_culprit(root, worktree, green, commits, step, command, scratch, remote, persistent,
                                 again.measure if timing else None, budget)
-        if result.culprit:
+        record["control"] = {"sha": green, "result": result.control}
+        if result.control == BAD:
+            record["result"] = HOST_RESULT
+            record["note"] = (f"step {step} fails on the last green main {green[:12]} too, on this host: "
+                              "the failure is the host's or the environment's, no commit is blamed and "
+                              "nothing is reverted")
+        elif result.control != GOOD:
+            record["note"] = (f"step {step} could not be run on the last green main {green[:12]} to check "
+                              "the host, so no commit is blamed")
+        elif result.culprit:
             record["culprit"] = commit_info(root, result.culprit)
         else:
             record["candidates"] = [commit_info(root, c) for c in result.candidates]

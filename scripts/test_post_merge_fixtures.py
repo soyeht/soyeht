@@ -20,7 +20,8 @@ import post_merge_hosts
 
 # A stand-in for check_all.sh. The step named by FAKE_STEP (default `unit`) fails once the
 # file `broken` exists; `tcc` also fails without its prerequisite `snap` in `--only`.
-# FAKE_FLAKY=1 makes every `--only` run pass; FAKE_INFRA=1 makes the gate unable to start;
+# FAKE_FLAKY=1 makes every `--only` run pass; FAKE_HOST_BROKEN=1 makes the step fail on every commit
+# (a full disk, a network that is down), as a failure of the host and not of a commit does; FAKE_INFRA=1 makes the gate unable to start;
 # FAKE_TRACE=FILE records each run's directory and arguments; FAKE_EVENTS=DIR keeps the
 # `--event-file` of each run as DIR/<HEAD sha>.json. `--list` names a step per area:
 # `eng` (engine) runs on the remote host, `unit`, `sw` and `tcc` run here.
@@ -43,6 +44,7 @@ if [[ -n "$only" ]]; then
     [[ "$step" != tcc || ",$only," == *",snap,"* ]] || exit 1
 fi
 [[ -e broken ]] && status=1
+[[ -z "${FAKE_HOST_BROKEN:-}" ]] || status=1
 printf '{"latest":{"steps":[{"id":"%s","area":"always","seconds":1.0,"status":%s}]}}' "$step" "$status" > "$timings"
 ((status)) && echo "check_all: FAILED step $step (area always, exit 1)" >&2
 exit "$status"

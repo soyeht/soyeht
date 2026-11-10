@@ -24,9 +24,12 @@ after waiting (all the waiting of a run shares `LOAD_WAIT_BUDGET_SECONDS`) for t
 the culprit search waits the same way before each probe, on the host the rerun used. With `--remote`
 that host is the quiet Linux one: the timing steps are in `REMOTE_AREAS`, so they run there from
 the first run. A host still busy after the budget makes a failed rerun inconclusive (recorded
-`flaky`) and a probe that fails on it is skipped, so it blames nobody. Otherwise it finds the
-culprit among the first-parent commits since the last green main, running only the failing
-step (`check_all.sh --only STEP_ID`, with the steps it depends on) on a binary search of
+`flaky`) and a probe that fails on it is skipped, so it blames nobody. Otherwise it runs the
+failing step on the last green main itself, on this host, as a control (also when only one commit
+came since): a step that fails there too is the host's or the environment's, the record's result
+is `host`, and no commit is blamed or reverted; one that cannot run there blames nobody either.
+Only when it passes there does it find the culprit among the first-parent commits since the last
+green main, running only the failing step (`check_all.sh --only STEP_ID`, with the steps it depends on) on a binary search of
 them. It never pushes, reverts or edits main: it reports the culprit commit, the failing
 step and the log, and exits 1. A commit that cannot run the step, or cannot be checked
 out, is skipped; if that leaves several candidates, all of them are reported.

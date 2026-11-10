@@ -58,12 +58,16 @@ class PrerequisiteProbeTests(SyntheticRepositoryCase):
         self.assertTrue(probes)
         self.assertEqual(set(probes), {"build,use"})
 
-    def test_without_the_prerequisite_the_programs_of_the_newest_commit_blame_the_wrong_one(self):
-        # The failure this guards against: every probe reads what the newest commit built.
+    def test_without_the_prerequisite_the_stale_programs_are_the_hosts_and_blame_nobody(self):
+        # The failure this guards against: every probe reads what the newest commit built. Before
+        # the control run it named a commit that is not to blame; now the last green main fails the
+        # step too, with the programs the head built, and the result is the host's.
         _, head = self.red_main()
         with mock.patch.object(post_merge_gate, "PREREQUISITES", {}):
             self.assertEqual(self.run_main(head), 1)
-        self.assertEqual(self.record(head)["culprit"]["subject"], "one")
+        record = self.record(head)
+        self.assertEqual(record["result"], "host")
+        self.assertNotIn("culprit", record)
 
     def test_a_step_without_prerequisites_is_probed_alone(self):
         self.assertEqual(post_merge_gate.step_with_prerequisites("other"), "other")
