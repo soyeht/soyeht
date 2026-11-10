@@ -134,7 +134,14 @@ Behaviour unchanged. The guard of the lock measures every hold, not only the one
   and finishes. There are no counters at the roughly 300 call sites of the store. Statements are
   timed at one place: the SQLite trace hook of the connection (statement start and finish, with a
   monotonic clock, since SQLite's own profile timer has a millisecond resolution and misses a commit
-  under 1 ms), and the `COMMIT` statement is charged to its own column because it is the `fsync`.
+  under 1 ms), and the `COMMIT` statement is charged to its own column because it is the `fsync`
+  of a transaction. How to read the two columns, which decides step 4: `sqlMs` is the lifetime of a
+  statement, from its first step to its reset, so it includes the Rust code that runs between the
+  steps (a row callback, a nested query) and statements that nest are summed; a write outside an
+  explicit transaction commits inside its own `INSERT`, so that disk wait is in `sqlMs` and not in
+  `commitMs`, and a `BEGIN IMMEDIATE` that waits for another writer is in `sqlMs` too. The disk
+  wait of the engine is therefore `commitMs` plus the part of `sqlMs` that belongs to the writes
+  outside a transaction; `commitMs` alone understates it.
   Segment-file reads and appends and the file port are charged where they are called (two functions
   of the segment log, the methods of the editor's port; a call inside another is charged once). Work
   done on a thread that holds no lock is not timed at all.
@@ -143,7 +150,9 @@ Behaviour unchanged. The guard of the lock measures every hold, not only the one
   wait was 100 ms or more. And, once a minute, one usage line (`core_lock_usage`) for each of the ten
   busiest purposes (a request is a purpose of its own, named by its allow-listed method): the number
   of holds, the share of the minute the lock was held, the p50 and p99 of the hold and of the wait,
-  the longest wait, and the sums of the five costs. With this the question "does SQLite dominate
+  the longest wait, and the sums of the five costs. A purpose that held the lock for less than
+  5 thousandths of the minute is not written, so an idle engine, whose tick takes the lock a hundred
+  times a second, does not write the same lines every minute. With this the question "does SQLite dominate
   the 3 to 20 ms holds" is answered from the owner's own log, which is what decides step 4.
 - The trace hook is the `trace` feature of `rusqlite`, which is enabled only through `test-support`
   today (`soyeht-store/Cargo.toml`). Production needs it on in the normal build, so this change edits a

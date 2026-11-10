@@ -144,8 +144,10 @@ are the only ways to take it. `with` runs on a blocking thread, so no async
 worker ever waits for the lock. The guard marks its thread with
 `soyeht_process::forbid`, and `soyeht_process::run` refuses to start a
 command on a marked thread (`Error::UnderLock`). The guard also logs any hold
-of 100 ms or more as `engine.core_lock_slow`, with a short static purpose
-such as `tick`, `dispatch` or `offload_apply`. A hold that repeats is one condition: per
+(or wait for the lock) of 100 ms or more as `engine.core_lock_slow`, with a short static
+purpose such as `tick`, `dispatch` or `offload_apply`, the time it waited and where the hold's time
+went (ADR 0147 says what each cost means), and once a minute the busiest purposes as
+`engine.core_lock_usage`, slow or not. A hold that repeats is one condition: per
 purpose the guard logs the first slow hold, a hold at least twice as long as the longest one
 logged since, and once a minute `engine.core_lock_slow_summary` with the `count` of the holds
 left out and their `worstMs` (`slow_holds.rs`, the rule of `Streak`, AGENTS.md "Logging"). The
@@ -211,7 +213,8 @@ under the lock, and each is bounded:
 - `pane.experiment.export` writes its export under the lock. It is a rare
   action, available only in the signed app.
 
-A slow hold among these appears in the log as `engine.core_lock_slow`.
+A slow hold among these appears in the log as `engine.core_lock_slow`, with the split of its
+time (ADR 0147).
 
 ## Consequences
 

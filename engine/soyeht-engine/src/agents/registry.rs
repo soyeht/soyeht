@@ -15,12 +15,24 @@ pub(super) const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
-const SNAPSHOT_DIGEST: &str = "44982b3852dd673a1de03709ca09483937a3f8ce3ba71b0f9748f1dce16f5cd6";
+const SNAPSHOT_DIGEST: &str = "d5421aa23e295ef272bc2276f318bf521429f0d8a5b3b7e266876b8e131e6450";
+
+/// Whether a built-in harness has been checked against the real program (ADR 0143). The
+/// catalogue lists an `Experimental` one nowhere, so no new pane starts on it; a pane already bound
+/// to it still resolves it, because every lookup by id reads the whole catalogue.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum Support {
+    Supported,
+    Experimental,
+}
 
 #[derive(Clone)]
 pub(crate) struct RegistryEntry {
     pub launch: HarnessLaunch,
     pub source: HarnessSource,
+    /// A custom entry is the person's own choice and is always supported.
+    pub support: Support,
     recipe_directories: Vec<PathBuf>,
     local_commands: Vec<String>,
 }
@@ -40,6 +52,7 @@ struct SnapshotEntry {
     id: String,
     name: String,
     version: String,
+    support: Support,
     command: String,
     args: Vec<String>,
     #[serde(default)]
@@ -201,6 +214,7 @@ pub(crate) fn builtin_entries() -> Result<Vec<RegistryEntry>> {
             Ok(RegistryEntry {
                 launch,
                 source: HarnessSource::BuiltIn,
+                support: entry.support,
                 recipe_directories: directories,
                 local_commands: entry.local_commands,
             })
@@ -266,6 +280,7 @@ fn custom_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
         .map(|launch| RegistryEntry {
             launch,
             source: HarnessSource::Custom,
+            support: Support::Supported,
             recipe_directories: Vec::new(),
             local_commands: Vec::new(),
         })
@@ -363,6 +378,13 @@ pub(crate) fn remove_custom(directory: &Path, id: &str) -> Result<()> {
 pub(crate) fn catalogue_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
     let mut entries = custom_entries(directory)?;
     entries.extend(builtin_entries()?);
+    Ok(entries)
+}
+
+/// The entries a new pane may start on: what `harness.list` shows.
+pub(crate) fn listed_entries(directory: &Path) -> Result<Vec<RegistryEntry>> {
+    let mut entries = catalogue_entries(directory)?;
+    entries.retain(|entry| entry.support == Support::Supported);
     Ok(entries)
 }
 
@@ -611,6 +633,7 @@ pub(super) mod tests {
                 environment: None,
             },
             source: HarnessSource::BuiltIn,
+            support: Support::Experimental,
             recipe_directories: vec![fixture.0.clone()],
             local_commands: vec![evidence.clone()],
         };

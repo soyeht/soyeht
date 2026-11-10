@@ -10400,6 +10400,51 @@
     "value": "web_host"
   },
   {
+    "name": "EngineCapability:terminal",
+    "type": "EngineCapability",
+    "value": "terminal"
+  },
+  {
+    "name": "EngineCapability:workspaces",
+    "type": "EngineCapability",
+    "value": "workspaces"
+  },
+  {
+    "name": "EngineCapability:snapshot-parts",
+    "type": "EngineCapability",
+    "value": "snapshot-parts"
+  },
+  {
+    "name": "EngineCapability:event-replay",
+    "type": "EngineCapability",
+    "value": "event-replay"
+  },
+  {
+    "name": "EngineCapability:terminal-replay",
+    "type": "EngineCapability",
+    "value": "terminal-replay"
+  },
+  {
+    "name": "EngineCapability:device-pairing",
+    "type": "EngineCapability",
+    "value": "device-pairing"
+  },
+  {
+    "name": "EngineCapability:workspace-tasks",
+    "type": "EngineCapability",
+    "value": "workspace-tasks"
+  },
+  {
+    "name": "EngineCapability:subscription-usage",
+    "type": "EngineCapability",
+    "value": "subscription-usage"
+  },
+  {
+    "name": "EngineCapability:push",
+    "type": "EngineCapability",
+    "value": "push"
+  },
+  {
     "name": "PermissionRequestKind:web_session",
     "type": "PermissionRequestKind",
     "value": "web_session"

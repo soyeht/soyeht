@@ -492,6 +492,7 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "EditorAgentCursorEvent" => decode_encode::<EditorAgentCursorEvent>(name, value),
         "EditorReviewRequestedEvent" => decode_encode::<EditorReviewRequestedEvent>(name, value),
         "ClientCapability" => decode_encode::<ClientCapability>(name, value),
+        "EngineCapability" => decode_encode::<EngineCapability>(name, value),
         "WebInteractionMode" => decode_encode::<WebInteractionMode>(name, value),
         "WebNavigationAction" => decode_encode::<WebNavigationAction>(name, value),
         "WebViewportPreset" => decode_encode::<WebViewportPreset>(name, value),
