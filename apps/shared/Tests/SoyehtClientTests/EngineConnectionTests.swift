@@ -143,14 +143,13 @@
 
   @MainActor private func checkEmbeddedHarnessCatalogue(_ client: EngineClient) async throws {
     client.refreshHarnesses(rescan: true)
-    try await until { client.harnesses.count == 41 }
+    // The catalogue lists only the four harnesses checked against the real program (ADR 0143).
+    try await until { client.harnesses.count == 4 }
     let ids = Set(client.harnesses.map(\.id))
-    for id in [
-      "registry.claude-acp", "registry.codex-acp", "registry.cursor",
-      "registry.opencode", "registry.gemini",
-    ] {
-      #expect(ids.contains(id))
-    }
+    #expect(
+      ids == [
+        "registry.claude-acp", "registry.codex-acp", "registry.cursor", "registry.opencode",
+      ])
   }
 
   @MainActor private func checkCustomHarnessManagement(_ client: EngineClient) async throws {
