@@ -14,12 +14,14 @@ use crate::{
 use serde::Deserialize as _;
 use serde_json::Value;
 use soyeht_ink::{Recognizer, Writing};
-use soyeht_protocol::InkRecognizeParams;
-use std::time::Duration;
+use soyeht_protocol::{InkRecognizeParams, limits};
+use std::time::{Duration, Instant};
 
-/// The longest one recognition may take, a little under the clients' request timeout so a
-/// slow one is answered by the engine and not by the client giving up.
-const RECOGNIZE_TIMEOUT: Duration = Duration::from_secs(10);
+/// The longest one request may take, the wait behind other recognitions included
+/// (`inkDeadlineSec`): a little under the clients' request timeout so a slow one is answered
+/// by the engine and not by the client giving up.
+const RECOGNIZE_TIMEOUT: Duration = Duration::from_secs(limits::INK_DEADLINE_SEC as u64);
+const TIMED_OUT: &str = "Handwriting recognition timed out";
 
 /// The recognizer of this engine, or why it has none.
 pub struct Service {
@@ -45,12 +47,19 @@ impl Core {
             .map_err(|_| errors::invalid("Invalid ink recognition parameters"))?;
         let writing = Writing::from_params(&params)?;
         let recognizer = self.ink.recognizer.clone()?;
+        // The request's own deadline. The server stops waiting for the work then, but the
+        // work cannot be stopped: a request that finds the port busy for longer than that
+        // would still read when its turn came, and make the requests behind it late too.
+        let deadline = Instant::now() + RECOGNIZE_TIMEOUT;
         Ok(Outcome::Offload(
             Offload::new(
-                "Handwriting recognition timed out",
+                TIMED_OUT,
                 RECOGNIZE_TIMEOUT,
                 move || {
                     recognizer.with(|recognizer| {
+                        if Instant::now() >= deadline {
+                            return Err(errors::internal(TIMED_OUT));
+                        }
                         soyeht_ink::recognize(recognizer, &writing).map_err(errors::Error::from)
                     })
                 },

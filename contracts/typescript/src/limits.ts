@@ -113,5 +113,6 @@ export const limits = {
   "inkLanguageBytes": 35,
   "inkCoordinate": 1000000,
   "inkDurationMs": 3600000,
-  "inkCandidateBytes": 2048
+  "inkCandidateBytes": 2048,
+  "inkDeadlineSec": 10
 } as const;

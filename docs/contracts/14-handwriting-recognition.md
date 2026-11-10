@@ -74,7 +74,7 @@ draws or recognizes anything, and a request over one is answered at once.
 | `ink_language_unavailable` | The recognizer reads none of the languages asked. The client may offer other languages or try again with another list. |
 | `ink_unsupported` | The engine cannot read handwriting at all, and `data.detail` says why: `no_os_support` (the system has no recognizer), `language_pack_missing` (the system has one but the language data is not installed), `model_not_installed` (it needs a model nobody installed). A client does not retry and says so to the person. |
 | `ink_recognition_failed` | The recognizer failed on a request it could have read. A client may retry once. |
-| `internal_error` | A recognition outlived its deadline (10 s), or the engine broke its own rule. |
+| `internal_error` | A request outlived its deadline (`inkDeadlineSec`), or the engine broke its own rule. |
 
 No message holds the writing or the text.
 
@@ -83,7 +83,8 @@ No message holds the writing or the text.
 1. **Under the Core lock**, the request is checked against section 3. Nothing else is done there.
 2. **Off the lock** (`Outcome::Offload`, ADR 0079), the languages are matched with what the
    recognizer reads, the strokes are drawn as an image and the recognizer reads the image. At
-   most one recognition runs at a time; the others wait behind it, inside their deadline. A
+   most one recognition runs at a time; the others wait behind it, inside their deadline, and one
+   whose deadline has passed when its turn comes is answered without being read. A
    recognition does not hold back the other requests of its connection (`concurrent`).
 3. The answer is tidied (section 2) and sent.
 

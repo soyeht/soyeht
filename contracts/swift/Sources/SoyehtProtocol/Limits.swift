@@ -128,6 +128,8 @@ public enum ProtocolLimits {
     public static let inkDurationMs = 3600000
     /// The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.
     public static let inkCandidateBytes = 2048
+    /// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
+    public static let inkDeadlineSec = 10
 }
 
 public enum ProtocolVersion {

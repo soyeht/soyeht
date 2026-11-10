@@ -128,6 +128,8 @@ pub const INK_COORDINATE: usize = 1000000;
 pub const INK_DURATION_MS: usize = 3600000;
 /// The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.
 pub const INK_CANDIDATE_BYTES: usize = 2048;
+/// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
+pub const INK_DEADLINE_SEC: usize = 10;
 pub const FRAME_KIND_JSON: u8 = 1;
 pub const FRAME_KIND_TERMINAL: u8 = 2;
 pub const FRAME_KIND_ATTACHMENT: u8 = 3;

@@ -14919,7 +14919,8 @@
     "inkLanguageBytes": "The longest language tag (in UTF-8 bytes) of an `ink.recognize` request; the length a BCP 47 tag may have.",
     "inkCoordinate": "The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).",
     "inkDurationMs": "The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.",
-    "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character."
+    "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.",
+    "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -15035,7 +15036,8 @@
     "inkLanguageBytes": 35,
     "inkCoordinate": 1000000,
     "inkDurationMs": 3600000,
-    "inkCandidateBytes": 2048
+    "inkCandidateBytes": 2048,
+    "inkDeadlineSec": 10
   },
   "x-settings": {
     "terminal.defaultCols": {

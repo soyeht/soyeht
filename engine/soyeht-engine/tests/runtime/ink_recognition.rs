@@ -2,6 +2,7 @@
 //! lock, the limits of the contract are enforced, and `hello` tells whether the engine reads
 //! handwriting.
 use super::*;
+use soyeht_protocol::limits;
 
 /// How long the fixture recognizer takes to read. Long enough that a request which waited for it
 /// would show, short enough to keep the suite quick.
@@ -61,6 +62,41 @@ fn a_recognition_runs_off_the_core_lock_and_holds_back_nothing() {
     assert_eq!(result["language"], "en-US");
     // The fixture says where it ran: no Core lock was held by its thread.
     assert_eq!(result["candidates"][0]["text"], "off-the-lock");
+}
+
+#[test]
+fn a_request_sent_after_a_burst_of_expired_ones_is_served_in_one_recognition() {
+    let rig = Rig::with_environment(&[("SOYEHT_TEST_INK_RECOGNIZER_MS", READING_MS)]);
+    let mut burst = rig.client();
+    let mut later = rig.client();
+    let deadline = Duration::from_secs(limits::INK_DEADLINE_SEC as u64);
+    let reading = Duration::from_millis(READING_MS.parse().unwrap());
+
+    // Five readings of four seconds do not fit in the deadline: the third starts at 8 s and
+    // the fourth and fifth would only start after 10 s.
+    let started = Instant::now();
+    let ids = (0..5)
+        .map(|_| burst.send("ink.recognize", writing(1, 10)))
+        .collect::<Vec<_>>();
+    // Asked just after the deadline of the third: its own turn comes behind the one reading.
+    thread::sleep(deadline + Duration::from_millis(500));
+    let asked = Instant::now();
+    let answer = later.request("ink.recognize", writing(1, 10));
+    let waited = asked.elapsed();
+    assert!(answer.get("error").is_none(), "{answer}");
+    assert!(
+        waited < 2 * reading,
+        "the request waited {waited:?} behind readings that had already expired"
+    );
+    assert!(started.elapsed() < deadline + 3 * reading);
+
+    // The burst: the first two were read, the others answered late with the deadline's error.
+    let answers = ids.iter().map(|id| burst.wait(*id)).collect::<Vec<_>>();
+    let failed = answers
+        .iter()
+        .filter(|answer| answer.get("error").is_some())
+        .count();
+    assert_eq!(failed, 3, "{answers:?}");
 }
 
 #[test]

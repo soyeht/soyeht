@@ -50,10 +50,9 @@ impl<P: ?Sized> SharedPort<P> {
     }
 
     pub fn with<R>(&self, use_port: impl FnOnce(&mut P) -> Result<R>) -> Result<R> {
-        let mut port = self
-            .0
-            .lock()
-            .map_err(|_| errors::internal("Port lock poisoned"))?;
+        // The mutex only orders the users of the port. One whose work panicked leaves a port
+        // that holds no half-made state of the engine's, so a later user takes it as it is.
+        let mut port = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         use_port(&mut **port)
     }
 }
@@ -559,6 +558,15 @@ mod tests {
         assert!(!shared.lock().unwrap().background.is_active("test.slow:1"));
         drop(shared);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn a_port_still_serves_after_a_user_of_it_panicked() {
+        let port = SharedPort::new(Box::new(5_i32));
+        let panicking = port.clone();
+        let crashed = thread::spawn(move || panicking.with(|_| -> Result<()> { panic!("user") }));
+        assert!(crashed.join().is_err());
+        assert_eq!(port.with(|value| Ok(*value)).unwrap(), 5);
     }
 
     #[test]

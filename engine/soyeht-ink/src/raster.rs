@@ -22,6 +22,10 @@ const SIGNIFICANT_SHARE: f64 = 0.35;
 /// A letter-sized stroke is taller than a small letter: it holds ascenders and descenders.
 /// This turns the median height of such strokes into the height of a small letter.
 const X_HEIGHT_SHARE: f64 = 0.75;
+/// The smallest letter height, in the writing's units, that is scaled up to the image size. A
+/// writing smaller than this (a coordinate range that is subnormal) is drawn as the same dot a
+/// single point is, instead of a scale that overflows.
+const MIN_LETTER: f64 = 1e-9;
 const WHITE: u8 = 255;
 
 /// An 8-bit grayscale image, row 0 at the top, 255 white and 0 ink.
@@ -102,7 +106,7 @@ fn x_height(strokes: &[Vec<Dot>], frame: &Frame) -> f64 {
 /// nothing was written.
 pub fn render(writing: &Writing) -> Bitmap {
     let frame = frame(&writing.strokes);
-    let letter = x_height(&writing.strokes, &frame);
+    let letter = x_height(&writing.strokes, &frame).max(MIN_LETTER);
     let mut scale = X_HEIGHT_PX / letter;
     let longest = frame.width.max(frame.height);
     let room = LONGEST_SIDE_PX - 2.0 * MARGIN_PX;
@@ -299,6 +303,27 @@ mod tests {
         assert!(image.width >= (2.0 * MARGIN_PX) as usize);
         let far = render(&writing(&[&[(999_999.0, -999_999.0)]]));
         assert_eq!((image.width, image.height), (far.width, far.height));
+    }
+
+    #[test]
+    fn a_writing_of_subnormal_extent_is_drawn_as_a_dot_and_does_not_overflow() {
+        for extent in [1e-310, 5e-324, 1e-300, 1e-12] {
+            for strokes in [
+                vec![vec![(0.0, 0.0), (0.0, extent)]],
+                vec![vec![(0.0, 0.0), (extent, 0.0)]],
+                vec![
+                    vec![(0.0, 0.0), (extent, extent)],
+                    vec![(0.0, 0.0), (0.0, extent)],
+                ],
+            ] {
+                let refs = strokes.iter().map(Vec::as_slice).collect::<Vec<_>>();
+                let image = render(&writing(&refs));
+                assert!(image.width >= (2.0 * MARGIN_PX) as usize, "{extent}");
+                assert!(image.width as f64 <= LONGEST_SIDE_PX + 1.0, "{extent}");
+                assert!(image.height as f64 <= LONGEST_SIDE_PX + 1.0, "{extent}");
+                assert!(dark(&image) > 0, "the pen stays visible for {extent}");
+            }
+        }
     }
 
     #[test]
