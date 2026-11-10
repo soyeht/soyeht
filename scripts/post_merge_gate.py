@@ -29,8 +29,19 @@ FAILED_STEP = re.compile(r"^check_all: FAILED step (\S+)", re.MULTILINE)
 UNSUPPORTED_STEP_EXIT = 78
 INFRASTRUCTURE_EXIT = 2
 INFRASTRUCTURE_EXITS = {INFRASTRUCTURE_EXIT, 64, 70, 71, UNSUPPORTED_STEP_EXIT}
-# A step that only means something after another step of the same run.
-PREREQUISITES = {"e2e:tcc-check": "e2e:tcc-snapshot"}
+# What a step reads from earlier steps of the same run: the build of the programs it starts, or the
+# snapshot it compares with. A rerun on any commit (the culprit search, the flake check) takes them
+# first, so a step is never judged against the programs of another commit that the worktree still
+# holds (its target directory is kept between probes). test_gate_list holds every step that starts
+# the engine's programs to this table.
+BUILT_PROGRAMS = ("engine:build-product", "engine:build-test-engine")
+PREREQUISITES: dict[str, tuple[str, ...]] = {
+    "e2e:tcc-check": ("e2e:tcc-snapshot",),
+    **{f"e2e:{suite}": BUILT_PROGRAMS for suite in
+       ("core", "agents", "tasks", "editor", "web", "writing", "real-acp", "real-agent-messaging",
+        "real-harnesses")},
+    "swift:test-shared": ("swift:engine-binaries",),
+}
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
 
 
@@ -366,8 +377,8 @@ def run_gate(worktree: Path, base: str | None, only: str | None, log: Path | Non
 
 
 def step_with_prerequisites(step: str) -> str:
-    prerequisite = PREREQUISITES.get(step)
-    return f"{prerequisite},{step}" if prerequisite else step
+    """The `--only` selection that runs `step` after what it reads (`check_all.sh` keeps file order)."""
+    return ",".join([*PREREQUISITES.get(step, ()), step])
 
 
 def failing_step(log: Path, timings: Path, last: bool = False) -> str | None:

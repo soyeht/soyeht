@@ -248,6 +248,7 @@ step gate_scripts both post-merge-flakes:unit uv run python -m unittest discover
 step gate_scripts both post-merge-remote:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_remote.py'
 step gate_scripts both post-merge-load:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_load.py'
 step gate_scripts both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
+step gate_scripts both e2e-swift-client:unit uv run python -m unittest discover -s scripts -p 'test_e2e_swift_client.py'
 step gate_scripts both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and
@@ -362,6 +363,14 @@ step e2e both e2e:tasks uv run python scripts/e2e_tasks.py --report .cache/e2e-t
 step e2e both e2e:editor uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
 step e2e both e2e:web uv run python scripts/e2e_web.py --report .cache/e2e-web.json
 step e2e both e2e:writing uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
+# The Swift client's integration test against the engine just built: a change to the engine can
+# break it with every Rust test green, and the full `swift test` runs only after the merge. It sits
+# between the TCC snapshot and its check, is the `swift` area's (the Mac runs it, the Linux host has
+# no Swift) and builds the programs itself, so it also holds when the e2e steps ran on another host.
+swift_client_fast() {
+    build_product_programs && uv run python scripts/e2e_swift_client.py
+}
+step swift fast swift:test-shared-fast swift_client_fast
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     step e2e full e2e:real-acp uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
     step e2e full e2e:real-agent-messaging uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json
