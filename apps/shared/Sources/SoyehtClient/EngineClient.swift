@@ -213,7 +213,7 @@ public final class EngineClient {
     disconnect()
   }
   private func disconnect() {
-    connected = false
+    (connected, engineCapabilities) = (false, [])
     resetAgentSession()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
