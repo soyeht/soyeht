@@ -15,11 +15,20 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.*
 import com.soyeht.next.android.AppModel
+import com.soyeht.next.android.eink.ScreenRefresh
 import com.soyeht.next.android.theme.*
 import uniffi.soyeht_android.*
 
@@ -179,9 +188,17 @@ private fun Question(question: PermissionQuestion, agent: String, answer: (Strin
 private fun MessageComposer(model: AppModel, row: PaneRow, working: Boolean) {
     val roles = LocalRoles.current
     val metrics = LocalMetrics.current
-    var text by rememberSaveable(row.paneId) { mutableStateOf("") }
+    var field by rememberSaveable(row.paneId, stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
     val controls = model.data(row.paneId).composer
     val agent = controls?.harness?.title ?: "the agent"
+    val focus = remember { FocusRequester() }
+    val view = LocalView.current
+    val refresh = remember(view) { ScreenRefresh.forView(view) }
+    val scope = rememberCoroutineScope()
+    val density = LocalDensity.current.density
+    val writing = remember(row.paneId, refresh) {
+        Writing(model.handwriting, refresh, scope, density, read = { field }, write = { field = it }, focus = { focus.requestFocus() })
+    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -189,23 +206,35 @@ private fun MessageComposer(model: AppModel, row: PaneRow, working: Boolean) {
             .padding(horizontal = PaneInterior.cardPadding.dp, vertical = PaneInterior.cardVerticalPadding.dp),
         verticalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp),
     ) {
-        BasicTextField(
-            value = text,
-            onValueChange = { text = it },
-            textStyle = TextStyle(color = roles.ink, fontSize = metrics.paneBody.sp),
-            cursorBrush = SolidColor(roles.accent),
-            modifier = Modifier.fillMaxWidth().heightIn(min = PaneInterior.sendButtonSize.dp),
-            decorationBox = { inner ->
-                if (text.isEmpty()) {
-                    Text(
-                        if (working) "Queue a message for $agent…" else "Message $agent…",
-                        color = roles.muted,
-                        fontSize = metrics.paneBody.sp,
-                    )
-                }
-                inner()
-            },
-        )
+        // The pen writes on the field: an open ink area gives it room, and the strokes draw over it.
+        val room = if (writing.active) (PaneInterior.touchTarget * INK_ROWS).dp else PaneInterior.sendButtonSize.dp
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = room)
+                .onSizeChanged { writing.area = it }
+                .onGloballyPositioned { writing.origin = it.positionInRoot() }
+                .stylusWriting(writing)
+                .inkStrokes(writing, roles.ink, PaneInterior.separatorWidth * 2 * density),
+        ) {
+            BasicTextField(
+                value = field,
+                onValueChange = { field = it },
+                textStyle = TextStyle(color = roles.ink, fontSize = metrics.paneBody.sp),
+                cursorBrush = SolidColor(roles.accent),
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                decorationBox = { inner ->
+                    if (field.text.isEmpty()) {
+                        Text(
+                            if (working) "Queue a message for $agent…" else "Message $agent…",
+                            color = roles.muted,
+                            fontSize = metrics.paneBody.sp,
+                        )
+                    }
+                    inner()
+                },
+            )
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (controls != null) {
                 // A line longer than the room scrolls under the finger; the send button keeps its place.
@@ -213,10 +242,13 @@ private fun MessageComposer(model: AppModel, row: PaneRow, working: Boolean) {
             } else {
                 Spacer(Modifier.weight(1f))
             }
-            SendButton { model.prompt(row.paneId, text); text = "" }
+            SendButton { model.prompt(row.paneId, field.text); field = TextFieldValue() }
         }
     }
 }
+
+/** The rows of touch targets the field has while the pen writes on it. */
+private const val INK_ROWS = 3
 
 @Composable
 private fun SendButton(onClick: () -> Unit) {

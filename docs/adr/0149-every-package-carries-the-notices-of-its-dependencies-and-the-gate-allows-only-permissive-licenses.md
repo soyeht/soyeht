@@ -38,7 +38,7 @@ ship, and nothing in the packages.
   source-available license). An expression passes when one alternative of it is entirely allowed. `clarify`
   gives the license of a package whose manifest declares none, or states a combined one, each with its reason.
   `exceptions` lets a known package with a license outside the list pass, each with its reason; an exception
-  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses. `release_flow.py collect` and `publish` refuse while any exception is in the policy (`release_checks.exception_problems`), so one cannot be forgotten at a release.
+  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses. `release_flow.py collect` and `publish` refuse while any exception is in the policy (`release_checks.exception_problems`), so one cannot be forgotten at a release. An exception can carry `"accepted": {"by", "date"}` (ADR 0157): the owner has decided to ship that one package under that license, and a release passes it. `by` must be on a fixed list in `third_party_licenses.ACCEPTERS` (only "owner"), `date` a real date, and a license that is copyleft (GPL, AGPL, LGPL, MPL, EPL, CDDL, EUPL, SSPL, CC-BY-SA) is never accepted: the policy does not load.
 - **The gate checks it.** `third-party-notices:check` (area `always`) fails when a dependency has no allowed
   license, when `swift.json` or `gradle.json` disagree with the lock files, when an exception is unused, or
   when the committed file differs from what `generate` writes. `third-party-notices:unit` runs

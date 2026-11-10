@@ -62,7 +62,53 @@
       "reason": "The package is MIT; NOTICES lists the Apache-2.0 code it derives from swift-transformers."
     }
   },
-  "exceptions": [],
+  "exceptions": [
+    {
+      "package": "com.google.mlkit:digital-ink-recognition",
+      "license": "LicenseRef-ML-Kit-Terms",
+      "reason": "Handwriting recognition on a Boox below Android 14 (ADR 0157). Google's proprietary binary under the ML Kit Terms of Service: not open source and not on the allow-list. It is not copyleft and links no GPL code. The owner accepted it on 2026-11-08 as an opt-in feature that is off by default; the app tells the person what ML Kit sends to Google (PRIVACY.md).",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.mlkit:common",
+      "license": "LicenseRef-ML-Kit-Terms",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the ML Kit Terms of Service, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-base",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-basement",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-tasks",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    }
+  ],
   "bundled": {
     "freetype-sys": {
       "license": "FTL OR GPL-2.0-only",

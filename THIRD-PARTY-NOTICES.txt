@@ -12,7 +12,7 @@ apps/desktop/ and apps/android/, the Package.resolved files of the Swift package
 apps/android/app/build.gradle.kts and scripts/third_party/. Do not edit it:
     uv run python scripts/third_party_notices.py generate
 
-1. Components (876)
+1. Components (882)
 
 Rust crates (814)
   accesskit 0.24.1  (MIT OR Apache-2.0)  [apps/desktop]
@@ -2986,7 +2986,7 @@ Swift packages (42)
       https://github.com/ibireme/yyjson.git
       Copyright (c) 2020 YaoYuan <ibireme@gmail.com>
 
-Android libraries (13)
+Android libraries (19)
   androidx.activity:activity-compose 1.9.3  (Apache-2.0)
       https://developer.android.com/jetpack/androidx/releases/activity
   androidx.camera:camera-camera2 1.4.1  (Apache-2.0)
@@ -3007,9 +3007,21 @@ Android libraries (13)
       https://developer.android.com/jetpack/androidx/releases/compose
   androidx.lifecycle:lifecycle-viewmodel-compose 2.8.7  (Apache-2.0)
       https://developer.android.com/jetpack/androidx/releases/lifecycle
+  androidx.work:work-runtime 2.7.0  (Apache-2.0)
+      https://developer.android.com/jetpack/androidx/releases/work
+  com.google.android.gms:play-services-base 18.1.0  (LicenseRef-Android-SDK-License)
+      https://developer.android.com/studio/terms
+  com.google.android.gms:play-services-basement 18.1.0  (LicenseRef-Android-SDK-License)
+      https://developer.android.com/studio/terms
+  com.google.android.gms:play-services-tasks 18.0.2  (LicenseRef-Android-SDK-License)
+      https://developer.android.com/studio/terms
+  com.google.mlkit:common 18.6.0  (LicenseRef-ML-Kit-Terms)
+      https://developers.google.com/ml-kit/terms
+  com.google.mlkit:digital-ink-recognition 18.1.0  (LicenseRef-ML-Kit-Terms)
+      https://developers.google.com/ml-kit/vision/digital-ink-recognition
   com.google.zxing:core 3.5.3  (Apache-2.0)
       https://github.com/zxing/zxing
-  Kotlin standard library, AndroidX and Compose runtime libraries (transitive)  (Apache-2.0)
+  Kotlin standard library, AndroidX, Room, Firebase components, Datatransport, OkHttp and Okio libraries (transitive)  (Apache-2.0)
       https://developer.android.com/jetpack/androidx
   net.java.dev.jna:jna 5.14.0  (Apache-2.0 OR LGPL-2.1-or-later)
       following: Apache-2.0
@@ -3036,15 +3048,16 @@ Fonts and icons (7)
 2. License and notice texts
 
 ----------------------------------------------------------------------------------------------------
-Text 1 of 90: Apache-2.0
+Text 1 of 92: Apache-2.0
 Used by: androidx.activity:activity-compose 1.9.3, androidx.camera:camera-camera2 1.4.1,
     androidx.camera:camera-core 1.4.1, androidx.camera:camera-lifecycle 1.4.1,
     androidx.camera:camera-view 1.4.1, androidx.compose.foundation:foundation (Compose BOM),
     androidx.compose.material3:material3 (Compose BOM), androidx.compose.ui:ui (Compose BOM),
     androidx.compose:compose-bom 2024.12.01, androidx.lifecycle:lifecycle-viewmodel-compose 2.8.7,
-    async-http-client 1.36.2, codespan-reporting 0.13.1, com.google.zxing:core 3.5.3, compress-nio
-    1.4.2, gethostname 1.1.0, glutin_wgl_sys 0.6.1, hummingbird 2.16.0, hummingbird-websocket 2.6.0,
-    Kotlin standard library, AndroidX and Compose runtime libraries (transitive), mlx-swift 0.31.6,
+    androidx.work:work-runtime 2.7.0, async-http-client 1.36.2, codespan-reporting 0.13.1,
+    com.google.zxing:core 3.5.3, compress-nio 1.4.2, gethostname 1.1.0, glutin_wgl_sys 0.6.1,
+    hummingbird 2.16.0, hummingbird-websocket 2.6.0, Kotlin standard library, AndroidX, Room,
+    Firebase components, Datatransport, OkHttp and Okio libraries (transitive), mlx-swift 0.31.6,
     net.java.dev.jna:jna 5.14.0, ring 0.17.14, ryu 1.0.23, self_cell 1.3.0, similar 3.2.0, spirv
     0.4.0+sdk-1.4.341.0, stacksafe 0.1.4, stacksafe-macro 0.1.4, swift-algorithms 1.2.1,
     swift-argument-parser 1.8.2, swift-asn1 1.7.3, swift-async-algorithms 1.1.7, swift-atomics
@@ -3235,7 +3248,7 @@ Used by: androidx.activity:activity-compose 1.9.3, androidx.camera:camera-camera
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 2 of 90: Apache-2.0
+Text 2 of 92: Apache-2.0
 Used by: speech-swift 2723d1c275
 ----------------------------------------------------------------------------------------------------
                                  Apache License
@@ -3416,7 +3429,7 @@ Used by: speech-swift 2723d1c275
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 3 of 90: Apache-2.0
+Text 3 of 92: Apache-2.0
 Used by: atomic-waker 1.1.2, futures-lite 2.6.1
 ----------------------------------------------------------------------------------------------------
 ===============================================================================
@@ -3466,7 +3479,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 4 of 90: Apache-2.0
+Text 4 of 92: Apache-2.0
 Used by: parking 2.2.1
 ----------------------------------------------------------------------------------------------------
 ===============================================================================
@@ -3480,7 +3493,7 @@ option. All files in the project carrying such notice may not be
 copied, modified, or distributed except according to those terms.
 
 ----------------------------------------------------------------------------------------------------
-Text 5 of 90: Apache-2.0
+Text 5 of 92: Apache-2.0
 Used by: crossbeam-channel 0.5.17
 ----------------------------------------------------------------------------------------------------
 ===============================================================================
@@ -4053,7 +4066,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 6 of 90: Apache-2.0
+Text 6 of 92: Apache-2.0
 Used by: siphasher 0.3.11
 ----------------------------------------------------------------------------------------------------
 Copyright 2012-2016 The Rust Project Developers.
@@ -4065,7 +4078,7 @@ http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
 option.
 
 ----------------------------------------------------------------------------------------------------
-Text 7 of 90: Apache-2.0
+Text 7 of 92: Apache-2.0
 Used by: collections 0.1.0, derive_refineable 0.1.0, gpui 0.2.2, gpui_linux 0.1.0, gpui_macos 0.1.0,
     gpui_macros 0.1.0, gpui_platform 0.1.0, gpui_shared_string 0.1.0, gpui_util 0.1.0, gpui_web
     0.1.0, gpui_wgpu 0.1.0, gpui_windows 0.1.0, http_client 0.1.0, media 0.1.0, perf 0.1.0,
@@ -4295,7 +4308,7 @@ Apache License
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 8 of 90: Apache-2.0
+Text 8 of 92: Apache-2.0
 Used by: chrono 0.4.45
 ----------------------------------------------------------------------------------------------------
 Rust-chrono is dual-licensed under The MIT License [1] and
@@ -4513,7 +4526,7 @@ TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
 END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 9 of 90: Apache-2.0
+Text 9 of 92: Apache-2.0
 Used by: ring 0.17.14
 ----------------------------------------------------------------------------------------------------
 The Apache License, Version 2.0 (Apache-2.0)
@@ -4533,7 +4546,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ----------------------------------------------------------------------------------------------------
-Text 10 of 90: Apache-2.0
+Text 10 of 92: Apache-2.0
 Used by: swift-sdk 0.12.1
 ----------------------------------------------------------------------------------------------------
 The MCP project is undergoing a licensing transition from the MIT License to the Apache License, Version 2.0 ("Apache-2.0"). All new code and specification contributions to the project are licensed under Apache-2.0. Documentation contributions (excluding specifications) are licensed under CC-BY-4.0.
@@ -4722,7 +4735,7 @@ No rights beyond those granted by the applicable original license are conveyed f
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 11 of 90: Apache-2.0 AND ISC
+Text 11 of 92: Apache-2.0 AND ISC
 Used by: ring 0.17.14
 ----------------------------------------------------------------------------------------------------
 *ring* uses an "ISC" license, like BoringSSL used to use, for new code
@@ -4736,7 +4749,7 @@ See src/polyfill/once_cell/LICENSE-APACHE and src/polyfill/once_cell/LICENSE-MIT
 for the license to code that was sourced from the once_cell project.
 
 ----------------------------------------------------------------------------------------------------
-Text 12 of 90: Apache-2.0 notice
+Text 12 of 92: Apache-2.0 notice
 Used by: swift-algorithms 1.2.1, swift-argument-parser 1.8.2, swift-async-algorithms 1.1.7,
     swift-atomics 1.3.1, swift-collections 1.7.2, swift-numerics 1.1.1, swift-syntax 603.0.2,
     swift-system 1.8.1
@@ -4750,7 +4763,7 @@ Used by: swift-algorithms 1.2.1, swift-argument-parser 1.8.2, swift-async-algori
     otherwise be required by Sections 4(a), 4(b) and 4(d) of the License.
 
 ----------------------------------------------------------------------------------------------------
-Text 13 of 90: Apache-2.0 notice
+Text 13 of 92: Apache-2.0 notice
 Used by: swift-markdown 0.9.0
 ----------------------------------------------------------------------------------------------------
 ### Runtime Library Exception to the Apache 2.0 License: ###
@@ -4762,7 +4775,7 @@ Used by: swift-markdown 0.9.0
     otherwise be required by Sections 4(a), 4(b) and 4(d) of the License.
 
 ----------------------------------------------------------------------------------------------------
-Text 14 of 90: Apache-2.0 notice
+Text 14 of 92: Apache-2.0 notice
 Used by: swift-sdk 0.12.1
 ----------------------------------------------------------------------------------------------------
 ---
@@ -4798,7 +4811,7 @@ CC-BY-4.0. See https://creativecommons.org/licenses/by/4.0/legalcode for
 the full license text.
 
 ----------------------------------------------------------------------------------------------------
-Text 15 of 90: Apache-2.0 notice
+Text 15 of 92: Apache-2.0 notice
 Used by: speech-swift 2723d1c275
 ----------------------------------------------------------------------------------------------------
 Copyright 2025 Ivan Digital
@@ -4816,7 +4829,7 @@ Copyright 2025 Ivan Digital
    limitations under the License.
 
 ----------------------------------------------------------------------------------------------------
-Text 16 of 90: Apache-2.0 notice
+Text 16 of 92: Apache-2.0 notice
 Used by: ring 0.17.14
 ----------------------------------------------------------------------------------------------------
 Licenses for support code
@@ -4889,13 +4902,13 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 17 of 90: Apache-2.0 notice
+Text 17 of 92: Apache-2.0 notice
 Used by: chrono 0.4.45
 ----------------------------------------------------------------------------------------------------
 ~~~~
 
 ----------------------------------------------------------------------------------------------------
-Text 18 of 90: BSD-2-Clause
+Text 18 of 92: BSD-2-Clause
 Used by: arrayref 0.3.9
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -4923,7 +4936,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 19 of 90: BSD-2-Clause
+Text 19 of 92: BSD-2-Clause
 Used by: swift-cmark 0.9.0
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5094,7 +5107,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 20 of 90: BSD-2-Clause
+Text 20 of 92: BSD-2-Clause
 Used by: rav1e 0.8.1
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5119,7 +5132,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 21 of 90: BSD-2-Clause
+Text 21 of 92: BSD-2-Clause
 Used by: av1-grain 0.2.5, v_frame 0.3.9
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5144,7 +5157,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 22 of 90: BSD-3-Clause
+Text 22 of 92: BSD-3-Clause
 Used by: exr 1.74.2
 ----------------------------------------------------------------------------------------------------
 # Licenses
@@ -5182,7 +5195,7 @@ Redistribution and use in source and binary forms, with or without modification,
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 23 of 90: BSD-3-Clause
+Text 23 of 92: BSD-3-Clause
 Used by: tree-sitter 0.27.0
 ----------------------------------------------------------------------------------------------------
 COPYRIGHT AND PERMISSION NOTICE (ICU 58 and later)
@@ -5601,7 +5614,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 24 of 90: BSD-3-Clause
+Text 24 of 92: BSD-3-Clause
 Used by: tiny-skia 0.11.4, tiny-skia-path 0.11.4
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5633,7 +5646,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 25 of 90: BSD-3-Clause
+Text 25 of 92: BSD-3-Clause
 Used by: avif-serialize 0.8.9, ed25519-dalek 2.2.0, encoding_rs 0.8.42, lebe 0.5.3, moxcms 0.8.1,
     pxfm 0.1.30, ravif 0.13.0, subtle 2.6.1
 ----------------------------------------------------------------------------------------------------
@@ -5665,7 +5678,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 26 of 90: BSD-3-Clause
+Text 26 of 92: BSD-3-Clause
 Used by: curve25519-dalek 4.1.3
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5732,7 +5745,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 27 of 90: BSD-3-Clause
+Text 27 of 92: BSD-3-Clause
 Used by: sha1_smol 1.0.1
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5792,7 +5805,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 28 of 90: BSD-3-Clause
+Text 28 of 92: BSD-3-Clause
 Used by: libsqlite3-sys 0.38.2
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
@@ -5818,7 +5831,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 29 of 90: CC0-1.0
+Text 29 of 92: CC0-1.0
 Used by: notify 8.2.0
 ----------------------------------------------------------------------------------------------------
 Creative Commons CC0 1.0 Universal
@@ -5864,7 +5877,7 @@ For these and/or other purposes and motivations, and without any expectation of 
      d. Affirmer understands and acknowledges that Creative Commons is not a party to this document and has no duty or obligation with respect to this CC0 or use of the Work.
 
 ----------------------------------------------------------------------------------------------------
-Text 30 of 90: CC0-1.0
+Text 30 of 92: CC0-1.0
 Used by: dunce 1.0.5, hexf-parse 0.2.1, imgref 1.12.3, tiny-keccak 2.0.2
 ----------------------------------------------------------------------------------------------------
 Creative Commons Legal Code
@@ -5990,7 +6003,7 @@ express Statement of Purpose.
     this CC0 or use of the Work.
 
 ----------------------------------------------------------------------------------------------------
-Text 31 of 90: CDLA-Permissive-2.0
+Text 31 of 92: CDLA-Permissive-2.0
 Used by: webpki-roots 1.0.9
 ----------------------------------------------------------------------------------------------------
 # Community Data License Agreement - Permissive - Version 2.0
@@ -6056,7 +6069,7 @@ of Data, including for example machine learning models and models'
 insights.
 
 ----------------------------------------------------------------------------------------------------
-Text 32 of 90: CDLA-Permissive-2.0
+Text 32 of 92: CDLA-Permissive-2.0
 Used by: webpki-roots 1.0.9
 ----------------------------------------------------------------------------------------------------
 Community Data License Agreement - Permissive - Version 2.0
@@ -6096,7 +6109,7 @@ NO DATA PROVIDER SHALL HAVE ANY LIABILITY FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
 5.4. "Results" means any outcome obtained by computational analysis of Data, including for example machine learning models and models' insights.
 
 ----------------------------------------------------------------------------------------------------
-Text 33 of 90: FTL
+Text 33 of 92: FTL
 Used by: freetype-sys 0.20.1
 ----------------------------------------------------------------------------------------------------
                     The FreeType Project LICENSE
@@ -6270,7 +6283,7 @@ Legal Terms
 --- end of FTL.TXT ---
 
 ----------------------------------------------------------------------------------------------------
-Text 34 of 90: FTL
+Text 34 of 92: FTL
 Used by: freetype-sys 0.20.1
 ----------------------------------------------------------------------------------------------------
 FREETYPE LICENSES
@@ -6321,7 +6334,7 @@ builds) is in the public domain.
 --- end of LICENSE.TXT ---
 
 ----------------------------------------------------------------------------------------------------
-Text 35 of 90: ISC
+Text 35 of 92: ISC
 Used by: untrusted 0.9.0
 ----------------------------------------------------------------------------------------------------
 // Copyright 2015-2016 Brian Smith.
@@ -6339,7 +6352,7 @@ Used by: untrusted 0.9.0
 // OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 36 of 90: ISC
+Text 36 of 92: ISC
 Used by: rustls-webpki 0.103.15
 ----------------------------------------------------------------------------------------------------
 Except as otherwise noted, this project is licensed under the following
@@ -6363,7 +6376,7 @@ The files under third-party/chromium are licensed as described in
 third-party/chromium/LICENSE.
 
 ----------------------------------------------------------------------------------------------------
-Text 37 of 90: ISC
+Text 37 of 92: ISC
 Used by: Lucide icons
 ----------------------------------------------------------------------------------------------------
 Permission to use, copy, modify, and/or distribute this software for any
@@ -6407,7 +6420,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 38 of 90: ISC
+Text 38 of 92: ISC
 Used by: inotify 0.11.5, inotify-sys 0.1.8, libloading 0.8.9, ring 0.17.14, untrusted 0.9.0
 ----------------------------------------------------------------------------------------------------
 Permission to use, copy, modify, and/or distribute this software for any purpose
@@ -6423,7 +6436,30 @@ TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 39 of 90: MIT
+Text 39 of 92: LicenseRef-Android-SDK-License
+Used by: com.google.android.gms:play-services-base 18.1.0,
+    com.google.android.gms:play-services-basement 18.1.0, com.google.android.gms:play-services-tasks
+    18.0.2
+----------------------------------------------------------------------------------------------------
+The Android Software Development Kit License
+
+This component is distributed by Google under the Android Software Development Kit License, which is not an
+open-source license. The terms are published at https://developer.android.com/studio/terms and apply to the use
+and redistribution of the Google Play services libraries in an app. They give no right to the source code of the
+libraries.
+
+----------------------------------------------------------------------------------------------------
+Text 40 of 92: LicenseRef-ML-Kit-Terms
+Used by: com.google.mlkit:common 18.6.0, com.google.mlkit:digital-ink-recognition 18.1.0
+----------------------------------------------------------------------------------------------------
+The ML Kit Terms of Service
+
+This component is distributed by Google under the ML Kit Terms of Service, which are not an open-source license.
+The terms are published at https://developers.google.com/ml-kit/terms and apply to the use and redistribution of
+the ML Kit libraries in an app. They give no right to the source code of the libraries.
+
+----------------------------------------------------------------------------------------------------
+Text 41 of 92: MIT
 Used by: float_next_after 1.0.0
 ----------------------------------------------------------------------------------------------------
 MIT License
@@ -6451,7 +6487,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 40 of 90: MIT
+Text 42 of 92: MIT
 Used by: fdeflate 0.3.7, half 2.7.1, image 0.25.10, image-webp 0.2.4, linebender_resource_handle
     0.1.1, simdutf8 0.1.5
 ----------------------------------------------------------------------------------------------------
@@ -6482,7 +6518,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 41 of 90: MIT
+Text 43 of 92: MIT
 Used by: ring 0.17.14
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any
@@ -6510,7 +6546,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 42 of 90: MIT
+Text 44 of 92: MIT
 Used by: mlx-swift 0.31.6
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining
@@ -6540,7 +6576,7 @@ source code, you may redistribute such embedded portions in such object form
 without including the above copyright and permission notices.
 
 ----------------------------------------------------------------------------------------------------
-Text 43 of 90: MIT
+Text 45 of 92: MIT
 Used by: wayland-protocols 0.32.13
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a
@@ -6569,7 +6605,7 @@ The above is the version of the MIT "Expat" License used by X.org:
     http://cgit.freedesktop.org/xorg/xserver/tree/COPYING
 
 ----------------------------------------------------------------------------------------------------
-Text 44 of 90: MIT
+Text 46 of 92: MIT
 Used by: rustybuzz 0.20.1, uds_windows 1.2.1, windows 0.57.0, windows 0.61.3, windows 0.62.2,
     windows-collections 0.2.0, windows-collections 0.3.2, windows-core 0.57.0, windows-core 0.61.2,
     windows-core 0.62.2, windows-future 0.2.1, windows-future 0.3.2, windows-implement 0.57.0,
@@ -6604,7 +6640,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy
     SOFTWARE
 
 ----------------------------------------------------------------------------------------------------
-Text 45 of 90: MIT
+Text 47 of 92: MIT
 Used by: accesskit 0.24.1, accesskit_atspi_common 0.18.1, accesskit_consumer 0.36.0,
     accesskit_consumer 0.37.0, accesskit_consumer 0.38.0, accesskit_macos 0.26.3, accesskit_unix
     0.21.1, accesskit_windows 0.33.1, addr2line 0.25.1, adler2 2.0.1, aes 0.8.4, ahash 0.8.12,
@@ -6764,7 +6800,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 46 of 90: MIT
+Text 48 of 92: MIT
 Used by: ntapi 0.4.3
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -6786,7 +6822,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 47 of 90: MIT
+Text 49 of 92: MIT
 Used by: zed-scap 0.0.8-zed
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -6809,7 +6845,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 48 of 90: MIT
+Text 50 of 92: MIT
 Used by: bytemuck 1.25.2, bytemuck_derive 1.12.1
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -6819,7 +6855,7 @@ The above copyright notice and this permission notice (including the next paragr
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 49 of 90: MIT
+Text 51 of 92: MIT
 Used by: fax 0.2.7, loop9 0.1.5
 ----------------------------------------------------------------------------------------------------
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -6829,7 +6865,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 50 of 90: MIT
+Text 52 of 92: MIT
 Used by: open 5.4.4
 ----------------------------------------------------------------------------------------------------
 The MIT License (MIT)
@@ -6859,7 +6895,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 51 of 90: MIT
+Text 53 of 92: MIT
 Used by: swift-nio 2.104.0
 ----------------------------------------------------------------------------------------------------
 This software is licensed under the MIT License.
@@ -6886,7 +6922,7 @@ OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
 USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 52 of 90: MIT
+Text 54 of 92: MIT
 Used by: hashlink 0.12.2
 ----------------------------------------------------------------------------------------------------
 This work is derived in part from the `linked-hash-map` crate, Copyright (c)
@@ -6917,7 +6953,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 53 of 90: MIT
+Text 55 of 92: MIT
 Used by: regex-syntax 0.8.11
 ----------------------------------------------------------------------------------------------------
 UNICODE, INC. LICENSE AGREEMENT - DATA FILES AND SOFTWARE
@@ -6979,7 +7015,7 @@ use or other dealings in these Data Files or Software without prior
 written authorization of the copyright holder.
 
 ----------------------------------------------------------------------------------------------------
-Text 54 of 90: MIT
+Text 56 of 92: MIT
 Used by: tree-sitter 0.27.0
 ----------------------------------------------------------------------------------------------------
 musl as a whole is licensed under the following standard MIT license:
@@ -7177,7 +7213,7 @@ permissive licensing, and of not having licensing issues being an
 obstacle to adoption, that text has been removed.
 
 ----------------------------------------------------------------------------------------------------
-Text 55 of 90: MIT OR Apache-2.0
+Text 57 of 92: MIT OR Apache-2.0
 Used by: tauri-winrt-notification 0.8.1
 ----------------------------------------------------------------------------------------------------
 SPDXVersion: SPDX-2.1
@@ -7201,7 +7237,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/winrt-notification.git
 Creator: Person: Daniel Thompson-Yvetot
 
 ----------------------------------------------------------------------------------------------------
-Text 56 of 90: MIT OR Apache-2.0 OR BSD-1-Clause
+Text 58 of 92: MIT OR Apache-2.0 OR BSD-1-Clause
 Used by: fiat-crypto 0.2.9
 ----------------------------------------------------------------------------------------------------
 The BSD 1-Clause License (BSD-1-Clause)
@@ -7229,7 +7265,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
-Text 57 of 90: MPL-2.0
+Text 59 of 92: MPL-2.0
 Used by: dwrote 0.11.5, option-ext 0.2.0, uniffi 0.29.5, uniffi_bindgen 0.29.5, uniffi_core 0.29.5,
     uniffi_internal_macros 0.29.5, uniffi_macros 0.29.5, uniffi_meta 0.29.5, uniffi_pipeline 0.29.5,
     uniffi_udl 0.29.5
@@ -7609,7 +7645,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   defined by the Mozilla Public License, v. 2.0.
 
 ----------------------------------------------------------------------------------------------------
-Text 58 of 90: NCSA
+Text 60 of 92: NCSA
 Used by: libfuzzer-sys 0.4.13
 ----------------------------------------------------------------------------------------------------
 University of Illinois/NCSA Open Source License
@@ -7629,7 +7665,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE CONTRIBUTORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 59 of 90: NOTICE
+Text 61 of 92: NOTICE
 Used by: async-http-client 1.36.2
 ----------------------------------------------------------------------------------------------------
                             The AsyncHTTPClient Project
@@ -7695,7 +7731,7 @@ This product contains a derivation of Fabian Fett's 'Base64.swift'.
     * https://github.com/fabianfett/swift-base64-kit
 
 ----------------------------------------------------------------------------------------------------
-Text 60 of 90: NOTICE
+Text 62 of 92: NOTICE
 Used by: hummingbird 2.16.0
 ----------------------------------------------------------------------------------------------------
                             The Hummingbird Project
@@ -7729,7 +7765,7 @@ This product contains code from swift-foundation.
     * https://github.com/swiftlang/swift-foundation/
 
 ----------------------------------------------------------------------------------------------------
-Text 61 of 90: NOTICE
+Text 63 of 92: NOTICE
 Used by: swift-websocket 1.5.0
 ----------------------------------------------------------------------------------------------------
                             The Hummingbird Project
@@ -7763,7 +7799,7 @@ This product contains code from swift-nio-extras.
     * https://github.com/apple/swift-nio-extras/
 
 ----------------------------------------------------------------------------------------------------
-Text 62 of 90: NOTICE
+Text 64 of 92: NOTICE
 Used by: swift-http-types 1.8.0
 ----------------------------------------------------------------------------------------------------
                             The Swift HTTP Types Project
@@ -7801,7 +7837,7 @@ This product contains a derivation of various scripts from SwiftNIO.
     * https://github.com/apple/swift-nio
 
 ----------------------------------------------------------------------------------------------------
-Text 63 of 90: NOTICE
+Text 65 of 92: NOTICE
 Used by: swift-markdown 0.9.0
 ----------------------------------------------------------------------------------------------------
                             The Swift Markdown Project
@@ -7845,7 +7881,7 @@ https://github.com/apple/swift-cmark.
     * https://github.com/github/cmark-gfm
 
 ----------------------------------------------------------------------------------------------------
-Text 64 of 90: NOTICE
+Text 66 of 92: NOTICE
 Used by: swift-asn1 1.7.3
 ----------------------------------------------------------------------------------------------------
                             The SwiftASN1 Project
@@ -7892,7 +7928,7 @@ This product contains derivations of various scripts from Swift OpenAPI Generato
     * https://github.com/apple/swift-openapi-generator
 
 ----------------------------------------------------------------------------------------------------
-Text 65 of 90: NOTICE
+Text 67 of 92: NOTICE
 Used by: swift-certificates 1.21.0
 ----------------------------------------------------------------------------------------------------
                             The SwiftCertificates Project
@@ -7984,7 +8020,7 @@ This product contains derivations of various scripts from Swift OpenAPI Generato
     * https://github.com/apple/swift-openapi-generator
 
 ----------------------------------------------------------------------------------------------------
-Text 66 of 90: NOTICE
+Text 68 of 92: NOTICE
 Used by: swift-crypto 4.5.2
 ----------------------------------------------------------------------------------------------------
                             The SwiftCrypto Project
@@ -8031,7 +8067,7 @@ This product contains a derivation of various files from SwiftNIO.
     * https://github.com/apple/swift-nio
 
 ----------------------------------------------------------------------------------------------------
-Text 67 of 90: NOTICE
+Text 69 of 92: NOTICE
 Used by: swift-log 1.16.1
 ----------------------------------------------------------------------------------------------------
                             The SwiftLog Project
@@ -8070,7 +8106,7 @@ scripts from SwiftNIO.
     * https://github.com/apple/swift-nio
 
 ----------------------------------------------------------------------------------------------------
-Text 68 of 90: NOTICE
+Text 70 of 92: NOTICE
 Used by: swift-metrics 2.12.0
 ----------------------------------------------------------------------------------------------------
                             The SwiftMetrics Project
@@ -8108,7 +8144,7 @@ This product contains a derivation of the lock implementation and various script
     * https://github.com/apple/swift-nio
 
 ----------------------------------------------------------------------------------------------------
-Text 69 of 90: NOTICE
+Text 71 of 92: NOTICE
 Used by: swift-nio-extras 1.35.1
 ----------------------------------------------------------------------------------------------------
                             The SwiftNIO Project
@@ -8166,7 +8202,7 @@ This product contains a vendored copy of zlib with symbols prefixed as "cnioextr
 ---
 
 ----------------------------------------------------------------------------------------------------
-Text 70 of 90: NOTICE
+Text 72 of 92: NOTICE
 Used by: swift-nio 2.104.0
 ----------------------------------------------------------------------------------------------------
                             The SwiftNIO Project
@@ -8276,7 +8312,7 @@ This product contains a derivation of "TokenBucket.swift" from Swift Package Man
     * https://github.com/swiftlang/swift-package-manager
 
 ----------------------------------------------------------------------------------------------------
-Text 71 of 90: NOTICE
+Text 73 of 92: NOTICE
 Used by: swift-nio-http2 1.46.0
 ----------------------------------------------------------------------------------------------------
                             The SwiftNIO Project
@@ -8350,7 +8386,7 @@ This product contains a graceful shutdown connection manager derived from gRPC S
     * https://github.com/gRPC/gRPC-swift-nio-transport
 
 ----------------------------------------------------------------------------------------------------
-Text 72 of 90: NOTICE
+Text 74 of 92: NOTICE
 Used by: swift-nio-ssl 2.37.5
 ----------------------------------------------------------------------------------------------------
                             The SwiftNIO Project
@@ -8415,7 +8451,7 @@ This product contains code from boringssl.
     * https://boringssl.googlesource.com/boringssl/
 
 ----------------------------------------------------------------------------------------------------
-Text 73 of 90: NOTICE
+Text 75 of 92: NOTICE
 Used by: swift-configuration 1.2.2
 ----------------------------------------------------------------------------------------------------
                        The SwiftConfiguration Project
@@ -8464,7 +8500,7 @@ This repository contains a modified copy of the test-examples.sh script the appl
 ---
 
 ----------------------------------------------------------------------------------------------------
-Text 74 of 90: NOTICE
+Text 76 of 92: NOTICE
 Used by: swift-service-context 1.3.0
 ----------------------------------------------------------------------------------------------------
                       The Swift Service Context Project
@@ -8502,7 +8538,7 @@ This product contains derivations of benchmarking code from Swift Distributed Tr
     * https://github.com/apple/swift-distributed-tracing
 
 ----------------------------------------------------------------------------------------------------
-Text 75 of 90: NOTICE
+Text 77 of 92: NOTICE
 Used by: mlx-swift-lm 3.31.4
 ----------------------------------------------------------------------------------------------------
 # Individual Contributors
@@ -8525,7 +8561,7 @@ MLX Swift was developed with contributions from the following individuals:
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 76 of 90: NOTICE
+Text 78 of 92: NOTICE
 Used by: mlx-swift 0.31.6
 ----------------------------------------------------------------------------------------------------
 # Individual Contributors
@@ -8827,7 +8863,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 77 of 90: NOTICE
+Text 79 of 92: NOTICE
 Used by: mlx-swift 0.31.6
 ----------------------------------------------------------------------------------------------------
 # Individual Contributors
@@ -9100,7 +9136,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 
 ----------------------------------------------------------------------------------------------------
-Text 78 of 90: NOTICE
+Text 80 of 92: NOTICE
 Used by: mlx-swift 0.31.6
 ----------------------------------------------------------------------------------------------------
 # Individual Contributors
@@ -9113,7 +9149,7 @@ with a short description of your contribution(s) below. For example:
 MLX-C was developed with contributions from the following individuals:
 
 ----------------------------------------------------------------------------------------------------
-Text 79 of 90: NOTICE
+Text 81 of 92: NOTICE
 Used by: swift-service-lifecycle 2.12.1
 ----------------------------------------------------------------------------------------------------
 The ServiceLifecycle Project
@@ -9162,7 +9198,7 @@ This product uses swift-async-algorithms.
 ---
 
 ----------------------------------------------------------------------------------------------------
-Text 80 of 90: NOTICE
+Text 82 of 92: NOTICE
 Used by: whisperkit 1.1.0
 ----------------------------------------------------------------------------------------------------
 This file lists third-party software incorporated into Argmax OSS and the
@@ -9377,7 +9413,7 @@ The full text of the Apache License, Version 2.0 follows.
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-Text 81 of 90: OFL-1.1
+Text 83 of 92: OFL-1.1
 Used by: Nunito
 ----------------------------------------------------------------------------------------------------
 Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito)
@@ -9475,7 +9511,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 82 of 90: OFL-1.1
+Text 84 of 92: OFL-1.1
 Used by: Courier Prime
 ----------------------------------------------------------------------------------------------------
 Copyright 2015 The Courier Prime Project Authors (https://github.com/quoteunquoteapps/CourierPrime).
@@ -9573,7 +9609,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 83 of 90: OFL-1.1
+Text 85 of 92: OFL-1.1
 Used by: Inter
 ----------------------------------------------------------------------------------------------------
 Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
@@ -9671,7 +9707,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 84 of 90: OFL-1.1
+Text 86 of 92: OFL-1.1
 Used by: JetBrains Mono
 ----------------------------------------------------------------------------------------------------
 Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
@@ -9769,7 +9805,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 85 of 90: OFL-1.1
+Text 87 of 92: OFL-1.1
 Used by: Newsreader
 ----------------------------------------------------------------------------------------------------
 Copyright 2020 The Newsreader Project Authors (http://github.com/productiontype/Newsreader)
@@ -9867,7 +9903,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-Text 86 of 90: Unicode-3.0
+Text 88 of 92: Unicode-3.0
 Used by: unicode-ident 1.0.24, unicode-ident 1.0.26, unicode-ident 1.0.27
 ----------------------------------------------------------------------------------------------------
 UNICODE LICENSE V3
@@ -9911,7 +9947,7 @@ dealings in these Data Files or Software without prior written
 authorization of the copyright holder.
 
 ----------------------------------------------------------------------------------------------------
-Text 87 of 90: Unicode-3.0
+Text 89 of 92: Unicode-3.0
 Used by: icu_collections 2.3.0, icu_locale_core 2.3.0, icu_normalizer 2.3.0, icu_normalizer_data
     2.3.0, icu_properties 2.3.0, icu_properties_data 2.3.0, icu_provider 2.3.1, litemap 0.8.3,
     potential_utf 0.1.6, tinystr 0.8.4, writeable 0.6.4, yoke 0.8.3, yoke-derive 0.8.2, yoke-derive
@@ -9966,7 +10002,7 @@ Portions of ICU4X may have been adapted from ICU4C and/or ICU4J.
 ICU 1.8.1 to ICU 57.1 © 1995-2016 International Business Machines Corporation and others.
 
 ----------------------------------------------------------------------------------------------------
-Text 88 of 90: Zlib
+Text 90 of 92: Zlib
 Used by: nanorand 0.7.0
 ----------------------------------------------------------------------------------------------------
 The zlib/libpng License
@@ -9993,7 +10029,7 @@ the following restrictions:
 3.  This notice may not be removed or altered from any source distribution.
 
 ----------------------------------------------------------------------------------------------------
-Text 89 of 90: Zlib
+Text 91 of 92: Zlib
 Used by: foldhash 0.1.5, foldhash 0.2.0, slotmap 1.1.1, zlib-rs 0.6.8
 ----------------------------------------------------------------------------------------------------
 This software is provided 'as-is', without any express or implied warranty. In
@@ -10015,7 +10051,7 @@ the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 
 ----------------------------------------------------------------------------------------------------
-Text 90 of 90: bzip2-1.0.6
+Text 92 of 92: bzip2-1.0.6
 Used by: libbz2-rs-sys 0.2.5
 ----------------------------------------------------------------------------------------------------
 --------------------------------------------------------------------------
