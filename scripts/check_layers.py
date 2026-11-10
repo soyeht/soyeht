@@ -38,6 +38,7 @@ BLOCKS = (
     "soyeht-usage",
     "soyeht-lsp",
     "soyeht-skills",
+    "soyeht-ink",
 )
 LAYERS: dict[str, set[str]] = {
     # Layer 2: wire models and rules, and the operating-system seams.

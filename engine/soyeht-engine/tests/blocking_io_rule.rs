@@ -19,6 +19,7 @@ const ENGINE_CRATES: &[&str] = &[
     "soyeht-store",
     "soyeht-lsp",
     "soyeht-skills",
+    "soyeht-ink",
 ];
 
 /// Files allowed to run a child process directly, and why that is safe.
