@@ -28,7 +28,8 @@ Two areas are derived, not mapped from a path:
 
 - `e2e` is selected when the engine selection is the whole workspace, or its reverse closure
   contains an engine program that the suites start (`E2E_PROGRAMS`). A change to a library
-  crate that none of those programs depends on does not select it.
+  crate that none of those programs depends on does not select it. It also selects `swift`:
+  the Swift client's integration test starts the same programs (`swift:test-shared-fast`).
 - `gate_scripts` (the unit tests of the gate scripts themselves) is selected when a path under
   `scripts/`, `contracts/*.py` or `.githooks/` changes, and by the full tier. Other changes
   cannot break those tests, so the fast tier does not pay for them.
@@ -276,7 +277,8 @@ def make_plan(
     if "engine" in areas and not everything:
         selection = tuple(sorted(reverse_closure(crates, engine_packages or [])))
     if "engine" in areas and (selection is None or set(selection) & set(E2E_PROGRAMS)):
-        areas.add(E2E_AREA)
+        # The suites and the Swift client's integration test start those programs.
+        areas.update((E2E_AREA, "swift"))
     reasons = sorted({reason for path in files for reason in review_reasons(path)})
     upgrade = tuple(sorted(path for path in files if gate_runner(path)))
     return Plan(

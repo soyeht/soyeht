@@ -335,12 +335,17 @@ inherit the main actor.
   (`e2e:*`, with the `engine:build-product` and `engine:build-test-engine` builds and the TCC
   guard around them) run when the engine selection is the whole workspace or its reverse
   closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
-  engine crate does. The unit tests of the gate scripts (`post_merge*`, `main_watch*`,
-  `check_quality`, `gate_list`, `gate_timings`) are the `gate_scripts` area: a change under
+  engine crate does. That selection also selects `swift` for `swift:test-shared-fast`: it builds
+  the engine programs and runs the one Swift test that drives them
+  (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor`, `scripts/e2e_swift_client.py`, inside the
+  TCC guard's bracket and on the suites' staged copy of the programs), so an engine change that
+  breaks the Swift client's integration test fails before the merge, not after it. The unit tests
+  of the gate scripts (`post_merge*`, `main_watch*`, `check_quality`, `gate_list`,
+  `gate_timings`) are the `gate_scripts` area: a change under
   `scripts/`, `contracts/*.py` or `.githooks/` selects it. The fast tier leaves out the engine
-  integration tests (`tests/` directories), the Swift and dictation tests, the Mac and iOS app
-  builds, the editor measurement on the VM and the ignored timing tests: they are `full`
-  steps. A change to the gate scripts (`check_all.sh`,
+  integration tests (`tests/` directories), the rest of the Swift tests and the dictation tests,
+  the Mac and iOS app builds, the editor measurement on the VM and the ignored timing tests: they
+  are `full` steps. A change to the gate scripts (`check_all.sh`,
   `gate_*`, `post_merge*`, `main_watch*`, `remote_gate*`, `e2e*`, the app build scripts) runs
   the full tier instead, and the log says why; a change to their unit tests alone
   (`scripts/test_*.py`) does not. A file that another directory reads (an `include_str!`, a
@@ -379,7 +384,10 @@ inherit the main actor.
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit, and
   the steps the failed run never reached still run), then finds the culprit commit by running only the failing step on the commits since the last
   green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed
-  and only the editor measurement on the VM is missing). `main_watch.py --apply` then reverts a
+  and only the editor measurement on the VM is missing). A probe first runs the steps its step
+  reads from earlier in the run (`PREREQUISITES` in `post_merge_gate.py`: the builds of the engine
+  programs for the suites and the Swift tests, the TCC snapshot), so no commit is judged against
+  programs built from another one. `main_watch.py --apply` then reverts a
   single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
   log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
   a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches

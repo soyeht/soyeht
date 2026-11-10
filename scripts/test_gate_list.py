@@ -64,7 +64,7 @@ E2E_SET = (
 GATE_SCRIPT_UNITS = (
     "post-merge:unit", "post-merge-editor:unit", "post-merge-flakes:unit", "post-merge-remote:unit",
     "post-merge-load:unit", "post-merge-waiver:unit", "main-watch:unit", "quality:unit",
-    "gate-list:unit", "gate-timings:unit",
+    "gate-list:unit", "gate-timings:unit", "e2e-swift-client:unit",
 )
 # One sample change per kind: files that `gate_plan.py` maps to areas.
 DESKTOP_ONLY = ["apps/desktop/crates/soyeht-client/src/lib.rs"]
@@ -204,12 +204,56 @@ class StepListTests(unittest.TestCase):
         # The plan's own tests read the engine and desktop sources (CROSS_READS): every change runs them.
         self.assertEqual(steps["gate-plan:unit"], ("always", "both"))
 
-    def test_post_merge_prerequisites_are_steps_of_the_same_area(self):
-        steps = {step_id: area for area, _, step_id in gate_steps()}
-        for step_id, prerequisite in post_merge_gate.PREREQUISITES.items():
-            with self.subTest(step=step_id):
-                self.assertIn(step_id, steps)
-                self.assertEqual(steps.get(prerequisite), steps[step_id])
+    def test_post_merge_prerequisites_are_earlier_steps_that_run_on_the_same_host(self):
+        order = [step_id for _, _, step_id in gate_steps()]
+        areas = {step_id: area for area, _, step_id in gate_steps()}
+        for step_id, prerequisites in post_merge_gate.PREREQUISITES.items():
+            self.assertIn(step_id, areas)
+            for prerequisite in prerequisites:
+                with self.subTest(step=step_id, prerequisite=prerequisite):
+                    self.assertIn(prerequisite, areas)
+                    self.assertLess(order.index(prerequisite), order.index(step_id))
+                    # A selection is split between the Linux host and this machine by area.
+                    self.assertEqual(areas[prerequisite] in post_merge_hosts.REMOTE_AREAS,
+                                     areas[step_id] in post_merge_hosts.REMOTE_AREAS)
+
+    def test_every_step_that_starts_the_engine_programs_takes_their_build_as_a_prerequisite(self):
+        # A rerun of the step on a commit (the culprit search) must not run the programs of another
+        # commit: the worktree keeps its target directory from one probe to the next.
+        text = (ROOT / "scripts/check_all.sh").read_text()
+        starts_programs = re.compile(r"scripts/e2e(?:_\w+)?\.py|swift test --package-path apps/shared")
+        found = []
+        for area, step_id, command in re.findall(r"^\s*step (\w+) \S+ (\S+) (.*)$", text, re.MULTILINE):
+            if starts_programs.search(command) and "unittest" not in command:
+                found.append(step_id)
+                with self.subTest(step=step_id):
+                    self.assertTrue(post_merge_gate.PREREQUISITES.get(step_id),
+                                    f"{step_id} starts the engine's programs: build them first in a rerun")
+        self.assertIn("e2e:core", found)
+        self.assertIn("swift:test-shared", found)
+
+    def test_the_fast_swift_client_test_builds_the_programs_it_starts_itself(self):
+        # It sits in the `swift` area, so the e2e builds may have run on another host.
+        text = (ROOT / "scripts/check_all.sh").read_text()
+        self.assertRegex(text, r"(?m)^step swift fast swift:test-shared-fast swift_client_fast$")
+        self.assertRegex(
+            text, r"(?m)^swift_client_fast\(\) {\n    build_product_programs && uv run python scripts/e2e_swift_client\.py\n}$")
+        self.assertIn(r"nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
+                      (ROOT / "scripts/e2e_swift_client.py").read_text())
+        self.assertIn("nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
+                      (ROOT / "apps/shared/Tests/SoyehtClientTests/EngineConnectionTests.swift").read_text())
+
+    def test_an_engine_change_runs_the_swift_client_test_between_the_tcc_snapshot_and_its_check(self):
+        for files in (ENGINE_CORE, EDITOR_CRATE):
+            order = listed_steps("fast", files)
+            with self.subTest(files=files):
+                self.assertLess(order.index("engine:build-product"), order.index("swift:test-shared-fast"))
+                self.assertLess(order.index("e2e:tcc-snapshot"), order.index("swift:test-shared-fast"))
+                self.assertLess(order.index("swift:test-shared-fast"), order.index("e2e:tcc-check"))
+        for files in (DESKTOP_ONLY, DOCS_ONLY):
+            with self.subTest(files=files):
+                self.assertNotIn("swift:test-shared-fast", listed_steps("fast", files))
+        self.assertNotIn("swift:test-shared-fast", listed_steps("full", ENGINE_CORE))
 
     def test_every_area_of_the_plan_has_a_step(self):
         used = {area for area, _, _ in gate_steps()}
