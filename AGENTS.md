@@ -337,8 +337,9 @@ inherit the main actor.
   closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
   engine crate does. That selection also selects `swift` for `swift:test-shared-fast`: it builds
   the engine programs and runs the one Swift test that drives them
-  (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor`, `scripts/e2e_swift_client.py`, inside the
-  TCC guard's bracket and on the suites' staged copy of the programs), so an engine change that
+  (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor`, `scripts/e2e_swift_client.py`, on the
+  suites' staged copy of the programs, inside the TCC guard's bracket when the e2e steps run on
+  this Mac; about one to two minutes), so an engine change that
   breaks the Swift client's integration test fails before the merge, not after it. The unit tests
   of the gate scripts (`post_merge*`, `main_watch*`, `check_quality`, `gate_list`,
   `gate_timings`) are the `gate_scripts` area: a change under

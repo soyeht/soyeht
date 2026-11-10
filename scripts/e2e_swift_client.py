@@ -5,7 +5,8 @@ The test (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor` in `apps/shared`
 supervisor and the engine and drives them through `EngineClient`. A change to the engine can break
 it while every Rust test passes, and the full `swift test` that would say so runs only after the
 merge. This runs that one test in the fast tier, with the programs of `e2e.stage_programs`: the
-same stable copy the suites start, so the TCC guard around them also watches this run.
+same stable copy the suites start, so when the suites run on this Mac the TCC guard around
+them also watches this run.
 
 Swift Testing exits 0 when a filter matches nothing, so the run passes only when the output says
 the named test passed, exactly once.
