@@ -218,6 +218,7 @@ impl Workbench {
         self.forget_closed_panes();
         self.raise_alerts(cx);
         self.restore_failed_start(cx);
+        self.restore_returned_prompts(cx);
         if self.switch.is_some() {
             self.choose_first_harness(cx);
         }

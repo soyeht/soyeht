@@ -1,6 +1,6 @@
 use crate::{
-    catalogue::Catalogue, editor::EditorEvent, preferences::Preferences, snapshot::Snapshot,
-    streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
+    catalogue::Catalogue, composer::ReturnedPrompt, editor::EditorEvent, preferences::Preferences,
+    snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -51,6 +51,9 @@ pub enum Event {
     Opened { ticket: u64, pane_id: String },
     /// The workspace a request to open a folder (`Command::CreateWorkspace`) made.
     WorkspaceOpened { ticket: u64, workspace: Workspace },
+    /// The engine did not take a message sent from the composer of `pane_id` (`Command::Prompt`):
+    /// what was typed and the files attached to it, to put back.
+    PromptReturned(ReturnedPrompt),
     /// The request to open a pane that `ticket` names failed.
     OpenFailed { ticket: u64 },
     /// The engine did not store the arrangement of a workspace (`Command::SetLayout`).
