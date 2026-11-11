@@ -28,3 +28,10 @@ chrono.workspace = true
 
 [lints]
 workspace = true
+
+# A research tool for developers (docs/research/terminal-screen-recorder.md). An example is built
+# only when it is asked for by name, so no `cargo build` of a package ever carries it.
+[[example]]
+name = "screen_recorder"
+path = "examples/screen_recorder/main.rs"
+test = true
