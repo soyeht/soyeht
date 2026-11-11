@@ -8,7 +8,9 @@ use crate::{
     settings,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::{Pane, PaneExperimentCapture, PaneMode, StateSource, event, method, setting};
+use soyeht_protocol::{
+    Pane, PaneCreateParams, PaneExperimentCapture, PaneMode, StateSource, event, method, setting,
+};
 use soyeht_ptyd::wire::Request;
 use std::path::Path;
 use uuid::Uuid;
@@ -67,26 +69,26 @@ pub(crate) fn pane_created(saved: &StoredPane) -> Result<(Value, Vec<(String, Va
 fn new_agent(
     directory: &Path,
     store: &impl StorePort,
-    params: &Value,
+    create: &PaneCreateParams,
 ) -> Result<Option<crate::agents::state::State>> {
-    if params["mode"] != "agent" {
+    if create.mode != PaneMode::Agent {
         return Ok(None);
     }
-    let harness = params["harness"]
-        .as_str()
+    let harness = create
+        .harness
+        .as_deref()
         .ok_or_else(|| errors::invalid("Agent panes require a harness"))?;
     let (launch, digest) = crate::agents::registry::prepare(directory, harness)?;
-    let mode = match params.get("permissionMode") {
-        Some(Value::String(mode)) => Some(mode.clone()),
-        Some(_) => return Err(errors::invalid("Invalid permission mode")),
+    let mode = match &create.permission_mode {
+        Some(mode) => Some(mode.clone()),
         None => settings::default_agent_mode(store, harness)?,
     };
     let mut agent = crate::agents::state::State::new(launch, digest, mode)?;
-    for name in ["model", "effort"] {
-        if let Some(value) = params[name].as_str() {
+    for (name, value) in [("model", &create.model), ("effort", &create.effort)] {
+        if let Some(value) = value {
             agent
                 .requested_options
-                .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.into()));
+                .insert(name.into(), soyeht_protocol::ConfigValue::V0(value.clone()));
         }
     }
     Ok(Some(agent))
@@ -95,16 +97,16 @@ fn new_agent(
 impl Core {
     fn prepare_process_pane(
         &self,
-        params: &Value,
+        create: &PaneCreateParams,
         defaults: &PaneDefaults,
         agent: Option<&crate::agents::state::State>,
     ) -> Result<(
         StoredPane,
         Option<(crate::terminal_harness::TerminalHarnessSession, String)>,
     )> {
-        let agent_mode = params["mode"] == "agent";
-        let workspace = model::workspace(&self.store, errors::param_str(params, "workspaceId")?)?;
-        let requested_cwd = params["cwd"].as_str().unwrap_or(&workspace.path);
+        let agent_mode = create.mode == PaneMode::Agent;
+        let workspace = model::workspace(&self.store, &create.workspace_id)?;
+        let requested_cwd = create.cwd.as_deref().unwrap_or(&workspace.path);
         if !Path::new(requested_cwd).is_absolute() || !Path::new(requested_cwd).is_dir() {
             return Err(errors::invalid("Pane directory must exist and be absolute"));
         }
@@ -115,7 +117,7 @@ impl Core {
         let cwd = canonical
             .to_str()
             .ok_or_else(|| errors::invalid("Working directory must be UTF-8"))?;
-        let name = match (params["name"].as_str(), agent) {
+        let name = match (create.name.as_deref(), agent) {
             (Some(name), _) => name.to_owned(),
             (None, Some(state)) => self.default_agent_name(
                 &workspace.workspace_id,
@@ -137,12 +139,8 @@ impl Core {
                 StateSource::None
             },
             confidence: if agent_mode { 1.0 } else { 0.0 },
-            cols: params["cols"]
-                .as_u64()
-                .map_or(defaults.cols, |value| value as u32),
-            rows: params["rows"]
-                .as_u64()
-                .map_or(defaults.rows, |value| value as u32),
+            cols: create.cols.unwrap_or(defaults.cols),
+            rows: create.rows.unwrap_or(defaults.rows),
             record: agent_mode || defaults.record,
             stream_id: (!agent_mode).then(|| Uuid::new_v4().to_string()),
             agent: agent.map(|state| state.public(self.now_ms())),
@@ -152,9 +150,10 @@ impl Core {
                 "Starting shell"
             })
         };
-        let terminal_harness = params["harness"]
-            .as_str()
-            .filter(|_| !agent_mode && params["mode"] == "terminal")
+        let terminal_harness = create
+            .harness
+            .as_deref()
+            .filter(|_| create.mode == PaneMode::Terminal)
             .map(|harness| {
                 crate::terminal_harness::TerminalHarnessSession::prepare(
                     &self.directory,
@@ -169,7 +168,7 @@ impl Core {
                 )
             })
             .transpose()?;
-        if params["name"].as_str().is_none()
+        if create.name.is_none()
             && let Some((_, harness_name)) = &terminal_harness
         {
             pane.name = format!("{harness_name} Terminal");
@@ -190,19 +189,40 @@ impl Core {
     /// Creates a pane. A pane with a process replies once the supervisor has started it, so the
     /// reply still means a pane that takes input; the wait is off the Core lock (ADR 0126).
     pub fn pane_create(&mut self, connection: &str, params: &Value) -> Result<Outcome> {
-        let editor_like = match params["mode"].as_str() {
-            Some("editor") => Some(self.editor_pane_create(connection, params)),
-            Some("web") => Some(self.web_pane_create(connection, params)),
-            Some("writing") => Some(self.writing_pane_create(connection, params)),
-            _ => None,
+        let create: PaneCreateParams = model::typed_params(params)?;
+        let editor_like = match create.mode {
+            PaneMode::Editor => Some(self.editor_pane_create(connection, params)),
+            PaneMode::Web => Some(self.web_pane_create(connection, params)),
+            PaneMode::Writing => Some(self.writing_pane_create(connection, params)),
+            PaneMode::Terminal | PaneMode::Agent => None,
         };
         if let Some(created) = editor_like {
             return created.map(Outcome::Reply);
         }
         let defaults = pane_defaults(&self.store)?;
-        let agent = new_agent(&self.directory, &self.store, params)?;
+        let agent = new_agent(&self.directory, &self.store, &create)?;
+        // An agent that downloads a package unchecked starts only once a person acknowledged
+        // that exact package (ADR 0143): this request's own acknowledgement counts.
+        let acknowledging = agent
+            .as_ref()
+            .map(|agent| {
+                let package = self.acknowledgement_of(
+                    connection,
+                    create.acknowledged_package.as_deref(),
+                    &agent.launch,
+                )?;
+                crate::agents::adapter_consent::require(
+                    &self.store,
+                    &agent.launch,
+                    package.as_deref(),
+                )?;
+                Ok::<_, errors::Error>(package)
+            })
+            .transpose()?
+            .flatten();
+        let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
-            self.prepare_process_pane(params, &defaults, agent.as_ref())?;
+            self.prepare_process_pane(&create, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
@@ -211,6 +231,9 @@ impl Core {
         let created = pane_created(&saved)?;
         let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
+            if let Some(package) = &acknowledging {
+                soyeht_store::adapter_acknowledgement::acknowledge(tx, package, acknowledged_at)?;
+            }
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }

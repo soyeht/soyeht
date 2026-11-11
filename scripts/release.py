@@ -76,10 +76,17 @@ def _cargo_workspace(path):
     return Place(path, "workspace package version", pattern, _version)
 
 
+# Path crates of apps/desktop that stand in for a crate of the registry, under the version that the
+# crate it replaces has (`wayland-protocols-plasma` 0.3.99 answers GPUI's `0.3.9`): they are not the
+# product, and a bump leaves them alone (ADR 0149).
+STAND_INS = ("wayland-protocols-plasma",)
+
+
 def _cargo_lock(path):
     # A package of the workspace has no `source` line; a crate from the registry does.
+    skipped = "".join(f'(?!{re.escape(name)}")' for name in STAND_INS)
     pattern = _pattern(
-        r'(?P<pre>\[\[package\]\]\nname = "(?P<name>[^"]+)"\nversion = ")(?P<value>[^"]*)(?P<post>"\n)(?!source = )'
+        rf'(?P<pre>\[\[package\]\]\nname = "(?P<name>{skipped}[^"]+)"\nversion = ")(?P<value>[^"]*)(?P<post>"\n)(?!source = )'
     )
     return Place(path, "workspace crate", pattern, _version)
 

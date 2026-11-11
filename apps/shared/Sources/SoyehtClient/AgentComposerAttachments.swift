@@ -35,6 +35,19 @@ import UniformTypeIdentifiers
     return list.items
   }
 
+  /// Puts back the drafts of a prompt the engine did not accept, in front of any staged since.
+  /// The limits of a prompt still hold: when both do not fit, the returned drafts stay and the
+  /// ones staged later are left out, with the notice saying why.
+  func restore(_ drafts: [AgentAttachmentDraft]) {
+    guard !drafts.isEmpty else { return }
+    var restored = AgentAttachmentList()
+    notice = nil
+    for draft in drafts + list.items {
+      do { try restored.add(draft) } catch { notice = error.message }
+    }
+    list = restored
+  }
+
   public func add(_ results: [AgentAttachmentResult]) {
     notice = nil
     for result in results {

@@ -102,12 +102,6 @@ impl TextInput {
         self.text.trim().is_empty()
     }
 
-    /// The text to send, trimmed; `None` when there is nothing but space.
-    pub fn to_send(&self) -> Option<String> {
-        let text = self.text.trim();
-        (!text.is_empty()).then(|| text.to_owned())
-    }
-
     pub fn clear(&mut self) {
         *self = Self::default();
     }

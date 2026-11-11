@@ -135,29 +135,44 @@ def endpoint_proof(secret, side, client_nonce, server_nonce):
                     hashlib.sha256).digest()
 
 
+def prove_to_listener(stream, secret):
+    """The client's half of the proof (contract 08, 2.5) over a connected stream: raises
+    `PermissionError` when the listener cannot prove that it knows `secret`, after sending only a nonce."""
+    client_nonce = os.urandom(NONCE_BYTES)
+    stream.sendall(client_nonce)
+    reply = read_exact(stream, NONCE_BYTES + hashlib.sha256().digest_size)
+    server_nonce, proof = reply[:NONCE_BYTES], reply[NONCE_BYTES:]
+    if not hmac.compare_digest(
+            proof, endpoint_proof(secret, "server", client_nonce, server_nonce)):
+        raise PermissionError("the endpoint does not know the secret")
+    stream.sendall(endpoint_proof(secret, "client", client_nonce, server_nonce))
+
+
 def connect_loopback(path, timeout):
     """Connect through an endpoint file: `soyeht-local-2 <port> <secret>` (contract 08, 2.5)."""
     magic, port, secret = path.read_text().split()
     require(magic == ENDPOINT_MAGIC, "unknown endpoint file format")
-    secret = bytes.fromhex(secret)
     stream = socket.create_connection(("127.0.0.1", int(port)), timeout=timeout)
     try:
-        client_nonce = os.urandom(NONCE_BYTES)
-        stream.sendall(client_nonce)
-        reply = read_exact(stream, NONCE_BYTES + hashlib.sha256().digest_size)
-        server_nonce, proof = reply[:NONCE_BYTES], reply[NONCE_BYTES:]
-        if not hmac.compare_digest(
-                proof, endpoint_proof(secret, "server", client_nonce, server_nonce)):
-            raise PermissionError("the endpoint does not know the secret")
-        stream.sendall(endpoint_proof(secret, "client", client_nonce, server_nonce))
+        prove_to_listener(stream, bytes.fromhex(secret))
     except BaseException:
         stream.close()
         raise
     return stream
 
 
-def connect_endpoint(path, timeout=10):
-    """A stream to the engine or supervisor endpoint at `path`, whatever the system's flavour."""
+def read_socket_secret(path):
+    """The secret beside a proved Unix socket: `<socket>.secret`, `soyeht-local-2 secret <hex>`."""
+    magic, kind, secret = Path(f"{path}.secret").read_text().split()
+    require((magic, kind) == (ENDPOINT_MAGIC, "secret"), "unknown secret file format")
+    return bytes.fromhex(secret)
+
+
+def connect_endpoint(path, timeout=10, proved=False):
+    """A stream to the engine or supervisor endpoint at `path`, whatever the system's flavour.
+
+    The supervisor's Unix socket (`proved=True`) asks for the proof of contract 08, 2.5, over the
+    secret file beside it; the engine's does not. A file endpoint, Windows', always does."""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(str(path))
@@ -167,6 +182,8 @@ def connect_endpoint(path, timeout=10):
     stream.settimeout(timeout)
     try:
         stream.connect(str(path))
+        if proved:
+            prove_to_listener(stream, read_socket_secret(path))
     except BaseException:
         stream.close()
         raise

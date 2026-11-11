@@ -42,6 +42,9 @@ pub enum Error {
     PlatformUnsupported(String),
     FileNotText(String),
     FileTooLarge(String),
+    AdapterNotAcknowledged(String),
+    WorkspaceFolderMissing(String),
+    PushUnavailable(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -52,6 +55,7 @@ pub enum Error {
     PaneState(soyeht_pane_state::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
+    Ink(soyeht_ink::Error),
     PortScan(crate::ports::PortScanError),
     Writing(soyeht_writing::Error),
     Supervisor(soyeht_ptyd::Error),
@@ -118,7 +122,7 @@ constructor!(git_unavailable, GitUnavailable);
 /// has no usable `git`, `worktree_unavailable` for any other reason.
 pub fn worktree_process(error: soyeht_process::Error) -> Error {
     match error {
-        soyeht_process::Error::GitUnavailable => git_unavailable(error.to_string()),
+        problem if problem.git_is_unusable() => git_unavailable(problem.to_string()),
         other => worktree_unavailable(other.to_string()),
     }
 }
@@ -128,6 +132,22 @@ constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
 constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
+constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
+constructor!(workspace_folder_missing, WorkspaceFolderMissing);
+constructor!(push_unavailable, PushUnavailable);
+
+/// The failure to open a workspace's root folder: `workspace_folder_missing` when the folder is gone
+/// (deleted, moved or on a disk that is not mounted), so a client says so instead of reporting
+/// "I/O operation failed"; any other failure stays an I/O error. The message names no path,
+/// which the client already has from the workspace.
+pub fn workspace_root(error: io::Error) -> Error {
+    match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            workspace_folder_missing("The workspace folder is missing")
+        }
+        _ => io(error),
+    }
+}
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -180,82 +200,6 @@ pub fn lsp(error: soyeht_lsp::Error) -> Error {
     Error::Lsp(error)
 }
 
-fn store_kind(error: &soyeht_store::Error) -> ErrorKind {
-    use soyeht_store::Error;
-    match error {
-        Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
-        Error::CursorTooOld => ErrorKind::CursorTooOld,
-        Error::DiskFull => ErrorKind::DiskFull,
-        Error::TaskVersionConflict => ErrorKind::StaleVersion,
-        Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
-        Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
-        Error::SubitemNotFound => ErrorKind::NotFound,
-        Error::FileVersionNotFound => ErrorKind::NotFound,
-        Error::FileReplacementBusy => ErrorKind::StaleVersion,
-        Error::InvalidEngineGeneration
-        | Error::InvalidIdempotencyKey
-        | Error::EventParametersNotObject
-        | Error::CursorAhead
-        | Error::NegativeEventId
-        | Error::NegativeEventCursor
-        | Error::PairingRequestLimit
-        | Error::InvalidQueuedPrompt
-        | Error::PromptQueueFull
-        | Error::AttentionItemTooLarge
-        | Error::AttentionPaneMismatch
-        | Error::AgentRuntimeTooLarge
-        | Error::StaleAgentGeneration
-        | Error::NewOutboxHasProgress
-        | Error::IncompleteOutboxRecord
-        | Error::InvalidOutboxEnvelope
-        | Error::AgentOutboxFull
-        | Error::InvalidPartialWriteReceipt
-        | Error::NativeWriteAttemptsExhausted
-        | Error::NativeMessageIncomplete
-        | Error::InvalidNativeRequestIdentity
-        | Error::PublicRequestTooLarge
-        | Error::PendingRequestsTooLarge
-        | Error::NativeRequestNotFound
-        | Error::NativeEffectNotFound
-        | Error::NativeEffectNotPending
-        | Error::NativeEffectAlreadyStarted
-        | Error::InvalidTranscriptSequence
-        | Error::TranscriptMessageTooLarge
-        | Error::TranscriptMutation
-        | Error::StaleTranscriptReplay
-        | Error::InvalidTranscriptPageLimit
-        | Error::TranscriptPageTooLarge
-        | Error::ApprovedPairTokenMissing => ErrorKind::InvalidParams,
-        Error::InvalidEditorFile
-        | Error::InvalidFileHistoryLimit
-        | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
-        _ => ErrorKind::InternalError,
-    }
-}
-
-fn supervisor_kind(error: &soyeht_ptyd::Error) -> ErrorKind {
-    match error {
-        soyeht_ptyd::Error::Remote { kind, .. } if kind == wire_kind::STALE_ENGINE_GENERATION => {
-            ErrorKind::StaleEngineGeneration
-        }
-        soyeht_ptyd::Error::Remote { kind, .. }
-            if kind == wire_kind::SPAWN_FAILED || kind == wire_kind::SPAWN_REFUSED =>
-        {
-            ErrorKind::HarnessUnavailable
-        }
-        _ => ErrorKind::PtydUnavailable,
-    }
-}
-
-fn editor_kind(error: &soyeht_editor::Error) -> ErrorKind {
-    match error {
-        soyeht_editor::Error::ParserLanguage | soyeht_editor::Error::ParserStopped => {
-            ErrorKind::InternalError
-        }
-        _ => ErrorKind::InvalidParams,
-    }
-}
-
 fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
     match error {
         soyeht_vcs::Error::InvalidRepository | soyeht_vcs::Error::InvalidPath => {
@@ -263,46 +207,6 @@ fn vcs_kind(error: &soyeht_vcs::Error) -> ErrorKind {
         }
         soyeht_vcs::Error::GitUnavailable => ErrorKind::GitUnavailable,
         _ => ErrorKind::InternalError,
-    }
-}
-
-fn web_kind(error: &soyeht_web::Error) -> ErrorKind {
-    match error {
-        soyeht_web::Error::EmptyUrl
-        | soyeht_web::Error::InvalidUrl
-        | soyeht_web::Error::UnsupportedScheme
-        | soyeht_web::Error::MissingHost
-        | soyeht_web::Error::InvalidViewport
-        | soyeht_web::Error::InvalidWait
-        | soyeht_web::Error::InvalidCommand => ErrorKind::NavigationRefused,
-        soyeht_web::Error::StaleReference => ErrorKind::StaleReference,
-        soyeht_web::Error::HumanModeUnavailable => ErrorKind::WebHostUnavailable,
-        _ => ErrorKind::InternalError,
-    }
-}
-
-fn writing_kind(error: &soyeht_writing::Error) -> ErrorKind {
-    use soyeht_writing::Error;
-    match error {
-        Error::InvalidSectionPath => ErrorKind::WritingSectionRefused,
-        Error::VariantNotFound | Error::CannotRemoveOnlyVariant => ErrorKind::WritingLineNotFound,
-        Error::BeatNotFound => ErrorKind::NotFound,
-        Error::SceneNotFound => ErrorKind::WritingSceneNotFound,
-        Error::DocumentTooLarge
-        | Error::SlideLimit
-        | Error::SceneLimit
-        | Error::ElementLimit
-        | Error::VariantLimit
-        | Error::VariantTooLarge
-        | Error::BeatLimit
-        | Error::LinkLimit
-        | Error::SectionLimit => ErrorKind::WritingLimitExceeded,
-        Error::InvalidPosition
-        | Error::InvalidRange
-        | Error::EmptySelection
-        | Error::MissingFormatValue
-        | Error::InvalidVariantSelection
-        | Error::InvalidBeat => ErrorKind::InvalidParams,
     }
 }
 
@@ -337,7 +241,19 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
     }
 }
 
-/// The single translation from engine failures to the public protocol.
+/// The single translation from engine failures to the public protocol. A failure of a domain
+/// crate already names its kind where the failure is defined; this names the engine's own.
+impl Error {
+    /// What a pane that cannot start says when it is a package nobody acknowledged (ADR 0143):
+    /// it names the package, so the person knows to acknowledge it. `None` for any other error.
+    pub(crate) fn unacknowledged_reason(&self) -> Option<&str> {
+        match self {
+            Error::AdapterNotAcknowledged(message) => Some(message),
+            _ => None,
+        }
+    }
+}
+
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
         Error::RecordedRpc(error) => error.data.kind.clone(),
@@ -358,14 +274,15 @@ pub fn kind(error: &Error) -> ErrorKind {
             ErrorKind::HarnessUnavailable
         }
         Error::HarnessSwitchFailed(_) => ErrorKind::HarnessSwitchFailed,
-        Error::Editor(error) => editor_kind(error),
+        Error::Editor(error) => error.into(),
         Error::Vcs(error) => vcs_kind(error),
-        Error::Web(error) => web_kind(error),
+        Error::Web(error) => error.into(),
+        Error::Ink(error) => error.into(),
         Error::PortScan(crate::ports::PortScanError::Unsupported(_)) => {
             ErrorKind::PlatformUnsupported
         }
         Error::PortScan(_) => ErrorKind::InternalError,
-        Error::Writing(error) => writing_kind(error),
+        Error::Writing(error) => error.into(),
         Error::NeedsLogin(_) => ErrorKind::NeedsLogin,
         Error::CursorTooOld(_) => ErrorKind::CursorTooOld,
         Error::ResyncRequired(_) => ErrorKind::ResyncRequired,
@@ -382,6 +299,9 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
+        Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
+        Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
+        Error::PushUnavailable(_) => ErrorKind::PushUnavailable,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -406,10 +326,10 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::InvalidPublicKeyLength
         | Error::WeakPublicKey => ErrorKind::InvalidParams,
         Error::SnapshotTooLarge(_) => ErrorKind::SnapshotTooLarge,
-        Error::Storage(error) => store_kind(error),
+        Error::Storage(error) => error.into(),
         Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => ErrorKind::DiskFull,
         Error::Io(_) => ErrorKind::InternalError,
-        Error::Supervisor(error) => supervisor_kind(error),
+        Error::Supervisor(error) => error.into(),
     }
 }
 
@@ -495,6 +415,9 @@ fn message(error: &Error) -> String {
         | Error::PlatformUnsupported(message)
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
+        | Error::AdapterNotAcknowledged(message)
+        | Error::WorkspaceFolderMissing(message)
+        | Error::PushUnavailable(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),
@@ -503,7 +426,9 @@ fn message(error: &Error) -> String {
         }
         Error::Storage(soyeht_store::Error::CursorTooOld) => "Request a new snapshot".into(),
         Error::Storage(soyeht_store::Error::DiskFull) => "Storage is full".into(),
-        Error::Storage(error) if store_kind(error) == ErrorKind::InvalidParams => error.to_string(),
+        Error::Storage(error) if ErrorKind::from(error) == ErrorKind::InvalidParams => {
+            error.to_string()
+        }
         Error::Storage(_) => "Storage operation failed".into(),
         Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => "Storage is full".into(),
         Error::Io(_) => "I/O operation failed".into(),
@@ -513,6 +438,7 @@ fn message(error: &Error) -> String {
         Error::PaneState(error) => error.to_string(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
+        Error::Ink(error) => error.to_string(),
         Error::PortScan(error) => error.to_string(),
         Error::Writing(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
@@ -546,6 +472,17 @@ fn message(error: &Error) -> String {
     }
 }
 
+/// What more a client may read in `data.detail`: why an `ink_unsupported` error is one.
+fn detail(error: &Error) -> Option<String> {
+    let Error::Ink(error) = error else {
+        return None;
+    };
+    match serde_json::to_value(error.unsupported_reason()?) {
+        Ok(serde_json::Value::String(reason)) => Some(reason),
+        _ => None,
+    }
+}
+
 pub fn wire(error: Error) -> RpcError {
     if let Error::RecordedRpc(error) = error {
         return error;
@@ -562,7 +499,7 @@ pub fn wire(error: Error) -> RpcError {
         message: message(&error),
         data: ErrorData {
             kind,
-            detail: None,
+            detail: detail(&error),
             retry_after_sec,
         },
     }
@@ -598,6 +535,7 @@ impl std::error::Error for Error {
             Self::PaneState(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
+            Self::Ink(error) => Some(error),
             Self::PortScan(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
@@ -655,6 +593,12 @@ impl From<soyeht_vcs::Error> for Error {
 impl From<soyeht_web::Error> for Error {
     fn from(error: soyeht_web::Error) -> Self {
         Self::Web(error)
+    }
+}
+
+impl From<soyeht_ink::Error> for Error {
+    fn from(error: soyeht_ink::Error) -> Self {
+        Self::Ink(error)
     }
 }
 

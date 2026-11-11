@@ -24,6 +24,15 @@ pub struct Options {
     pub routes: BTreeMap<String, Route>,
 }
 
+/// Mode kinds from the least to the most permissive; a mode's rank is its place in this list.
+const MODE_KINDS_BY_RANK: [&str; 4] = ["plan", "standard", "auto_review", FULL_ACCESS_KIND];
+
+/// How permissive a mode kind is: `plan` 0, `standard` 1, `auto_review` 2, `full_access` 3.
+/// A missing or unknown kind has no rank.
+pub fn mode_kind_rank(kind: Option<&str>) -> Option<usize> {
+    kind.and_then(|kind| MODE_KINDS_BY_RANK.iter().position(|known| *known == kind))
+}
+
 /// Whether an adapter that predates `_meta.kind` names this mode full access.
 pub fn is_known_full_access_id(mode: &str) -> bool {
     FULL_ACCESS_MODE_IDS.contains(&mode)
@@ -410,6 +419,17 @@ mod tests {
             next.request("session", "mode", &value).unwrap().unwrap().0,
             "session/set_mode"
         );
+    }
+
+    #[test]
+    fn mode_kinds_rank_from_plan_to_full_access_and_unknown_has_no_rank() {
+        let ranks: Vec<_> = ["plan", "standard", "auto_review", "full_access"]
+            .iter()
+            .map(|kind| mode_kind_rank(Some(kind)))
+            .collect();
+        assert_eq!(ranks, [Some(0), Some(1), Some(2), Some(3)]);
+        assert_eq!(mode_kind_rank(None), None);
+        assert_eq!(mode_kind_rank(Some("surprise")), None);
     }
 
     #[test]

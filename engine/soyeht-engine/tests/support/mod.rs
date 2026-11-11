@@ -21,6 +21,9 @@ use std::{
 };
 use uuid::Uuid;
 
+mod language_servers;
+mod locked_adapter;
+mod search_path;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use ticker::{Ticker, longest_gap};
@@ -66,7 +69,7 @@ impl Rig {
         let path = rig_root().join(format!("sn-{}", Uuid::new_v4()));
         fs::create_dir(&path).unwrap();
         install_fake_worktrunk(&path);
-        install_fake_lsp(&path);
+        language_servers::install(&path);
         let ptyd = Command::new(sibling_binary("soyeht-ptyd"))
             .arg("--data-dir")
             .arg(&path)
@@ -154,19 +157,6 @@ impl Rig {
             serde_json::to_vec(entries).unwrap(),
         )
         .unwrap();
-    }
-    /// An `npx` that starts the fake agent, which the registry's package runner launches.
-    #[cfg(unix)]
-    pub fn install_fake_claude_runner(&self) {
-        let binary = sibling_binary("soyeht-fake-acp");
-        write_script(
-            &self.path.join("bin/npx"),
-            &format!(
-                "#!/bin/sh\nexec '{}' --state-dir '{}'\n",
-                binary.display(),
-                self.path.join("claude-native").display()
-            ),
-        );
     }
     /// A program named `name` on the engine's search path that exists but is never run.
     pub fn install_stub_executable(&self, name: &str) {
@@ -311,6 +301,15 @@ impl Rig {
         }
         let _ = fs::remove_file(self.path.join("engine.sock"));
     }
+    /// The generation that takes the supervisor over from the engine, whatever that engine is
+    /// at: the one after the supervisor's recorded one. A fixed number would be refused as stale
+    /// once the supervisor has recorded a higher one.
+    pub fn supervisor_takeover_generation(&self) -> Option<u64> {
+        let recorded = fs::read(self.path.join("ptyd-registry.json")).ok()?;
+        let registry: serde_json::Value = serde_json::from_slice(&recorded).ok()?;
+        registry["engine_generation"].as_u64()?.checked_add(1)
+    }
+
     pub fn restart_ptyd(&mut self) {
         self.ptyd.kill().unwrap();
         self.ptyd.wait().unwrap();
@@ -435,10 +434,6 @@ fn install_fake(root: &Path, binary: &str, name: &str) {
     fs::copy(binary, bin.join(format!("{name}.exe"))).unwrap();
 }
 
-pub fn install_fake_lsp(root: &Path) {
-    install_fake(root, "soyeht-fake-lsp", "rust-analyzer");
-}
-
 pub fn install_fake_worktrunk(root: &Path) {
     install_fake(root, "soyeht-fake-worktrunk", PROGRAM);
 }
@@ -449,7 +444,8 @@ impl Drop for Rig {
             let _ = child.kill();
             let _ = child.wait();
         }
-        if let Ok(mut client) = PtyClient::connect(&self.path.join("ptyd.sock"), u64::MAX)
+        if let Some(generation) = self.supervisor_takeover_generation()
+            && let Ok(mut client) = PtyClient::connect(&self.path.join("ptyd.sock"), generation)
             && let Ok(Response::Instances(instances)) = client.request(Request::List)
         {
             for instance in instances {

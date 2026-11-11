@@ -20,7 +20,7 @@ const SLOW: Duration = Duration::from_millis(1_500);
 
 /// A supervisor that says what it was asked. A drain takes `delay` to answer; a resize
 /// waits for `gate` when there is one.
-struct Stub {
+pub(crate) struct Stub {
     delay: Duration,
     draining: Arc<AtomicBool>,
     asked: Arc<Mutex<Vec<String>>>,
@@ -30,7 +30,7 @@ struct Stub {
 }
 
 impl Stub {
-    fn new(delay: Duration) -> (Self, Arc<AtomicBool>, Arc<Mutex<Vec<String>>>) {
+    pub(crate) fn new(delay: Duration) -> (Self, Arc<AtomicBool>, Arc<Mutex<Vec<String>>>) {
         let draining = Arc::new(AtomicBool::new(false));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let stub = Self {
@@ -104,7 +104,7 @@ impl SupervisorPort for Stub {
     }
 }
 
-fn open_core() -> (Core, std::path::PathBuf, String) {
+pub(crate) fn open_core() -> (Core, std::path::PathBuf, String) {
     let root = std::env::temp_dir().join(format!("soyeht-handle-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
     let mut core = Core::open(&root).unwrap();
@@ -119,12 +119,21 @@ fn open_core() -> (Core, std::path::PathBuf, String) {
     (core, root, format!("{connection}|{pane}"))
 }
 
-fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
+/// A core whose jobs run in the caller, linked to a stub supervisor that says what it was asked.
+pub(crate) fn core_with_stub() -> (Core, std::path::PathBuf, String, Arc<Mutex<Vec<String>>>) {
+    let (mut core, root, ids) = open_core();
+    core.background = crate::offload::Background::inline();
+    let (stub, _, asked) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    (core, root, ids, asked)
+}
+
+pub(crate) fn request(id: u64, method: &str, params: serde_json::Value) -> serde_json::Value {
     json!({"jsonrpc":"2.0","id":id,"method":method,"params":params})
 }
 
 /// Waits until `ready`, failing with `what` after 30 s.
-fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
+pub(crate) fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
     let deadline = Instant::now() + Duration::from_secs(30);
     while !ready() {
         assert!(Instant::now() < deadline, "{what}");
@@ -230,11 +239,8 @@ fn a_slow_supervisor_holds_up_neither_the_tick_nor_a_request_that_does_not_need_
 
 #[test]
 fn an_input_is_confirmed_once_its_receipt_is_durable() {
-    let (mut core, root, ids) = open_core();
+    let (mut core, root, ids, asked) = core_with_stub();
     let (connection, pane) = ids.split_once('|').unwrap();
-    core.background = crate::offload::Background::inline();
-    let (stub, _, asked) = Stub::new(Duration::ZERO);
-    core.link_supervisor(Box::new(stub));
 
     let reply = core.dispatch_inline(
         connection,
@@ -249,6 +255,10 @@ fn an_input_is_confirmed_once_its_receipt_is_durable() {
     };
 
     assert_eq!(reply["acceptedBytes"], 4);
+    // The reply goes first; the outcome is recorded with the next write of inputs (or after the
+    // linger, or when the engine stops), and the supervisor forgets the operation after that.
+    assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
+    core.flush_all_input_receipts().unwrap();
     assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -521,6 +531,18 @@ fn a_turn_that_never_ran_does_not_hold_the_ones_after_it() {
     next.wait();
 
     assert!(started.elapsed() < Duration::from_millis(100));
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn a_turn_for_a_process_named_twice_does_not_wait_for_itself() {
+    let (mut core, root, _) = open_core();
+    let earlier = core.turn(&[INSTANCE]);
+    let twice = core.turn(&[INSTANCE, INSTANCE]);
+
+    // It waits for the turn before it, once, and never for its own end.
+    assert_eq!(twice.before.len(), 1);
+    assert!(Arc::ptr_eq(&twice.before[0], &earlier.mine));
     std::fs::remove_dir_all(root).unwrap();
 }
 

@@ -1,5 +1,6 @@
 //! The questions an agent asks: a form made of the properties of the request's schema.
 
+use crate::Command;
 use serde_json::Value;
 
 pub const CANCEL: &str = "Cancel";
@@ -43,4 +44,61 @@ pub fn answer(typed: impl IntoIterator<Item = (String, String)>) -> Value {
             .map(|(key, text)| (key, Value::String(text)))
             .collect(),
     )
+}
+
+/// The request that answers the question `request_id` with what the person typed (`typed`, a key
+/// and its text for each field), or that declines it when `typed` is `None`.
+pub fn response(
+    pane_id: &str,
+    request_id: &str,
+    typed: Option<impl IntoIterator<Item = (String, String)>>,
+) -> Command {
+    let fields = typed.map(answer);
+    Command::AnswerElicitation {
+        pane_id: pane_id.to_owned(),
+        request_id: request_id.to_owned(),
+        cancel: fields.is_none(),
+        fields,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn typed(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs
+            .iter()
+            .map(|(key, text)| ((*key).to_owned(), (*text).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn submitting_answers_with_the_fields_that_have_text() {
+        let command = response("p", "r", Some(typed(&[("name", "Ada"), ("note", "")])));
+        assert_eq!(
+            command,
+            Command::AnswerElicitation {
+                pane_id: "p".into(),
+                request_id: "r".into(),
+                fields: Some(json!({"name": "Ada"})),
+                cancel: false,
+            }
+        );
+    }
+
+    #[test]
+    fn declining_cancels_and_carries_no_fields() {
+        let command = response("p", "r", None::<Vec<(String, String)>>);
+        assert_eq!(
+            command,
+            Command::AnswerElicitation {
+                pane_id: "p".into(),
+                request_id: "r".into(),
+                fields: None,
+                cancel: true,
+            }
+        );
+    }
 }

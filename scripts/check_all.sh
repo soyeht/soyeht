@@ -90,7 +90,10 @@ fi
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
 GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
-GATE_ENGINE_TEST_ARGS="--workspace"
+# The engine crates `engine:test-changed` tests. The plan sets them from the changed paths; a
+# `--only` run has no plan, so a caller that ran the plan elsewhere (scripts/gate_remote.py, whose
+# remote half is a `--only` run) hands the result over.
+GATE_ENGINE_TEST_ARGS="${SOYEHT_GATE_ENGINE_TEST_ARGS:---workspace}"
 matched=0
 
 finish() {
@@ -245,6 +248,7 @@ step gate_scripts both post-merge-flakes:unit uv run python -m unittest discover
 step gate_scripts both post-merge-remote:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_remote.py'
 step gate_scripts both post-merge-load:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_load.py'
 step gate_scripts both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
+step gate_scripts both e2e-swift-client:unit uv run python -m unittest discover -s scripts -p 'test_e2e_swift_client.py'
 step gate_scripts both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and
@@ -279,8 +283,12 @@ step always both desktop-tokens:unit uv run python -m unittest discover -s scrip
 step always both desktop-tokens:check uv run python scripts/check_desktop_tokens.py
 step always both event-literals:unit uv run python -m unittest discover -s scripts -p 'test_check_event_literals.py'
 step always both event-literals:check uv run python scripts/check_event_literals.py
+step always both params-reads:unit uv run python -m unittest discover -s scripts -p 'test_check_params_reads.py'
+step always both params-reads:check uv run python scripts/check_params_reads.py
 step always both legacy-isolation:unit uv run python -m unittest discover -s scripts -p 'test_check_legacy_isolation.py'
 step always both legacy-isolation:check uv run python scripts/check_legacy_isolation.py
+step always both xcode-project-ids:unit uv run python -m unittest discover -s scripts -p 'test_check_xcode_project_ids.py'
+step always both xcode-project-ids:check uv run python scripts/check_xcode_project_ids.py
 
 step always both contracts:generate-check uv run python contracts/generate.py --check
 step always both contracts:unit uv run python -m unittest discover -s contracts -p 'test_*.py'
@@ -291,8 +299,11 @@ step always both release-flow:unit uv run python -m unittest discover -s scripts
 step always both changelog:unit uv run python -m unittest discover -s scripts -p 'test_changelog.py'
 step always both package-linux:unit uv run python -m unittest discover -s scripts -p 'test_package_linux.py'
 step always both package-mac:unit uv run python -m unittest discover -s scripts -p 'test_package_mac.py'
+step always both release-identity:unit uv run python -m unittest discover -s scripts -p 'test_release_identity.py'
 step always both package-windows:unit uv run python -m unittest discover -s scripts -p 'test_package_windows.py'
 step always both release:check uv run python scripts/release.py check
+step always both third-party-notices:unit uv run python -m unittest discover -s scripts -p 'test_third_party_notices.py'
+step always both third-party-notices:check uv run python scripts/third_party_notices.py check --fetch
 step always both agent-precheck:unit uv run python -m unittest discover -s scripts -p 'test_agent_precheck.py'
 
 step engine both engine:fmt in_dir engine cargo fmt --all --check
@@ -352,6 +363,14 @@ step e2e both e2e:tasks uv run python scripts/e2e_tasks.py --report .cache/e2e-t
 step e2e both e2e:editor uv run python scripts/e2e_editor.py --report .cache/e2e-editor.json
 step e2e both e2e:web uv run python scripts/e2e_web.py --report .cache/e2e-web.json
 step e2e both e2e:writing uv run python scripts/e2e_writing.py --report .cache/e2e-writing.json
+# The Swift client's integration test against the engine just built: a change to the engine can
+# break it with every Rust test green, and the full `swift test` runs only after the merge. It sits
+# between the TCC snapshot and its check, is the `swift` area's (the Mac runs it, the Linux host has
+# no Swift) and builds the programs itself, so it also holds when the e2e steps ran on another host.
+swift_client_fast() {
+    build_product_programs && uv run python scripts/e2e_swift_client.py
+}
+step swift fast swift:test-shared-fast swift_client_fast
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then
     step e2e full e2e:real-acp uv run python scripts/e2e_real_acp.py --report .cache/e2e-real-acp.json
     step e2e full e2e:real-agent-messaging uv run python scripts/e2e_real_agent_messaging.py --report .cache/e2e-real-agent-messaging.json

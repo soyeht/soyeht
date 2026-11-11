@@ -3,10 +3,13 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyeht_platform::fs::{set_private_dir, set_private_file, sync_directory};
+use soyeht_protocol::ErrorKind;
 use std::{fmt, fs, io, path::Path, time::Duration};
 use uuid::Uuid;
 
-pub const SCHEMA_VERSION: u32 = 32;
+mod migrations;
+
+pub const SCHEMA_VERSION: u32 = 35;
 
 #[derive(Debug)]
 pub enum Error {
@@ -94,6 +97,8 @@ pub enum Error {
     InvalidWritingCreateIntent,
     InvalidAgentModelRefusal,
     InvalidHarnessSignIn,
+    InvalidAdapterAcknowledgement,
+    InvalidProjectTrust,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -197,11 +202,70 @@ impl fmt::Display for Error {
             Self::InvalidWritingCreateIntent => f.write_str("invalid writing create intent"),
             Self::InvalidAgentModelRefusal => f.write_str("invalid agent model refusal"),
             Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
+            Self::InvalidAdapterAcknowledgement => f.write_str("invalid adapter acknowledgement"),
+            Self::InvalidProjectTrust => f.write_str("invalid project trust"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
 }
 impl std::error::Error for Error {}
+
+/// The protocol kind the engine presents for a storage failure. The mapping lives beside the
+/// failures it names, so a new one cannot be added without deciding what a client sees.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
+            Error::CursorTooOld => ErrorKind::CursorTooOld,
+            Error::DiskFull => ErrorKind::DiskFull,
+            Error::TaskVersionConflict => ErrorKind::StaleVersion,
+            Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
+            Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
+            Error::SubitemNotFound => ErrorKind::NotFound,
+            Error::FileVersionNotFound => ErrorKind::NotFound,
+            Error::FileReplacementBusy => ErrorKind::StaleVersion,
+            Error::InvalidEngineGeneration
+            | Error::InvalidIdempotencyKey
+            | Error::EventParametersNotObject
+            | Error::CursorAhead
+            | Error::NegativeEventId
+            | Error::NegativeEventCursor
+            | Error::PairingRequestLimit
+            | Error::ApprovedPairTokenMissing
+            | Error::InvalidQueuedPrompt
+            | Error::PromptQueueFull
+            | Error::AttentionItemTooLarge
+            | Error::AttentionPaneMismatch
+            | Error::AgentRuntimeTooLarge
+            | Error::StaleAgentGeneration
+            | Error::NewOutboxHasProgress
+            | Error::IncompleteOutboxRecord
+            | Error::InvalidOutboxEnvelope
+            | Error::AgentOutboxFull
+            | Error::InvalidPartialWriteReceipt
+            | Error::NativeWriteAttemptsExhausted
+            | Error::NativeMessageIncomplete
+            | Error::InvalidNativeRequestIdentity
+            | Error::PublicRequestTooLarge
+            | Error::PendingRequestsTooLarge
+            | Error::NativeRequestNotFound
+            | Error::NativeEffectNotFound
+            | Error::NativeEffectNotPending
+            | Error::NativeEffectAlreadyStarted
+            | Error::InvalidTranscriptSequence
+            | Error::TranscriptMessageTooLarge
+            | Error::TranscriptMutation
+            | Error::StaleTranscriptReplay
+            | Error::InvalidTranscriptPageLimit
+            | Error::TranscriptPageTooLarge
+            | Error::InvalidEditorFile
+            | Error::InvalidFileHistoryLimit
+            | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
+            _ => ErrorKind::InternalError,
+        }
+    }
+}
+
 impl From<rusqlite::Error> for Error {
     fn from(e: rusqlite::Error) -> Self {
         if matches!(
@@ -263,68 +327,6 @@ impl Change<'_> {
     pub(crate) fn connection(&self) -> &Connection {
         &self.transaction
     }
-}
-
-fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Result<()> {
-    if version < 24 {
-        tx.execute_batch(include_str!(
-            "../migrations/024-workspace-created-sequence.sql"
-        ))?;
-    }
-    if version < 25 {
-        tx.execute_batch(include_str!("../migrations/025-agent-message-rate.sql"))?;
-    }
-    if version < 26 {
-        tx.execute_batch(include_str!("../migrations/026-harness-readiness.sql"))?;
-    }
-    if version < 27 {
-        tx.execute_batch(include_str!("../migrations/027-pane-created-sequence.sql"))?;
-    }
-    if version < 28 {
-        tx.execute_batch(include_str!("../migrations/028-push-registrations.sql"))?;
-    }
-    if version < 29 {
-        tx.execute_batch(include_str!("../migrations/029-editor-tabs.sql"))?;
-    }
-    if version < 30 {
-        tx.execute_batch(include_str!(
-            "../migrations/030-prompt-attachment-files.sql"
-        ))?;
-        drop_legacy_prompt_attachments(tx)?;
-    }
-    if version < 31 {
-        tx.execute_batch(include_str!("../migrations/031-harness-sign-in.sql"))?;
-        crate::harness_sign_in::adopt_pane_choices(tx)?;
-    }
-    if version < 32 {
-        tx.execute_batch(include_str!("../migrations/032-usage-opencode.sql"))?;
-    }
-    Ok(())
-}
-
-/// Version 30 names queued attachments by engine-owned paths. A prompt queued
-/// with the earlier byte reference cannot be delivered, so it keeps its text.
-fn drop_legacy_prompt_attachments(tx: &Transaction<'_>) -> Result<()> {
-    for (table, field) in [
-        ("agent_prompt_queue", "$.attachments"),
-        ("agent_runtime", "$.active.attachments"),
-    ] {
-        let exists: bool = tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
-            [table],
-            |row| row.get(0),
-        )?;
-        if exists {
-            tx.execute(
-                &format!(
-                    "UPDATE {table} SET payload=json_remove(payload,?1) \
-                     WHERE json_type(payload,?1) IS NOT NULL"
-                ),
-                [field],
-            )?;
-        }
-    }
-    Ok(())
 }
 
 fn backup_before_migration(connection: &Connection, directory: &Path) -> Result<()> {
@@ -444,15 +446,14 @@ impl Store {
             if version < 23 {
                 tx.execute_batch(include_str!("../migrations/023-writing-full-width.sql"))?;
             }
-            apply_recent_migrations(&tx, version)?;
+            migrations::apply_recent_migrations(&tx, version)?;
             tx.commit()?;
         }
         let db_id =
             connection.query_row("SELECT value FROM metadata WHERE key='db_id'", [], |row| {
                 row.get(0)
             })?;
-        #[cfg(feature = "test-support")]
-        crate::test_support::count_statements(&connection);
+        crate::statement_cost::watch(&connection);
         Ok(Self {
             connection,
             db_id,

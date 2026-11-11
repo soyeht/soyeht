@@ -7,6 +7,7 @@
       "id": "registry.agoragentic-acp",
       "name": "Agoragentic",
       "version": "1.3.0",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -20,6 +21,7 @@
       "id": "registry.amp-acp",
       "name": "Amp",
       "version": "0.9.0",
+      "support": "experimental",
       "command": "amp-acp",
       "args": [],
       "environment": [],
@@ -29,6 +31,7 @@
       "id": "registry.antigravity-acp",
       "name": "Google Antigravity",
       "version": "1.1.1",
+      "support": "experimental",
       "command": "agy_acp_server.par",
       "args": [],
       "environment": [],
@@ -38,6 +41,7 @@
       "id": "registry.auggie",
       "name": "Auggie CLI",
       "version": "0.36.0",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -56,6 +60,7 @@
       "id": "registry.autohand",
       "name": "Autohand Code",
       "version": "0.2.1",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -68,6 +73,7 @@
       "id": "registry.claude-acp",
       "name": "Claude Agent",
       "version": "0.100.0",
+      "support": "supported",
       "command": "npx",
       "args": [
         "--yes",
@@ -83,6 +89,7 @@
       "id": "registry.cline",
       "name": "Cline",
       "version": "3.0.61",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -96,6 +103,7 @@
       "id": "registry.codebuddy-code",
       "name": "Codebuddy Code",
       "version": "2.150.0",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -109,6 +117,7 @@
       "id": "registry.codex-acp",
       "name": "Codex",
       "version": "1.11.0",
+      "support": "supported",
       "command": "npx",
       "args": [
         "--yes",
@@ -124,6 +133,7 @@
       "id": "registry.cortex-code",
       "name": "Cortex Code",
       "version": "1.0.73",
+      "support": "experimental",
       "command": "cortex",
       "args": [
         "acp",
@@ -136,6 +146,7 @@
       "id": "registry.corust-agent",
       "name": "Corust Agent",
       "version": "0.6.0",
+      "support": "experimental",
       "command": "corust-agent-acp",
       "args": [],
       "environment": [],
@@ -145,6 +156,7 @@
       "id": "registry.crow-cli",
       "name": "crow-cli",
       "version": "0.1.24",
+      "support": "experimental",
       "command": "crow-cli",
       "args": [
         "acp"
@@ -156,6 +168,7 @@
       "id": "registry.cursor",
       "name": "Cursor",
       "version": "2026.09.10",
+      "support": "supported",
       "command": "cursor-agent",
       "args": [
         "acp"
@@ -167,6 +180,7 @@
       "id": "registry.deepagents",
       "name": "DeepAgents",
       "version": "0.1.7",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -179,6 +193,7 @@
       "id": "registry.devin",
       "name": "Devin",
       "version": "3000.10.21",
+      "support": "experimental",
       "command": "devin",
       "args": [
         "acp"
@@ -190,6 +205,7 @@
       "id": "registry.dimcode",
       "name": "DimCode",
       "version": "0.5.2",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -203,6 +219,7 @@
       "id": "registry.dirac",
       "name": "Dirac",
       "version": "0.5.12",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -216,6 +233,7 @@
       "id": "registry.factory-droid",
       "name": "Factory Droid",
       "version": "0.218.1",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -240,6 +258,7 @@
       "id": "registry.fast-agent",
       "name": "fast-agent",
       "version": "0.10.1",
+      "support": "experimental",
       "command": "uvx",
       "args": [
         "fast-agent-acp==0.10.1",
@@ -257,6 +276,7 @@
       "id": "registry.gemini",
       "name": "Gemini CLI",
       "version": "0.59.0",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -273,6 +293,7 @@
       "id": "registry.github-copilot-cli",
       "name": "GitHub Copilot",
       "version": "1.0.83",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -286,6 +307,7 @@
       "id": "registry.glm-acp-agent",
       "name": "GLM Agent",
       "version": "1.8.0",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -298,6 +320,7 @@
       "id": "registry.goose",
       "name": "goose",
       "version": "1.50.0",
+      "support": "experimental",
       "command": "goose",
       "args": [
         "acp"
@@ -309,6 +332,7 @@
       "id": "registry.grok-build",
       "name": "Grok Build",
       "version": "1.0.30",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -323,6 +347,7 @@
       "id": "registry.harn",
       "name": "Harn",
       "version": "0.10.135",
+      "support": "experimental",
       "command": "harn",
       "args": [
         "serve",
@@ -335,6 +360,7 @@
       "id": "registry.junie",
       "name": "Junie",
       "version": "3218.3.0",
+      "support": "experimental",
       "command": "junie",
       "args": [
         "--acp=true"
@@ -346,6 +372,7 @@
       "id": "registry.kilo",
       "name": "Kilo",
       "version": "7.6.2",
+      "support": "experimental",
       "command": "kilo",
       "args": [
         "acp"
@@ -357,6 +384,7 @@
       "id": "registry.kimchi",
       "name": "Kimchi",
       "version": "1.1.18",
+      "support": "experimental",
       "command": "kimchi",
       "args": [
         "--mode",
@@ -369,6 +397,7 @@
       "id": "registry.kimi",
       "name": "Kimi CLI",
       "version": "1.50.0",
+      "support": "experimental",
       "command": "kimi",
       "args": [
         "acp"
@@ -380,6 +409,7 @@
       "id": "registry.minimax-code",
       "name": "MiniMax Code",
       "version": "0.2.7",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -393,6 +423,7 @@
       "id": "registry.minion-code",
       "name": "Minion Code",
       "version": "0.1.44",
+      "support": "experimental",
       "command": "uvx",
       "args": [
         "minion-code@0.1.44",
@@ -405,6 +436,7 @@
       "id": "registry.mistral-vibe",
       "name": "Mistral Vibe",
       "version": "2.24.1",
+      "support": "experimental",
       "command": "vibe-acp",
       "args": [],
       "environment": [],
@@ -414,6 +446,7 @@
       "id": "registry.nova",
       "name": "Nova",
       "version": "1.1.38",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -427,6 +460,7 @@
       "id": "registry.opencode",
       "name": "OpenCode",
       "version": "1.18.30",
+      "support": "supported",
       "command": "opencode",
       "args": [
         "acp"
@@ -438,6 +472,7 @@
       "id": "registry.pi-acp",
       "name": "pi ACP",
       "version": "0.0.33",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -450,6 +485,7 @@
       "id": "registry.poolside",
       "name": "Poolside",
       "version": "1.0.16",
+      "support": "experimental",
       "command": "pool-darwin-arm64",
       "args": [
         "acp"
@@ -461,6 +497,7 @@
       "id": "registry.qoder",
       "name": "Qoder CLI",
       "version": "0.2.14",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -474,6 +511,7 @@
       "id": "registry.qwen-code",
       "name": "Qwen Code",
       "version": "0.23.3",
+      "support": "experimental",
       "command": "npx",
       "args": [
         "--yes",
@@ -488,6 +526,7 @@
       "id": "registry.sigit",
       "name": "siGit Code",
       "version": "1.5.8",
+      "support": "experimental",
       "command": "sigit",
       "args": [],
       "environment": [],
@@ -497,6 +536,7 @@
       "id": "registry.stakpak",
       "name": "Stakpak",
       "version": "0.3.88",
+      "support": "experimental",
       "command": "stakpak",
       "args": [
         "acp"
@@ -508,6 +548,7 @@
       "id": "registry.vtcode",
       "name": "VT Code",
       "version": "0.96.14",
+      "support": "experimental",
       "command": "vtcode",
       "args": [
         "acp"

@@ -3,7 +3,7 @@
 
 use super::{
     preferences::page,
-    ui::{Typeface, column, icon, id, row},
+    ui::{Typeface, column, grow, icon, id, row},
 };
 use crate::{
     assets::Icon,
@@ -80,9 +80,7 @@ fn theme_card(
         }))
         .child(swatch(own))
         .child(
-            div()
-                .flex_1()
-                .min_w_0()
+            grow()
                 .truncate()
                 .chrome()
                 .text_size(px(type_scale::CAPTION))

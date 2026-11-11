@@ -292,8 +292,10 @@ class Services:
 
     def close_supervised_processes(self):
         try:
-            with connect_endpoint(self.data / PTYD_SOCKET, timeout=5) as stream:
-                send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": 18446744073709551615}})
+            with connect_endpoint(self.data / PTYD_SOCKET, timeout=5, proved=True) as stream:
+                # The supervisor lets a hello raise its generation by a step, not by any number.
+                registry = json.loads((self.data / "ptyd-registry.json").read_text())
+                send(stream, {"method": "hello", "params": {"version": self.ptyd_version, "engine_generation": registry["engine_generation"] + 1}})
                 require(receive(stream)["status"] == "welcome", "cleanup supervisor handshake")
                 send(stream, {"method": "list"})
                 for instance in receive(stream)["value"]:

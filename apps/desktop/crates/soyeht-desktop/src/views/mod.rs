@@ -39,12 +39,14 @@ mod readiness;
 mod resize_handles;
 pub(crate) mod selectable;
 mod settings;
+mod sheet;
 mod slash;
 mod start;
 mod switch_popover;
 mod tasks;
 mod terminal_menu;
 mod tiles;
+mod trust_prompt;
 mod web;
 
 pub(crate) use tiles::sizing;
@@ -72,6 +74,7 @@ use soyeht_client::{Connection, state::problem::Banner};
 
 impl Render for Workbench {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.hold_trust_keys(window, cx);
         self.apply_focus_request(window, cx);
         self.settle_preedit(window, cx);
         self.settle_rename(window, cx);
@@ -131,6 +134,7 @@ impl Render for Workbench {
                 self.prefs_open()
                     .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
+            .children(self.trust_prompt_sheet(cx, palette))
             .children(resize_handles::handles(window))
             .child(crate::workbench::input_surface(&self.focus, cx));
         // A page that is a window of its own stays where it was until it is told to go.

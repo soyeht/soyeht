@@ -49,7 +49,7 @@ fun annotate(runs: List<MarkdownRun>, look: RunLook, open: (String) -> Unit): An
         val style = SpanStyle(
             fontWeight = FontWeight.Bold.takeIf { run.bold || look.bold },
             fontStyle = FontStyle.Italic.takeIf { run.italic },
-            fontFamily = FontFamily.Monospace.takeIf { run.code },
+            fontFamily = Faces.mono.takeIf { run.code },
             background = if (run.code) look.codeBackground else Color.Unspecified,
             color = if (run.link != null) look.accent else Color.Unspecified,
             textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
@@ -75,30 +75,33 @@ fun MarkdownView(blocks: List<MarkdownBlock>, copy: CodeCopy, ink: Color, modifi
 @Composable
 private fun Block(block: MarkdownBlock, copy: CodeCopy, ink: Color) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
+    // A rule and a quote's bar are the well's grey, which on e-ink is too near the page to show: they take the border.
+    val line = roles.border ?: roles.well
     val uri = LocalUriHandler.current
     // A phone with nothing to open a link with must not lose the conversation over it.
     val open: (String) -> Unit = { address -> runCatching { uri.openUri(address) } }
     when (block) {
         is MarkdownBlock.Paragraph ->
-            Text(annotate(block.runs, RunLook(roles.accent, roles.well), open), color = ink, fontSize = TypeScale.body.sp)
+            Text(annotate(block.runs, RunLook(roles.accent, roles.well), open), color = ink, fontSize = metrics.body.sp)
         // Headings are bold at body size (ADR 0087).
         is MarkdownBlock.Heading ->
-            Text(annotate(block.runs, RunLook(roles.accent, roles.well, bold = true), open), color = ink, fontSize = TypeScale.body.sp)
+            Text(annotate(block.runs, RunLook(roles.accent, roles.well, bold = true), open), color = ink, fontSize = metrics.body.sp)
         is MarkdownBlock.Code -> CodeBlock(block.text, copy, ink)
         is MarkdownBlock.Quote -> Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(PaneInterior.compactSpacing.dp)) {
-            Box(Modifier.fillMaxHeight().width(PaneInterior.tightSpacing.dp).background(roles.well, RoundedCornerShape(Radius.compact.dp)))
+            Box(Modifier.fillMaxHeight().width(PaneInterior.tightSpacing.dp).background(line, RoundedCornerShape(Radius.compact.dp)))
             MarkdownView(block.blocks, copy, ink, Modifier.weight(1f))
         }
         is MarkdownBlock.ItemList -> Column(verticalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp)) {
             block.items.forEach { item ->
                 Row(horizontalArrangement = Arrangement.spacedBy(PaneInterior.tightSpacing.dp)) {
-                    Text(item.marker, color = roles.secondary, fontSize = TypeScale.body.sp, modifier = Modifier.widthIn(min = Space.x18.dp))
+                    Text(item.marker, color = roles.secondary, fontSize = metrics.body.sp, modifier = Modifier.widthIn(min = Space.x18.dp))
                     MarkdownView(item.blocks, copy, ink, Modifier.weight(1f))
                 }
             }
         }
         is MarkdownBlock.Table -> Table(block, ink, open)
-        MarkdownBlock.Rule -> Box(Modifier.fillMaxWidth().height(PaneInterior.separatorWidth.dp).background(roles.well))
+        MarkdownBlock.Rule -> Box(Modifier.fillMaxWidth().height(maxOf(PaneInterior.separatorWidth, metrics.borderWidth).dp).background(line))
     }
 }
 
@@ -106,6 +109,7 @@ private fun Block(block: MarkdownBlock, copy: CodeCopy, ink: Color) {
 @Composable
 private fun CodeBlock(text: String, copy: CodeCopy, ink: Color) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     val clipboard = LocalClipboardManager.current
     var copies by remember { mutableIntStateOf(0) }
     var copied by remember { mutableStateOf(false) }
@@ -117,19 +121,19 @@ private fun CodeBlock(text: String, copy: CodeCopy, ink: Color) {
         }
     }
     Row(
-        Modifier.fillMaxWidth().background(roles.well, RoundedCornerShape(PaneInterior.wellRadius.dp)),
+        Modifier.fillMaxWidth().panel(roles.well, RoundedCornerShape(PaneInterior.wellRadius.dp)),
         verticalAlignment = Alignment.Top,
     ) {
         Text(
             text,
             color = ink,
-            fontFamily = FontFamily.Monospace,
-            fontSize = PaneInterior.monoPointSize.sp,
+            fontFamily = Faces.mono,
+            fontSize = metrics.terminalFont.sp,
             modifier = Modifier.weight(1f).padding(PaneInterior.rowSpacing.dp),
         )
         Box(
             Modifier
-                .defaultMinSize(minWidth = PaneInterior.touchTarget.dp, minHeight = PaneInterior.touchTarget.dp)
+                .defaultMinSize(minWidth = metrics.touchTarget.dp, minHeight = metrics.touchTarget.dp)
                 .semantics { contentDescription = if (copied) copy.copied else copy.label }
                 .clickable {
                     clipboard.setText(AnnotatedString(text))
@@ -142,7 +146,7 @@ private fun CodeBlock(text: String, copy: CodeCopy, ink: Color) {
             Text(
                 if (copied) copy.copied else copy.label,
                 color = if (copied) roles.accent else roles.secondary,
-                fontSize = TypeScale.small.sp,
+                fontSize = metrics.small.sp,
             )
         }
     }
@@ -152,9 +156,10 @@ private fun CodeBlock(text: String, copy: CodeCopy, ink: Color) {
 @Composable
 private fun Table(table: MarkdownBlock.Table, ink: Color, open: (String) -> Unit) {
     val roles = LocalRoles.current
+    val metrics = LocalMetrics.current
     val rows = listOf(table.header) + table.rows
     val columns = rows.maxOf { it.cells.size }
-    Row(Modifier.horizontalScroll(rememberScrollState()).background(roles.well, RoundedCornerShape(PaneInterior.wellRadius.dp))) {
+    Row(Modifier.horizontalScroll(rememberScrollState()).panel(roles.well, RoundedCornerShape(PaneInterior.wellRadius.dp))) {
         repeat(columns) { column ->
             Column(Modifier.width(IntrinsicSize.Max).padding(PaneInterior.rowSpacing.dp)) {
                 rows.forEachIndexed { index, row ->
@@ -162,7 +167,7 @@ private fun Table(table: MarkdownBlock.Table, ink: Color, open: (String) -> Unit
                     Text(
                         annotate(runs, RunLook(roles.accent, roles.well, bold = index == 0), open),
                         color = ink,
-                        fontSize = TypeScale.caption.sp,
+                        fontSize = metrics.caption.sp,
                         modifier = Modifier.padding(vertical = PaneInterior.tightSpacing.dp),
                     )
                 }

@@ -32,6 +32,7 @@ use std::{
     path::{Component, Path},
 };
 
+pub mod probes;
 mod windows;
 
 /// How the paths of a workspace are written: the system the workspace is on.

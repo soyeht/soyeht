@@ -4,7 +4,6 @@ use crate::{
     model::{self, Connected, RunningPane, StoredPane, Waiter},
     offload::SharedPort,
     ports::{Clock, StorePort, SystemClock},
-    screen::Screen,
     supervisor_handle::Supervisor,
     tasks::{revision::GitRevision, worktree::CommandWorktree},
 };
@@ -68,6 +67,16 @@ pub struct Core {
     /// for them (see `read_ahead`).
     pub(crate) reads: crate::read_ahead::Reads,
     pub(crate) supervisor_retry: crate::supervisor_link::Retry,
+    /// The outcomes of inputs the supervisor accepted that wait for the next write of inputs
+    /// (ADR 0147, step R).
+    pub(crate) input_receipts: Vec<crate::input_receipts::Waiting>,
+    /// The operations the supervisor holds whose intent the store still holds, when the engine
+    /// first saw them: an input accepted just before the engine ended, which nobody retries.
+    pub(crate) orphan_inputs: BTreeMap<String, i64>,
+    /// The folder of each workspace whose files the editor watches, until it is closed.
+    pub(crate) workspace_roots: BTreeMap<String, PathBuf>,
+    /// What the supervisor says about its processes' output (ADR 0147, step 1a).
+    pub(crate) watch: crate::supervisor_watch::Watch,
     pub clock: Arc<dyn Clock>,
     /// What a test makes the engine do; [`NoHooks`] in a product (ADR 0091).
     pub hooks: Arc<dyn Hooks>,
@@ -76,6 +85,7 @@ pub struct Core {
     pub(crate) background: crate::offload::Background,
     pub usage: crate::usage::Service,
     pub web: crate::web::Service,
+    pub ink: crate::ink::Service,
     pub vcs: soyeht_vcs::Service,
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
@@ -96,6 +106,8 @@ pub struct Core {
     pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
     pub native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
     pub language_waiters: BTreeMap<String, Vec<Waiter>>,
+    /// The search path the language servers of folders that are not trusted are started from.
+    pub language_search_path: Option<std::ffi::OsString>,
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
     pub pair_address: String,
@@ -120,18 +132,6 @@ fn log_stale_export_cleanup(directory: &Path) {
         }
         _ => (),
     }
-}
-
-/// The screen of a pane read from the database. Nobody reads the output of a closed pane, so its
-/// segment files are not opened.
-fn restored_screen(directory: &Path, stored: &StoredPane) -> Result<Screen> {
-    if stored.closed {
-        return Ok(Screen::closed());
-    }
-    Screen::open(
-        &directory.join("sessions").join(&stored.pane.pane_id),
-        stored.pane.record,
-    )
 }
 
 /// The address a paired device reaches the engine at before the listeners say otherwise.
@@ -200,6 +200,10 @@ impl Core {
             send_turns: BTreeMap::new(),
             reads: Default::default(),
             supervisor_retry: Default::default(),
+            input_receipts: Vec::new(),
+            orphan_inputs: BTreeMap::new(),
+            workspace_roots: BTreeMap::new(),
+            watch: Default::default(),
             clock: Arc::new(SystemClock),
             hooks: Arc::clone(&hooks),
             revision: SharedPort::new(Box::new(GitRevision)),
@@ -207,12 +211,15 @@ impl Core {
             background: Default::default(),
             usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
             web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
+            ink: crate::ink::Service::new(
+                hooks.ink_recognizer().map_or_else(soyeht_ink::system, Ok),
+            ),
             vcs: soyeht_vcs::Service::new(Box::new(soyeht_vcs::SystemGit)),
-            editor: crate::editor::Service::new(
+            editor: crate::editor::Service::new(Box::new(crate::editor::timed_files::TimedFiles(
                 hooks
                     .editor_disk()
                     .unwrap_or_else(|| Box::new(crate::editor::SystemFiles)),
-            ),
+            ))),
             project_watches: Default::default(),
             skill_watches: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
@@ -228,42 +235,14 @@ impl Core {
             harness_switches: BTreeMap::new(),
             native_waiters: BTreeMap::new(),
             language_waiters: BTreeMap::new(),
+            language_search_path: std::env::var_os("PATH"),
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
             pair_address: loopback_address(&DEV),
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
-        for stored in model::panes(&core.store)? {
-            if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
-                let state = core.restore_agent(&stored)?;
-                core.agents.insert(
-                    stored.pane.pane_id.clone(),
-                    crate::agents::Running::new(state),
-                );
-            }
-            if stored.pane.mode == soyeht_protocol::PaneMode::Terminal
-                && let Some(value) = core
-                    .store
-                    .pane_launch::<Value>(&stored.pane.pane_id)
-                    .map_err(errors::storage)?
-                && let Some(session) =
-                    crate::terminal_harness::TerminalHarnessSession::decode(value)?
-            {
-                if session.spawn.instance_key != stored.instance_key
-                    || session.spawn.generation != stored.pane.generation
-                {
-                    return Err(errors::internal(
-                        "Stored terminal harness session does not match its pane generation",
-                    ));
-                }
-                core.terminal_harnesses
-                    .insert(stored.pane.pane_id.clone(), session);
-            }
-            let screen = restored_screen(directory, &stored)?;
-            core.panes
-                .insert(stored.pane.pane_id.clone(), RunningPane { stored, screen });
-        }
+        core.restore_panes(directory)?;
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.
@@ -282,7 +261,10 @@ impl Core {
         Ok(core)
     }
 
-    fn restore_agent(&mut self, stored: &StoredPane) -> Result<crate::agents::state::State> {
+    pub(crate) fn restore_agent(
+        &mut self,
+        stored: &StoredPane,
+    ) -> Result<crate::agents::state::State> {
         let pane = &stored.pane.pane_id;
         let mut state: crate::agents::state::State = self
             .store
@@ -379,13 +361,7 @@ impl Core {
             .clients
             .get(connection)
             .ok_or_else(|| errors::unauthorized("Connection not found"))?;
-        let actor = serde_json::to_value(
-            client
-                .actor
-                .as_ref()
-                .ok_or_else(|| errors::unauthorized("Handshake required"))?,
-        )
-        .map_err(|_| errors::internal("Connection actor serialization failed"))?;
+        let actor = self.actor_json(connection)?;
         let key = params["idempotencyKey"]
             .as_str()
             .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
@@ -403,6 +379,21 @@ impl Core {
         .map_err(errors::storage)?;
         self.publish(&mutation.events)?;
         Ok(mutation)
+    }
+
+    /// Who the connection is, as the store records it with an idempotency receipt.
+    pub(crate) fn actor_json(&self, connection: &str) -> Result<Value> {
+        let client = self
+            .clients
+            .get(connection)
+            .ok_or_else(|| errors::unauthorized("Connection not found"))?;
+        serde_json::to_value(
+            client
+                .actor
+                .as_ref()
+                .ok_or_else(|| errors::unauthorized("Handshake required"))?,
+        )
+        .map_err(|_| errors::internal("Connection actor serialization failed"))
     }
 
     pub(crate) fn repeated_mutation(
@@ -436,6 +427,7 @@ impl Core {
     /// recorded must at least reach the log.
     pub(crate) fn lose_supervisor_link(&mut self) {
         self.ptyd = None;
+        self.watch.stop();
         self.supervisor_later.clear();
         self.forget_all_reads();
         if let Err(error) = self.system_event(
@@ -473,6 +465,7 @@ impl Core {
         if result.is_err() {
             self.ptyd = None;
         } else {
+            self.watch.link_made();
             let generation = errors::invariant(
                 self.ptyd.as_ref(),
                 "Supervisor disappeared after registry reconciliation",
@@ -491,8 +484,9 @@ impl Core {
         for operation_key in receipts {
             let pending = StorePort::input_intent_operation_pending(&self.store, &operation_key)
                 .map_err(errors::storage)?;
-            if !pending
-                && !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
+            if pending {
+                self.watch_orphan_input(operation_key);
+            } else if !crate::agents::delivery::receipt_pending(&self.store, &operation_key)?
                 && !self.languages.has_pending_write(&operation_key)
             {
                 // Nobody waits for it: an unconfirmed receipt is reconciled at the next link.
@@ -679,6 +673,7 @@ impl Core {
         self.isolated("project_tree", Self::advance_project_tree);
         self.isolated("skills", Self::advance_skills);
         self.isolated("local_servers", Self::advance_local_servers);
+        self.isolated("input_receipts", Self::flush_input_receipts);
         self.isolated("web_commands", Self::advance_web_commands);
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());
@@ -707,6 +702,7 @@ impl Core {
     /// Moves new terminal and agent output from the supervisor into each
     /// pane's screen. This is the terminal path.
     pub(crate) fn drain_panes(&mut self) -> Result<()> {
+        self.sweep_watch();
         let ids: Vec<_> = self
             .panes
             .iter()
@@ -718,8 +714,8 @@ impl Core {
             if self.capture_restore_pending(&id) {
                 continue;
             }
-            // A tick woken by a read polls the agents only.
-            if self.polling_woken() && !self.agents.contains_key(&id) {
+            // A tick woken by a read polls the agents and the panes a notice marked.
+            if self.polling_woken() && !self.agents.contains_key(&id) && !self.pane_marked(&id) {
                 continue;
             }
             if self.agents.contains_key(&id) {
