@@ -26,23 +26,33 @@ impl Raw {
         raw
     }
 
-    /// The next JSON message, or `None` when the engine closed the connection.
+    /// The next JSON message, or `None` when the engine closed the connection. An engine that
+    /// neither answers nor closes within the read timeout fails the test: silence is not a close.
     fn read(&mut self) -> Option<Value> {
         match Frame::read_from(&mut self.socket) {
-            Ok(Some(Frame::Json(bytes))) => serde_json::from_slice(&bytes).ok(),
-            _ => None,
+            Ok(Some(Frame::Json(bytes))) => {
+                Some(serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+                    panic!("the engine sent a body that is not JSON: {error}")
+                }))
+            }
+            Ok(Some(_)) => panic!("the engine sent a frame that is not JSON before its end"),
+            Ok(None) => None,
+            Err(soyeht_protocol::Error::Io(error)) if timed_out(&error) => {
+                panic!("the engine neither answered nor closed the connection: {error}")
+            }
+            // A reset, or a frame cut short by the close: the engine hung up.
+            Err(_) => None,
         }
     }
 
-    /// Whether the engine has closed this connection (nothing but notifications may precede it).
-    fn closed(&mut self) -> bool {
+    /// Asserts the engine closes this connection (nothing but notifications may precede it).
+    fn assert_closed(&mut self, what: impl std::fmt::Display) {
         while let Some(message) = self.read() {
             assert!(
                 message.get("id").is_none(),
-                "an answer to a refused frame: {message}"
+                "{what}: an answer to a refused frame: {message}"
             );
         }
-        true
     }
 
     fn write_raw(&mut self, kind: u8, length: u32, body: &[u8]) {
@@ -76,6 +86,15 @@ impl Raw {
     fn hello(&mut self, id: u64, params: Value) -> Value {
         self.request(id, "hello", params)
     }
+}
+
+/// Whether a read failed because nothing arrived in time (the platforms name it differently),
+/// which is not the engine closing the connection.
+pub(super) fn timed_out(error: &std::io::Error) -> bool {
+    matches!(
+        error.kind(),
+        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+    )
 }
 
 fn kind(answer: &Value) -> &str {
@@ -134,7 +153,7 @@ fn a_frame_the_protocol_forbids_closes_the_connection_before_its_payload_is_read
         let mut raw = Raw::connect(&rig);
         // Only the five header bytes are sent: the engine must decide from them alone.
         raw.write_raw(kind, length, &[]);
-        assert!(raw.closed(), "kind {kind} length {length}");
+        raw.assert_closed(format!("kind {kind} length {length}"));
     }
     assert_engine_still_serves(&rig);
 }
@@ -148,10 +167,10 @@ fn a_frame_cut_short_or_followed_by_garbage_ends_only_its_own_connection() {
         .socket
         .shutdown(std::net::Shutdown::Write)
         .unwrap();
-    assert!(truncated.closed());
+    truncated.assert_closed("a truncated frame");
     let mut garbage = Raw::connect(&rig);
     garbage.write_raw(limits::FRAME_KIND_JSON, 7, b"not json");
-    assert!(garbage.closed() || garbage.read().is_none());
+    garbage.assert_closed("a frame that is not JSON");
     assert_engine_still_serves(&rig);
 }
 
@@ -217,7 +236,7 @@ fn a_message_that_is_not_json_or_has_no_method_ends_its_connection() {
             json!({"client":"attack","clientVersion":"1","protocolVersion":1}),
         );
         raw.write_raw(limits::FRAME_KIND_JSON, body.len() as u32, body);
-        assert!(raw.closed(), "{}", String::from_utf8_lossy(body));
+        raw.assert_closed(String::from_utf8_lossy(body));
     }
     assert_engine_still_serves(&rig);
 }
@@ -235,7 +254,7 @@ fn a_hello_with_malformed_parameters_is_refused_and_closes_the_connection() {
         let mut raw = Raw::connect(&rig);
         let answer = raw.hello(1, params.clone());
         assert_eq!(kind(&answer), "invalid_params", "{params}: {answer}");
-        assert!(raw.closed(), "{params}");
+        raw.assert_closed(&params);
     }
 }
 
@@ -287,10 +306,9 @@ fn a_second_hello_is_refused_and_ends_the_connection() {
         let refused = raw.hello(2, second.clone());
         assert_eq!(kind(&refused), "unauthorized", "{second}: {refused}");
         assert_eq!(refused["error"]["message"], "Handshake already completed");
-        assert!(
-            raw.closed(),
+        raw.assert_closed(format!(
             "a refused handshake keeps the connection: {second}"
-        );
+        ));
     }
     // The refused claims to host the web did not take the single place.
     let _host = Client::new_with_capabilities(rig.path.join("engine.sock"), json!(["web_host"]));
@@ -306,7 +324,7 @@ fn a_hello_for_another_protocol_version_is_refused_and_gives_no_role() {
             json!({"client":"attack","clientVersion":"1","protocolVersion":version}),
         );
         assert_eq!(kind(&answer), "protocol_version_unsupported", "{answer}");
-        assert!(raw.closed());
+        raw.assert_closed("an unsupported protocol version");
     }
 }
 
@@ -323,7 +341,7 @@ fn an_unknown_binding_gives_no_role_and_ends_the_connection() {
             matches!(kind(&answer), "unauthorized" | "invalid_params"),
             "{answer}"
         );
-        assert!(raw.closed());
+        raw.assert_closed(format!("binding {binding:.20}"));
     }
 }
 

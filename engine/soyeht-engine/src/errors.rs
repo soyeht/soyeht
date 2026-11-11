@@ -78,7 +78,6 @@ pub enum Error {
     InvalidPublicKey,
     InvalidPublicKeyLength,
     InvalidEngineKey,
-    WeakPublicKey,
     ConnectionClosed,
     RecordedRpc(RpcError),
 }
@@ -323,8 +322,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         | Error::InvalidArguments
         | Error::InvalidBinaryWebSocketFrame
         | Error::InvalidPublicKey
-        | Error::InvalidPublicKeyLength
-        | Error::WeakPublicKey => ErrorKind::InvalidParams,
+        | Error::InvalidPublicKeyLength => ErrorKind::InvalidParams,
         Error::SnapshotTooLarge(_) => ErrorKind::SnapshotTooLarge,
         Error::Storage(error) => error.into(),
         Error::Io(error) if error.kind() == io::ErrorKind::StorageFull => ErrorKind::DiskFull,
@@ -466,7 +464,6 @@ fn message(error: &Error) -> String {
         Error::InvalidPublicKey => "Invalid public key".into(),
         Error::InvalidPublicKeyLength => "Invalid public key length".into(),
         Error::InvalidEngineKey => "Invalid engine key".into(),
-        Error::WeakPublicKey => "Weak public key".into(),
         Error::ConnectionClosed => "Connection closed".into(),
         Error::RecordedRpc(error) => error.message.clone(),
     }

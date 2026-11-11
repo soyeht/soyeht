@@ -369,6 +369,27 @@ fn an_agent_cannot_read_or_write_a_file_outside_its_worktree() {
     let before = site.outside_state();
     let outside = site.outside.display().to_string();
     let project = site.project.display().to_string();
+    // The control: the same two requests inside the project succeed, so the refusals below
+    // are the engine's rule about the path and not a fake agent or a rig that refuses everything.
+    let reply = agent_file_request(
+        &mut client,
+        &pane,
+        "fs-write",
+        &format!("{project}/new.txt"),
+    );
+    assert!(
+        !reply.contains("\"error\""),
+        "a write inside the project: {reply}"
+    );
+    assert_eq!(
+        fs::read_to_string(site.project.join("new.txt")).unwrap(),
+        "attacker\n"
+    );
+    let reply = agent_file_request(&mut client, &pane, "fs-read", &format!("{project}/ok.txt"));
+    assert!(
+        !reply.contains("\"error\"") && reply.contains("inside"),
+        "a read inside the project: {reply}"
+    );
     let attempts = [
         format!("{outside}/secret.txt"),
         format!("{outside}/created-by-agent.txt"),
