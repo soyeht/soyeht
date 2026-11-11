@@ -3,7 +3,8 @@
 //! `npx` and `uvx` read the configuration and the packages of the folder they start in (an
 //! `.npmrc`, a `node_modules`, a `.python-version`). A built-in registry adapter is launched
 //! through one, so it must not start in the workspace, where a repository could decide which code
-//! runs. It starts in a folder the engine owns, owner-only, and empty. The session's folder
+//! runs. It starts in a folder the engine owns, owner-only, and empty but for `installed/`, where
+//! the engine puts the adapters it installs from a lockfile (`adapter_install`). The session's folder
 //! reaches the adapter through ACP (`session/new` and `session/load` carry `cwd`), which is where
 //! the adapter works (ADR 0143).
 //!

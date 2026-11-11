@@ -1,5 +1,7 @@
 pub mod account;
+pub(crate) mod adapter_consent;
 pub(crate) mod adapter_directory;
+pub(crate) mod adapter_install;
 pub mod attachments;
 pub mod authentication;
 pub mod catalog;
@@ -100,6 +102,8 @@ pub struct Changes {
     pub model_refusal: Option<AgentModelRefusal>,
     /// The harness's remembered protocol sign-in changes with this commit.
     pub(crate) sign_in: Option<harness_sign_in::SignInChange>,
+    /// The package a person acknowledged with this commit (ADR 0143).
+    pub(crate) acknowledged_package: Option<String>,
     pub workspace_layout: Option<Workspace>,
     /// A sign-in terminal closed with this commit once the agent confirmed sign-in.
     pub closed_login_pane: Option<StoredPane>,
@@ -163,12 +167,16 @@ struct AgentPersistence<'a> {
 fn persist_agent_metadata(
     tx: &Change<'_>,
     changes: &Changes,
+    at_ms: i64,
 ) -> soyeht_store::database::Result<()> {
     if let Some(refusal) = &changes.model_refusal {
         agents::save_model_refusal(tx, refusal)?;
     }
     if let Some(change) = &changes.sign_in {
         change.persist(tx)?;
+    }
+    if let Some(package) = &changes.acknowledged_package {
+        soyeht_store::adapter_acknowledgement::acknowledge(tx, package, at_ms)?;
     }
     if let Some((sender, target, at_ms, since_ms)) = &changes.message_rate {
         agents::record_message(tx, sender, target, *at_ms, *since_ms)?;
@@ -295,7 +303,7 @@ impl AgentPersistence<'_> {
         if let Some(write) = &self.changes.editor_agent_write {
             write.persist(tx)?;
         }
-        persist_agent_metadata(tx, self.changes)?;
+        persist_agent_metadata(tx, self.changes, self.state.last_update_ms)?;
         persist_pane(tx, self.saved)?;
         if let Some(login) = &self.changes.closed_login_pane {
             persist_pane(tx, login)?;

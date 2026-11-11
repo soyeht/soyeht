@@ -9,6 +9,10 @@ use std::{collections::BTreeMap, time::Duration};
 
 /// How many purposes a minute writes: the busiest ones.
 const LINES_PER_WINDOW: usize = 10;
+/// A purpose that held the lock for less than this share of the window, in thousandths, is not
+/// written. The tick takes the lock a hundred times a second, so without a floor an idle engine
+/// would write the same lines every minute.
+const MIN_BUSY_PERMILLE: u64 = 5;
 /// Buckets of the histograms: bucket `b` holds the durations of `2^b` to `2^(b+1)` microseconds,
 /// and the last one everything longer (about 16 s).
 const BUCKETS: usize = 24;
@@ -131,6 +135,7 @@ impl Usage {
         self.window_start_ms = None;
         rows.sort_by_key(|(_, aggregate)| std::cmp::Reverse(aggregate.held_us));
         rows.into_iter()
+            .take_while(|(_, aggregate)| busy_permille(aggregate, elapsed_ms) >= MIN_BUSY_PERMILLE)
             .take(LINES_PER_WINDOW)
             .map(|((purpose, method), aggregate)| {
                 usage_line(purpose, method, &aggregate, elapsed_ms)
@@ -139,8 +144,13 @@ impl Usage {
     }
 }
 
+/// The share of the window the lock was held for these holds, in thousandths.
+fn busy_permille(aggregate: &Aggregate, window_ms: u64) -> u64 {
+    aggregate.held_us.saturating_mul(1000) / window_ms.saturating_mul(1000).max(1)
+}
+
 fn usage_line(purpose: &str, method: &str, aggregate: &Aggregate, window_ms: u64) -> Line {
-    let busy = aggregate.held_us.saturating_mul(1000) / window_ms.saturating_mul(1000).max(1);
+    let busy = busy_permille(aggregate, window_ms);
     Line::new("engine.core_lock_usage")
         .field("purpose", purpose)
         .field_opt("method", (!method.is_empty()).then_some(method))
@@ -183,16 +193,17 @@ mod tests {
     #[test]
     fn a_window_writes_the_busiest_purposes_and_starts_again() {
         let mut usage = Usage::default();
-        usage.add(&observation("tick", 4, 1), 0);
-        usage.add(&observation("tick", 6, 3), 10);
-        usage.add(&observation("offload_apply", 1, 0), 20);
+        usage.add(&observation("tick", 4_000, 1), 0);
+        usage.add(&observation("tick", 6_000, 3), 10);
+        usage.add(&observation("offload_apply", 1_000, 0), 20);
         assert!(usage.due(59_999, 60_000).is_empty());
         let lines = usage.due(60_000, 60_000);
         assert_eq!(lines.len(), 2);
         let first = lines[0].json();
         assert!(first.contains(r#""purpose":"tick""#), "{first}");
         assert!(first.contains(r#""holds":"2""#), "{first}");
-        assert!(first.contains(r#""commitMs":"5""#), "{first}");
+        assert!(first.contains(r#""commitMs":"5000""#), "{first}");
+        assert!(first.contains(r#""busyPermille":"166""#), "{first}");
         assert!(first.contains(r#""waitMaxUs":"3000""#), "{first}");
         assert!(!first.contains("method"), "{first}");
         // The next window is empty until something is held again.
@@ -210,7 +221,7 @@ mod tests {
                 &Observation {
                     purpose: "dispatch",
                     method,
-                    ..observation("dispatch", n as u64 + 1, 0)
+                    ..observation("dispatch", (n as u64 + 1) * 600, 0)
                 },
                 0,
             );
@@ -218,5 +229,24 @@ mod tests {
         let lines = usage.due(60_000, 60_000);
         assert_eq!(lines.len(), LINES_PER_WINDOW);
         assert!(lines[0].json().contains(r#""method":"l""#));
+    }
+
+    #[test]
+    fn purposes_that_barely_held_the_lock_write_nothing_and_the_window_starts_again() {
+        let mut usage = Usage::default();
+        // Six thousand holds that took no time at all, a purpose under the floor, and one at it.
+        for n in 0..6_000 {
+            usage.add(&Observation::for_test("tick", 0, 0), n * 10);
+        }
+        usage.add(&observation("offload_apply", 100, 0), 0);
+        usage.add(&observation("background", 300, 0), 0);
+        let lines = usage.due(60_000, 60_000);
+        assert_eq!(
+            lines.len(),
+            1,
+            "only a purpose at or over the floor is written"
+        );
+        assert!(lines[0].json().contains(r#""purpose":"background""#));
+        assert!(usage.due(120_000, 60_000).is_empty());
     }
 }

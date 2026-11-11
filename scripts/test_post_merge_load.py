@@ -232,7 +232,10 @@ class LoadRuleTests(RemoteHostCase):
         readings = iter([QUIET, BUSY, QUIET, QUIET])
         record = self.probe_record(head, lambda: next(readings, BUSY))
         self.assertNotIn("culprit", record, "a probe on a busy host blames nobody")
-        self.assertEqual(len(record["candidates"]), 4)
+        # The control run is the first probe: it fails on the busy host, is skipped, and the search
+        # of the four commits does not start.
+        self.assertEqual(record["control"]["result"], "skip")
+        self.assertNotIn("candidates", record)
         self.assertEqual(sum(self.pauses), post_merge_hosts.LOAD_WAIT_BUDGET_SECONDS, "one budget for all the probes")
 
     def test_a_probe_that_passes_on_a_busy_host_still_narrows_the_range(self):

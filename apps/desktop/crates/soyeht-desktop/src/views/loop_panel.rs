@@ -9,11 +9,10 @@ use super::{
     ui::{ChromeBold, field_well, mono_note, option_pill, switch},
 };
 use crate::{
-    loop_form::Choice,
     neo,
     theme::{Palette, desktop, elevation, pane_interior, radius, space, type_scale},
 };
-use soyeht_client::loops::{self, Form};
+use soyeht_client::loops::{self, Choice, Form};
 use soyeht_protocol::{AgentPaneRole, LoopStopWhen, Pane};
 
 impl Workbench {
@@ -32,7 +31,11 @@ impl Workbench {
         let Some(held) = self.loop_form(&pane.pane_id) else {
             return div();
         };
-        let (form, role, choice) = (held.form.clone(), held.role.clone(), held.choice);
+        let (form, role, choice) = (
+            held.panel.form.clone(),
+            held.panel.role.clone(),
+            held.panel.choice,
+        );
         let prompt = held.prompt.clone();
         let can_apply = loops::can_apply(form.enabled, prompt.read(cx).draft().text());
         let pane_id = pane.pane_id.clone();

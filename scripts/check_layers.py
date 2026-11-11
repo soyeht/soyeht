@@ -38,6 +38,7 @@ BLOCKS = (
     "soyeht-usage",
     "soyeht-lsp",
     "soyeht-skills",
+    "soyeht-ink",
 )
 LAYERS: dict[str, set[str]] = {
     # Layer 2: wire models and rules, and the operating-system seams.
@@ -67,6 +68,9 @@ LAYERS: dict[str, set[str]] = {
     # Soyeht's Apache-2.0 stand-in for Zed's GPL-3.0 `ztracing` (ADR 0149): a proc-macro that does
     # nothing, patched in for the crate that GPUI's `sum_tree` uses. It depends on nothing.
     "ztracing": set(),
+    # The same for the LGPL-2.1 protocol crate that GPUI's Linux backend names: a protocol of our own
+    # with the names GPUI imports, which no compositor advertises (ADR 0149).
+    "wayland-protocols-plasma": set(),
     "soyeht-desktop": {"soyeht-client", "soyeht-webview", "soyeht-protocol", "soyeht-platform"},
     # Layer 8: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
     # connection and replica and holds no rule of its own.

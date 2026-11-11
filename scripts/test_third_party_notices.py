@@ -233,14 +233,10 @@ class CargoTests(unittest.TestCase):
         self.assertFalse(licenses.names_copyleft(MIT_TEXT))
         self.assertFalse(licenses.names_copyleft("GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "x " * 100))  # known: judged by its id
 
-    def test_the_policy_entries_for_freetype_and_the_plasma_protocols_say_what_is_bundled(self):
-        freetype, plasma = POLICY.bundled["freetype-sys"], POLICY.bundled["wayland-protocols-plasma"]
+    def test_the_policy_entry_for_freetype_says_what_is_bundled(self):
+        freetype = POLICY.bundled["freetype-sys"]
         self.assertIn("2.13.2", freetype["credit"])
         self.assertNotIn("<year>", freetype["credit"])
-        self.assertEqual(plasma["notice_only"], ["LGPL-2.1-or-later"])
-        self.assertEqual(plasma["source"], "https://github.com/KDE/plasma-wayland-protocols")
-        self.assertTrue(all(name.endswith(".txt") for name in plasma["files"]) and len(plasma["files"]) == 4)
-        self.assertIn("MIT-CMU", POLICY.allowed)
 
     def test_a_credit_and_a_bundled_source_are_lines_of_the_entry(self):
         found = sources.Component("Rust", "freetype-sys", "0.20.1", "MIT", "", {"apps/desktop"}, notes=["credit: Portions of this software are copyright 2023 The FreeType Project", "bundled source: https://example.com"])
@@ -281,7 +277,7 @@ class CargoTests(unittest.TestCase):
         self.assertEqual(found.exception, "reviewed")
 
     def test_an_exception_nobody_uses_fails(self):
-        extra = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {("ghost", "GPL-3.0-or-later"): "once"})
+        extra = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {**POLICY.exceptions, ("ghost", "GPL-3.0-or-later"): "once"})
         with self.assertRaisesRegex(sources.SourceError, "exceptions"):
             notices.collect(extra, metadata=lambda w, r: self.metadata([]))
 
@@ -361,8 +357,34 @@ class RepositoryTests(unittest.TestCase):
         for identifier in POLICY.allowed - {"OFL-1.1", "Apache-2.0 WITH LLVM-exception"}:  # FTL has its own file
             licenses.spdx_text(identifier)
 
-    def test_the_policy_holds_no_exception_so_a_gpl_crate_that_comes_back_fails_the_gate(self):
-        self.assertEqual(POLICY.exceptions, {})
+    def test_the_only_exceptions_are_the_ml_kit_libraries_each_with_its_own_license_and_none_is_copyleft(self):
+        # A GPL crate that comes back must fail the gate, so no exception may name one; the ML Kit libraries (ADR 0157)
+        # are proprietary binaries that the owner accepted on 2026-11-08 (`accepted` in the policy), one entry each.
+        self.assertEqual(
+            dict(POLICY.exceptions.keys()),
+            {
+                "com.google.mlkit:digital-ink-recognition": "LicenseRef-ML-Kit-Terms",
+                "com.google.mlkit:common": "LicenseRef-ML-Kit-Terms",
+                "com.google.android.gms:play-services-base": "LicenseRef-Android-SDK-License",
+                "com.google.android.gms:play-services-basement": "LicenseRef-Android-SDK-License",
+                "com.google.android.gms:play-services-tasks": "LicenseRef-Android-SDK-License",
+            },
+        )
+        for package, license in POLICY.exceptions:
+            self.assertIsNone(licenses.COPYLEFT.search(license), license)
+        # The owner accepted them (2026-11-08): a release passes them, and only them.
+        self.assertEqual(set(POLICY.accepted), set(POLICY.exceptions))
+
+    def test_each_exception_is_one_library_of_gradle_json_with_that_license(self):
+        data = json.loads(sources.GRADLE_DATA.read_text())["libraries"]
+        recorded = {(l["coordinate"], l["license"]) for l in data}
+        for key in POLICY.exceptions:
+            self.assertIn(key, recorded)
+        # An exception is one library and one license: no entry of the proprietary ones groups libraries or licenses.
+        for library in data:
+            if library["license"].startswith("LicenseRef-"):
+                self.assertNotRegex(library["license"], r" (AND|OR) ")
+                self.assertTrue(library["coordinate"].startswith("com."), library["coordinate"])
 
     def test_a_swift_license_file_is_never_a_source_file(self):
         data = json.loads(sources.SWIFT_DATA.read_text())["packages"]

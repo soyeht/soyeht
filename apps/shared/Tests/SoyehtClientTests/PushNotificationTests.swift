@@ -129,3 +129,54 @@ private let request = "6f1c7a2e-0d5b-4e8f-9a51-2c3d4e5f6a7b"
   #expect(PushToken.environment(provisioningProfile: nil, simulator: false) == .production)
   #expect(PushToken.environment(provisioningProfile: nil, simulator: true) == .sandbox)
 }
+
+/// A `welcome` as the engine sends it, built from JSON the way `EngineProofTests` builds one.
+private func welcome(capabilities: [EngineCapability], role: Role) throws -> Welcome {
+  try JsonValue.object([
+    "engineVersion": .string("1"), "protocolVersion": .integer(1), "connectionId": .string("c"),
+    "role": .string(role.rawValue),
+    "capabilities": .array(capabilities.map { .string($0.rawValue) }),
+    "dbId": .string("d"),
+  ]).decoded(Welcome.self)
+}
+
+@MainActor @Test func theWelcomeSaysWhoConnectedAndWhatTheEngineOffers() throws {
+  let client = EngineClient(socket: "/tmp/push-welcome.sock")
+  client.recordWelcome(
+    try welcome(capabilities: [.push, .terminal], role: .human_device),
+    client: "Soyeht iPhone", deviceId: "device-1")
+  #expect(client.engineOffers(.push))
+  #expect(client.connectionActor?.role == .human_device)
+  #expect(client.connectionActor?.client == "Soyeht iPhone")
+  #expect(client.connectionActor?.deviceId == "device-1")
+  client.recordWelcome(
+    try welcome(capabilities: [.terminal], role: .human_local), client: "Soyeht Mac",
+    deviceId: nil)
+  #expect(!client.engineOffers(.push))
+  #expect(client.connectionActor?.role == .human_local)
+  #expect(client.connectionActor?.client == "Soyeht Mac")
+}
+
+@MainActor @Test func aPhoneAsksForNotificationsOnlyWhenTheEngineOffersPush() {
+  let client = EngineClient(socket: "/tmp/push-capability.sock")
+  #expect(!client.engineOffers(.push))
+  client.engineCapabilities = [EngineCapability.terminal.rawValue]
+  #expect(!client.engineOffers(.push))
+  client.engineCapabilities.insert(EngineCapability.push.rawValue)
+  #expect(client.engineOffers(.push))
+}
+
+@MainActor @Test func aTokenIsNotSentToAnEngineThatDoesNotOfferPush() async {
+  let client = EngineClient(socket: "/tmp/push-register.sock")
+  client.engineCapabilities = [EngineCapability.terminal.rawValue]
+  do {
+    try await client.registerPush(token: "ab12", environment: .production)
+    Issue.record("registerPush sent a token to an engine without push")
+  } catch let ClientFailure.remote(kind, _, _) {
+    // The refusal is raised before a request is made, so a client that is not even connected
+    // still names the engine's own answer.
+    #expect(kind == ErrorKind.push_unavailable.rawValue)
+  } catch {
+    Issue.record("unexpected failure: \(error)")
+  }
+}

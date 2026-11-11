@@ -26,7 +26,7 @@ struct EngineTimeoutDiagnostic: Equatable {
 public final class EngineClient {
   public internal(set) var panes: [Pane] = []
   public private(set) var workspaces: [Workspace] = []
-  public private(set) var devices: [Device] = []
+  public internal(set) var devices: [Device] = []
   public internal(set) var pairRequests: [PairPrompt] = []
   public internal(set) var agentPanes: [String: AgentPaneView] = [:]
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
@@ -47,6 +47,8 @@ public final class EngineClient {
   public internal(set) var paneLoops: [String: LoopConfig] = [:]
   /// The usage readings of the providers; the client asks the engine, the replica keeps them.
   public let usage = UsageReplica()
+  /// The trust of each open workspace's folder; the client asks the engine, the replica keeps it.
+  public let projectTrust = ProjectTrustReplica()
   public internal(set) var slashSources = SlashSources()
   public internal(set) var editorFiles: [String: EditorFileView] = [:]
   public internal(set) var editorNavigationTarget: EditorNavigationTarget?
@@ -70,13 +72,11 @@ public final class EngineClient {
       workspaceLayout: workspace.layout,
       livePanes: self.layoutPanes(self.panes.filter { $0.workspaceId == workspaceId }))
   }
-  public var gapText: String? {
-    selectedPaneId.flatMap { terminalStreams.gapText(for: $0) }
-  }
   public internal(set) var pairCode: DevicePairStartResult?
   /// Whether paired devices can reach the engine; `nil` until the engine says.
   public internal(set) var reachability: EngineReachability?
   public internal(set) var connectionActor: Actor?
+  public internal(set) var engineCapabilities: Set<String> = []
   @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
   @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
   @ObservationIgnored private var terminalOutputSinks: [String: TerminalOutputTarget] = [:]
@@ -97,7 +97,9 @@ public final class EngineClient {
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
   @ObservationIgnored private var pending: [String: Pending] = [:]
   @ObservationIgnored private var snapshot = SnapshotAssembly()
-  var terminalStreams = TerminalStreamReplica()
+  /// Not observed: positions move with every chunk. A view reads `terminalGapTexts`.
+  @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
+  var terminalGapTexts: [String: String] = [:]
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?
@@ -211,7 +213,7 @@ public final class EngineClient {
     disconnect()
   }
   private func disconnect() {
-    connected = false
+    (connected, engineCapabilities) = (false, [])
     resetAgentSession()
     for task in editorWriteTasks.values { task.cancel() }
     editorWriteTasks.removeAll()
@@ -296,8 +298,7 @@ public final class EngineClient {
     else {
       throw ClientFailure.invalidFrame
     }
-    connectionActor = Actor(
-      role: welcome.role, client: hello.client, deviceId: credential?.deviceId)
+    recordWelcome(welcome, client: hello.client, deviceId: credential?.deviceId)
     _ = try await request(.stateSnapshot, .object([:]))
     try await loadPreferredHarness()
     _ = try await request(.eventsSubscribe, .object(["since": .string(String(cursor))]))
@@ -550,7 +551,7 @@ public final class EngineClient {
       try applyTaskEvent(eventName, params)
     case .attentionChanged: try applyAttentionEvent(params)
     case .loopTick, .loopStopped: try applyLoopEvent(eventName, params)
-    case .usageChanged: try applyUsageEvent(params)
+    case .usageChanged, .projectTrustChanged: try applyReplicaEvent(eventName, params)
     case .skillsChanged, .paneCommandsChanged: try applySlashEvent(eventName, params)
     case .fileChangedOnDisk, .fileSaved, .fileSaveFailed, .fileConflict, .lspDiagnostics,
       .editorAgentCursor, .editorReviewRequested, .editorTabsUpdated, .projectEntryRenamed,
@@ -561,7 +562,7 @@ public final class EngineClient {
     case .settingsChanged: try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .engineReachabilityChanged: try applyReachability(params)
     case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
-      .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged:
+      .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged, .projectTrustChanged:
       break
     case .writingChanged: try applyWritingEvent(params)
     }
@@ -615,21 +616,6 @@ public final class EngineClient {
       workspaces.append(workspace)
     }
   }
-  private func applyDeviceEvent(_ eventName: EventName, _ params: JsonValue) throws {
-    switch eventName {
-    case .devicePairRequested:
-      let event = try params.decoded(DevicePairRequestedEvent.self)
-      pairRequests.removeAll { $0.requestId == event.requestId }
-      pairRequests.append(PairPrompt(event))
-    case .devicePaired:
-      let device = try params["device"].decoded(Device.self)
-      pairRequests.removeAll { $0.fingerprint == device.fingerprint }
-      devices.removeAll { $0.deviceId == device.deviceId }
-      if !device.revoked { devices.append(device) }
-    case .deviceRevoked: devices.removeAll { $0.deviceId == params["deviceId"].string }
-    default: break
-    }
-  }
   private func applySnapshot(_ value: JsonValue) throws {
     let result = try value.decoded(StateSnapshotResult.self)
     let sections = try snapshot.finish(result)
@@ -659,6 +645,7 @@ public final class EngineClient {
     try applyTaskSnapshot(sections, panes: panes)
     try applyEditorSnapshot(sections, panes: panes)
     try applyWritingSnapshot(sections, panes: panes)
+    try applyProjectTrustSnapshot(sections)
     applyWebSnapshot(panes: panes)
     pairRequests = requests
     cursor = UInt64(result.cursor)!
@@ -730,7 +717,7 @@ public final class EngineClient {
     guard !terminalStreams.contains(paneId) else { return }
     perform { try await self.subscribe(paneId) }
   }
-  public func gapText(for paneId: String) -> String? { terminalStreams.gapText(for: paneId) }
+  public func gapText(for paneId: String) -> String? { terminalGapTexts[paneId] }
   func claimTerminalOutput(
     owner: AnyObject, sink: @escaping (Data, Bool) -> Void
   ) {
@@ -770,21 +757,6 @@ public final class EngineClient {
     #if os(macOS)
       terminalViewRegistry.remove(paneId)
     #endif
-  }
-  public func createTerminalPane(directory: URL) async throws -> String {
-    let path = directory.standardizedFileURL.path
-    let workspaceId = try await workspaceId(for: directory, path: path)
-    let result = try await mutation(
-      .paneCreate,
-      PaneCreateParams(
-        workspaceId: workspaceId,
-        mode: .terminal, cwd: path, name: "Terminal", idempotencyKey: UUID().uuidString))
-    let paneId = try result.decoded(PaneCreateResult.self).paneId
-    select(paneId)
-    return paneId
-  }
-  func workspaceId(for directory: URL, path: String) async throws -> String {
-    try await createWorkspace(path: path, name: directory.lastPathComponent).workspaceId
   }
   public func setWorkspacePaneLayout(
     workspaceId: String, state: PaneLayoutState

@@ -96,7 +96,7 @@ class SyntheticRepositoryTests(SyntheticRepositoryCase):
         culprit = self.add("breaks", {"broken": "x"})
         head = self.add("four", {"c": "3"})
         with mock.patch.dict(os.environ, {"FAKE_STEP": "tcc"}), \
-                mock.patch.object(post_merge_gate, "PREREQUISITES", {"tcc": "snap"}):
+                mock.patch.object(post_merge_gate, "PREREQUISITES", {"tcc": ("snap",)}):
             self.assertEqual(self.run_main(head), 1)
         record = json.loads((self.health / f"{head}.json").read_text())
         self.assertEqual(record["failed_step"], "tcc")

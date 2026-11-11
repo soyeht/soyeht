@@ -28,10 +28,8 @@ ship, and nothing in the packages.
   compiles code of another license has a `bundled` entry in the policy: `freetype-sys` builds FreeType, which
   is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit line (the FreeType 2.13.2 it bundles) is in its entry. A nested license file
   classified outside the allow-list fails the check unless the crate's `bundled` entry lists that license in
-  `notice_only`: `wayland-protocols-plasma` has 17 of its 29 SPDX-tagged protocol files under LGPL-2.1-or-later (the
-  generated interface tables are compiled in; no LGPL library code is linked), 10 under MIT-CMU and one under
-  BSD-3-Clause, and ships the four license texts with the source address
-  (https://github.com/KDE/plasma-wayland-protocols). An entry of
+  `notice_only` (a license that is shipped as a notice for data the crate carries, one license at a time; no crate
+  needs it today, since the Linux app's LGPL protocol crate was replaced, see Consequences). An entry of
   an MPL-2.0 component gives the address of its source (section 3.2). For the Swift packages, the pins of the four
   `Package.resolved` files against `scripts/third_party/swift.json` and the texts under
   `scripts/third_party/swift/`, which `third_party_notices.py refresh-swift --checkouts DIR` renews from
@@ -43,7 +41,7 @@ ship, and nothing in the packages.
   source-available license). An expression passes when one alternative of it is entirely allowed. `clarify`
   gives the license of a package whose manifest declares none, or states a combined one, each with its reason.
   `exceptions` lets a known package with a license outside the list pass, each with its reason; an exception
-  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses. `release_flow.py collect` and `publish` refuse while any exception is in the policy (`release_checks.exception_problems`), so one cannot be forgotten at a release.
+  that no dependency needs fails, so the list cannot go stale, and a run prints each exception it uses. `release_flow.py collect` and `publish` refuse while any exception is in the policy (`release_checks.exception_problems`), so one cannot be forgotten at a release. An exception can carry `"accepted": {"by", "date"}` (ADR 0157): the owner has decided to ship that one package under that license, and a release passes it. `by` must be on a fixed list in `third_party_licenses.ACCEPTERS` (only "owner"), `date` a real date, and a license that is copyleft (GPL, AGPL, LGPL, MPL, EPL, CDDL, EUPL, SSPL, CC-BY-SA) is never accepted: the policy does not load.
 - **The gate checks it.** `third-party-notices:check` (area `always`) fails when a dependency has no allowed
   license, when `swift.json` or `gradle.json` disagree with the lock files, when an exception is unused, or
   when the committed file differs from what `generate` writes. `third-party-notices:unit` runs
@@ -58,7 +56,7 @@ ship, and nothing in the packages.
 
 - A new dependency fails the gate until its license is allowed and the file is regenerated; the diff of
   `THIRD-PARTY-NOTICES.txt` shows the reviewer what was added.
-- The file is about 560 KB (about 100 KB compressed), under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
+- The file is about 500 KB (about 80 KB compressed), under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
   are kept once and the copyright lines go with each component. It grows with the dependency graph.
 - The Gradle side lists the libraries the build file declares and one line for the transitive AndroidX, Kotlin
   and Compose libraries (all Apache-2.0); it is not resolved from a Gradle dependency report.
@@ -73,3 +71,15 @@ ship, and nothing in the packages.
   --target all -i zlog` finds nothing. The Android workspace has no GPUI. `policy.json` has no
   `exceptions`, so a GPL crate that comes back fails the gate. When the GPUI pin moves to a revision after
   the relicense, the patch and the crate can go.
+- LGPL-2.1-or-later protocol files were in the Linux graph: the registry crate `wayland-protocols-plasma`, which
+  GPUI's Linux backend (`gpui_linux`) uses only for `blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager}`,
+  and 17 of whose 29 SPDX-tagged protocol files (`blur.xml` among them) are LGPL-2.1-or-later. Soyeht never asks
+  for a blurred window (no `WindowBackgroundAppearance::Blurred` in `apps/desktop`). `[patch.crates-io]` in
+  `apps/desktop/Cargo.toml` replaces the crate with `apps/desktop/shims/wayland-protocols-plasma` (Apache-2.0,
+  version 0.3.99 so that it satisfies the `0.3.9` GPUI asks for; it sits outside `crates/` because the release
+  check wants every crate there to take the product version). It has a protocol of our own, written from the calls
+  GPUI makes (`create`, `unset`, `commit`, `release`) and not from KDE's, and exports it under the module and type
+  names GPUI imports. Its interfaces are named `soyeht_unadvertised_blur_manager` and `soyeht_unadvertised_blur`,
+  which no compositor offers: GPUI looks for the manager global, finds none, and blur stays off. A test of the
+  shim holds the names and the calls. `cargo tree --target x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu`
+  resolve to the shim, and no `0.3.12` of the registry crate remains in the lockfile.

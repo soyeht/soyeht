@@ -134,7 +134,14 @@ Behaviour unchanged. The guard of the lock measures every hold, not only the one
   and finishes. There are no counters at the roughly 300 call sites of the store. Statements are
   timed at one place: the SQLite trace hook of the connection (statement start and finish, with a
   monotonic clock, since SQLite's own profile timer has a millisecond resolution and misses a commit
-  under 1 ms), and the `COMMIT` statement is charged to its own column because it is the `fsync`.
+  under 1 ms), and the `COMMIT` statement is charged to its own column because it is the `fsync`
+  of a transaction. How to read the two columns, which decides step 4: `sqlMs` is the lifetime of a
+  statement, from its first step to its reset, so it includes the Rust code that runs between the
+  steps (a row callback, a nested query) and statements that nest are summed; a write outside an
+  explicit transaction commits inside its own `INSERT`, so that disk wait is in `sqlMs` and not in
+  `commitMs`, and a `BEGIN IMMEDIATE` that waits for another writer is in `sqlMs` too. The disk
+  wait of the engine is therefore `commitMs` plus the part of `sqlMs` that belongs to the writes
+  outside a transaction; `commitMs` alone understates it.
   Segment-file reads and appends and the file port are charged where they are called (two functions
   of the segment log, the methods of the editor's port; a call inside another is charged once). Work
   done on a thread that holds no lock is not timed at all.
@@ -143,7 +150,9 @@ Behaviour unchanged. The guard of the lock measures every hold, not only the one
   wait was 100 ms or more. And, once a minute, one usage line (`core_lock_usage`) for each of the ten
   busiest purposes (a request is a purpose of its own, named by its allow-listed method): the number
   of holds, the share of the minute the lock was held, the p50 and p99 of the hold and of the wait,
-  the longest wait, and the sums of the five costs. With this the question "does SQLite dominate
+  the longest wait, and the sums of the five costs. A purpose that held the lock for less than
+  5 thousandths of the minute is not written, so an idle engine, whose tick takes the lock a hundred
+  times a second, does not write the same lines every minute. With this the question "does SQLite dominate
   the 3 to 20 ms holds" is answered from the owner's own log, which is what decides step 4.
 - The trace hook is the `trace` feature of `rusqlite`, which is enabled only through `test-support`
   today (`soyeht-store/Cargo.toml`). Production needs it on in the normal build, so this change edits a
@@ -251,6 +260,39 @@ connection returns the engine to polling at the tick interval until it is made a
   byte-by-byte copy in `retention.rs` are separate work by another change. This change adds a push
   where the reader appends (`start_readers`); an exit notice can later replace the exit poll without
   a wire change.
+
+**As built (change 1a).** The wire is as above, with these details and two narrowings:
+
+- A process the engine does not name in `Watch` counts as read to offset 0, so the engine names
+  none and the answer is every process with output and every process that exited: one pass over
+  all of them when a watch starts, which is also the first sweep.
+- A read clears a mark only when it reached the larger of what the notice announced and what the
+  supervisor held when the read was made (`Output.end_seq`); a notice is sent once per read, so the
+  first one of a burst says little. A read that found output and reached the end leaves the process
+  to the regular tick for one tick (the 10 ms `PACE`), so a process that writes in small chunks
+  costs a read and an apply per tick and not one per round trip; a truncated read is repeated at
+  once.
+- A watch notice is a mark with the end it announced. A read clears it when it reached that end (or,
+  for a mark that a sweep made, always); a notice that arrives during a read raises the end, so
+  that read leaves the mark and the process is read again. A pane whose reads keep truncating is
+  repeated at once by a woken tick up to 16 times in a row; the regular tick always reads a marked
+  pane.
+- **Agents** keep their poll and their pause: it cannot advance without a read, and the native
+  records, deadlines and the expiry of requests of an idle agent must not be late. An idle agent
+  is still read every `IDLE_PACE_MS` (100 ms); a mark ends the pause at once, so output is not
+  waiting for it.
+- **Language servers are not moved in this change.** They are read on every tick, as before: they
+  exist only while an editor has a source file open and their poll needs a read each tick. They move
+  with step 1b, where the tick has deadlines.
+- Counts, in the release build on a loaded host (load average 80 to 130, so the CPU and latency
+  figures are only a direction): context switches per second of the engine and of the supervisor
+  fell from 806 and 138 (1 shell) to 499 and 36, from 1739 and 689 (6 shells) to 561 and 125, and
+  from 2339 and 1671 (21 shells) to 572 and 693. What is left in the engine is the 10 ms tick (step
+  1b); what is left in the supervisor at 21 shells is the 10 ms exit poll of each process, which
+  another change replaces. The echo of a typed key, measured from the send of the input to the
+  frame that carries the echo, was at the median 31 ms before and 21 ms after with 1 shell, 64 and
+  57 ms with 6 shells, and 63 and 63 ms with 21; p99 fell in each case. The meter on a quiet host
+  decides.
 
 ### Step R. The reductions that need no new mechanism and no change of durability
 

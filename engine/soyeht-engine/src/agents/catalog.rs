@@ -39,10 +39,22 @@ fn environment_issue(rescan: bool) -> Option<HarnessEnvironmentIssue> {
     resolution.issue.map(wire_environment_issue)
 }
 
+/// What the engine knows about the package a harness's launch downloads, for [`setup_state`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Download {
+    /// No package runner: a program on the `PATH`, or a custom entry.
+    None,
+    /// A package runner, and the person has not acknowledged what the first start downloads:
+    /// the engine installs it from its lock (and says so), or the runner fetches it unchecked.
+    Unacknowledged,
+    /// The person acknowledged the exact package.
+    Acknowledged,
+}
+
 fn setup_state(
     resolved: bool,
     installed: bool,
-    package_runner: bool,
+    download: Download,
     environment_issue: bool,
     recorded: Option<&HarnessReadiness>,
     phase: Option<&Phase>,
@@ -57,19 +69,29 @@ fn setup_state(
             }),
         );
     }
+    // What the notice is for: a package nobody started yet. A program of the same name on the
+    // `PATH` does not end it (the runner still fetches the package), and neither does the record
+    // of a start that never got going (`launch_failed`); only a record of a process that ran does.
+    let ran = recorded.is_some_and(|value| value.reason != Some(HarnessSetupReason::LaunchFailed));
+    if download == Download::Unacknowledged && !ran {
+        return (
+            HarnessSetupState::NotChecked,
+            Some(HarnessSetupReason::RegistryPackageUnverified),
+        );
+    }
     if let Some(recorded) = recorded {
         return (recorded.state.clone(), recorded.reason.clone());
     }
     if !installed {
-        return if package_runner {
-            (
-                HarnessSetupState::NotChecked,
-                Some(HarnessSetupReason::RegistryPackageUnverified),
-            )
-        } else {
+        return if download == Download::None {
             (
                 HarnessSetupState::NotInstalled,
                 Some(HarnessSetupReason::ExecutableMissing),
+            )
+        } else {
+            (
+                HarnessSetupState::NotChecked,
+                Some(HarnessSetupReason::NeverStarted),
             )
         };
     }
@@ -220,7 +242,7 @@ pub(crate) fn prepare_catalog(
         let mut resolve_ms = 0;
         let mut prepare_ms = 0;
         let mut installed_ms = 0;
-        let entries = registry::catalogue_entries(&directory)?
+        let entries = registry::listed_entries(&directory)?
             .into_iter()
             .map(|entry| {
                 let step = Instant::now();
@@ -325,10 +347,21 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
     };
     let package_runner = entry.source == HarnessSource::BuiltIn
         && package_runner::package_runner(&entry.launch.command).is_some();
+    let package = super::adapter_install::runner_package(&entry.launch);
+    let acknowledged = match super::adapter_consent::unchecked_package(&entry.launch) {
+        Some(package) => soyeht_store::adapter_acknowledgement::acknowledged(&core.store, &package)
+            .map_err(errors::storage)?,
+        None => false,
+    };
+    let download = match (package_runner, acknowledged) {
+        (false, _) => Download::None,
+        (true, true) => Download::Acknowledged,
+        (true, false) => Download::Unacknowledged,
+    };
     let (setup_state, setup_reason) = setup_state(
         resolved.is_some(),
         installed,
-        package_runner,
+        download,
         issue,
         recorded.as_ref(),
         known.map(|agent| &agent.state.phase),
@@ -356,7 +389,9 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
         source: Some(entry.source),
         setup_state: Some(setup_state),
         setup_reason,
-        last_ready_at_ms: recorded.and_then(|value| value.last_ready_ms.map(|ms| ms.to_string()))
+        last_ready_at_ms: recorded.and_then(|value| value.last_ready_ms.map(|ms| ms.to_string())),
+        package_locked: package.as_ref().map(|(_, locked)| *locked),
+        package: package.map(|(name, _)| name),
     }))
 }
 
@@ -419,7 +454,7 @@ mod status_tests {
     #[test]
     fn setup_state_uses_observed_launch_facts_without_mistaking_missing_probes_for_failure() {
         assert_eq!(
-            setup_state(true, true, false, false, None, None),
+            setup_state(true, true, Download::None, false, None, None),
             (
                 HarnessSetupState::NotChecked,
                 Some(HarnessSetupReason::NeverStarted)
@@ -431,32 +466,39 @@ mod status_tests {
             last_ready_ms: Some(42),
         };
         assert_eq!(
-            setup_state(true, true, false, false, Some(&ready), None),
+            setup_state(true, true, Download::None, false, Some(&ready), None),
             (HarnessSetupState::Ready, None)
         );
         assert_eq!(
-            setup_state(true, true, false, false, None, Some(&Phase::NeedsLogin)),
+            setup_state(
+                true,
+                true,
+                Download::None,
+                false,
+                None,
+                Some(&Phase::NeedsLogin)
+            ),
             (
                 HarnessSetupState::SignIn,
                 Some(HarnessSetupReason::AuthenticationRequired)
             )
         );
         assert_eq!(
-            setup_state(false, true, false, false, Some(&ready), None),
+            setup_state(false, true, Download::None, false, Some(&ready), None),
             (
                 HarnessSetupState::NotInstalled,
                 Some(HarnessSetupReason::ExecutableMissing)
             )
         );
         assert_eq!(
-            setup_state(false, true, false, true, Some(&ready), None),
+            setup_state(false, true, Download::None, true, Some(&ready), None),
             (
                 HarnessSetupState::NotInstalled,
                 Some(HarnessSetupReason::EnvironmentUnavailable)
             )
         );
         assert_eq!(
-            setup_state(true, false, true, false, None, None),
+            setup_state(true, false, Download::Unacknowledged, false, None, None),
             (
                 HarnessSetupState::NotChecked,
                 Some(HarnessSetupReason::RegistryPackageUnverified)
@@ -468,10 +510,70 @@ mod status_tests {
             last_ready_ms: None,
         };
         assert_eq!(
-            setup_state(true, false, true, false, Some(&login), None),
+            setup_state(
+                true,
+                false,
+                Download::Unacknowledged,
+                false,
+                Some(&login),
+                None
+            ),
             (
                 HarnessSetupState::SignIn,
                 Some(HarnessSetupReason::AuthenticationRequired)
+            )
+        );
+    }
+
+    /// The notice about what the first start downloads is not replaced by the record of a start
+    /// that failed, and ends when the person acknowledged the package.
+    #[test]
+    fn the_download_notice_outlives_a_failed_first_start_and_ends_with_the_acknowledgement() {
+        let failed = HarnessReadiness {
+            state: HarnessSetupState::CheckSetup,
+            reason: Some(HarnessSetupReason::LaunchFailed),
+            last_ready_ms: None,
+        };
+        let notice = (
+            HarnessSetupState::NotChecked,
+            Some(HarnessSetupReason::RegistryPackageUnverified),
+        );
+        assert_eq!(
+            setup_state(
+                true,
+                false,
+                Download::Unacknowledged,
+                false,
+                Some(&failed),
+                None
+            ),
+            notice
+        );
+        // A program of the same name on the `PATH` does not end it: the runner fetches the package.
+        assert_eq!(
+            setup_state(true, true, Download::Unacknowledged, false, None, None),
+            notice
+        );
+        // Once the person acknowledged it, the failure is what is shown.
+        assert_eq!(
+            setup_state(
+                true,
+                false,
+                Download::Acknowledged,
+                false,
+                Some(&failed),
+                None
+            ),
+            (
+                HarnessSetupState::CheckSetup,
+                Some(HarnessSetupReason::LaunchFailed)
+            )
+        );
+        assert_eq!(
+            setup_state(true, false, Download::Acknowledged, false, None, None),
+            (
+                HarnessSetupState::NotChecked,
+                Some(HarnessSetupReason::NeverStarted)
             )
         );
     }
@@ -516,135 +618,4 @@ mod status_tests {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use soyeht_protocol::ErrorKind;
-    #[test]
-    fn catalogue_pages_preserve_large_entries_and_reject_changed_cursors() {
-        let items = (0..5)
-            .map(|n| json!({"id":n,"text":"x".repeat(400_000)}))
-            .collect::<Vec<_>>();
-        let first = page(items.clone(), json!({}), &json!({})).unwrap();
-        assert!(serde_json::to_vec(&first).unwrap().len() <= limits::JSON_BYTES);
-        assert_eq!(first["items"].as_array().unwrap().len(), 2);
-        let second = page(
-            items.clone(),
-            json!({}),
-            &json!({"cursor":first["nextCursor"]}),
-        )
-        .unwrap();
-        assert_eq!(second["items"][0]["id"], 2);
-        let mut changed = items;
-        changed[0]["text"] = json!("changed");
-        assert_eq!(
-            errors::kind(
-                &page(changed, json!({}), &json!({"cursor":first["nextCursor"]})).unwrap_err(),
-            ),
-            ErrorKind::ResyncRequired
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn model_list_reads_an_executable_only_for_a_harness_with_a_live_session() {
-        use std::os::unix::fs::PermissionsExt;
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-model-list-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        // Executable but unreadable: resolving it works, hashing it cannot.
-        let executable = directory.join("agent");
-        std::fs::write(&executable, b"#!/bin/sh\nexit 0\n").unwrap();
-        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o111)).unwrap();
-        let launch = soyeht_protocol::HarnessLaunch {
-            id: "slow-disk".into(),
-            name: "Slow disk".into(),
-            command: executable.to_str().unwrap().into(),
-            args: vec![],
-            version: "1".into(),
-            environment: None,
-        };
-        registry::create_custom(&directory, launch).unwrap();
-        let params = json!({"harness":"slow-disk"});
-
-        let idle = prepare_catalog(directory.clone(), "model.list", &params, BTreeSet::new());
-        assert!(matches!(
-            idle.unwrap(),
-            PreparedCatalog::Model { prepared: None, .. }
-        ));
-
-        let with_session = BTreeSet::from(["slow-disk".to_owned()]);
-        let can_read = std::fs::File::open(&executable).is_ok();
-        let live = prepare_catalog(directory.clone(), "model.list", &params, with_session);
-        if can_read {
-            // Privileged runs (root) read a mode 0o111 file, so the unreadable-file
-            // failure cannot be produced here. Say so instead of passing silently.
-            eprintln!("skipped: this user reads mode 0o111 files, so hashing cannot fail");
-            assert!(live.is_ok(), "a readable executable is hashed");
-        } else {
-            assert!(live.is_err(), "an unreadable executable cannot be hashed");
-        }
-
-        let unknown = prepare_catalog(
-            directory.clone(),
-            "model.list",
-            &json!({"harness":"nope"}),
-            BTreeSet::new(),
-        );
-        assert!(unknown.is_err());
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn model_list_for_an_idle_harness_is_not_probed_and_empty() {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-model-idle-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        let core = Core::open(&directory).unwrap();
-        let params = json!({"harness":"registry.claude-acp"});
-        let prepared = PreparedCatalog::Model {
-            harness: "registry.claude-acp".into(),
-            prepared: None,
-        };
-        let listed = core.agent_catalog_prepared(prepared, &params).unwrap();
-        assert_eq!(listed["source"], "not_probed");
-        assert_eq!(listed["items"], json!([]));
-        drop(core);
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    #[test]
-    fn harness_list_names_harnesses_with_the_label_panes_are_named_after() {
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-harness-label-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        let core = Core::open(&directory).unwrap();
-        let prepared = prepare_catalog(
-            directory.clone(),
-            "harness.list",
-            &json!({}),
-            BTreeSet::new(),
-        )
-        .unwrap();
-        let listed = core.agent_catalog_prepared(prepared, &json!({})).unwrap();
-        let entries = registry::catalogue_entries(&directory).unwrap();
-        let claude = entries
-            .iter()
-            .find(|entry| entry.launch.id == "registry.claude-acp")
-            .unwrap();
-        let item = listed["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|item| item["id"] == "registry.claude-acp")
-            .unwrap();
-        // The registry calls the adapter "Claude Agent"; panes and pickers say "Claude".
-        assert_eq!(claude.launch.name, "Claude Agent");
-        assert_eq!(
-            item["name"],
-            super::super::naming::harness_label(&claude.launch)
-        );
-        assert_eq!(item["name"], "Claude");
-        drop(core);
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-}
+mod tests;

@@ -540,7 +540,11 @@ extension EngineClient {
         try await self.refreshEditorFile(fileId, generation: generation)
       } catch is CancellationError {} catch {
         guard self.editorRefreshGeneration[fileId] == generation else { return }
-        self.problem = error.localizedDescription
+        let folderGone =
+          self.editorFiles[fileId].map {
+            self.noteMissingWorkspaceFolder(error, workspaceId: $0.file.workspaceId)
+          } ?? false
+        if !folderGone { self.problem = error.localizedDescription }
       }
       if self.editorRefreshGeneration[fileId] == generation {
         self.editorRefreshTasks[fileId] = nil

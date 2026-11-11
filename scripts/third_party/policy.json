@@ -13,7 +13,6 @@
     "ISC",
     "MIT",
     "MIT-0",
-    "MIT-CMU",
     "MPL-2.0",
     "NCSA",
     "OFL-1.1",
@@ -63,7 +62,53 @@
       "reason": "The package is MIT; NOTICES lists the Apache-2.0 code it derives from swift-transformers."
     }
   },
-  "exceptions": [],
+  "exceptions": [
+    {
+      "package": "com.google.mlkit:digital-ink-recognition",
+      "license": "LicenseRef-ML-Kit-Terms",
+      "reason": "Handwriting recognition on a Boox below Android 14 (ADR 0157). Google's proprietary binary under the ML Kit Terms of Service: not open source and not on the allow-list. It is not copyleft and links no GPL code. The owner accepted it on 2026-11-08 as an opt-in feature that is off by default; the app tells the person what ML Kit sends to Google (PRIVACY.md).",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.mlkit:common",
+      "license": "LicenseRef-ML-Kit-Terms",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the ML Kit Terms of Service, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-base",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-basement",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    },
+    {
+      "package": "com.google.android.gms:play-services-tasks",
+      "license": "LicenseRef-Android-SDK-License",
+      "reason": "A library the ML Kit recognizer needs at run time (transitive of com.google.mlkit:digital-ink-recognition, ADR 0157): Google's proprietary binary under the Android Software Development Kit License, not open source. The owner accepted it on 2026-11-08 together with the recognizer.",
+      "accepted": {
+        "by": "owner",
+        "date": "2026-11-08"
+      }
+    }
+  ],
   "bundled": {
     "freetype-sys": {
       "license": "FTL OR GPL-2.0-only",
@@ -72,20 +117,6 @@
       ],
       "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit line of its entry and the license text are in the notices.",
       "credit": "Portions of this software are copyright \u00a9 2023 The FreeType Project (www.freetype.org). All rights reserved. (FreeType 2.13.2, bundled by freetype-sys 0.20.1)"
-    },
-    "wayland-protocols-plasma": {
-      "license": "MIT AND MIT-CMU AND BSD-3-Clause AND LGPL-2.1-or-later",
-      "notice_only": [
-        "LGPL-2.1-or-later"
-      ],
-      "files": [
-        "plasma-wayland-protocols/LICENSES/MIT.txt",
-        "plasma-wayland-protocols/LICENSES/MIT-CMU.txt",
-        "plasma-wayland-protocols/LICENSES/BSD-3-Clause.txt",
-        "plasma-wayland-protocols/LICENSES/LGPL-2.1-or-later.txt"
-      ],
-      "source": "https://github.com/KDE/plasma-wayland-protocols",
-      "reason": "The crate (MIT) turns the XML protocol descriptions of KDE's plasma-wayland-protocols into interface tables at build time. Of its 29 SPDX-tagged protocol files, 17 are LGPL-2.1-or-later (blur.xml, the one gpui_linux uses, among them), 10 MIT-CMU, 1 BSD-3-Clause and 1 MIT. Only the generated interface tables are compiled in; no LGPL library code is linked. The four license texts are shipped, and the LGPL is allowed here as a notice only."
     }
   }
 }

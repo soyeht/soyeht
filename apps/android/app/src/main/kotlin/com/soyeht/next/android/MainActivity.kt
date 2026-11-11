@@ -14,7 +14,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         offer(intent)
-        setContent { SoyehtTheme { SoyehtApp(model) } }
+        setContent { SoyehtTheme(eink = model.eink) { SoyehtApp(model) } }
     }
 
     override fun onNewIntent(intent: Intent) {

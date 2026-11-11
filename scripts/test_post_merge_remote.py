@@ -14,7 +14,7 @@ from unittest import mock
 import gate_remote
 import post_merge_gate
 import post_merge_hosts
-from test_post_merge_fixtures import RemoteHostCase, git
+from test_post_merge_fixtures import RemoteHostCase, git, isolate_environment
 
 
 class RemoteGateTests(RemoteHostCase):
@@ -440,6 +440,15 @@ class PullRequestGateTests(RemoteHostCase):
         (remote_arguments,), (local_arguments,) = self.sides()
         self.assertIn(f"event={event}", local_arguments)
         self.assertIn("event= ", remote_arguments + " ")
+
+    def test_a_gate_wrapper_slot_in_the_environment_does_not_move_the_hosts_worktree(self):
+        # A gate that runs through gate_remote.py with a slot hands SOYEHT_REMOTE_SLOT to the local
+        # half, which runs these tests: the stand-in host must still use its default `tree`.
+        wrapper = {gate_remote.SLOT_ENV: "slot1", gate_remote.HOST_ENV: "other", gate_remote.ROOT_ENV: "/nowhere",
+                   "SOYEHT_REMOTE_GATE_DIR": "/nowhere", "SOYEHT_GATE_ENV_FILE": "/nowhere"}
+        with mock.patch.dict(os.environ, wrapper):
+            isolate_environment()
+            self.assertEqual({name for name in wrapper if name in os.environ}, set())
 
     def test_it_refuses_to_run_without_a_host(self):
         with mock.patch.dict(os.environ, {}, clear=False):

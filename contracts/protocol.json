@@ -82,7 +82,8 @@
         "capabilities",
         "streams",
         "files",
-        "writing"
+        "writing",
+        "trust"
       ]
     },
     "ErrorKind": {
@@ -128,7 +129,14 @@
         "platform_unsupported",
         "git_unavailable",
         "file_not_text",
-        "file_too_large"
+        "file_too_large",
+        "adapter_not_acknowledged",
+        "workspace_folder_missing",
+        "push_unavailable",
+        "ink_unsupported",
+        "ink_language_unavailable",
+        "ink_limit_exceeded",
+        "ink_recognition_failed"
       ]
     },
     "RpcError": {
@@ -941,6 +949,11 @@
         "permissionMode": {
           "$ref": "#/$defs/Id"
         },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
+        },
         "url": {
           "type": "string",
           "maxLength": 4096
@@ -1429,6 +1442,10 @@
         "uri": {
           "type": "string"
         },
+        "qr": {
+          "type": "string",
+          "description": "The text of the pairing QR code: the fields of `uri` behind a prefix that is not a URL scheme, so the system camera hands it to no app (ADR 0153). Absent from an engine that predates it, whose app draws `uri`."
+        },
         "reachability": {
           "$ref": "#/$defs/EngineReachability"
         }
@@ -1681,6 +1698,7 @@
         "tailnet_address_not_found",
         "tailnet_lookup_failed",
         "tailnet_listen_failed",
+        "tailnet_port_in_use",
         "loopback_only"
       ]
     },
@@ -3601,6 +3619,14 @@
         },
         "lastReadyAtMs": {
           "$ref": "#/$defs/Decimal"
+        },
+        "package": {
+          "type": "string",
+          "description": "The package a built-in adapter downloads and runs through a package runner, as `name@version`; absent for any other harness (ADR 0143)."
+        },
+        "packageLocked": {
+          "type": "boolean",
+          "description": "True when the engine installs that package once from a lockfile it carries, with every dependency checked by integrity; false when the runner downloads it and its dependencies on the first start, unchecked."
         }
       },
       "required": [
@@ -4340,6 +4366,11 @@
         "effort": {
           "type": "string",
           "maxLength": 256
+        },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "The package, as `name@version`, that the person was told the agent downloads and runs unchecked (`HarnessInfo.package`, ADR 0143). The engine starts such an agent only after this exact package was acknowledged once; only a person's request can acknowledge, and a new version asks again."
         },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
@@ -7880,6 +7911,106 @@
       ],
       "additionalProperties": true
     },
+    "ProjectTrust": {
+      "type": "string",
+      "enum": [
+        "undecided",
+        "restricted",
+        "trusted"
+      ]
+    },
+    "ProjectTrustChoice": {
+      "type": "string",
+      "enum": [
+        "restricted",
+        "trusted"
+      ]
+    },
+    "ProjectTrustEntry": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustSetParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrustChoice"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "trust",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustSetResult": {
+      "type": "object",
+      "properties": {
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "workspaceIds",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectTrustChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "workspaceIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Id"
+          }
+        },
+        "trust": {
+          "$ref": "#/$defs/ProjectTrust"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "workspaceIds",
+        "trust"
+      ],
+      "additionalProperties": true
+    },
     "UsageProvider": {
       "type": "string",
       "enum": [
@@ -8204,7 +8335,8 @@
         "starting",
         "ready",
         "restarting",
-        "unavailable"
+        "unavailable",
+        "restricted"
       ]
     },
     "TextPosition": {
@@ -9980,6 +10112,9 @@
         "detail": {
           "type": "string",
           "maxLength": 1024
+        },
+        "safeMode": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -10244,6 +10379,22 @@
       "type": "string",
       "enum": [
         "web_host"
+      ]
+    },
+    "EngineCapability": {
+      "type": "string",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158).",
+      "enum": [
+        "terminal",
+        "workspaces",
+        "snapshot-parts",
+        "event-replay",
+        "terminal-replay",
+        "device-pairing",
+        "workspace-tasks",
+        "subscription-usage",
+        "push",
+        "ink-recognition"
       ]
     },
     "WebInteractionMode": {
@@ -12721,6 +12872,108 @@
         "recorded"
       ],
       "additionalProperties": true
+    },
+    "InkPoint": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "t": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "t"
+      ],
+      "additionalProperties": true
+    },
+    "InkStroke": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/InkPoint"
+      }
+    },
+    "InkRecognizeParams": {
+      "type": "object",
+      "properties": {
+        "strokes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InkStroke"
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxCandidates": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "strokes",
+        "languages"
+      ],
+      "additionalProperties": true
+    },
+    "InkCandidate": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "InkRecognizeResult": {
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InkCandidate"
+          }
+        },
+        "recognizer": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidates",
+        "recognizer",
+        "language"
+      ],
+      "additionalProperties": true
+    },
+    "InkUnsupportedReason": {
+      "type": "string",
+      "enum": [
+        "no_os_support",
+        "language_pack_missing",
+        "model_not_installed"
+      ]
     }
   },
   "x-protocolVersion": 1,
@@ -13738,6 +13991,15 @@
       },
       "mutation": true
     },
+    "project.trust.set": {
+      "params": {
+        "$ref": "#/$defs/ProjectTrustSetParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectTrustSetResult"
+      },
+      "mutation": true
+    },
     "lsp.status": {
       "params": {
         "$ref": "#/$defs/LspStatusParams"
@@ -14071,6 +14333,15 @@
         "$ref": "#/$defs/PaneExperimentHookResult"
       },
       "mutation": true
+    },
+    "ink.recognize": {
+      "params": {
+        "$ref": "#/$defs/InkRecognizeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/InkRecognizeResult"
+      },
+      "mutation": false
     }
   },
   "x-events": {
@@ -14215,6 +14486,12 @@
     "settings.changed": {
       "params": {
         "$ref": "#/$defs/SettingsChangedEvent"
+      },
+      "durable": true
+    },
+    "project.trust_changed": {
+      "params": {
+        "$ref": "#/$defs/ProjectTrustChangedEvent"
       },
       "durable": true
     },
@@ -14567,7 +14844,18 @@
     "pairingCodeChars": "The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.",
     "pairingWindowSeconds": "How long a pairing code stays valid, and the longest a device waits for the person to allow access.",
     "deviceNameBytes": "The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.",
-    "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows."
+    "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.",
+    "inkStrokes": "The most strokes one `ink.recognize` request carries.",
+    "inkStrokePoints": "The most points one stroke of an `ink.recognize` request carries.",
+    "inkTotalPoints": "The most points all the strokes of one `ink.recognize` request carry together.",
+    "inkCandidates": "The most candidates an `ink.recognize` request may ask for and the engine answers with.",
+    "inkCandidatesDefault": "How many candidates an `ink.recognize` request without `maxCandidates` gets.",
+    "inkLanguages": "The most language tags one `ink.recognize` request names.",
+    "inkLanguageBytes": "The longest language tag (in UTF-8 bytes) of an `ink.recognize` request; the length a BCP 47 tag may have.",
+    "inkCoordinate": "The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).",
+    "inkDurationMs": "The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.",
+    "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.",
+    "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -14673,7 +14961,18 @@
     "modelRefusalReasonBytes": 4096,
     "experimentExportPanes": 64,
     "experimentExportRows": 100000,
-    "experimentExportBytes": 67108864
+    "experimentExportBytes": 67108864,
+    "inkStrokes": 64,
+    "inkStrokePoints": 2000,
+    "inkTotalPoints": 8000,
+    "inkCandidates": 10,
+    "inkCandidatesDefault": 5,
+    "inkLanguages": 8,
+    "inkLanguageBytes": 35,
+    "inkCoordinate": 1000000,
+    "inkDurationMs": 3600000,
+    "inkCandidateBytes": 2048,
+    "inkDeadlineSec": 10
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -14759,7 +15058,14 @@
     "platform_unsupported": -32037,
     "git_unavailable": -32038,
     "file_not_text": -32039,
-    "file_too_large": -32040
+    "file_too_large": -32040,
+    "adapter_not_acknowledged": -32041,
+    "workspace_folder_missing": -32042,
+    "push_unavailable": -32043,
+    "ink_unsupported": -32044,
+    "ink_language_unavailable": -32045,
+    "ink_limit_exceeded": -32046,
+    "ink_recognition_failed": -32047
   },
   "x-clientPolicy": {
     "timeouts": {
@@ -14781,7 +15087,12 @@
     "terminal": {
       "inputChunkBytes": 16384,
       "inputQueueBytes": 1048576,
-      "scrollbackLines": 10000
+      "scrollbackLines": 10000,
+      "outputFlushMs": 16,
+      "outputFloodMs": 50,
+      "outputFloodBytes": 8192,
+      "interactiveWindowMs": 150,
+      "outputFlushBytes": 1048576
     },
     "caps": {
       "waitingMessages": 1000,
@@ -14850,6 +15161,7 @@
       "editorNoFile": "The engine has no file for this editor tab.",
       "editorFileNotText": "Binary file, can't be shown.",
       "editorFileTooLarge": "This file is too large to open in the editor.",
+      "workspaceFolderGone": "This workspace's folder is gone:",
       "editorSaveMissing": "Couldn't save: this file was deleted from the disk. Save again to create it.",
       "editorSaveDenied": "Couldn't save: permission denied. Fix the permissions, then save again.",
       "editorSaveFull": "Couldn't save: the disk is full. Free some space, then save again.",
@@ -14873,8 +15185,38 @@
       "loginStartLater": "You can turn it on later from Preferences.",
       "loginStartTurnOn": "Turn on",
       "loginStartNotNow": "Not now",
+      "tryAgain": "Try again",
+      "ok": "OK",
+      "appMoveQuestion": "Move Soyeht to Applications?",
+      "appMoveSummary": "Soyeht's engine needs the app in your Applications folder so macOS remembers the permissions you give it. Soyeht copies itself there and opens again. If it runs from a disk image, you can eject the image afterwards.",
+      "appMoveAction": "Move to Applications",
+      "appMoveMenu": "Move to Applications…",
+      "appMoveExplanation": "The engine is off. It needs Soyeht in your Applications folder so macOS remembers its permissions.",
+      "appMoveReplaceQuestion": "Replace the app in Applications?",
+      "appMoveReplaceSummary": "Soyeht is already in Applications. The old copy goes to the Trash.",
+      "appMoveReplace": "Replace",
+      "appMoveFailedTitle": "Soyeht could not move itself",
+      "appMoveFailedLater": "The engine stays off until Soyeht is in Applications. You can drag it there yourself, or choose Move to Applications again.",
+      "appMoveRelaunchFailedTitle": "Soyeht is now in Applications",
+      "appMoveRelaunchFailed": "Soyeht was moved to Applications but could not open there. Open it from Applications.",
+      "appMoveNotThisApp": "This copy is not the app Soyeht expected, so nothing was changed.",
+      "appMoveAnotherApp": "A different app with the same name is in Applications. Soyeht did not touch it.",
+      "appMoveNoWritableFolder": "Neither the Applications folder nor your own Applications folder can be written to.",
+      "appMoveChanged": "Applications changed while Soyeht was moving. Nothing was replaced.",
+      "appMoveNotFinished": "The copy did not finish. The app that was there is unchanged.",
+      "appMoveNotSigned": "The copy is not signed like this app, so it was not installed. The app that was there is unchanged.",
+      "appMoveAlreadyThere": "This is the copy that is in Applications. Open it from there.",
+      "appMoveRunning": "Soyeht is running from Applications. Quit it there, then move this copy.",
+      "appMoveCopyLocked": "A copy of Soyeht is already in Applications and cannot be replaced from this account. Remove it, or open that copy.",
+      "appMoveOldInTrash": "The old copy of Soyeht is in the Trash and could not be put back. Drag it from the Trash to Applications to restore it.",
       "pushNeedsYouTitle": "An agent needs you",
-      "pushNeedsYouBody": "Open Soyeht to see what it asks."
+      "pushNeedsYouBody": "Open Soyeht to see what it asks.",
+      "projectTrustTitle": "Trust this folder?",
+      "projectTrustSummary": "Trusting a folder lets Soyeht run what the folder contains. Language servers read its build files, which can run programs. Keep it restricted if you do not know where it came from.",
+      "projectTrustTrust": "Trust folder",
+      "projectTrustRestrict": "Keep restricted",
+      "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
+      "projectTrustFailed": "Soyeht could not save this choice."
     },
     "inlineImageTypes": ["image/png", "image/jpeg", "image/gif", "image/webp"],
     "paneStates": {

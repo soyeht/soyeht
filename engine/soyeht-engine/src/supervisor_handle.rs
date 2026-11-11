@@ -343,7 +343,9 @@ impl Core {
         started
     }
 
-    /// Takes a place in the order of the sends to `instances`.
+    /// Takes a place in the order of the sends to `instances`. A process named twice (a size and
+    /// an acknowledgement of one process in the same batch) counts once: this turn never waits for
+    /// itself, which would hold it, and every send behind it, until [`DEADLINE`].
     pub(crate) fn turn(&mut self, instances: &[&str]) -> Turn {
         self.send_turns.retain(|_, done| !done.is_ended());
         let mine = Done::new();
@@ -353,6 +355,7 @@ impl Core {
                 .send_turns
                 .insert((*instance).to_owned(), Arc::clone(&mine));
             if let Some(earlier) = earlier
+                && !Arc::ptr_eq(&earlier, &mine)
                 && !before.iter().any(|seen| Arc::ptr_eq(seen, &earlier))
             {
                 before.push(earlier);
@@ -431,7 +434,21 @@ impl Core {
             return;
         };
         let batch = std::mem::take(&mut self.supervisor_later);
-        let instances: Vec<&str> = batch.iter().filter_map(instance_of).collect();
+        let mut instances: Vec<String> = batch
+            .iter()
+            .filter_map(instance_of)
+            .map(str::to_owned)
+            .collect();
+        // A confirmation says the supervisor may forget an operation, so it follows every input
+        // on its way: one for that operation that the supervisor has not yet seen would find it
+        // forgotten and write again.
+        if batch
+            .iter()
+            .any(|request| matches!(request, Request::ConfirmInput { .. }))
+        {
+            instances.extend(self.send_turns.keys().cloned());
+        }
+        let instances: Vec<&str> = instances.iter().map(String::as_str).collect();
         let turn = self.turn(&instances);
         let used = supervisor.clone();
         // On a thread of its own, not a shared worker: this job holds a turn that a typed input
@@ -453,4 +470,4 @@ impl Core {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -36,6 +36,8 @@ android {
             jniLibs.srcDir(layout.buildDirectory.dir("generated/jniLibs"))
             // The license documents of the repository root travel in the APK as assets (ADR 0149).
             assets.srcDir(layout.buildDirectory.dir("generated/licenses"))
+            // The approved fonts and the providers' logos, copied from the Mac's and the shared package's resources below.
+            res.srcDir(layout.buildDirectory.dir("generated/shared-res"))
         }
     }
     testOptions { unitTests.isReturnDefaultValues = true }
@@ -48,6 +50,32 @@ val copyLicenses by tasks.registering(Copy::class) {
     into(layout.buildDirectory.dir("generated/licenses"))
 }
 tasks.named("preBuild") { dependsOn(copyLicenses) }
+
+// The fonts of `contracts/design-tokens.json` (Nunito, Inter, JetBrains Mono) are the files the Mac app ships; the
+// app holds no second copy. An Android resource name is lowercase with underscores.
+val copyFonts by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.resolve("../mac/Resources/Fonts")) {
+        include(
+            "Nunito-Regular.ttf", "Nunito-SemiBold.ttf", "Nunito-Bold.ttf", "Inter.ttf",
+            "JetBrainsMono-Regular.ttf", "JetBrainsMono-Medium.ttf", "JetBrainsMono-Bold.ttf",
+        )
+        rename { it.lowercase().replace("-", "_") }
+    }
+    into(layout.buildDirectory.dir("generated/shared-res/font"))
+}
+tasks.named("preBuild") { dependsOn(copyFonts) }
+
+// The logos of the four providers are the files the Mac and the iPhone draw (the shared package's asset catalog),
+// copied flat and named for Android; they are tinted in a palette color, as `ProviderGlyph` does.
+val copyProviderIcons by tasks.registering(Copy::class) {
+    from(rootProject.projectDir.resolve("../shared/Sources/SoyehtClient/Resources/ProviderIcons.xcassets")) {
+        include("*.imageset/*.png")
+        eachFile { relativePath = RelativePath(true, "provider_$name") }
+        includeEmptyDirs = false
+    }
+    into(layout.buildDirectory.dir("generated/shared-res/drawable-nodpi"))
+}
+tasks.named("preBuild") { dependsOn(copyProviderIcons) }
 
 // The tests that call the core load the library scripts/check_android.sh built for this computer.
 tasks.withType<Test>().configureEach {
@@ -72,6 +100,11 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$camera")
     implementation("androidx.camera:camera-view:$camera")
     implementation("com.google.zxing:core:3.5.3")
+    // Handwriting recognition on the device, below Android 14 (ADR 0157): the language model is downloaded only when asked for.
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    // ML Kit's model download runs on WorkManager. The app's manifest removes WorkManager's own start-up entry, so the
+    // app starts it (`MlKitInkEngine.start`) only after the person turns the recognizer on; this is the version ML Kit brings.
+    implementation("androidx.work:work-runtime:2.7.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("net.java.dev.jna:jna:5.14.0")
     testImplementation("org.json:json:20240303")

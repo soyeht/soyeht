@@ -1,6 +1,7 @@
 # Run the new Dev profile
 
-GitHub Actions is disabled until the product is ready. Before every merge, run
+Hosted CI (`.github/workflows/check-all.yml`) runs the fast tier on every pull request and
+push to main, as a check for contributors. The merge gate stays local: before every merge, run
 `bash scripts/check_all.sh --tier fast` with `FORBIDDEN_TERMS` supplied through the
 environment; after the merge `scripts/main_watch.py` runs the full tier on main through
 `scripts/post_merge.py` and reverts a confirmed culprit (ADRs 0089 and 0092).
@@ -11,8 +12,10 @@ also scan PR history and the final title/body, pass
 ratchets compare with the merge-base of `origin/main` and `HEAD`, and fail when
 it cannot be resolved; run `git fetch origin main` first. Keep the vocabulary
 outside the repository. `.github/workflows/check-all.yml` only calls
-`check_all.sh`, for when hosted CI resumes; add new steps to the script, never to
-a workflow.
+`check_all.sh --tier fast`; add new steps to the script, never to a workflow. A change
+to the gate scripts or the workflow runs the full tier (`gate_plan.py`), which the hosted
+runner cannot finish (the editor measurement on VM1, the app builds), so it stays a local
+and post-merge run.
 
 The editor performance proof is collected separately on VM1, from the same
 checkout as the PR. Set `SOYEHT_EDITOR_METER_VM=1` and a locally configured
@@ -263,7 +266,15 @@ per run, `latest.json`, `last_green.json`, `watch.json`, `flakes.json`. It is `-
 `scripts/gate_base.py` is the only place that resolves it, and `gate_plan.py` uses it too, so the fast
 plan reads the directory the operator writes. Set `SOYEHT_MAIN_HEALTH_DIR` for the operator scripts
 and for any gate run that should print the warning. The plan prints `WARNING: main is RED ...` when
-`latest.json` says `fail`, and `NOTE: main is FLAKY ...` when it says `flaky`.
+`latest.json` says `fail`, `NOTE: main is FLAKY ...` when it says `flaky`, and `NOTE: the post-merge gate failed ... the host or its
+environment` when it says `host`.
+
+A red step is also run on the last green main (the control run, with the steps it reads from earlier in the
+run; once more when it fails). A step that fails there both times is the host's or the environment's: the
+record's result is `host`, `control` in it names the commit, no culprit is searched and nothing is
+reverted. `main_watch.py` exits 1 and leaves the pass open, so `post_merge.py` runs that head again
+after `HOST_RETRY_SECONDS` (30 minutes), or at once with `--force`; fix the environment first. A control
+that cannot run blames nobody either, and the note lists the commits since.
 
 A step that fails and passes when run again on the same commit is `flaky` and blames nobody. The gate
 stops at its first failure, so `post_merge.py` then runs the steps the failed run never reached and

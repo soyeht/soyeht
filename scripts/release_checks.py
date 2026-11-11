@@ -61,13 +61,15 @@ def read_build_sha(path):
 
 
 def exception_problems(policy=None):
-    """One line for each license exception still in `scripts/third_party/policy.json`. An exception
-    lets the gate pass what is already in the tree (ADR 0149); a release must not ship it."""
+    """One line for each license exception still in `scripts/third_party/policy.json` that nobody accepted. An
+    exception lets the gate pass what is already in the tree (ADR 0149); a release must not ship one the owner has
+    not accepted (`accepted` of the entry, with who and the date), and never ships a copyleft one."""
     policy = policy or third_party_licenses.load_policy()
     return [
         f"{package} is under {license} and still has an exception in scripts/third_party/policy.json: "
-        "remove the dependency before a release"
+        "remove the dependency, or have the owner accept it, before a release"
         for package, license in sorted(policy.exceptions)
+        if (package, license) not in policy.accepted
     ]
 
 

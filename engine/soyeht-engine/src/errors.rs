@@ -42,6 +42,9 @@ pub enum Error {
     PlatformUnsupported(String),
     FileNotText(String),
     FileTooLarge(String),
+    AdapterNotAcknowledged(String),
+    WorkspaceFolderMissing(String),
+    PushUnavailable(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -52,6 +55,7 @@ pub enum Error {
     PaneState(soyeht_pane_state::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
+    Ink(soyeht_ink::Error),
     PortScan(crate::ports::PortScanError),
     Writing(soyeht_writing::Error),
     Supervisor(soyeht_ptyd::Error),
@@ -118,7 +122,7 @@ constructor!(git_unavailable, GitUnavailable);
 /// has no usable `git`, `worktree_unavailable` for any other reason.
 pub fn worktree_process(error: soyeht_process::Error) -> Error {
     match error {
-        soyeht_process::Error::GitUnavailable => git_unavailable(error.to_string()),
+        problem if problem.git_is_unusable() => git_unavailable(problem.to_string()),
         other => worktree_unavailable(other.to_string()),
     }
 }
@@ -128,6 +132,22 @@ constructor!(attachment_limit_exceeded, AttachmentLimitExceeded);
 constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
+constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
+constructor!(workspace_folder_missing, WorkspaceFolderMissing);
+constructor!(push_unavailable, PushUnavailable);
+
+/// The failure to open a workspace's root folder: `workspace_folder_missing` when the folder is gone
+/// (deleted, moved or on a disk that is not mounted), so a client says so instead of reporting
+/// "I/O operation failed"; any other failure stays an I/O error. The message names no path,
+/// which the client already has from the workspace.
+pub fn workspace_root(error: io::Error) -> Error {
+    match error.kind() {
+        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory => {
+            workspace_folder_missing("The workspace folder is missing")
+        }
+        _ => io(error),
+    }
+}
 constructor!(internal, Internal);
 constructor!(snapshot_too_large, SnapshotTooLarge);
 
@@ -223,6 +243,17 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
 
 /// The single translation from engine failures to the public protocol. A failure of a domain
 /// crate already names its kind where the failure is defined; this names the engine's own.
+impl Error {
+    /// What a pane that cannot start says when it is a package nobody acknowledged (ADR 0143):
+    /// it names the package, so the person knows to acknowledge it. `None` for any other error.
+    pub(crate) fn unacknowledged_reason(&self) -> Option<&str> {
+        match self {
+            Error::AdapterNotAcknowledged(message) => Some(message),
+            _ => None,
+        }
+    }
+}
+
 pub fn kind(error: &Error) -> ErrorKind {
     match error {
         Error::RecordedRpc(error) => error.data.kind.clone(),
@@ -246,6 +277,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Editor(error) => error.into(),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => error.into(),
+        Error::Ink(error) => error.into(),
         Error::PortScan(crate::ports::PortScanError::Unsupported(_)) => {
             ErrorKind::PlatformUnsupported
         }
@@ -267,6 +299,9 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::PlatformUnsupported(_) => ErrorKind::PlatformUnsupported,
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
+        Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
+        Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
+        Error::PushUnavailable(_) => ErrorKind::PushUnavailable,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -380,6 +415,9 @@ fn message(error: &Error) -> String {
         | Error::PlatformUnsupported(message)
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
+        | Error::AdapterNotAcknowledged(message)
+        | Error::WorkspaceFolderMissing(message)
+        | Error::PushUnavailable(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),
@@ -400,6 +438,7 @@ fn message(error: &Error) -> String {
         Error::PaneState(error) => error.to_string(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
+        Error::Ink(error) => error.to_string(),
         Error::PortScan(error) => error.to_string(),
         Error::Writing(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
@@ -433,6 +472,17 @@ fn message(error: &Error) -> String {
     }
 }
 
+/// What more a client may read in `data.detail`: why an `ink_unsupported` error is one.
+fn detail(error: &Error) -> Option<String> {
+    let Error::Ink(error) = error else {
+        return None;
+    };
+    match serde_json::to_value(error.unsupported_reason()?) {
+        Ok(serde_json::Value::String(reason)) => Some(reason),
+        _ => None,
+    }
+}
+
 pub fn wire(error: Error) -> RpcError {
     if let Error::RecordedRpc(error) = error {
         return error;
@@ -449,7 +499,7 @@ pub fn wire(error: Error) -> RpcError {
         message: message(&error),
         data: ErrorData {
             kind,
-            detail: None,
+            detail: detail(&error),
             retry_after_sec,
         },
     }
@@ -485,6 +535,7 @@ impl std::error::Error for Error {
             Self::PaneState(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
+            Self::Ink(error) => Some(error),
             Self::PortScan(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
@@ -542,6 +593,12 @@ impl From<soyeht_vcs::Error> for Error {
 impl From<soyeht_web::Error> for Error {
     fn from(error: soyeht_web::Error) -> Self {
         Self::Web(error)
+    }
+}
+
+impl From<soyeht_ink::Error> for Error {
+    fn from(error: soyeht_ink::Error) -> Self {
+        Self::Ink(error)
     }
 }
 

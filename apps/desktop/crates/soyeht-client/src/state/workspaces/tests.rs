@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     Event,
-    testing::{cases, pane, text, workspace},
+    testing::{cases, harness, pane, text, workspace},
 };
 use serde_json::{Value, json};
 
@@ -221,6 +221,40 @@ fn with_agent(state: &mut State) {
     state.apply(Event::Harnesses(vec![agent]));
 }
 
+#[test]
+fn an_agent_whose_package_the_runner_downloads_unchecked_starts_with_its_acknowledgement() {
+    let mut state = state_with(&[("a", "/a")]);
+    let harness =
+        |id: &str, package: serde_json::Value, locked: bool| -> soyeht_protocol::HarnessInfo {
+            serde_json::from_value(json!({
+                "id": id, "name": id, "available": true, "capabilities": [], "options": [],
+                "authMethods": [], "installed": false, "setupState": "not_checked",
+                "setupReason": "registry_package_unverified",
+                "package": package, "packageLocked": locked
+            }))
+            .unwrap()
+        };
+    state.apply(Event::Harnesses(vec![
+        harness("fetched", json!("some-adapter@1.2.3"), false),
+        harness("installed", json!("locked-adapter@4.5.6"), true),
+    ]));
+    let sent = |state: &mut State, harness: &str| {
+        let mut form = form("/a", "");
+        form.harness = harness.into();
+        let started = state.start_agent(1, &form).unwrap();
+        match &started.effects[0] {
+            Effect::Send(Command::CreateAgent { acknowledged, .. }) => acknowledged.clone(),
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(
+        sent(&mut state, "fetched").as_deref(),
+        Some("some-adapter@1.2.3")
+    );
+    // The engine installs the other from its lockfile: nothing to acknowledge.
+    assert_eq!(sent(&mut state, "installed"), None);
+}
+
 /// The agent pane `ticket` asked for arrives in workspace `workspace_id`: the effects it brings.
 fn agent_arrives(state: &mut State, ticket: u64, pane_id: &str, workspace_id: &str) -> Vec<Effect> {
     state.apply(Event::Opened {
@@ -276,6 +310,7 @@ fn an_agent_started_in_a_new_folder_gets_its_workspace_first_and_then_its_first_
         [Effect::Send(Command::CreateAgent {
             workspace_id: "new".into(),
             harness: "ada".into(),
+            acknowledged: None,
             cwd: Some("/home/ana/notes".into()),
             ticket: 7,
         })]
@@ -283,6 +318,32 @@ fn an_agent_started_in_a_new_folder_gets_its_workspace_first_and_then_its_first_
     let effects = agent_arrives(&mut state, 7, "p", "new");
     assert!(effects.contains(&Effect::FocusPane("p".into())));
     assert_eq!(sent_prompt(&effects), Some("hello"));
+}
+
+#[test]
+fn a_first_message_the_engine_does_not_take_comes_back_to_the_composer_of_its_agent() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    let started = state.start_agent(7, &form("/a", "  hello\n")).unwrap();
+    let ticket = match &started.effects[..] {
+        [Effect::Send(Command::CreateAgent { ticket, .. })] => *ticket,
+        other => panic!("expected the agent to be created, got {other:?}"),
+    };
+    let effects = agent_arrives(&mut state, ticket, "p", "a");
+    let Some(Effect::Send(prompt)) = effects
+        .into_iter()
+        .find(|e| matches!(e, Effect::Send(Command::Prompt { .. })))
+    else {
+        panic!("the first message is sent");
+    };
+    let returned = prompt.failure(&crate::Error::Disconnected).unwrap();
+    state.apply(returned);
+    let back = state.take_returned_prompts();
+    assert_eq!(back.len(), 1);
+    assert_eq!(
+        (back[0].pane_id.as_str(), back[0].typed.as_str()),
+        ("p", "hello")
+    );
 }
 
 #[test]
@@ -296,6 +357,7 @@ fn an_agent_started_in_a_folder_that_has_a_workspace_uses_it_and_a_blank_message
         [Effect::Send(Command::CreateAgent {
             workspace_id: "a".into(),
             harness: "ada".into(),
+            acknowledged: None,
             cwd: None,
             ticket: 3,
         })]
@@ -353,4 +415,78 @@ fn a_connection_lost_while_an_agent_starts_keeps_its_message_for_the_form() {
     state.apply(Event::Disconnected("gone".into()));
     assert!(state.starts.is_empty() && state.expected.is_empty());
     assert_eq!(state.take_failed_start(), Some(form("/new", "keep me")));
+}
+
+#[test]
+fn a_rename_is_sent_only_for_a_name_that_is_not_blank_and_not_the_one_it_has() {
+    let mut state = State::default();
+    state.apply(Event::Connected(crate::Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: vec![pane("p", "w", "terminal")],
+        ..crate::Snapshot::default()
+    }));
+    let (in_workspace, in_pane) = (
+        RenameTarget::Workspace("w".into()),
+        RenameTarget::Pane("p".into()),
+    );
+    assert_eq!(
+        state.rename_request(&in_workspace, "  Docs "),
+        Some(Command::RenameWorkspace {
+            workspace_id: "w".into(),
+            name: "Docs".into()
+        })
+    );
+    assert_eq!(
+        state.rename_request(&in_pane, "build"),
+        Some(Command::RenamePane {
+            pane_id: "p".into(),
+            name: "build".into()
+        })
+    );
+    assert_eq!(state.rename_request(&in_workspace, "w"), None, "unchanged");
+    assert_eq!(state.rename_request(&in_pane, " \n "), None, "blank");
+}
+
+#[test]
+fn a_name_typed_on_two_lines_is_one_line() {
+    let state = State::default();
+    let target = RenameTarget::Pane("gone".into());
+    assert_eq!(
+        state.rename_request(&target, "one\ntwo\r\nthree"),
+        Some(Command::RenamePane {
+            pane_id: "gone".into(),
+            name: "one two  three".into()
+        })
+    );
+}
+
+#[test]
+fn the_start_form_opens_on_the_folder_of_the_selected_workspace_and_an_agent_that_can_start() {
+    let mut state = state_with(&[("w", "/work")]);
+    state.harnesses = vec![harness("off", false), harness("claude", true)];
+    state.select_workspace("w");
+    let form = state.new_agent_form();
+    assert_eq!(form.directory, "/work");
+    assert_eq!(form.harness, "claude");
+    assert_eq!(form.prompt, "");
+    let nothing = State::default().new_agent_form();
+    assert_eq!(
+        (nothing.directory.as_str(), nothing.harness.as_str()),
+        ("", "")
+    );
+}
+
+#[test]
+fn an_agent_that_stops_being_available_is_replaced_while_the_form_is_open() {
+    let mut state = state_with(&[("w", "/work")]);
+    state.harnesses = vec![harness("claude", true), harness("codex", true)];
+    let mut form = NewAgent {
+        harness: "codex".into(),
+        ..NewAgent::default()
+    };
+    state.choose_agent(&mut form);
+    assert_eq!(form.harness, "codex", "it can still start");
+    state.harnesses = vec![harness("claude", true), harness("codex", false)];
+    state.choose_agent(&mut form);
+    assert_eq!(form.harness, "claude");
 }
