@@ -16,6 +16,17 @@ pub fn pane_json(id: &str, workspace: &str, mode: &str) -> Value {
     })
 }
 
+/// A state connected to an engine that lists workspace `w` with the panes `(id, mode)`.
+pub fn connected(panes: &[(&str, &str)]) -> crate::State {
+    let mut state = crate::State::default();
+    state.apply(crate::Event::Connected(crate::Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: panes.iter().map(|(id, mode)| pane(id, "w", mode)).collect(),
+        ..crate::Snapshot::default()
+    }));
+    state
+}
+
 /// The tree of the layout that `effects` store.
 pub fn stored_layout(effects: &[Effect]) -> Option<WorkspacePaneLayoutNode> {
     effects.iter().find_map(|effect| match effect {

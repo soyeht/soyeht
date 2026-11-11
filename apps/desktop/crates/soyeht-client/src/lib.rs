@@ -17,6 +17,7 @@ pub mod bounded_map;
 pub mod cards;
 pub mod catalogue;
 pub mod commands;
+pub mod composer;
 pub mod crash_notice;
 pub mod device;
 pub mod diagnostics;
