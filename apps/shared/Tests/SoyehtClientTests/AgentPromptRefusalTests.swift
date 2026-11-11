@@ -61,6 +61,15 @@ private func file(_ name: String) -> AgentAttachmentDraft {
   try await Task.sleep(for: .milliseconds(150))
 }
 
+/// Waits until the engine has the prompt in hand, before it answers.
+@MainActor private func waitForPrompt(_ engine: FakePromptEngine) async throws {
+  var polls = 0
+  while engine.prompts.isEmpty && polls < 1_000 {
+    polls += 1
+    try await Task.sleep(for: .milliseconds(5))
+  }
+}
+
 @MainActor private func send(
   _ drafts: AgentPromptDrafts, _ client: EngineClient, expanding: (String) -> String = { $0 }
 ) {
@@ -151,11 +160,7 @@ private func file(_ name: String) -> AgentAttachmentDraft {
   attachments(drafts).add([.success(first)])
 
   send(drafts, client)
-  var polls = 0
-  while engine.prompts.isEmpty && polls < 1_000 {
-    polls += 1
-    try await Task.sleep(for: .milliseconds(5))
-  }
+  try await waitForPrompt(engine)
   // The composer is free while the engine thinks about it.
   #expect(drafts.text(for: paneId).isEmpty)
   drafts.set("the next thought", for: paneId)
@@ -191,15 +196,23 @@ private func file(_ name: String) -> AgentAttachmentDraft {
   drafts.set("for a pane that is gone", for: paneId)
 
   send(drafts, client)
-  var polls = 0
-  while engine.prompts.isEmpty && polls < 1_000 {
-    polls += 1
-    try await Task.sleep(for: .milliseconds(5))
-  }
+  try await waitForPrompt(engine)
   try client.applyPaneEvent(.paneClosed, .object(["paneId": .string(paneId)]))
   engine.held = false
   try await settle(engine)
 
   #expect(drafts.text(for: paneId).isEmpty)
   #expect(attachments(drafts).items.isEmpty)
+}
+
+@MainActor @Test func returnedFilesWinWhenTheyAndTheNewerOnesDoNotAllFit() {
+  let drafts = AgentPromptDrafts()
+  let returned = (0..<ProtocolLimits.promptAttachments).map { file("returned-\($0).txt") }
+  let newer = file("newer.txt")
+  attachments(drafts).add([.success(newer)])
+
+  attachments(drafts).restore(returned)
+
+  #expect(attachments(drafts).items == returned)
+  #expect(attachments(drafts).notice == AgentAttachmentRejection.tooMany.message)
 }
