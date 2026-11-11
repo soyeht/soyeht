@@ -32,6 +32,13 @@ from quality_core import (
     tool_paths,
     unjustified_relaxations,
 )
+from check_quality import (
+    CENTRAL_OBJECT_KEY,
+    central_object_changes,
+    central_object_counts,
+    measure_with_central_objects,
+    unjustified_central_objects,
+)
 from review_report import render
 
 
@@ -47,6 +54,20 @@ REPEATED_RUST = (
     "    sixth + fourth\n"
     "}\n"
 )
+CORE_FIXTURE = (
+    "pub struct Core {\n"
+    "    pub store: Store,\n"
+    "    pub(crate) reads: Reads,\n"
+    "    pub(super) clock: Arc<dyn Clock>,\n"
+    "    private: u8,\n"
+    "    nested: Nested,\n"
+    "}\n\n"
+    "pub struct Nested {\n"
+    "    pub escaped: u8,\n"
+    "}\n"
+)
+CENTRAL_ZEROES = {key: 0 for key in (
+    "core_impl_files", "core_open_fields", "engine_client_extension_files", "workbench_impl_files")}
 
 
 def git(root: Path, *arguments: str) -> None:
@@ -116,10 +137,7 @@ class QualityRatchetTests(unittest.TestCase):
         # A metric the older baseline did count still cannot grow.
         before[SWALLOWED_KEY]["rust_ok"] = 1
         after[SWALLOWED_KEY]["rust_ok"] = 2
-        self.assertEqual(
-            [change.key for change in baseline_relaxations(before, after)],
-            ["swallowed_errors.rust_ok"],
-        )
+        self.assertEqual([change.key for change in baseline_relaxations(before, after)], ["swallowed_errors.rust_ok"])
 
     def test_percentage_is_informational_not_in_the_baseline(self):
         measured = empty_measurement()
@@ -136,9 +154,7 @@ class QualityRatchetTests(unittest.TestCase):
         actual = copy.deepcopy(baseline)
         actual["loose_literals"] = {new_file: {"padding": 1}}
         changes = differences(baseline, actual)
-        self.assertEqual(
-            [change.direction for change in changes], ["RELAXATION", "IMPROVEMENT"]
-        )
+        self.assertEqual([change.direction for change in changes], ["RELAXATION", "IMPROVEMENT"])
 
     def test_existing_file_cap_cannot_grow_and_must_follow_shrinking_file(self):
         baseline = empty_measurement()
@@ -156,10 +172,7 @@ class QualityRatchetTests(unittest.TestCase):
         actual = copy.deepcopy(baseline)
         actual["oversized_files"]["apps/mac/Sources/New.swift"] = 801
         actual["loose_literals"]["apps/mac/Sources/New.swift"] = {"padding": 1}
-        self.assertEqual(
-            [change.direction for change in differences(baseline, actual)],
-            ["RELAXATION", "RELAXATION"],
-        )
+        self.assertEqual([change.direction for change in differences(baseline, actual)], ["RELAXATION", "RELAXATION"])
 
     def test_any_engine_production_panic_fails_whatever_the_baseline_says(self):
         baseline = empty_measurement()
@@ -170,10 +183,7 @@ class QualityRatchetTests(unittest.TestCase):
         baseline[PANIC_KEY] = 5  # an edited baseline cannot buy headroom
         self.assertEqual([c.key for c in differences(baseline, actual)], [PANIC_KEY])
         reason = {PANIC_KEY: {"value": 1, "reason": "no reason is enough"}}
-        self.assertEqual(
-            [c.key for c in unjustified_relaxations(empty_measurement(), actual, reason)],
-            [PANIC_KEY],
-        )
+        self.assertEqual([c.key for c in unjustified_relaxations(empty_measurement(), actual, reason)], [PANIC_KEY])
         actual[PANIC_KEY] = 0
         self.assertEqual(differences(baseline, actual), [])
 
@@ -237,10 +247,7 @@ class QualityRatchetTests(unittest.TestCase):
         raised = copy.deepcopy(previous)
         raised["oversized_files"]["engine/big.rs"] = 900
         key = "oversized_files.engine/big.rs"
-        self.assertEqual(
-            [change.key for change in unjustified_relaxations(previous, raised, {})],
-            [key],
-        )
+        self.assertEqual([change.key for change in unjustified_relaxations(previous, raised, {})], [key])
         stale = {key: {"value": 850, "reason": "an older, smaller raise"}}
         self.assertEqual(len(unjustified_relaxations(previous, raised, stale)), 1)
         blank = {key: {"value": 900, "reason": "  "}}
@@ -259,20 +266,28 @@ class QualityRatchetTests(unittest.TestCase):
         after["oversized_files"]["engine/existing.rs"] = 901
         after["oversized_files"]["engine/new.rs"] = 810
         after["loose_literals"]["apps/mac/Sources/New.swift"] = {"font_name": 1}
-        reasons = {
-            "oversized_files.engine/new.rs": {"value": 810, "reason": "split in #999"}
-        }
-        report = render(
-            before, after, after, "main", "SKIPPED (not installed)", None, reasons
-        )
+        reasons = {"oversized_files.engine/new.rs": {"value": 810, "reason": "split in #999"}}
+        report = render(before, after, after, "main", "SKIPPED (not installed)", None, reasons)
         self.assertEqual(report.count("🔴 "), 5)  # heading plus four loosened entries
         self.assertIn("written justification required", report)
-        self.assertIn(
-            "engine/new.rs: cap 800, actual 810; split the file — "
-            "justification: split in #999",
-            report,
-        )
+        self.assertIn("engine/new.rs: cap 800, actual 810; split the file — justification: split in #999", report)
         self.assertEqual(report.count("MISSING justification"), 3)
+
+    def test_report_marks_a_central_object_relaxation_red_with_its_reason(self):
+        before = empty_measurement()
+        before[CENTRAL_OBJECT_KEY] = dict(CENTRAL_ZEROES)
+        after = copy.deepcopy(before)
+        after[CENTRAL_OBJECT_KEY]["core_impl_files"] = 1
+        reasons = {f"{CENTRAL_OBJECT_KEY}.core_impl_files": {"value": 1, "reason": "split next"}}
+        report = render(before, after, after, "main", "SKIPPED", before, reasons)
+        self.assertIn("central object core_impl_files: baseline 0, actual 1", report)
+        self.assertIn("justification: split next", report)
+        self.assertIn("MISSING justification", render(before, after, after, "main", "SKIPPED", before))
+
+    def test_the_report_measures_central_objects_as_the_check_does(self):
+        with patch("check_quality.measure", return_value=empty_measurement()):
+            current = measure_with_central_objects(ROOT, Path("jscpd"), "machete")
+        self.assertEqual(current[CENTRAL_OBJECT_KEY], central_object_counts(ROOT))
 
     def test_missing_jscpd_has_install_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -461,6 +476,75 @@ class QualityRatchetTests(unittest.TestCase):
         )
         self.assertEqual(literals["engine/crate/src/mod.rs"]["rust_limits"], 1)
 
+    def test_central_objects_count_inherent_impls_once_and_skip_tests_and_trait_impls(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            core = root / "engine/soyeht-engine/src"
+            core.mkdir(parents=True)
+            (core / "core.rs").write_text(CORE_FIXTURE)
+            (core / "one.rs").write_text("impl Core {\n}\n")
+            (core / "two.rs").write_text("impl Core {\n}\n\nimpl Core {\n}\n")
+            (core / "generic.rs").write_text("impl<T> Core<T> {\n}\n")
+            (core / "qualified.rs").write_text("impl crate::core::Core {\n}\n")
+            (core / "nested.rs").write_text("impl<T: Into<String>> Core {\n}\n")
+            (core / "trait.rs").write_text("impl Display for Core {\n}\n\nimpl Display for crate::core::Core {\n}\n")
+            (core / "tests.rs").write_text("impl Core {\n}\n")
+            (core / "lib.rs").write_text("#[cfg(test)]\nmod x_tests;\n")
+            (core / "x_tests.rs").write_text("impl Core {\n}\n")
+            (core / "inline.rs").write_text("#[cfg(test)]\nmod fixture {\n    impl Core {\n    }\n}\n")
+            (core / "tests").mkdir()
+            (core / "tests/more.rs").write_text("impl Core {\n}\n")
+            desktop = root / "apps/desktop/crates/soyeht-desktop/src"
+            desktop.mkdir(parents=True)
+            (desktop / "flow.rs").write_text("impl Workbench {\n}\n")
+            (desktop / "qualified.rs").write_text("impl crate::app::Workbench {\n}\n")
+            (desktop / "trait.rs").write_text("impl Display for Workbench {\n}\n")
+            shared = root / "apps/shared/Sources/SoyehtClient"
+            shared.mkdir(parents=True)
+            (shared / "One.swift").write_text(
+                "extension EngineClient {\n}\n\nextension EngineClient {\n}\n"
+            )
+            (shared / "Stub.swift").write_text("struct EngineClientStub {}\n")
+            tests = root / "apps/shared/Tests/SoyehtClientTests"
+            tests.mkdir(parents=True)
+            (tests / "Test.swift").write_text("extension EngineClient {\n}\n")
+            self.assertEqual(
+                central_object_counts(root),
+                {
+                    "core_impl_files": 5,
+                    "core_open_fields": 3,
+                    "engine_client_extension_files": 1,
+                    "workbench_impl_files": 2,
+                },
+            )
+
+    def test_a_central_object_count_may_not_grow_and_a_drop_lowers_the_baseline(self):
+        baseline = {CENTRAL_OBJECT_KEY: dict(CENTRAL_ZEROES)}
+        actual = copy.deepcopy(baseline)
+        self.assertEqual(central_object_changes(baseline, actual), [])
+        actual[CENTRAL_OBJECT_KEY]["core_impl_files"] = 1
+        (grown,) = central_object_changes(baseline, actual)
+        self.assertEqual(grown.direction, "RELAXATION")
+        self.assertIn("move new state into a domain struct", grown.message)
+        actual[CENTRAL_OBJECT_KEY]["core_impl_files"] = 0
+        baseline[CENTRAL_OBJECT_KEY]["core_impl_files"] = 1
+        (dropped,) = central_object_changes(baseline, actual)
+        self.assertEqual(dropped.direction, "IMPROVEMENT")
+
+    def test_a_central_object_raise_needs_a_reason_and_an_older_baseline_has_none(self):
+        previous = {CENTRAL_OBJECT_KEY: dict(CENTRAL_ZEROES)}
+        raised = copy.deepcopy(previous)
+        raised[CENTRAL_OBJECT_KEY]["core_open_fields"] = 45
+        reason = {f"{CENTRAL_OBJECT_KEY}.core_open_fields": {"value": 45, "reason": "split next"}}
+        self.assertEqual(
+            [change.key for change in unjustified_central_objects(previous, raised, {})],
+            [f"{CENTRAL_OBJECT_KEY}.core_open_fields"],
+        )
+        self.assertEqual(unjustified_central_objects(previous, raised, reason), [])
+        # A baseline written before this section existed has nothing to compare.
+        self.assertEqual(unjustified_central_objects({}, raised, {}), [])
+        self.assertEqual(unjustified_central_objects(None, raised, {}), [])
+
     def test_full_gate_fails_regressions(self):
         jscpd, machete = tool_paths(ROOT)
         with tempfile.TemporaryDirectory() as directory:
@@ -585,6 +669,33 @@ class QualityRatchetTests(unittest.TestCase):
                 regressed.stderr,
             )
 
+    def test_full_gate_reports_a_new_file_spreading_a_central_object(self):
+        jscpd, machete = tool_paths(ROOT)
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = GateFixture(Path(directory), jscpd, machete)
+            self.assertEqual(fixture.gate().returncode, 0)
+            core = fixture.root / "engine/soyeht-engine/src"
+            core.mkdir(parents=True)
+            (core / "spread.rs").write_text("impl Core {\n}\n")
+            grown = fixture.gate()
+            self.assertEqual(grown.returncode, 1)
+            self.assertIn(
+                "REGRESSION: central object core_impl_files: baseline 0, actual 1",
+                grown.stderr,
+            )
+            # A count that drops before the baseline is lowered fails the same way.
+            path = fixture.root / "scripts/quality_baseline.json"
+            baseline = json.loads(path.read_text())
+            baseline[CENTRAL_OBJECT_KEY]["core_impl_files"] = 1
+            path.write_text(json.dumps(baseline))
+            publish_as_origin_main(fixture.root)
+            (core / "spread.rs").unlink()
+            dropped = fixture.gate()
+            self.assertIn(
+                "UNLOCKED IMPROVEMENT: central object core_impl_files: baseline 1, actual 0",
+                dropped.stderr,
+            )
+
     def test_unresolvable_base_fails_loudly(self):
         with tempfile.TemporaryDirectory() as directory:
             result = run_gate(Path(directory))
@@ -672,8 +783,10 @@ class GateFixture:
 
     def refresh_baseline(self) -> None:
         measured = measure(self.root, self.jscpd, self.machete)
+        baseline = baseline_from_measurement(measured)
+        baseline[CENTRAL_OBJECT_KEY] = central_object_counts(self.root)
         (self.root / "scripts/quality_baseline.json").write_text(
-            json.dumps(baseline_from_measurement(measured))
+            json.dumps(baseline)
         )
 
     def gate(self) -> subprocess.CompletedProcess[str]:
