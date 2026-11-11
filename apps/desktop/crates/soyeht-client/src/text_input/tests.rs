@@ -81,10 +81,10 @@ fn home_and_end_follow_the_current_line_and_control_home_the_whole_text() {
 }
 
 #[test]
-fn what_is_sent_is_trimmed_and_blank_text_is_not_sent() {
+fn nothing_but_space_is_blank_and_clearing_empties_the_text() {
     let input = typed("  oi \n");
-    assert_eq!(input.to_send().as_deref(), Some("oi"));
-    assert_eq!(typed(" \n").to_send(), None);
+    assert!(!input.is_blank());
+    assert!(typed(" \n").is_blank());
     let mut cleared = input;
     cleared.clear();
     assert!(cleared.is_blank());

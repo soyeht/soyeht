@@ -35,6 +35,7 @@ use support::*;
 #[path = "../../../soyeht-protocol/tests/fuzz_support/mod.rs"]
 mod fuzz_support;
 
+mod adapter_acknowledgement;
 mod adapter_directory;
 mod agent_cli_choice;
 mod attack_floods;
@@ -50,6 +51,7 @@ mod editor_drafts_and_web_panes;
 mod harness_catalogue_and_mcp;
 mod harness_switch;
 mod harness_switch_names_and_failures;
+mod ink_recognition;
 mod language_and_project_search;
 mod native_permissions_and_modes;
 mod permissions_and_queue;
@@ -58,6 +60,7 @@ mod task_dispatch;
 mod terminal_hooks_and_phone;
 mod terminal_replay_and_capture;
 mod workspace_and_writing;
+mod workspace_trust;
 mod writing_documents;
 
 /// Polls `observe` until it returns `Ok`; at the deadline the test fails with `what` and the
@@ -502,8 +505,18 @@ fn wait_for_editor_file(
     }
 }
 
+/// The open processes, read by taking the supervisor over from the engine.
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
-    process_instances_at(rig, u64::MAX)
+    let generation = rig.supervisor_takeover_generation().unwrap();
+    process_instances_at(rig, generation)
+}
+
+/// Waits until `count` processes of the rig are open. A harness switch retires the old process
+/// and the engine closes it on its next tick, so a test that counts right after a switch waits.
+fn wait_for_open_processes(rig: &Rig, count: usize) {
+    wait_until("the retired process was not closed", || {
+        process_instances(rig).len() == count
+    });
 }
 
 fn process_registry_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {

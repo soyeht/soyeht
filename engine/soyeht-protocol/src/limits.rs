@@ -108,6 +108,28 @@ pub const MODEL_REFUSAL_REASON_BYTES: usize = 4096;
 pub const EXPERIMENT_EXPORT_PANES: usize = 64;
 pub const EXPERIMENT_EXPORT_ROWS: usize = 100000;
 pub const EXPERIMENT_EXPORT_BYTES: usize = 67108864;
+/// The most strokes one `ink.recognize` request carries.
+pub const INK_STROKES: usize = 64;
+/// The most points one stroke of an `ink.recognize` request carries.
+pub const INK_STROKE_POINTS: usize = 2000;
+/// The most points all the strokes of one `ink.recognize` request carry together.
+pub const INK_TOTAL_POINTS: usize = 8000;
+/// The most candidates an `ink.recognize` request may ask for and the engine answers with.
+pub const INK_CANDIDATES: usize = 10;
+/// How many candidates an `ink.recognize` request without `maxCandidates` gets.
+pub const INK_CANDIDATES_DEFAULT: usize = 5;
+/// The most language tags one `ink.recognize` request names.
+pub const INK_LANGUAGES: usize = 8;
+/// The longest language tag (in UTF-8 bytes) of an `ink.recognize` request; the length a BCP 47 tag may have.
+pub const INK_LANGUAGE_BYTES: usize = 35;
+/// The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).
+pub const INK_COORDINATE: usize = 1000000;
+/// The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.
+pub const INK_DURATION_MS: usize = 3600000;
+/// The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.
+pub const INK_CANDIDATE_BYTES: usize = 2048;
+/// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
+pub const INK_DEADLINE_SEC: usize = 10;
 pub const FRAME_KIND_JSON: u8 = 1;
 pub const FRAME_KIND_TERMINAL: u8 = 2;
 pub const FRAME_KIND_ATTACHMENT: u8 = 3;

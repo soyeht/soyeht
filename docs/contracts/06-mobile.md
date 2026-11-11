@@ -6,8 +6,9 @@ it has been confirmed to work”. Evidence of today's behavior is in
 
 ## 1. Rules (same as today, carried into the new engine and app)
 1. **Network**: the engine listens on the Soyeht port at Tailscale addresses
-   (v4 and v6) and loopback. On the LAN only while the “Add iPhone” window is
-   open. Never `0.0.0.0`. Bonjour advertisement on the LAN and tailnet.
+   (v4 and v6) and loopback, and nowhere else: never the LAN, never `0.0.0.0`
+   (ADR 0078). It advertises nothing and browses for nothing (no Bonjour, no
+   multicast), so macOS never asks to let it use the local network.
 2. **Transport**: plaintext HTTP and WebSocket within the tailnet;
    encryption is provided by Tailscale. The new iOS app carries the same ATS
    exception (`NSAllowsArbitraryLoads`) with the same explanatory comment.
@@ -24,6 +25,8 @@ it has been confirmed to work”. Evidence of today's behavior is in
 6. **Push**: the engine on the Mac sends directly to APNs (as today) for:
    permission requests, tasks marked “your turn”, “no signal”, pane death.
    Live Activity for “agent running” (already exists for deployment; reuse it).
+   Push is off in 0.1.0: the release engine has no APNs credentials and never
+   offers it (contract 08 §2.3).
 7. **What the iPhone and iPad do in v1**: everything the person can do at the Mac.
    A paired iPhone or iPad is a full remote control (owner decision,
    2026-09-26): view workspaces, panes and state; type into raw terminals

@@ -102,6 +102,13 @@ pub fn submission(typed: &str, current: &str) -> Option<String> {
     (!name.is_empty() && name != current).then(|| name.to_owned())
 }
 
+/// What is being renamed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenameTarget {
+    Workspace(String),
+    Pane(String),
+}
+
 /// The workspace selected after `closed` goes: the one after it, or the one before it when it was
 /// last, as in a browser. `None` when it was the only one, or is not listed.
 pub(super) fn selection_after_closing(order: &[String], closed: &str) -> Option<String> {
@@ -113,6 +120,30 @@ pub(super) fn selection_after_closing(order: &[String], closed: &str) -> Option<
 }
 
 impl State {
+    /// The request that renames `target` to `typed`, or `None` when that is blank or the name it
+    /// has now. Breaks inside `typed` are replaced by blanks.
+    pub fn rename_request(&self, target: &RenameTarget, typed: &str) -> Option<Command> {
+        let typed = typed.replace(['\n', '\r'], " ");
+        match target {
+            RenameTarget::Workspace(id) => {
+                let current = self.workspace(id).map(|workspace| workspace.name.as_str());
+                submission(&typed, current.unwrap_or_default()).map(|name| {
+                    Command::RenameWorkspace {
+                        workspace_id: id.clone(),
+                        name,
+                    }
+                })
+            }
+            RenameTarget::Pane(id) => {
+                let current = self.pane(id).map(|pane| pane.name.as_str());
+                submission(&typed, current.unwrap_or_default()).map(|name| Command::RenamePane {
+                    pane_id: id.clone(),
+                    name,
+                })
+            }
+        }
+    }
+
     /// What opening the folder at `path` does, or why it cannot be opened.
     pub fn open_folder(&self, path: &str) -> Result<FolderOpening, FolderPathProblem> {
         let path = resolve_path(path)?;
@@ -146,6 +177,30 @@ impl State {
         folders
     }
 
+    /// The "Start with an agent" form as it opens: the folder of the selected workspace, and the
+    /// agent the Mac would preselect.
+    pub fn new_agent_form(&self) -> NewAgent {
+        let mut form = NewAgent {
+            directory: self
+                .selected_workspace()
+                .map(|workspace| workspace.path.clone())
+                .unwrap_or_default(),
+            ..NewAgent::default()
+        };
+        self.choose_agent(&mut form);
+        form
+    }
+
+    /// Keeps the agent of `form` while the engine lists it as able to start; otherwise takes the
+    /// one the person prefers or the one that was ready most recently. The list changes while the
+    /// form is open.
+    pub fn choose_agent(&self, form: &mut NewAgent) {
+        form.keep_or_choose_harness(
+            &self.harnesses,
+            self.preferences.preferred_harness.as_deref(),
+        );
+    }
+
     /// Starts an agent as the Mac's new-pane form does: in the workspace of the form's folder
     /// (made first when the folder has none), running its harness, and sent the first message
     /// once its pane is here. Says why it cannot start when the form does not allow it.
@@ -154,6 +209,7 @@ impl State {
             return Err(blocker.explanation());
         }
         let harness = form.harness.clone();
+        let acknowledged = self.acknowledged_package(&harness);
         match self
             .open_folder(&form.directory)
             .map_err(FolderPathProblem::explanation)?
@@ -169,6 +225,7 @@ impl State {
                     effects: vec![Effect::Send(Command::CreateAgent {
                         workspace_id,
                         harness,
+                        acknowledged,
                         cwd: None,
                         ticket,
                     })],
@@ -186,6 +243,14 @@ impl State {
                 })
             }
         }
+    }
+
+    /// The package the person acknowledges by starting `harness` from the picker that showed its
+    /// notice (see `harness_picker::acknowledged_package`).
+    pub fn acknowledged_package(&self, harness: &str) -> Option<String> {
+        crate::harness_picker::acknowledged_package(
+            self.harnesses.iter().find(|item| item.id == harness),
+        )
     }
 
     /// The requests in flight are lost with the connection; an agent that was starting is kept
@@ -230,12 +295,14 @@ impl State {
         let command = match self.starts.remove(&ticket) {
             Some(start) => {
                 let harness = start.harness.clone();
+                let acknowledged = self.acknowledged_package(&harness);
                 if let Some(expected) = self.expected.last_mut() {
                     expected.start = Some(start);
                 }
                 Command::CreateAgent {
                     workspace_id,
                     harness,
+                    acknowledged,
                     cwd,
                     ticket,
                 }

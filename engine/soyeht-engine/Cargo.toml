@@ -30,6 +30,7 @@ bench = false
 [dependencies]
 soyeht-acp = { path = "../soyeht-acp" }
 soyeht-editor = { path = "../soyeht-editor" }
+soyeht-ink = { path = "../soyeht-ink" }
 soyeht-lsp = { path = "../soyeht-lsp" }
 soyeht-platform = { path = "../soyeht-platform", features = ["tokio"] }
 soyeht-pane-state = { path = "../soyeht-pane-state" }

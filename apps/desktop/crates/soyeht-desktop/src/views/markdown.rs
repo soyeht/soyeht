@@ -9,14 +9,17 @@ use super::{
     ui::{code_well, column, row, rule},
 };
 use crate::{
-    file_open::{Files, Probes},
+    file_open::Files,
     theme::{Palette, fonts, pane_interior},
 };
 use gpui::{
     AnyElement, Div, FontStyle, FontWeight, HighlightStyle, IntoElement, ParentElement,
     SharedString, StrikethroughStyle, Styled, UnderlineStyle, div, px, rgb,
 };
-use soyeht_client::markdown::{self, Block, Run, Style, Surface};
+use soyeht_client::{
+    file_links::probes::Probes,
+    markdown::{self, Block, Run, Style, Surface},
+};
 use soyeht_protocol::client_policy::COPY_CODE;
 use std::{cell::RefCell, ops::Range, rc::Rc, sync::Arc};
 

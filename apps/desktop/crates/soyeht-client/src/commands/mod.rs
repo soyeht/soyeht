@@ -10,6 +10,7 @@ mod workspaces;
 
 use crate::{
     attachments::{Draft, Upload},
+    composer::ReturnedPrompt,
     editor::EditorCommand,
     event::Event,
     preference_requests,
@@ -18,8 +19,9 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentPaneRole, LoopStopWhen, PaneInputParams, Request, TaskExecutor, TaskPriority, TaskState,
-    UsageProvider, WebNavigationAction, WorkspacePaneLayoutEnvelope, client_policy,
+    AgentPaneRole, LoopStopWhen, PaneInputParams, ProjectTrustChoice, Request, TaskExecutor,
+    TaskPriority, TaskState, UsageProvider, WebNavigationAction, WorkspacePaneLayoutEnvelope,
+    client_policy,
 };
 use uuid::Uuid;
 
@@ -81,6 +83,9 @@ pub enum Command {
     CreateAgent {
         workspace_id: String,
         harness: String,
+        /// The package the person was told the harness downloads unchecked
+        /// (`harness_picker::acknowledged_package`), which the engine needs to start it.
+        acknowledged: Option<String>,
         /// The folder the agent works in; `None` is the workspace's folder.
         cwd: Option<String>,
         ticket: u64,
@@ -103,8 +108,14 @@ pub enum Command {
     /// Send the person's message, and the files attached to it, to an agent.
     Prompt {
         pane_id: String,
+        /// What the engine is sent: the typed line, with a `/skill` turned into the prompt the
+        /// harness understands.
         text: String,
         attachments: Vec<Draft>,
+        /// What the composer held when the message was sent, exactly as it was typed. When the
+        /// engine does not take the message it comes back to the composer
+        /// (`Event::PromptReturned`); `None` for a message that did not come from a composer.
+        typed: Option<String>,
     },
     /// Stop the running turn.
     Cancel {
@@ -187,6 +198,8 @@ pub enum Command {
     SwitchHarness {
         pane_id: String,
         harness: String,
+        /// As in `CreateAgent`.
+        acknowledged: Option<String>,
         model: Option<String>,
         effort: Option<String>,
     },
@@ -271,6 +284,12 @@ pub enum Command {
     CloseWorkspace {
         workspace_id: String,
     },
+    /// The person's answer to "Trust this folder?": the engine sets it for every workspace that
+    /// shares the folder and tells each (`Event::ProjectTrust`).
+    SetProjectTrust {
+        workspace_id: String,
+        trust: ProjectTrustChoice,
+    },
     /// What the person does in an editor pane.
     Editor(EditorCommand),
     /// What a writing pane and the lists of the sections ask of the engine.
@@ -347,6 +366,19 @@ impl Command {
             Self::Editor(editor) => crate::editor::commands::refused(editor, error)
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
             Self::Writing(writing) => writing.failure(),
+            Self::SetProjectTrust { .. } => Some(Event::ProjectTrustFailed),
+            // Whatever the reason (a refusal, no answer in time, a connection that went, a queue
+            // that was full), the engine did not take the message: it goes back to its composer.
+            Self::Prompt {
+                pane_id,
+                attachments,
+                typed: Some(typed),
+                ..
+            } => Some(Event::PromptReturned(ReturnedPrompt {
+                pane_id: pane_id.clone(),
+                typed: typed.clone(),
+                attachments: attachments.clone(),
+            })),
             // The arrangement on screen goes back to the stored one, and the person is told.
             Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
                 workspace_id: workspace_id.clone(),
@@ -359,7 +391,7 @@ impl Command {
     /// its own: in the pane of a file the engine refused as text, or by the command's own
     /// failure event (a layout the engine refused says so in its message).
     pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
-        matches!(self, Self::SetLayout { .. })
+        matches!(self, Self::SetLayout { .. } | Self::SetProjectTrust { .. })
             || matches!(self, Self::Writing(writing) if writing.failure_is_shown_in_place())
             || matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }

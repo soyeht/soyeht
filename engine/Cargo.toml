@@ -1,5 +1,5 @@
 [workspace]
-members = ["soyeht-protocol", "soyeht-ptyd", "soyeht-acp", "soyeht-store", "soyeht-engine", "soyeht-cli", "soyeht-mcp", "soyeht-usage", "soyeht-editor", "soyeht-lsp", "soyeht-vcs", "soyeht-process", "soyeht-web", "soyeht-writing", "soyeht-pane-state", "soyeht-skills", "soyeht-platform", "soyeht-service"]
+members = ["soyeht-protocol", "soyeht-ptyd", "soyeht-acp", "soyeht-store", "soyeht-engine", "soyeht-cli", "soyeht-mcp", "soyeht-usage", "soyeht-editor", "soyeht-lsp", "soyeht-vcs", "soyeht-process", "soyeht-web", "soyeht-writing", "soyeht-pane-state", "soyeht-skills", "soyeht-platform", "soyeht-service", "soyeht-ink"]
 resolver = "3"
 
 [workspace.package]
@@ -63,9 +63,11 @@ opt-level = 3
 [profile.test]
 debug = 0
 
-# A shipping build. The engine and the clients rely on unwinding: a poisoned lock is recovered
-# (`PoisonError`), a panicked thread is joined and reported, and a panicked task ends only itself,
-# so `panic = "abort"` would turn each of those into the death of the whole process. The symbols
+# A shipping build. The engine and the clients rely on unwinding: a poisoned small lock is recovered
+# (`PoisonError`), a poisoned Core lock is logged and ends the engine with its own exit code so the
+# service manager starts a new one (ADR 0159), a panicked thread is joined and reported, and a
+# panicked task ends only itself, so `panic = "abort"` would turn each of those into the death of
+# the whole process before the exit code and the log line are written. The symbols
 # are stripped from the binary: a release is smaller and the engine hashes its whole executable at
 # start. `docs/platforms.md` describes the profile. Thin LTO stays: fat is 4% smaller here and
 # 1% slower on the editor (open and search), and the window, which gains from fat, is built apart.

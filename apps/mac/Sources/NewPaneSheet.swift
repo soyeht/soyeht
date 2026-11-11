@@ -6,6 +6,8 @@ import SwiftUI
 struct NewPaneSheet: View {
   @Bindable var client: EngineClient
   let workspaceId: String?
+  /// The workspace the new pane must join (a split's), else the folder's workspace.
+  let slotWorkspaceId: String?
   @Binding var mode: PaneMode
   let onCancel: () -> Void
   let onCreated: (String, PaneLayoutKind) -> Void
@@ -18,6 +20,7 @@ struct NewPaneSheet: View {
   private var current: NewPaneForm {
     var value = form
     value.kind = NewPaneKind(mode: mode)
+    value.workspaceId = slotWorkspaceId
     return value
   }
   private var canCreate: Bool {

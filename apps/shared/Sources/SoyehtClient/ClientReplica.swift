@@ -11,5 +11,5 @@
 extension EngineClient {
   /// Every replica the client owns; a disconnect cancels and clears each of them. A new domain's
   /// replica is added here and nowhere else.
-  var replicas: [any ClientReplica] { [usage] }
+  var replicas: [any ClientReplica] { [usage, projectTrust] }
 }

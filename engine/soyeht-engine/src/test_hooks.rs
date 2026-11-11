@@ -16,6 +16,7 @@ use crate::{
     model::RunningPane,
     usage::FixtureHost,
 };
+use soyeht_ink::Recognizer;
 use soyeht_ptyd::wire::Request;
 use soyeht_store::segments::Record;
 use soyeht_usage::host::Host;
@@ -45,6 +46,10 @@ const POLL_SKILLS_VARIABLE: &str = "SOYEHT_TEST_SKILL_POLL";
 /// Milliseconds every flush of a terminal segment to the disk takes, as on a busy machine.
 const SLOW_DISK_VARIABLE: &str = "SOYEHT_TEST_SLOW_DISK_MS";
 
+/// Replaces the system's handwriting recognizer with one that reads every writing as one word
+/// after pausing this many milliseconds, as a slow recognizer would.
+const INK_RECOGNIZER_VARIABLE: &str = "SOYEHT_TEST_INK_RECOGNIZER_MS";
+
 /// Milliseconds starting a file-event stream takes, as on a busy machine.
 const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
 
@@ -53,6 +58,7 @@ pub struct FileHooks {
     slow_disk: bool,
     usage_fixtures: Option<PathBuf>,
     poll_skills: bool,
+    ink_pause: Option<std::time::Duration>,
 }
 
 impl FileHooks {
@@ -70,11 +76,18 @@ impl FileHooks {
         {
             crate::file_events::slow_start::set(pause);
         }
+        let mut ink_pause = None;
+        if let Ok(value) = std::env::var(INK_RECOGNIZER_VARIABLE)
+            && let Ok(pause) = value.parse()
+        {
+            ink_pause = Some(std::time::Duration::from_millis(pause));
+        }
         Self {
             directory: directory.into(),
             slow_disk,
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
+            ink_pause,
         }
     }
 
@@ -138,9 +151,44 @@ impl Hooks for FileHooks {
             .then(|| Box::new(InterferedFiles(SlowWrites)) as Box<dyn FileSystemPort>)
     }
 
+    fn ink_recognizer(&self) -> Option<Box<dyn Recognizer>> {
+        Some(Box::new(PausedRecognizer(self.ink_pause?)))
+    }
+
     fn usage_host(&self) -> Option<Arc<dyn Host>> {
         let directory = self.usage_fixtures.clone()?;
         Some(Arc::new(FixtureHost::new(directory)))
+    }
+}
+
+/// A recognizer that takes `.0` to read and says whether it was started under the Core lock,
+/// which is the one thing a test of `ink.recognize` needs to see (ADR 0079).
+struct PausedRecognizer(std::time::Duration);
+
+impl Recognizer for PausedRecognizer {
+    fn id(&self) -> &'static str {
+        "paused-fixture"
+    }
+
+    fn languages(&mut self) -> soyeht_ink::Result<Vec<String>> {
+        Ok(vec!["en-US".into()])
+    }
+
+    fn read(
+        &mut self,
+        _image: &soyeht_ink::Bitmap,
+        _languages: &[String],
+        _most: usize,
+    ) -> soyeht_ink::Result<Vec<soyeht_ink::Candidate>> {
+        std::thread::sleep(self.0);
+        let text = match soyeht_process::forbidden() {
+            None => "off-the-lock",
+            Some(_) => "under-the-lock",
+        };
+        Ok(vec![soyeht_ink::Candidate {
+            text: text.into(),
+            score: Some(1.0),
+        }])
     }
 }
 

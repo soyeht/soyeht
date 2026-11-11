@@ -16,6 +16,17 @@ pub fn pane_json(id: &str, workspace: &str, mode: &str) -> Value {
     })
 }
 
+/// A state connected to an engine that lists workspace `w` with the panes `(id, mode)`.
+pub fn connected(panes: &[(&str, &str)]) -> crate::State {
+    let mut state = crate::State::default();
+    state.apply(crate::Event::Connected(crate::Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: panes.iter().map(|(id, mode)| pane(id, "w", mode)).collect(),
+        ..crate::Snapshot::default()
+    }));
+    state
+}
+
 /// The tree of the layout that `effects` store.
 pub fn stored_layout(effects: &[Effect]) -> Option<WorkspacePaneLayoutNode> {
     effects.iter().find_map(|effect| match effect {
@@ -88,6 +99,15 @@ pub fn event(name: soyeht_protocol::EventName, mut params: Value) -> crate::Even
     params["eventId"] = json!("9");
     params["at"] = json!("now");
     crate::Event::Notification { name, params }
+}
+
+/// A harness the engine lists, which can start or cannot.
+pub fn harness(id: &str, available: bool) -> soyeht_protocol::HarnessInfo {
+    serde_json::from_value(json!({
+        "id": id, "name": id, "available": available, "capabilities": [],
+        "options": [], "authMethods": [],
+    }))
+    .unwrap()
 }
 
 /// An agent session carrying `fields` besides the ones every session has.

@@ -11,8 +11,8 @@ use gpui::{ClipboardItem, Context, Entity};
 use soyeht_client::{
     Command, Connection,
     agent::TAIL,
-    cards::{Earlier, elicitation},
-    loops,
+    cards::elicitation,
+    composer::{Submission, returned_text},
 };
 use std::time::Instant;
 
@@ -30,6 +30,7 @@ impl Workbench {
     /// loop never sends over what the person is typing.
     pub(crate) fn beat_drafts(&mut self, cx: &mut Context<Self>) {
         let now = Instant::now();
+        let connected = self.state.connection == Connection::Connected;
         let drafts: Vec<(String, bool)> = self
             .panes
             .iter()
@@ -39,14 +40,12 @@ impl Workbench {
             })
             .collect();
         for (pane_id, has_draft) in drafts {
-            let ui = self.panes.of(&pane_id);
-            let last = ui.draft_beat;
-            if !has_draft {
-                ui.draft_beat = None;
-            } else if loops::draft_beat_due(has_draft, last, now)
-                && self.state.connection == Connection::Connected
+            if self
+                .panes
+                .of(&pane_id)
+                .draft_beat
+                .due(has_draft, connected, now)
             {
-                ui.draft_beat = Some(now);
                 self.send(Command::SetDraft {
                     pane_id,
                     active: true,
@@ -61,36 +60,24 @@ impl Workbench {
         subagent_id: &str,
         cx: &mut Context<Self>,
     ) {
-        let open = &mut self.panes.of(pane_id).open_subagents;
-        if !open.remove(subagent_id) {
-            open.insert(subagent_id.to_owned());
-        }
+        self.panes.of(pane_id).open.toggle_subagent(subagent_id);
         cx.notify();
     }
 
     /// How many messages of an agent's transcript the view draws.
     pub(crate) fn transcript_limit(&self, pane_id: &str) -> usize {
-        TAIL + self.panes.get(pane_id).map_or(0, |ui| ui.extra)
+        self.panes.get(pane_id).map_or(TAIL, |ui| ui.window.limit())
     }
 
     /// "Load earlier messages": draws the messages already held beyond the last ones, and when
     /// all of them are drawn asks the engine for the page before the oldest.
     pub(crate) fn load_earlier(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let limit = self.transcript_limit(pane_id);
         let Some(view) = self.state.agent(pane_id) else {
             return;
         };
-        match view.cards.earlier(view.tail(limit).1) {
-            Earlier::Reveal => {
-                self.panes.of(pane_id).extra += TAIL;
-            }
-            Earlier::Fetch(before) => {
-                self.send(Command::LoadOlder {
-                    pane_id: pane_id.to_owned(),
-                    before,
-                });
-            }
-            Earlier::Nothing => {}
+        let request = self.panes.of(pane_id).window.load_earlier(pane_id, view);
+        if let Some(request) = request {
+            self.send(request);
         }
         cx.notify();
     }
@@ -184,51 +171,40 @@ impl Workbench {
         submit: bool,
         cx: &mut Context<Self>,
     ) {
-        let fields = submit.then(|| {
-            elicitation::answer(
-                self.panes
-                    .get(pane_id)
-                    .into_iter()
-                    .flat_map(|ui| ui.form_fields.iter())
-                    .filter(|((request, _), _)| request == request_id)
-                    .map(|((_, key), field)| {
-                        (key.clone(), field.read(cx).draft().text().to_owned())
-                    }),
-            )
+        let typed = submit.then(|| {
+            self.panes
+                .get(pane_id)
+                .into_iter()
+                .flat_map(|ui| ui.form_fields.iter())
+                .filter(|((request, _), _)| request == request_id)
+                .map(|((_, key), field)| (key.clone(), field.read(cx).draft().text().to_owned()))
+                .collect::<Vec<_>>()
         });
-        self.send(Command::AnswerElicitation {
-            pane_id: pane_id.to_owned(),
-            request_id: request_id.to_owned(),
-            cancel: fields.is_none(),
-            fields,
-        });
+        self.send(elicitation::response(pane_id, request_id, typed));
         cx.notify();
     }
 
     /// Sends the composer's text to the agent. The text leaves the composer only once the
-    /// engine's queue has taken it: a message that could not be sent stays to be sent again.
+    /// engine's queue has taken it: a message that could not be sent stays to be sent again. One
+    /// the engine then does not take comes back (`restore_returned_prompts`).
     pub(crate) fn submit_prompt(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.clone()) else {
             return;
         };
-        let Some(text) = field.read(cx).draft().to_send() else {
-            return;
-        };
-        let text = self.state.slash_catalog(pane_id).prompt(&text);
-        if self.state.connection != Connection::Connected {
-            self.state.report_disconnected();
-            cx.notify();
-            return;
-        }
         let attachments = self
             .staged(pane_id)
             .map(|staged| staged.items().to_vec())
             .unwrap_or_default();
-        if self.send(Command::Prompt {
-            pane_id: pane_id.to_owned(),
-            text,
-            attachments,
-        }) {
+        let typed = field.read(cx).draft().text().to_owned();
+        let command = match self.state.submit_prompt(pane_id, &typed, attachments) {
+            Submission::Send(command) => command,
+            Submission::Blank => return,
+            Submission::Refused => {
+                cx.notify();
+                return;
+            }
+        };
+        if self.send(command) {
             field.update(cx, |field, cx| field.clear(cx));
             if let Some(staged) = self
                 .panes
@@ -241,16 +217,31 @@ impl Workbench {
         cx.notify();
     }
 
+    /// Puts back in their composers the messages the engine did not take, with their files, in
+    /// front of whatever was typed or attached since (`soyeht_client::composer`).
+    pub(crate) fn restore_returned_prompts(&mut self, cx: &mut Context<Self>) {
+        let returned = self.state.take_returned_prompts();
+        for prompt in returned {
+            let field = self.composer_field(&prompt.pane_id, cx);
+            let newer = field.read(cx).draft().text().to_owned();
+            let text = returned_text(&prompt.typed, &newer);
+            field.update(cx, |field, cx| field.replace(&text, cx));
+            self.panes
+                .of(&prompt.pane_id)
+                .staged
+                .get_or_insert_default()
+                .restore(prompt.attachments);
+            cx.notify();
+        }
+    }
+
     pub(crate) fn toggle_thought(
         &mut self,
         pane_id: &str,
         message_id: &str,
         cx: &mut Context<Self>,
     ) {
-        let open = &mut self.panes.of(pane_id).open_thoughts;
-        if !open.remove(message_id) {
-            open.insert(message_id.to_owned());
-        }
+        self.panes.of(pane_id).open.toggle_thought(message_id);
         cx.notify();
     }
 
@@ -260,8 +251,7 @@ impl Workbench {
         (pane_id, message): (&str, &str),
         cx: &mut Context<Self>,
     ) {
-        let pages = &mut self.panes.of(pane_id).reply_pages;
-        *pages.entry(message.to_owned()).or_insert(1) += 1;
+        self.panes.of(pane_id).open.show_more_of_reply(message);
         cx.notify();
     }
 

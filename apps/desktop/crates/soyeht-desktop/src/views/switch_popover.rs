@@ -6,7 +6,7 @@ use super::{
     cards::{Role, button},
     harness_menu::{Pick, Picker},
     menus,
-    ui::{OwnPress, column, hint, icon, id, row, rule},
+    ui::{OwnPress, column, grow, hint, icon, id, row, rule},
 };
 use crate::workbench::Workbench;
 use crate::{
@@ -38,12 +38,13 @@ impl Workbench {
             return column();
         };
         let search = draft.search.clone();
+        let choices = &draft.choices;
         let (chosen, model, effort) = (
-            draft.harness.clone(),
-            draft.model.clone(),
-            draft.effort.clone(),
+            choices.harness.clone(),
+            choices.model.clone(),
+            choices.effort.clone(),
         );
-        let models_open = draft.models_open;
+        let models_open = choices.models_open;
         search.update(cx, |field, _| field.style(palette, "Search agents"));
         let query = search.read(cx).draft().text().to_owned();
         let running = pane.agent.as_ref().map(|agent| agent.harness.clone());
@@ -290,13 +291,7 @@ fn model_field(
                 this.toggle_switch_models(cx);
             }
         }))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .child(SharedString::from(label)),
-        )
+        .child(grow().truncate().child(SharedString::from(label)))
         .child(super::ui::disclosure_chevron(open, palette.muted))
         .into_any_element()
 }

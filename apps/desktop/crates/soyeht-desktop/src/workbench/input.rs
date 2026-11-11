@@ -7,16 +7,20 @@ use crate::{
 };
 use gpui::{App, Context, KeyDownEvent, ScrollWheelEvent, Window};
 use soyeht_client::{
-    Command, Connection,
     editor::keys::types_text,
     keys::{self, Modifiers},
     screen::TerminalScreen,
+    terminal_input::Typed,
     text_input::keys::Edit,
 };
 use soyeht_protocol::PaneMode;
 
 impl Workbench {
     pub(crate) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        // The trust sheet has the keyboard: nothing is pasted into a pane under it.
+        if self.state.trust_prompt().is_some() {
+            return;
+        }
         let Some(item) = cx.read_from_clipboard() else {
             return;
         };
@@ -55,6 +59,16 @@ impl Workbench {
             && (self.prefs.mode_menu.take().is_some() || self.menus.escape())
         {
             cx.notify();
+            cx.stop_propagation();
+            return;
+        }
+        // While "Trust this folder?" is shown the keys are the sheet's: Escape closes it like its
+        // close button (the question is put off and the folder stays restricted), and the others
+        // reach no pane.
+        if self.state.trust_prompt().is_some() {
+            if trust_sheet_key(&keystroke.key) == SheetKey::Defer {
+                self.defer_trust_prompt(cx);
+            }
             cx.stop_propagation();
             return;
         }
@@ -143,7 +157,7 @@ impl Workbench {
             (self.destination, start_shown),
             self.field_request.is_some(),
             pane_takes_keys(window.focused(cx), self.focus.clone()),
-        );
+        ) && self.state.trust_prompt().is_none();
         let pane = self.state.focused_pane()?;
         match pane.mode {
             PaneMode::Editor if free => Some(KeyTarget::Editor(pane.pane_id.clone())),
@@ -156,28 +170,15 @@ impl Workbench {
 
     /// Typing returns the view to the live bottom, as in every terminal.
     pub(crate) fn send_input(&mut self, pane_id: &str, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        if self.state.connection != Connection::Connected {
-            // Keystrokes cannot reach a dead connection; say so instead of dropping them.
-            self.state.report_disconnected();
-            cx.notify();
-            return;
-        }
-        if let Some(screen) = self.state.screen_mut(pane_id) {
-            // What is typed or pasted ends a selection, as in every terminal.
-            let selected = screen.has_selection();
-            screen.clear_selection();
-            let scrolled = screen.scrolled_back();
-            if scrolled {
-                screen.scroll_to_bottom();
-            }
-            if selected || scrolled {
-                cx.notify();
+        match self.state.type_into_terminal(pane_id, bytes) {
+            Typed::Refused => cx.notify(),
+            Typed::Send { command, redraw } => {
+                if redraw {
+                    cx.notify();
+                }
+                self.send(command);
             }
         }
-        self.send(Command::Input {
-            pane_id: pane_id.to_owned(),
-            bytes,
-        });
     }
 }
 
@@ -192,6 +193,25 @@ fn pane_takes_keys<H: PartialEq>(focused: Option<H>, window: H) -> bool {
 pub(crate) enum KeyTarget {
     Terminal(String),
     Editor(String),
+}
+
+/// What a key does while the "Trust this folder?" sheet is shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SheetKey {
+    /// Closes the sheet like its close button.
+    Defer,
+    /// Reaches nothing: no pane under the sheet takes it. Enter does not pick an answer, as in
+    /// the other sheets of the window.
+    Swallow,
+}
+
+/// What the key named `key` does while the trust sheet is shown.
+fn trust_sheet_key(key: &str) -> SheetKey {
+    if key == "escape" {
+        SheetKey::Defer
+    } else {
+        SheetKey::Swallow
+    }
 }
 
 /// Whether the panes take the keys now: the stage shows them (`destination`, whether the start
@@ -213,6 +233,14 @@ fn stage_shows_panes(destination: Destination, start_shown: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_trust_sheet_takes_escape_to_close_and_swallows_every_other_key() {
+        assert_eq!(trust_sheet_key("escape"), SheetKey::Defer);
+        for key in ["enter", "a", "tab", "space", "up", "backspace", "c"] {
+            assert_eq!(trust_sheet_key(key), SheetKey::Swallow, "{key}");
+        }
+    }
 
     #[test]
     fn the_panes_take_keys_only_while_the_stage_shows_them() {

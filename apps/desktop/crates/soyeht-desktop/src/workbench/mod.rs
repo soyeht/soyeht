@@ -85,6 +85,8 @@ pub struct Workbench {
     /// The first field of a form that just opened, which takes the keyboard on the next frame
     /// before any pane does.
     pub(crate) field_request: Option<FocusHandle>,
+    /// Whether the "Trust this folder?" sheet holds the keyboard (`hold_trust_keys`).
+    pub(crate) trust_sheet_holds_keys: bool,
     /// The workspace whose close waits for the person's answer to its question.
     pub(crate) closing_workspace: Option<String>,
     /// The name of a workspace or pane being edited in place.
@@ -177,6 +179,7 @@ impl Workbench {
             preedit: None,
             focus_request: None,
             field_request: None,
+            trust_sheet_holds_keys: false,
             closing_workspace: None,
             rename: None,
             panels: ProjectPanels::default(),
@@ -215,6 +218,7 @@ impl Workbench {
         self.forget_closed_panes();
         self.raise_alerts(cx);
         self.restore_failed_start(cx);
+        self.restore_returned_prompts(cx);
         if self.switch.is_some() {
             self.choose_first_harness(cx);
         }

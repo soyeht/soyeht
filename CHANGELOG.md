@@ -12,9 +12,22 @@ Security.
 
 ## [Unreleased]
 
+### Added
+
+- The Android app can read the pen's handwriting in the message field on devices below Android 14, with Google's ML
+  Kit. It is off until you turn on "Handwriting on this device" in Settings. Turning it on starts ML Kit, which sends
+  diagnostics and usage metrics to Google (`PRIVACY.md` lists them); what you write is not among the data Google lists.
+  The Android app contains proprietary runtime libraries from Google (ML Kit and Google Play services), under Google's
+  terms and not open source, and are listed in `THIRD-PARTY-NOTICES.txt`.
+
 ## [0.1.0] - 2026-11-04
 
 The first public release.
+
+Push notifications are not part of this release. The iPhone and iPad app does not ask for
+notification permission, and your computer sends nothing to Apple's push service. The Mac, Windows
+and Linux apps still raise a system notification on your computer when an agent needs you. Push
+comes back in a later release.
 
 ### Added
 
@@ -52,4 +65,3 @@ The first public release.
   an older Mac says to update it, and one paired before says to pair again.
 - The supervisor's socket checks the user on the other end, and a private directory counts as private only
   when you own it. A web page can no longer open a WebSocket to the engine.
-- A push notification says nothing of what the agent asked.

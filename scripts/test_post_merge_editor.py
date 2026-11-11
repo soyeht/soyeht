@@ -121,9 +121,9 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         head = self.add("slows the editor", {"b": "2"})
         self.assertEqual(self.run_main(head, "--editor-meter", str(self.meter("slow"))), 1)
         record = self.record(head)
-        self.assertEqual(record["result"], "fail")
+        self.assertEqual(record["result"], "host")  # no editor files changed: the old commit is slow too
         self.assertEqual(record["failed_step"], "editor-performance:check")
-        self.assertEqual(record["culprit"]["sha"], head)
+        self.assertNotIn("culprit", record)
         self.assertNotIn("editor_tree_hash", record)
 
     def test_a_step_after_the_editor_check_still_decides_the_run(self):
@@ -149,7 +149,8 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         self.assertGreater(len(self.runs()), runs)
 
     def test_a_stale_report_on_an_older_commit_does_not_blame_it(self):
-        """The probes run older commits with the newest report: stale says nothing about latency."""
+        """The control and the probes run older commits with the newest report: stale says nothing
+        about latency, so the control on the last green main (editor v1) cannot run and nobody is blamed."""
         self.add("editor v1", {"editor_version": "v1"})
         self.assertEqual(self.run_main(self.shas[-1], "--editor-meter", str(self.meter("ok v1"))), 0)
         self.add("unrelated", {"b": "2"})
@@ -160,7 +161,9 @@ class EditorMeasurementTests(SyntheticRepositoryCase):
         record = self.record(head)
         self.assertEqual((record["result"], record["failed_step"]), ("fail", "editor-performance:check"))
         self.assertNotIn("culprit", record, "a commit that fails as stale is skipped, not blamed")
-        self.assertEqual([c["subject"] for c in record["candidates"]], ["unrelated", "editor v2"])
+        self.assertNotIn("candidates", record, "the control did not run: the search did not start")
+        self.assertEqual(record["control"], {"sha": self.shas[1], "result": "skip"})
+        self.assertIn("could not be run on the last green main", record["note"])
 
 
 class EditorMessageContractTests(unittest.TestCase):

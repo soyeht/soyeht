@@ -1,7 +1,7 @@
 """What the packaging scripts of every platform share (`package_mac.py`, `package_linux.py`,
 `package_windows.py`; ADRs 0120, 0121 and 0123): the error a step raises, the digest of a file, the
 command runners, the product version and the name of a package file (`contracts/release.json`, ADR
-0115), the release build of the two cargo workspaces and the programs it leaves."""
+0115), the license documents every package carries, the release build of the two cargo workspaces and the programs it leaves."""
 
 from __future__ import annotations
 
@@ -26,12 +26,23 @@ PACKAGE = "soyeht"
 HOMEPAGE = "https://github.com/soyeht/soyeht"
 # The programs of `engine/` that a package ships, by cargo package.
 ENGINE_PACKAGES = ("soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-mcp", "soyeht-service")
+# The license documents every package ships: the product's license and notice, and the generated
+# notices of its third-party components (`scripts/third_party_notices.py`, ADR 0149).
+LICENSE_DOCUMENTS = ("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt")
 # The biggest a package may be, by `<system>-<arch>.<extension>`, in bytes (`package_sizes.json`).
 SIZE_CEILINGS = Path(__file__).with_name("package_sizes.json")
 
 
 class PackagingError(Exception):
     """A step failed; the message says which and why."""
+
+
+def license_document(name):
+    """The bytes of one of `LICENSE_DOCUMENTS`; a package without it is not a release."""
+    path = ROOT / name
+    if not path.is_file():
+        raise PackagingError(f"{name} is missing: uv run python scripts/third_party_notices.py generate")
+    return path.read_bytes()
 
 
 def readable_by_others(path):

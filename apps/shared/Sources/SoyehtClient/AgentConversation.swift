@@ -387,14 +387,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
 
   private func submit() {
-    let text = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return }
-    prompt = ""
-    onExplicitRemoteAction()
-    client.sendPrompt(
-      paneId, text: client.slashCatalog(paneId: paneId).prompt(for: text),
-      attachments: attachments.take())
-    promptFocused = true
+    let catalog = client.slashCatalog(paneId: paneId)
+    let sent = AgentPromptDrafts.shared.submit(
+      paneId, to: client, expanding: catalog.prompt(for:), beforeSend: onExplicitRemoteAction)
+    if sent { promptFocused = true }
   }
 
   private func configValue(_ value: ConfigValue) -> String {

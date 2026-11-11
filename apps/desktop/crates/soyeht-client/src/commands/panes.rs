@@ -36,9 +36,15 @@ pub(super) fn request(command: &Command) -> Option<Request> {
         Command::CreateAgent {
             workspace_id,
             harness,
+            acknowledged,
             cwd,
             ..
-        } => create(workspace_id, PaneMode::Agent, Some(harness), cwd.as_ref()),
+        } => create(
+            workspace_id,
+            PaneMode::Agent,
+            Some((harness, acknowledged.as_ref())),
+            cwd.as_ref(),
+        ),
         Command::ClosePane { pane_id } => Request::PaneClose(PaneCloseParams {
             pane_id: pane_id.clone(),
             idempotency_key: key(),
@@ -47,6 +53,7 @@ pub(super) fn request(command: &Command) -> Option<Request> {
             pane_id,
             text,
             attachments,
+            ..
         } => Request::PanePrompt(PanePromptParams {
             pane_id: pane_id.clone(),
             text: text.clone(),
@@ -78,6 +85,7 @@ pub(super) fn request(command: &Command) -> Option<Request> {
         Command::SwitchHarness {
             pane_id,
             harness,
+            acknowledged,
             model,
             effort,
         } => Request::PaneHarnessSwitch(PaneHarnessSwitchParams {
@@ -85,6 +93,7 @@ pub(super) fn request(command: &Command) -> Option<Request> {
             harness: harness.clone(),
             model: model.clone(),
             effort: effort.clone(),
+            acknowledged_package: acknowledged.clone(),
             idempotency_key: key(),
         }),
         Command::AnswerPermission {
@@ -119,7 +128,7 @@ fn transcript_page(pane_id: &str, before: Option<&String>) -> Request {
 fn create(
     workspace_id: &str,
     mode: PaneMode,
-    harness: Option<&String>,
+    harness: Option<(&String, Option<&String>)>,
     cwd: Option<&String>,
 ) -> Request {
     Request::PaneCreate(PaneCreateParams {
@@ -130,10 +139,11 @@ fn create(
         cols: None,
         rows: None,
         idempotency_key: key(),
-        harness: harness.cloned(),
+        harness: harness.map(|(harness, _)| harness.clone()),
         model: None,
         effort: None,
         permission_mode: None,
+        acknowledged_package: harness.and_then(|(_, package)| package.cloned()),
         url: None,
         incognito: None,
         path: None,

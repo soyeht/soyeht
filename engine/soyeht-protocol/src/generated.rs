@@ -92,6 +92,8 @@ pub enum SnapshotSection {
     Files,
     #[serde(rename = "writing")]
     Writing,
+    #[serde(rename = "trust")]
+    Trust,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum ErrorKind {
@@ -177,6 +179,20 @@ pub enum ErrorKind {
     FileNotText,
     #[serde(rename = "file_too_large")]
     FileTooLarge,
+    #[serde(rename = "adapter_not_acknowledged")]
+    AdapterNotAcknowledged,
+    #[serde(rename = "workspace_folder_missing")]
+    WorkspaceFolderMissing,
+    #[serde(rename = "push_unavailable")]
+    PushUnavailable,
+    #[serde(rename = "ink_unsupported")]
+    InkUnsupported,
+    #[serde(rename = "ink_language_unavailable")]
+    InkLanguageUnavailable,
+    #[serde(rename = "ink_limit_exceeded")]
+    InkLimitExceeded,
+    #[serde(rename = "ink_recognition_failed")]
+    InkRecognitionFailed,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -564,6 +580,11 @@ pub struct PaneCreateParams {
     pub effort: Option<String>,
     #[serde(rename = "permissionMode", skip_serializing_if = "Option::is_none")]
     pub permission_mode: Option<Id>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
@@ -780,6 +801,8 @@ pub struct DevicePairStartResult {
     pub expires_at: String,
     #[serde(rename = "uri")]
     pub uri: String,
+    #[serde(rename = "qr", skip_serializing_if = "Option::is_none")]
+    pub qr: Option<String>,
     #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
     pub reachability: Option<EngineReachability>,
 }
@@ -898,6 +921,8 @@ pub enum EngineReachabilityReason {
     TailnetLookupFailed,
     #[serde(rename = "tailnet_listen_failed")]
     TailnetListenFailed,
+    #[serde(rename = "tailnet_port_in_use")]
+    TailnetPortInUse,
     #[serde(rename = "loopback_only")]
     LoopbackOnly,
 }
@@ -1915,6 +1940,10 @@ pub struct HarnessInfo {
     pub setup_reason: Option<HarnessSetupReason>,
     #[serde(rename = "lastReadyAtMs", skip_serializing_if = "Option::is_none")]
     pub last_ready_at_ms: Option<Decimal>,
+    #[serde(rename = "package", skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(rename = "packageLocked", skip_serializing_if = "Option::is_none")]
+    pub package_locked: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ModelRefusal {
@@ -2270,6 +2299,11 @@ pub struct PaneHarnessSwitchParams {
     pub model: Option<String>,
     #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
     pub effort: Option<String>,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -3990,6 +4024,58 @@ pub struct PaneRoleSetResult {
     pub role: AgentPaneRole,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectTrust {
+    #[serde(rename = "undecided")]
+    Undecided,
+    #[serde(rename = "restricted")]
+    Restricted,
+    #[serde(rename = "trusted")]
+    Trusted,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ProjectTrustChoice {
+    #[serde(rename = "restricted")]
+    Restricted,
+    #[serde(rename = "trusted")]
+    Trusted,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustEntry {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustSetParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrustChoice,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustSetResult {
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectTrustChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum UsageProvider {
     #[serde(rename = "claude")]
     Claude,
@@ -4266,6 +4352,8 @@ pub enum LspState {
     Restarting,
     #[serde(rename = "unavailable")]
     Unavailable,
+    #[serde(rename = "restricted")]
+    Restricted,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TextPosition {
@@ -5010,6 +5098,8 @@ pub struct LspServerStatus {
     pub generation: u32,
     #[serde(rename = "detail", skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    #[serde(rename = "safeMode", skip_serializing_if = "Option::is_none")]
+    pub safe_mode: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LspStatusParams {
@@ -5128,6 +5218,29 @@ pub struct EditorReviewRequestedEvent {
 pub enum ClientCapability {
     #[serde(rename = "web_host")]
     WebHost,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum EngineCapability {
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "workspaces")]
+    Workspaces,
+    #[serde(rename = "snapshot-parts")]
+    SnapshotParts,
+    #[serde(rename = "event-replay")]
+    EventReplay,
+    #[serde(rename = "terminal-replay")]
+    TerminalReplay,
+    #[serde(rename = "device-pairing")]
+    DevicePairing,
+    #[serde(rename = "workspace-tasks")]
+    WorkspaceTasks,
+    #[serde(rename = "subscription-usage")]
+    SubscriptionUsage,
+    #[serde(rename = "push")]
+    Push,
+    #[serde(rename = "ink-recognition")]
+    InkRecognition,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
@@ -6336,6 +6449,50 @@ pub struct PaneExperimentHookResult {
     #[serde(rename = "recorded")]
     pub recorded: bool,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkPoint {
+    #[serde(rename = "x")]
+    pub x: f64,
+    #[serde(rename = "y")]
+    pub y: f64,
+    #[serde(rename = "t")]
+    pub t: u32,
+}
+pub type InkStroke = Vec<InkPoint>;
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkRecognizeParams {
+    #[serde(rename = "strokes")]
+    pub strokes: Vec<InkStroke>,
+    #[serde(rename = "languages")]
+    pub languages: Vec<String>,
+    #[serde(rename = "maxCandidates", skip_serializing_if = "Option::is_none")]
+    pub max_candidates: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkCandidate {
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "score", skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkRecognizeResult {
+    #[serde(rename = "candidates")]
+    pub candidates: Vec<InkCandidate>,
+    #[serde(rename = "recognizer")]
+    pub recognizer: String,
+    #[serde(rename = "language")]
+    pub language: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum InkUnsupportedReason {
+    #[serde(rename = "no_os_support")]
+    NoOsSupport,
+    #[serde(rename = "language_pack_missing")]
+    LanguagePackMissing,
+    #[serde(rename = "model_not_installed")]
+    ModelNotInstalled,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -6559,6 +6716,8 @@ pub enum Request {
     EditorReviewReject(EditorReviewParams),
     #[serde(rename = "editor.review.comment")]
     EditorReviewComment(EditorReviewCommentParams),
+    #[serde(rename = "project.trust.set")]
+    ProjectTrustSet(ProjectTrustSetParams),
     #[serde(rename = "lsp.status")]
     LspStatus(LspStatusParams),
     #[serde(rename = "servers.local.list")]
@@ -6633,6 +6792,8 @@ pub enum Request {
     WritingBeatDelete(WritingBeatDeleteParams),
     #[serde(rename = "pane.experiment.hook")]
     PaneExperimentHook(PaneExperimentHookParams),
+    #[serde(rename = "ink.recognize")]
+    InkRecognize(InkRecognizeParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -7105,6 +7266,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "EditorReviewCommentResult",
         true,
     ),
+    (
+        "project.trust.set",
+        "ProjectTrustSetParams",
+        "ProjectTrustSetResult",
+        true,
+    ),
     ("lsp.status", "LspStatusParams", "LspStatusResult", false),
     (
         "servers.local.list",
@@ -7252,6 +7419,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "PaneExperimentHookResult",
         true,
     ),
+    (
+        "ink.recognize",
+        "InkRecognizeParams",
+        "InkRecognizeResult",
+        false,
+    ),
 ];
 pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.role.set", "paneId"),
@@ -7363,6 +7536,8 @@ pub enum EventName {
     PaneUpdated,
     #[serde(rename = "settings.changed")]
     SettingsChanged,
+    #[serde(rename = "project.trust_changed")]
+    ProjectTrustChanged,
     #[serde(rename = "pane.session_started")]
     PaneSessionStarted,
     #[serde(rename = "pane.turn_ended")]
@@ -7493,6 +7668,7 @@ impl EventName {
             Self::PtydLost => "ptyd.lost",
             Self::PaneUpdated => "pane.updated",
             Self::SettingsChanged => "settings.changed",
+            Self::ProjectTrustChanged => "project.trust_changed",
             Self::PaneSessionStarted => "pane.session_started",
             Self::PaneTurnEnded => "pane.turn_ended",
             Self::PaneQueued => "pane.queued",
@@ -7672,6 +7848,11 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::SettingsChanged,
         params_type: "SettingsChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::ProjectTrustChanged,
+        params_type: "ProjectTrustChangedEvent",
         durable: true,
     },
     EventDescriptor {
@@ -8117,6 +8298,16 @@ pub struct SettingsChangedDraft {
 }
 impl EventParams for SettingsChangedDraft {
     const NAME: EventName = EventName::SettingsChanged;
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct ProjectTrustChangedDraft {
+    #[serde(rename = "workspaceIds")]
+    pub workspace_ids: Vec<Id>,
+    #[serde(rename = "trust")]
+    pub trust: ProjectTrust,
+}
+impl EventParams for ProjectTrustChangedDraft {
+    const NAME: EventName = EventName::ProjectTrustChanged;
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct PaneSessionStartedDraft {
@@ -8825,6 +9016,7 @@ pub mod method {
     pub const EDITOR_REVIEW_ACCEPT: &str = "editor.review.accept";
     pub const EDITOR_REVIEW_REJECT: &str = "editor.review.reject";
     pub const EDITOR_REVIEW_COMMENT: &str = "editor.review.comment";
+    pub const PROJECT_TRUST_SET: &str = "project.trust.set";
     pub const LSP_STATUS: &str = "lsp.status";
     pub const SERVERS_LOCAL_LIST: &str = "servers.local.list";
     pub const WEB_OPEN: &str = "web.open";
@@ -8862,6 +9054,7 @@ pub mod method {
     pub const WRITING_BEAT_PUT: &str = "writing.beat.put";
     pub const WRITING_BEAT_DELETE: &str = "writing.beat.delete";
     pub const PANE_EXPERIMENT_HOOK: &str = "pane.experiment.hook";
+    pub const INK_RECOGNIZE: &str = "ink.recognize";
 }
 pub mod method_family {
     pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
@@ -8938,6 +9131,7 @@ pub mod event {
     pub const PTYD_LOST: &str = "ptyd.lost";
     pub const PANE_UPDATED: &str = "pane.updated";
     pub const SETTINGS_CHANGED: &str = "settings.changed";
+    pub const PROJECT_TRUST_CHANGED: &str = "project.trust_changed";
     pub const PANE_SESSION_STARTED: &str = "pane.session_started";
     pub const PANE_TURN_ENDED: &str = "pane.turn_ended";
     pub const PANE_QUEUED: &str = "pane.queued";
@@ -9034,5 +9228,12 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::GitUnavailable => -32038,
         ErrorKind::FileNotText => -32039,
         ErrorKind::FileTooLarge => -32040,
+        ErrorKind::AdapterNotAcknowledged => -32041,
+        ErrorKind::WorkspaceFolderMissing => -32042,
+        ErrorKind::PushUnavailable => -32043,
+        ErrorKind::InkUnsupported => -32044,
+        ErrorKind::InkLanguageUnavailable => -32045,
+        ErrorKind::InkLimitExceeded => -32046,
+        ErrorKind::InkRecognitionFailed => -32047,
     }
 }

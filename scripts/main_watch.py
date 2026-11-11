@@ -7,14 +7,17 @@
 One pass: fetch `origin/main`; when it moved since the last pass recorded in
 `<health-dir>/watch.json`, run `scripts/post_merge.py` once on the newest commit (a batch of
 all the new ones). The gate and the culprit search are post_merge's: a red step is rerun
-once, a pass is `flaky` and blames nobody, otherwise a search over the commits since the last
-green main names one culprit, or several candidates when commits cannot run the failing step.
+once, a pass is `flaky` and blames nobody. Otherwise the failing step runs on the last green main
+as a control: a step that fails there too is the host's or the environment's (result `host`, nothing
+is reverted, and the pass stays open: post_merge runs it again after `HOST_RETRY_SECONDS`), and one that passes there starts a search over the commits since, which names one
+culprit, or several candidates when commits cannot run the failing step.
 
 On a confirmed culprit, with `--apply`, it reverts that commit: a branch `main-watch/revert-<sha>`
 from `origin/main` with `git revert`, pushed as a new branch, a pull request titled
-"Revert <subject>" whose body names the failing step and the log, and `gh pr merge --squash`.
+"Revert <subject>" whose body names the failing step, the commits and the log file (no text of the
+log, which is local and unscanned), and `gh pr merge --squash`.
 The author of the culprit re-lands a fixed change. It does not revert when the culprit is
-ambiguous (candidates), when the run was flaky or the failing step is unknown, when the culprit
+ambiguous (candidates), when the run was flaky or `host` or the failing step is unknown, when the culprit
 is itself a revert, when it was reverted already, or when the revert does not apply cleanly:
 it records and reports instead.
 
@@ -67,8 +70,6 @@ BRANCH_PREFIX = "main-watch/revert-"
 GREEN_EXIT, RED_EXIT, INFRASTRUCTURE_EXIT, REVERT_FAILED_EXIT = 0, 1, 2, 3
 NEEDS_MEASUREMENT_EXIT = post_merge_editor.NEEDS_MEASUREMENT_EXIT
 HISTORY_LIMIT = 50
-LOG_TAIL_LINES = 40
-LOG_TAIL_CHARS = 3000
 # Used when the checkout has no git identity of its own.
 FALLBACK_IDENTITY = ("-c", "user.name=main watch", "-c", "user.email=main-watch@users.noreply.github.com")
 
@@ -99,32 +100,27 @@ def revert_title(subject: str) -> str:
     return f"Revert {subject}"
 
 
-def log_excerpt(record: dict) -> str:
-    """The end of the gate log, where the failing step prints its output."""
-    try:
-        lines = Path(record["log"]).read_text(errors="replace").splitlines()
-    except (OSError, KeyError):
-        return "(the log is not available)"
-    return "\n".join(lines[-LOG_TAIL_LINES:])[-LOG_TAIL_CHARS:]
-
-
 def revert_reason(record: dict, culprit: dict) -> str:
     return (
         f"This reverts commit {culprit['sha']}.\n\n"
         f"The full gate failed on main {record['sha'][:12]} at step {record['failed_step']}, and the "
         f"search over the commits since the last green main named {culprit['sha'][:12]} "
-        f"as the first one that fails it. The step also failed when run again on the same "
-        "commit, so it is not flaky."
+        f"as the first one that fails it. The step failed again when run on the same commit, so it is "
+        "not flaky, and it passed on the last green main on the same machine, so it is not the machine's."
     )
 
 
 def revert_body(record: dict, culprit: dict) -> str:
+    """No text of the gate log: it is local output that nothing has scanned, and this body is public.
+    The step, the commits and the name of the log are enough to find it on the machine that ran it."""
     log = Path(record.get("log", "")).name or "unknown"
+    control = (record.get("control") or {}).get("sha")
     return (
         f"{revert_reason(record, culprit)}\n\n"
         f"Failing step: `{record['failed_step']}`\n"
-        f"Log: `{log}` in `.cache/main-health` of the machine that ran the gate. End of the log:\n\n"
-        f"```\n{log_excerpt(record)}\n```\n\n"
+        f"Main at the failure: `{record['sha']}`\n"
+        + (f"Last green main, where the step passed: `{control}`\n" if control else "")
+        + f"Log: `{log}` in `.cache/main-health` of the machine that ran the gate.\n\n"
         "The author re-lands a fixed change. This revert skips the fast gate: it restores a state "
         "that was green.\n"
     )
@@ -226,6 +222,8 @@ def classify(record: dict) -> str:
         return "needs-measurement"
     if record.get("result") == "flaky":
         return "flaky"
+    if record.get("result") == post_merge_records.HOST_RESULT:
+        return "host"
     if record.get("culprit"):
         return "culprit"
     if record.get("candidates"):
@@ -241,7 +239,7 @@ def decide(root: Path, record: dict, apply: bool, gh: list[str], scratch: Path) 
         outcomes = {"merged": "red-reverted", "planned": "red-revert-planned", "open": "red-revert-open",
                     "skipped": "red-not-reverted", "failed": "red-revert-failed"}
         return outcomes[revert.state], revert
-    outcomes = {"green": "green", "flaky": "flaky", "ambiguous": "red-ambiguous", "unknown": "red-unknown",
+    outcomes = {"green": "green", "flaky": "flaky", "host": "host", "ambiguous": "red-ambiguous", "unknown": "red-unknown",
                 "needs-measurement": post_merge_editor.NEEDS_MEASUREMENT}
     return outcomes[kind], None
 
@@ -320,8 +318,10 @@ def run_pass(root: Path, health: Path, arguments: argparse.Namespace) -> int:
         "chronic": chronic,
     }
     # A dry run leaves the pass open for a later --apply; so does a missing measurement, which
-    # runs again (cheaply, from the record) until a report for its hash is given.
-    if arguments.apply and result != post_merge_editor.NEEDS_MEASUREMENT:
+    # runs again (cheaply, from the record) until a report for its hash is given, and a `host`
+    # result, which nobody has fixed yet: post_merge runs it again after HOST_RETRY_SECONDS (until
+    # then a pass only reads the record, so passes that come round quickly run no gate).
+    if arguments.apply and result not in (post_merge_editor.NEEDS_MEASUREMENT, post_merge_records.HOST_RESULT):
         update["last_sha"] = head
     write_json(status_path, update)
     print(summary(result, head, record, revert, chronic))

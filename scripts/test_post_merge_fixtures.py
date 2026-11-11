@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import gate_base
+import gate_remote
 import gate_worktree
 import post_merge
 import post_merge_editor
@@ -19,7 +20,10 @@ import post_merge_hosts
 
 # A stand-in for check_all.sh. The step named by FAKE_STEP (default `unit`) fails once the
 # file `broken` exists; `tcc` also fails without its prerequisite `snap` in `--only`.
-# FAKE_FLAKY=1 makes every `--only` run pass; FAKE_INFRA=1 makes the gate unable to start;
+# FAKE_FLAKY=1 makes every `--only` run pass; FAKE_HOST_BROKEN=1 makes the step fail on every commit
+# (a full disk, a network that is down), as a failure of the host and not of a commit does;
+# the file FAKE_CONTROL_ONCE makes the first `--only` run on a commit without `broken` fail (the
+# failure removes the file), as a flake of the step on the last green commit does; FAKE_INFRA=1 makes the gate unable to start;
 # FAKE_TRACE=FILE records each run's directory and arguments; FAKE_EVENTS=DIR keeps the
 # `--event-file` of each run as DIR/<HEAD sha>.json. `--list` names a step per area:
 # `eng` (engine) runs on the remote host, `unit`, `sw` and `tcc` run here.
@@ -39,9 +43,11 @@ if [[ -n "$only" ]]; then
     ((known)) || exit 78
     [[ ",$only," == *",$step,"* ]] || exit 0
     [[ -z "${FAKE_FLAKY:-}" ]] || exit 0
+    if [[ -n "${FAKE_CONTROL_ONCE:-}" && -e "$FAKE_CONTROL_ONCE" && ! -e broken ]]; then rm -f "$FAKE_CONTROL_ONCE"; status=1; fi
     [[ "$step" != tcc || ",$only," == *",snap,"* ]] || exit 1
 fi
 [[ -e broken ]] && status=1
+[[ -z "${FAKE_HOST_BROKEN:-}" ]] || status=1
 printf '{"latest":{"steps":[{"id":"%s","area":"always","seconds":1.0,"status":%s}]}}' "$step" "$status" > "$timings"
 ((status)) && echo "check_all: FAILED step $step (area always, exit 1)" >&2
 exit "$status"
@@ -113,11 +119,18 @@ def commit(root: Path, name: str, files: dict[str, str | None]) -> str:
     return git(root, "rev-parse", "HEAD")
 
 
+# The variables scripts/remote_gate.sh reads from its environment: its state directory and its host settings file.
+REMOTE_GATE_SCRIPT_ENV = ("SOYEHT_REMOTE_GATE_DIR", "SOYEHT_GATE_ENV_FILE")
+
+
 def isolate_environment():
-    """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge reads, which a
-    watch wrapper may export (they would send the tests to a real worktree, meter or host)."""
+    """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge, gate_remote and
+    remote_gate.sh read, which a watch or merge-gate wrapper may export (they would send the tests
+    to a real worktree, meter or host, or to the host's slot worktree instead of `tree`). A gate
+    that runs through gate_remote.py hands them to the local half, which runs these tests."""
     for name in (post_merge.WORKTREE_ENV, post_merge_editor.EDITOR_METER_ENV, post_merge_hosts.SSH_ENV,
-                 gate_base.MAIN_HEALTH_DIR_ENV):
+                 gate_base.MAIN_HEALTH_DIR_ENV, gate_remote.HOST_ENV, gate_remote.ROOT_ENV,
+                 gate_remote.SLOT_ENV, *REMOTE_GATE_SCRIPT_ENV):
         os.environ.pop(name, None)
 
 

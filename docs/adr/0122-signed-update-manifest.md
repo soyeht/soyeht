@@ -169,6 +169,9 @@ holds every pty, so terminals, harness processes and language servers die with i
 3. The new engine must speak to the running supervisor of the previous build. The supervisor's
    protocol has a version of its own, independent of the client's (ADR 0003); a release that
    changes it counts as a supervisor change for this rule.
+   The version is `soyeht_ptyd::wire::VERSION`, which `soyeht-ptyd --protocol-version` prints:
+   ADR 0160 raised it from 5 to 6 because an engine that proves itself to the supervisor cannot
+   talk to one that does not ask, so that release is a supervisor change for this rule.
 4. The order is: verify the package (`sha256`, `size`), install the apps, restart the engine,
    and only then, if confirmed, the supervisor. A failure before the engine restarts leaves the
    old installation running.

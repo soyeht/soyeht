@@ -252,6 +252,14 @@ impl Staged {
         self.notice = None;
         self.list.take()
     }
+
+    /// Puts back the files of a prompt the engine did not take, before any that were attached
+    /// since. When they do not all fit in one message the returned ones win, and the notice says
+    /// what did not fit.
+    pub fn restore(&mut self, returned: Vec<Draft>) {
+        let newer = self.list.take();
+        self.add(returned.into_iter().chain(newer).map(Ok).collect());
+    }
 }
 
 /// The picture on a chip that has no thumbnail.
