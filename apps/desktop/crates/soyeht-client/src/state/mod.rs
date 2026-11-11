@@ -765,7 +765,7 @@ mod writing;
 pub(crate) use layout_draft::same_panes;
 mod workspaces;
 pub use workspaces::{
-    FolderOpening, FolderPathProblem, RecentFolder, Started, name_of, submission,
+    FolderOpening, FolderPathProblem, RecentFolder, RenameTarget, Started, name_of, submission,
 };
 #[cfg(test)]
 mod tests;
