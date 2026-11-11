@@ -55,6 +55,7 @@ pub enum Error {
     PaneState(soyeht_pane_state::Error),
     Vcs(soyeht_vcs::Error),
     Web(soyeht_web::Error),
+    Ink(soyeht_ink::Error),
     PortScan(crate::ports::PortScanError),
     Writing(soyeht_writing::Error),
     Supervisor(soyeht_ptyd::Error),
@@ -276,6 +277,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::Editor(error) => error.into(),
         Error::Vcs(error) => vcs_kind(error),
         Error::Web(error) => error.into(),
+        Error::Ink(error) => error.into(),
         Error::PortScan(crate::ports::PortScanError::Unsupported(_)) => {
             ErrorKind::PlatformUnsupported
         }
@@ -436,6 +438,7 @@ fn message(error: &Error) -> String {
         Error::PaneState(error) => error.to_string(),
         Error::Vcs(error) => error.to_string(),
         Error::Web(error) => error.to_string(),
+        Error::Ink(error) => error.to_string(),
         Error::PortScan(error) => error.to_string(),
         Error::Writing(error) => error.to_string(),
         Error::Supervisor(soyeht_ptyd::Error::Remote { message, .. }) => message.clone(),
@@ -469,6 +472,17 @@ fn message(error: &Error) -> String {
     }
 }
 
+/// What more a client may read in `data.detail`: why an `ink_unsupported` error is one.
+fn detail(error: &Error) -> Option<String> {
+    let Error::Ink(error) = error else {
+        return None;
+    };
+    match serde_json::to_value(error.unsupported_reason()?) {
+        Ok(serde_json::Value::String(reason)) => Some(reason),
+        _ => None,
+    }
+}
+
 pub fn wire(error: Error) -> RpcError {
     if let Error::RecordedRpc(error) = error {
         return error;
@@ -485,7 +499,7 @@ pub fn wire(error: Error) -> RpcError {
         message: message(&error),
         data: ErrorData {
             kind,
-            detail: None,
+            detail: detail(&error),
             retry_after_sec,
         },
     }
@@ -521,6 +535,7 @@ impl std::error::Error for Error {
             Self::PaneState(error) => Some(error),
             Self::Vcs(error) => Some(error),
             Self::Web(error) => Some(error),
+            Self::Ink(error) => Some(error),
             Self::PortScan(error) => Some(error),
             Self::Supervisor(error) => Some(error),
             Self::Protocol(error) => Some(error),
@@ -578,6 +593,12 @@ impl From<soyeht_vcs::Error> for Error {
 impl From<soyeht_web::Error> for Error {
     fn from(error: soyeht_web::Error) -> Self {
         Self::Web(error)
+    }
+}
+
+impl From<soyeht_ink::Error> for Error {
+    fn from(error: soyeht_ink::Error) -> Self {
+        Self::Ink(error)
     }
 }
 

@@ -15,13 +15,16 @@ test-support = []
 [dependencies]
 tokio = { workspace = true, optional = true }
 
+# The proof of the local endpoint (ADR 0160): a Unix socket asks for it as the loopback
+# endpoint of Windows does.
+getrandom.workspace = true
+hmac.workspace = true
+sha2.workspace = true
+
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-getrandom.workspace = true
-hmac.workspace = true
-sha2.workspace = true
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Networking_WinSock",
@@ -41,9 +44,6 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
-getrandom.workspace = true
-hmac.workspace = true
-sha2.workspace = true
 tokio.workspace = true
 
 [lints]

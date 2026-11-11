@@ -42,6 +42,7 @@ mod editor_drafts_and_web_panes;
 mod harness_catalogue_and_mcp;
 mod harness_switch;
 mod harness_switch_names_and_failures;
+mod ink_recognition;
 mod language_and_project_search;
 mod native_permissions_and_modes;
 mod permissions_and_queue;
@@ -495,8 +496,10 @@ fn wait_for_editor_file(
     }
 }
 
+/// The open processes, read by taking the supervisor over from the engine.
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
-    process_instances_at(rig, u64::MAX)
+    let generation = rig.supervisor_takeover_generation().unwrap();
+    process_instances_at(rig, generation)
 }
 
 /// Waits until `count` processes of the rig are open. A harness switch retires the old process

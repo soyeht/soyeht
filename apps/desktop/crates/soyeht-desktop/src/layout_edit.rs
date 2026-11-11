@@ -47,15 +47,7 @@ impl Workbench {
     /// workspace and the folder the pane is in, with no chooser (the Mac does the same:
     /// `PaneSplitPolicy`).
     pub(crate) fn split_pane(&mut self, pane_id: &str, axis: Axis, cx: &mut Context<Self>) {
-        let harness = self
-            .state
-            .pane(pane_id)
-            .and_then(|pane| pane.agent.as_ref().map(|agent| agent.harness.clone()));
-        let cwd = self
-            .state
-            .pane(pane_id)
-            .map(|pane| pane.cwd.clone())
-            .filter(|cwd| !cwd.is_empty());
+        let (harness, cwd) = self.state.split_template(pane_id);
         let ticket = self.next_ticket();
         if let Some(workspace_id) = self.state.expect_split(ticket, pane_id, axis) {
             self.request_pane(workspace_id, harness, cwd, ticket, cx);

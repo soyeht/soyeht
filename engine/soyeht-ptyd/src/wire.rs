@@ -1,7 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-pub const VERSION: u32 = 5;
+/// The version of the supervisor protocol. A change of it counts as a change of the supervisor for
+/// an update (ADR 0122), and the Windows installer compares it (`--protocol-version`).
+///
+/// 6: a connection first proves that it can read the supervisor's secret (ADR 0160), so an engine
+/// of this build cannot talk to a supervisor of version 5 or the other way round.
+pub const VERSION: u32 = 6;
 
 /// What a connection is for. The default is the request connection, the only one older engines and
 /// supervisors know, so a hello without a role is the one of today.

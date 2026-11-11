@@ -90,9 +90,7 @@ pub fn share(core: Core, data_directory: &Path) -> Arc<Mutex<Core>> {
             let shared = shared.clone();
             tokio::task::spawn_blocking(move || {
                 let Some(core) = shared.upgrade() else { return };
-                let removed = core
-                    .lock()
-                    .map_err(|_| errors::internal("Engine state lock poisoned"))
+                let removed = crate::core_lock::lock(&core, "push_token_removal")
                     .and_then(|mut core| core.forget_push_token(&device, &token));
                 if let Err(error) = removed {
                     log::failure_with(

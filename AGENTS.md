@@ -43,6 +43,9 @@ Each layer depends only on the layers listed above it.
      `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
      canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
+   - `soyeht-ink`: handwriting recognition (ADR 0158): limits, the rasterizer and the recognizer
+     trait, with Apple Vision on the Mac and a typed refusal elsewhere. It depends on
+     `soyeht-protocol` and `soyeht-process` only.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself, and the Mac app
@@ -340,12 +343,18 @@ inherit the main actor.
   (`e2e:*`, with the `engine:build-product` and `engine:build-test-engine` builds and the TCC
   guard around them) run when the engine selection is the whole workspace or its reverse
   closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
-  engine crate does. The unit tests of the gate scripts (`post_merge*`, `main_watch*`,
-  `check_quality`, `gate_list`, `gate_timings`) are the `gate_scripts` area: a change under
+  engine crate does. That selection also selects `swift` for `swift:test-shared-fast`: it builds
+  the engine programs and runs the one Swift test that drives them
+  (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor`, `scripts/e2e_swift_client.py`, on the
+  suites' staged copy of the programs, inside the TCC guard's bracket when the e2e steps run on
+  this Mac; about one to two minutes), so an engine change that
+  breaks the Swift client's integration test fails before the merge, not after it. The unit tests
+  of the gate scripts (`post_merge*`, `main_watch*`, `check_quality`, `gate_list`,
+  `gate_timings`) are the `gate_scripts` area: a change under
   `scripts/`, `contracts/*.py` or `.githooks/` selects it. The fast tier leaves out the engine
-  integration tests (`tests/` directories), the Swift and dictation tests, the Mac and iOS app
-  builds, the editor measurement on the VM and the ignored timing tests: they are `full`
-  steps. A change to the gate scripts (`check_all.sh`,
+  integration tests (`tests/` directories), the rest of the Swift tests and the dictation tests,
+  the Mac and iOS app builds, the editor measurement on the VM and the ignored timing tests: they
+  are `full` steps. A change to the gate scripts (`check_all.sh`,
   `gate_*`, `post_merge*`, `main_watch*`, `remote_gate*`, `e2e*`, the app build scripts) runs
   the full tier instead, and the log says why; a change to their unit tests alone
   (`scripts/test_*.py`) does not. A file that another directory reads (an `include_str!`, a
@@ -384,22 +393,36 @@ inherit the main actor.
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit, and
   the steps the failed run never reached still run), then finds the culprit commit by running only the failing step on the commits since the last
   green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed
-  and only the editor measurement on the VM is missing). `main_watch.py --apply` then reverts a
-  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
-  log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
-  a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches
+  and only the editor measurement on the VM is missing). A probe first runs the steps its step
+  reads from earlier in the run (`PREREQUISITES` in `post_merge_gate.py`: the builds of the engine
+  programs for the suites and the Swift tests, the TCC snapshot), so no commit is judged against
+  programs built from another one. Before it names any commit, even when the range holds only
+  one, it runs the failing step the same way on the last green main, on today's host (the control
+  run). A control that fails is run once more, as the head was. A step that fails both times is the
+  host's or the environment's (a network failure during an install, a full disk, a toolchain
+  update, stale programs): the run is recorded as `host`, no commit is blamed and nothing is
+  reverted. A control that cannot run blames nobody either, and the note keeps the commits since. Only
+  a step that passes on the last green main and fails at the head can have a culprit.
+  `main_watch.py --apply` then reverts a
+  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step, the
+  two commits and the log file (no text of the log, which is local and unscanned), merged with
+  `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
+  a flaky or `host` run, a revert, or a revert that does not apply, and it never forces a push or touches
   another branch; `--dry-run` is the default. It writes `watch.json` in the health directory, with
   the flaky steps that are `chronic` (2 or more flakes in the last 10 runs, from `flakes.json`): fix
   them, never skip them. With
   `--remote HOST --remote-root PATH` the engine, desktop, e2e and timing steps run on a Linux host
   through `scripts/remote_gate.sh` (`docs/dev-local.md`). The plan prints a warning while
-  `latest.json` says main is red, and a note while it says flaky. The editor measurement on the VM is collected separately,
+  `latest.json` says main is red, and a note while it says flaky or `host`. The editor measurement on the VM is collected separately,
   when the editor hash changes. Run `--tier full` yourself before a merge when you want
   certainty.
 - Red main is fixed by the automatic revert of a confirmed culprit. Its author re-lands a
   fixed change (a new pull request through the fast gate); when the revert could not be made,
   they fix forward or revert by hand within the hour. No other change merges into the
-  affected area while main is red.
+  affected area while main is red. A `host` result has no culprit to revert: `main_watch.py`
+  exits 1 and `watch.json` says `host`, which tells the coordinator to fix the environment; the
+  pass stays open, so a later pass, or `post_merge.py --force`, runs the head again (a pass comes
+  back to it no sooner than `HOST_RETRY_SECONDS`).
 - Review: `gate_plan.py` prints `review: required` when a change touches the engine core
   (`soyeht-engine` `core*`, `dispatch*`, `server*`, `agents/`, and `soyeht-store`), the
   protocol and `contracts/profiles.json`, an editor, security-sensitive code (all of

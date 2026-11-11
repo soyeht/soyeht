@@ -109,7 +109,7 @@ class FlakyTailTests(SyntheticRepositoryCase):
 
     def test_a_prerequisite_that_already_ran_is_not_taken_again(self):
         head = self.flake_on_the_next_run()
-        with mock.patch.object(post_merge_gate, "PREREQUISITES", {"c": "a"}):
+        with mock.patch.object(post_merge_gate, "PREREQUISITES", {"c": ("a",)}):
             self.assertEqual(self.run_main(head), 1)
         self.assertEqual(self.selections(), ["", "a", "b,c"], "`a` ran: its snapshot is not retaken before `c`")
         self.assertEqual(self.record(head)["result"], "flaky")

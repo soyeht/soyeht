@@ -246,6 +246,47 @@ class Endpoints(unittest.TestCase):
                         stream.sendall(b"ping")
                         self.assertEqual(peer.recv(4), b"ping")
 
+    def proved_socket(self, secret_in_file, secret_in_listener, write_secret=True):
+        """A Unix socket whose listener runs the proof, with a secret file beside it (or none, and
+        then no listener thread: the client stops before it says anything)."""
+        directory = tempfile.TemporaryDirectory(dir="/tmp")
+        self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "ptyd.sock"
+        listener = socket.socket(socket.AF_UNIX)
+        self.addCleanup(listener.close)
+        listener.bind(str(path))
+        listener.listen(1)
+        if write_secret:
+            Path(f"{path}.secret").write_text(
+                f"{platform.ENDPOINT_MAGIC} secret {secret_in_file.hex()}\n")
+        outcome = []
+        thread = threading.Thread(
+            target=serve_loopback, args=(listener, secret_in_listener, outcome))
+        if write_secret:
+            thread.start()
+            self.addCleanup(thread.join)
+        return path, outcome, thread
+
+    def test_a_proved_unix_socket_is_reached_with_the_secret_file_beside_it(self):
+        secret = os.urandom(32)
+        path, outcome, thread = self.proved_socket(secret, secret)
+        with platform.connect_endpoint(path, proved=True) as stream:
+            self.assertEqual(stream.recv(5), b"hello")
+        thread.join()
+        self.assertEqual(outcome, ["accepted"])
+
+    def test_a_proved_unix_socket_that_cannot_prove_the_secret_is_refused(self):
+        path, outcome, thread = self.proved_socket(os.urandom(32), os.urandom(32))
+        with self.assertRaises(PermissionError):
+            platform.connect_endpoint(path, proved=True)
+        thread.join()
+        self.assertEqual(outcome, ["dropped"])
+
+    def test_a_proved_unix_socket_without_its_secret_file_is_not_reached(self):
+        path, _, _ = self.proved_socket(b"", b"", write_secret=False)
+        with self.assertRaises(FileNotFoundError):
+            platform.connect_endpoint(path, proved=True)
+
     def test_a_missing_endpoint_is_a_missing_file(self):
         with tempfile.TemporaryDirectory() as directory, self.assertRaises(FileNotFoundError):
             platform.connect_endpoint(Path(directory) / ENGINE_SOCKET)

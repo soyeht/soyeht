@@ -5,14 +5,7 @@
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
 use crate::workbench::Workbench;
 use gpui::{Context, Entity, Focusable, Window};
-use soyeht_client::{Command, state::submission};
-
-/// What is being renamed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum RenameTarget {
-    Workspace(String),
-    Pane(String),
-}
+pub(crate) use soyeht_client::state::RenameTarget;
 
 /// The name being edited.
 pub(crate) struct Rename {
@@ -69,32 +62,8 @@ impl Workbench {
         let Some(rename) = self.rename.take() else {
             return;
         };
-        // Shift+Return adds a line to the field; a name is one line.
-        let typed = rename
-            .field
-            .read(cx)
-            .draft()
-            .text()
-            .replace(['\n', '\r'], " ");
-        let command = match &rename.target {
-            RenameTarget::Workspace(id) => {
-                let current = self.state.workspace(id).map(|w| w.name.as_str());
-                submission(&typed, current.unwrap_or_default()).map(|name| {
-                    Command::RenameWorkspace {
-                        workspace_id: id.clone(),
-                        name,
-                    }
-                })
-            }
-            RenameTarget::Pane(id) => {
-                let current = self.state.pane(id).map(|pane| pane.name.as_str());
-                submission(&typed, current.unwrap_or_default()).map(|name| Command::RenamePane {
-                    pane_id: id.clone(),
-                    name,
-                })
-            }
-        };
-        if let Some(command) = command {
+        let typed = rename.field.read(cx).draft().text().to_owned();
+        if let Some(command) = self.state.rename_request(&rename.target, &typed) {
             self.send(command);
         }
         cx.notify();

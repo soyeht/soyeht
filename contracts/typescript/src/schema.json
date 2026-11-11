@@ -132,7 +132,11 @@
         "file_too_large",
         "adapter_not_acknowledged",
         "workspace_folder_missing",
-        "push_unavailable"
+        "push_unavailable",
+        "ink_unsupported",
+        "ink_language_unavailable",
+        "ink_limit_exceeded",
+        "ink_recognition_failed"
       ]
     },
     "RpcError": {
@@ -10453,7 +10457,7 @@
     },
     "EngineCapability": {
       "type": "string",
-      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered.",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158).",
       "enum": [
         "terminal",
         "workspaces",
@@ -10463,7 +10467,8 @@
         "device-pairing",
         "workspace-tasks",
         "subscription-usage",
-        "push"
+        "push",
+        "ink-recognition"
       ]
     },
     "WebInteractionMode": {
@@ -12941,6 +12946,108 @@
         "recorded"
       ],
       "additionalProperties": true
+    },
+    "InkPoint": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "t": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "t"
+      ],
+      "additionalProperties": true
+    },
+    "InkStroke": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/InkPoint"
+      }
+    },
+    "InkRecognizeParams": {
+      "type": "object",
+      "properties": {
+        "strokes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InkStroke"
+          }
+        },
+        "languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxCandidates": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "strokes",
+        "languages"
+      ],
+      "additionalProperties": true
+    },
+    "InkCandidate": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": true
+    },
+    "InkRecognizeResult": {
+      "type": "object",
+      "properties": {
+        "candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/InkCandidate"
+          }
+        },
+        "recognizer": {
+          "type": "string"
+        },
+        "language": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidates",
+        "recognizer",
+        "language"
+      ],
+      "additionalProperties": true
+    },
+    "InkUnsupportedReason": {
+      "type": "string",
+      "enum": [
+        "no_os_support",
+        "language_pack_missing",
+        "model_not_installed"
+      ]
     }
   },
   "x-protocolVersion": 1,
@@ -14308,6 +14415,15 @@
         "$ref": "#/$defs/PaneExperimentHookResult"
       },
       "mutation": true
+    },
+    "ink.recognize": {
+      "params": {
+        "$ref": "#/$defs/InkRecognizeParams"
+      },
+      "result": {
+        "$ref": "#/$defs/InkRecognizeResult"
+      },
+      "mutation": false
     }
   },
   "x-events": {
@@ -14810,7 +14926,18 @@
     "pairingCodeChars": "The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.",
     "pairingWindowSeconds": "How long a pairing code stays valid, and the longest a device waits for the person to allow access.",
     "deviceNameBytes": "The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.",
-    "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows."
+    "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.",
+    "inkStrokes": "The most strokes one `ink.recognize` request carries.",
+    "inkStrokePoints": "The most points one stroke of an `ink.recognize` request carries.",
+    "inkTotalPoints": "The most points all the strokes of one `ink.recognize` request carry together.",
+    "inkCandidates": "The most candidates an `ink.recognize` request may ask for and the engine answers with.",
+    "inkCandidatesDefault": "How many candidates an `ink.recognize` request without `maxCandidates` gets.",
+    "inkLanguages": "The most language tags one `ink.recognize` request names.",
+    "inkLanguageBytes": "The longest language tag (in UTF-8 bytes) of an `ink.recognize` request; the length a BCP 47 tag may have.",
+    "inkCoordinate": "The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).",
+    "inkDurationMs": "The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.",
+    "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.",
+    "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -14916,7 +15043,18 @@
     "modelRefusalReasonBytes": 4096,
     "experimentExportPanes": 64,
     "experimentExportRows": 100000,
-    "experimentExportBytes": 67108864
+    "experimentExportBytes": 67108864,
+    "inkStrokes": 64,
+    "inkStrokePoints": 2000,
+    "inkTotalPoints": 8000,
+    "inkCandidates": 10,
+    "inkCandidatesDefault": 5,
+    "inkLanguages": 8,
+    "inkLanguageBytes": 35,
+    "inkCoordinate": 1000000,
+    "inkDurationMs": 3600000,
+    "inkCandidateBytes": 2048,
+    "inkDeadlineSec": 10
   },
   "x-settings": {
     "terminal.defaultCols": {
@@ -15008,7 +15146,11 @@
     "file_too_large": -32040,
     "adapter_not_acknowledged": -32041,
     "workspace_folder_missing": -32042,
-    "push_unavailable": -32043
+    "push_unavailable": -32043,
+    "ink_unsupported": -32044,
+    "ink_language_unavailable": -32045,
+    "ink_limit_exceeded": -32046,
+    "ink_recognition_failed": -32047
   },
   "x-clientPolicy": {
     "timeouts": {

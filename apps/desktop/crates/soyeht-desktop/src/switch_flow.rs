@@ -1,28 +1,17 @@
 //! The harness switch as the Mac's popover does it: the person picks a harness, then a model and
 //! an effort, then confirms with "Restart conversation with ...". Nothing is sent until then.
-//! The choices live in a [`SwitchDraft`] that lasts as long as the popover is open.
+//! The choices are `soyeht_client::switch::Draft`, which lasts as long as the popover is open;
+//! this holds it with the popover's search field and sends what it asks for.
 
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
 use crate::{open_menu::Menu, workbench::Workbench};
 use gpui::{Context, Entity};
-use soyeht_client::{
-    Command,
-    account::AccountAction,
-    harness_picker,
-    switch::{can_switch, startable},
-};
+use soyeht_client::{Command, account::AccountAction, switch::Draft};
 use soyeht_protocol::HarnessInfo;
 
-/// What the open switch popover has chosen so far.
+/// What the open switch popover has chosen so far, and its search field.
 pub struct SwitchDraft {
-    pub pane_id: String,
-    /// The harness to switch to, once one is chosen.
-    pub harness: Option<String>,
-    /// The model chosen; `None` leaves the choice to the harness ("Agent default").
-    pub model: Option<String>,
-    pub effort: Option<String>,
-    /// The model list is unfolded under the model field.
-    pub models_open: bool,
+    pub choices: Draft,
     /// The search field above the list of harnesses.
     pub search: Entity<ComposerField>,
 }
@@ -38,101 +27,69 @@ impl Workbench {
             }
         })
         .detach();
-        self.switch = Some(SwitchDraft {
-            pane_id: pane_id.to_owned(),
-            harness: None,
-            model: None,
-            effort: None,
-            models_open: false,
-            search,
-        });
-        self.send(Command::LoadHarnesses { rescan: false });
-        self.choose_first_harness(cx);
+        let (choices, requests) = Draft::open(&self.state, pane_id);
+        self.switch = Some(SwitchDraft { choices, search });
+        for request in requests {
+            self.send(request);
+        }
+        if self
+            .switch
+            .as_ref()
+            .is_some_and(|draft| draft.choices.harness.is_some())
+        {
+            cx.notify();
+        }
     }
 
     /// The draft of the open popover of `pane_id`, if that is the popover that is open.
     pub(crate) fn switch_draft(&self, pane_id: &str) -> Option<&SwitchDraft> {
         self.switch.as_ref().filter(|draft| {
-            draft.pane_id == pane_id && self.menus.is_open(&Menu::Harness(pane_id.to_owned()))
+            draft.choices.pane_id == pane_id
+                && self.menus.is_open(&Menu::Harness(pane_id.to_owned()))
         })
-    }
-
-    /// The harness a pane runs.
-    fn running_harness(&self, pane_id: &str) -> Option<String> {
-        self.state
-            .pane(pane_id)
-            .and_then(|pane| pane.agent.as_ref())
-            .map(|agent| agent.harness.clone())
     }
 
     /// Chooses the default harness when the one chosen cannot start (or none is), as the Mac
     /// does each time it opens and each time the list changes.
     pub(crate) fn choose_first_harness(&mut self, cx: &mut Context<Self>) {
-        let Some(draft) = self.switch.as_ref() else {
+        let Some(draft) = self.switch.as_mut() else {
             return;
         };
-        let pane_id = draft.pane_id.clone();
-        let running = self.running_harness(&pane_id);
-        let chosen_can_start = draft
-            .harness
-            .as_deref()
-            .is_some_and(|id| startable(self.state.harnesses(), running.as_deref(), id));
-        if chosen_can_start {
-            return;
-        }
-        let preferred = self.state.preferences().preferred_harness.clone();
-        let first = harness_picker::default_harness(
-            self.state.harnesses(),
-            running.as_deref(),
-            preferred.as_deref(),
-        )
-        .map(|harness| harness.id.clone());
-        if let Some(first) = first {
-            self.choose_switch_harness(&first, cx);
+        if let Some(request) = draft.choices.settle(&self.state) {
+            self.send(request);
+            cx.notify();
         }
     }
 
     /// The person picked `harness` in the list: the model and effort start over, and the models
     /// of the harness are fetched when it can start.
     pub(crate) fn choose_switch_harness(&mut self, harness: &str, cx: &mut Context<Self>) {
-        let running = self
-            .switch
-            .as_ref()
-            .and_then(|draft| self.running_harness(&draft.pane_id));
-        let available = startable(self.state.harnesses(), running.as_deref(), harness);
         let Some(draft) = self.switch.as_mut() else {
             return;
         };
-        draft.harness = Some(harness.to_owned());
-        draft.model = None;
-        draft.effort = None;
-        draft.models_open = false;
-        if available {
-            self.send(Command::LoadCatalogue {
-                harness: harness.to_owned(),
-            });
+        if let Some(request) = draft.choices.choose_harness(&self.state, harness) {
+            self.send(request);
         }
         cx.notify();
     }
 
     pub(crate) fn choose_switch_model(&mut self, model: Option<String>, cx: &mut Context<Self>) {
         if let Some(draft) = self.switch.as_mut() {
-            draft.model = model;
-            draft.models_open = false;
+            draft.choices.choose_model(model);
         }
         cx.notify();
     }
 
     pub(crate) fn choose_switch_effort(&mut self, effort: String, cx: &mut Context<Self>) {
         if let Some(draft) = self.switch.as_mut() {
-            draft.effort = Some(effort);
+            draft.choices.choose_effort(effort);
         }
         cx.notify();
     }
 
     pub(crate) fn toggle_switch_models(&mut self, cx: &mut Context<Self>) {
         if let Some(draft) = self.switch.as_mut() {
-            draft.models_open = !draft.models_open;
+            draft.choices.toggle_models();
         }
         cx.notify();
     }
@@ -145,46 +102,19 @@ impl Workbench {
 
     /// Whether the harness chosen in the popover can be switched to now.
     pub(crate) fn switch_target(&self, pane_id: &str) -> Option<&HarnessInfo> {
-        let draft = self.switch_draft(pane_id)?;
-        let id = draft.harness.as_deref()?;
-        self.state
-            .harnesses()
-            .iter()
-            .find(|harness| harness.id == id)
+        self.switch_draft(pane_id)?.choices.target(&self.state)
     }
 
     /// Confirms the switch: the pane restarts on the chosen harness and the conversation is
     /// handed over. The engine's events tell how it went.
     pub(crate) fn confirm_switch(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let connected = self.state.connection == soyeht_client::Connection::Connected;
-        let allowed = can_switch(
-            connected,
-            self.state
-                .pane(pane_id)
-                .and_then(|pane| pane.agent.as_ref()),
-            self.state
-                .agent(pane_id)
-                .and_then(|view| view.harness_switch.as_ref()),
-        );
-        let Some(target) = self
-            .switch_target(pane_id)
-            .filter(|target| target.available)
+        let Some(request) = self
+            .switch_draft(pane_id)
+            .and_then(|draft| draft.choices.confirm(&self.state))
         else {
             return;
         };
-        let (harness, model, effort) = match self.switch_draft(pane_id) {
-            Some(draft) if allowed => {
-                (target.id.clone(), draft.model.clone(), draft.effort.clone())
-            }
-            _ => return,
-        };
-        self.send(Command::SwitchHarness {
-            pane_id: pane_id.to_owned(),
-            acknowledged: self.state.acknowledged_package(&harness),
-            harness,
-            model,
-            effort,
-        });
+        self.send(request);
         self.menus.close();
         cx.notify();
     }

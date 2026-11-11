@@ -139,8 +139,9 @@ Both cargo workspaces (`engine/` and `apps/desktop/`) have a `[profile.release]`
 `opt-level = 3`, `codegen-units = 1` and `strip = "symbols"`; the window's has `lto = "fat"` and
 the engine's `lto = "thin"` (fat LTO made the window 7% smaller and 4% faster on the terminal
 reflow, and the engine 4% smaller but 1% slower on the editor, which is not worth the size). `panic` stays
-`"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned lock,
-joins a panicked thread and reports a panicked task as a failure of that task, and `abort` would
+`"unwind"`, written out so nobody changes it by accident: the engine recovers a poisoned small lock
+(a poisoned Core lock is logged and ends the engine with exit code 70, so the service manager starts a
+new one, ADR 0159), joins a panicked thread and reports a panicked task as a failure of that task, and `abort` would
 turn each of those into the death of the whole process (and of every terminal the supervisor
 holds). Build with `cargo build --release --locked -p soyeht-engine -p soyeht-ptyd -p soyeht-cli -p soyeht-mcp -p soyeht-service`
 in `engine/` (the engine needs `soyeht-mcp` next to it; a whole-workspace build also makes the

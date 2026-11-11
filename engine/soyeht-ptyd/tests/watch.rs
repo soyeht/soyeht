@@ -3,6 +3,7 @@
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+use soyeht_platform::local::{ProvedListener, connect_proved};
 use soyeht_protocol::frame::{read_json, write_json};
 use soyeht_ptyd::{
     Error,
@@ -11,7 +12,6 @@ use soyeht_ptyd::{
     wire_kind,
 };
 use std::{
-    os::unix::net::UnixListener,
     sync::mpsc::{self, Receiver},
     thread,
     time::Duration,
@@ -203,7 +203,7 @@ fn an_engine_from_before_the_role_is_served_as_it_always_was() {
     );
     let (daemon, _client) = Daemon::start();
     drop(_client);
-    let mut stream = soyeht_platform::local::connect(&watch_socket(&daemon)).unwrap();
+    let mut stream = connect_proved(&watch_socket(&daemon)).unwrap();
     write_json(&mut stream, &hello).unwrap();
     let welcome: serde_json::Value = read_json(&mut stream).unwrap().unwrap();
     assert_eq!(welcome["status"], "welcome");
@@ -220,9 +220,9 @@ fn old_supervisor(answer: serde_json::Value) -> std::path::PathBuf {
         "/tmp/soyeht-old-ptyd-{}.sock",
         uuid::Uuid::new_v4()
     ));
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = ProvedListener::bind(&path).unwrap();
     thread::spawn(move || {
-        if let Ok((mut stream, _)) = listener.accept() {
+        if let Ok(mut stream) = listener.accept() {
             let hello: Option<serde_json::Value> = read_json(&mut stream).unwrap();
             assert!(hello.is_some());
             write_json(&mut stream, &answer).unwrap();
@@ -262,9 +262,9 @@ fn an_engine_that_meets_a_supervisor_from_before_the_role_goes_on_polling() {
 fn a_notice_that_comes_before_the_answer_is_part_of_it() {
     // A supervisor that writes the notice of a process's first chunk before it answers `Watch`.
     let path = std::path::PathBuf::from(format!("/tmp/soyeht-early-{}.sock", uuid::Uuid::new_v4()));
-    let listener = UnixListener::bind(&path).unwrap();
+    let listener = ProvedListener::bind(&path).unwrap();
     thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        let mut stream = listener.accept().unwrap();
         let _hello: Option<serde_json::Value> = read_json(&mut stream).unwrap();
         write_json(
             &mut stream,

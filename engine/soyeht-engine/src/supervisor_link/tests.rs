@@ -1,6 +1,6 @@
 use super::*;
 use crate::{errors, ports::Clock, ports::testing::FakeSupervisor};
-use soyeht_platform::local::{Listener, connect};
+use soyeht_platform::local::{ProvedListener, connect};
 use soyeht_protocol::{frame::write_json, profile::PTYD_SOCKET};
 use soyeht_ptyd::wire::{Response, VERSION};
 use std::sync::{
@@ -19,7 +19,7 @@ struct HangUp {
 impl HangUp {
     fn start(directory: &std::path::Path, welcome: bool) -> Self {
         let socket = directory.join(PTYD_SOCKET);
-        let listener = Listener::bind(&socket).unwrap();
+        let listener = ProvedListener::bind(&socket).unwrap();
         let accepted = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let (count, done) = (Arc::clone(&accepted), Arc::clone(&stop));
@@ -383,7 +383,7 @@ fn a_failure_the_supervisor_reports_or_the_store_raises_keeps_the_link_and_is_on
 /// A supervisor on the socket that welcomes the engine and answers its registry reads.
 pub(crate) fn serve_registry(directory: &std::path::Path) {
     use {soyeht_protocol::frame::read_json, soyeht_ptyd::wire::Request};
-    let listener = Listener::bind(&directory.join(PTYD_SOCKET)).unwrap();
+    let listener = ProvedListener::bind(&directory.join(PTYD_SOCKET)).unwrap();
     std::thread::spawn(move || {
         while let Ok(mut stream) = listener.accept() {
             std::thread::spawn(move || {

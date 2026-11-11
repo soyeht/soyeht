@@ -17,6 +17,7 @@ pub mod bounded_map;
 pub mod cards;
 pub mod catalogue;
 pub mod commands;
+pub mod composer;
 pub mod crash_notice;
 pub mod device;
 pub mod diagnostics;
@@ -50,6 +51,7 @@ pub mod state;
 pub mod streams;
 pub mod switch;
 pub mod tasks;
+pub mod terminal_input;
 pub mod terminal_state;
 #[cfg(test)]
 mod testing;

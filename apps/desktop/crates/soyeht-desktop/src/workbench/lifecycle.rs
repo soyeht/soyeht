@@ -144,31 +144,10 @@ impl Workbench {
         ticket: u64,
         cx: &mut Context<Self>,
     ) {
-        // A pane starts in the folder it is asked for (a split's: that of the pane it splits),
-        // else in the folder of its workspace, as the Mac asks.
-        let cwd = cwd.or_else(|| {
-            self.state
-                .workspace(&workspace_id)
-                .map(|workspace| workspace.path.clone())
-        });
-        self.send_open(
-            match harness {
-                Some(harness) => Command::CreateAgent {
-                    workspace_id,
-                    acknowledged: self.state.acknowledged_package(&harness),
-                    harness,
-                    cwd,
-                    ticket,
-                },
-                None => Command::CreateTerminal {
-                    workspace_id,
-                    cwd,
-                    ticket,
-                },
-            },
-            ticket,
-            cx,
-        );
+        let command = self
+            .state
+            .open_pane_request(workspace_id, harness, cwd, ticket);
+        self.send_open(command, ticket, cx);
     }
 
     /// Sends the command that opens the pane `ticket` waits for. A queue that refuses it releases

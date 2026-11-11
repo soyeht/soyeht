@@ -354,11 +354,12 @@ async fn push_is_offered_only_while_the_engine_can_send_alerts() {
     let push = "push".to_string();
     let rig = Rig::new(vec![]);
     assert!(rig.core.capabilities().contains(&push));
-    let root = std::env::temp_dir().join(format!("sn-push-off-{}", uuid::Uuid::new_v4()));
+    let root = soyeht_platform::testing::scratch_dir("push-off");
     let core = Core::open(&root).unwrap();
     let offered = core.capabilities();
     assert!(!offered.contains(&push));
     assert!(offered.contains(&"terminal".to_string()));
+    crate::test_paths::remove_after(core, &root);
 }
 
 #[tokio::test(start_paused = true)]
