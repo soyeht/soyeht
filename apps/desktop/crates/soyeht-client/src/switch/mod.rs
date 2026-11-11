@@ -3,6 +3,10 @@
 
 use soyeht_protocol::{AgentSession, HarnessInfo};
 
+mod draft;
+
+pub use draft::Draft;
+
 pub use soyeht_protocol::client_policy::{
     HARNESS_SWITCH_HANDOVER as HANDOVER_EXPLANATION, HARNESS_SWITCH_TITLE as TITLE,
 };
