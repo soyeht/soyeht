@@ -28,7 +28,7 @@ import Testing
 private let paneId = "refused-pane"
 
 @MainActor private func composer(
-  engine: FakePromptEngine
+  engine: FakePromptEngine, paneId: String = paneId
 ) throws -> (client: EngineClient, drafts: AgentPromptDrafts) {
   let client = EngineClient(socket: "/tmp/agent-prompt-refusal.sock")
   client.connected = true
@@ -217,35 +217,69 @@ private func file(_ name: String) -> AgentAttachmentDraft {
   #expect(attachments(drafts).notice == AgentAttachmentRejection.tooMany.message)
 }
 
-/// The first message of a new agent is sent by the new-pane sheet after the pane exists. These
-/// tests do what the sheets do: the pane is there, and the first prompt goes to it.
-@MainActor private func sendFirstPrompt(_ text: String, to client: EngineClient) async {
-  do {
-    try await client.sendPromptNow(paneId, text: text)
-  } catch {
-    // The sheet shows the failure; what the tests look at is where the prompt went.
+/// The first message of a new agent is sent by the new-pane sheet once the pane exists, with
+/// no draft of the person's behind it: the text is in the form. It still comes back in the new
+/// pane's composer when the engine does not take it. Each test has its own pane: the drafts are
+/// the app's one object, and the tests run side by side.
+///
+/// Sends `text` as a new pane's first message to an engine that fails with `failure`, and waits
+/// for `prompts` of them to reach it (none: for the client to have settled).
+@MainActor private func sendFirstPrompt(
+  _ text: String, to paneId: String, failure: ClientFailure? = nil, prompts: Int = 1
+) async throws -> (engine: FakePromptEngine, client: EngineClient) {
+  let engine = FakePromptEngine()
+  engine.failure = failure
+  let (client, _) = try composer(engine: engine, paneId: paneId)
+  client.sendFirstPrompt(paneId, text: text)
+  if prompts == 0 {
+    try await Task.sleep(for: .milliseconds(300))
+  } else {
+    try await settle(engine, prompts: prompts)
   }
+  return (engine, client)
 }
 
 @MainActor @Test func aFirstPromptTheEngineRefusesComesBackInTheNewPanesComposer() async throws {
+  let paneId = "first-prompt-\(#function)"
   defer { AgentPromptDrafts.shared.discard(paneId) }
-  let engine = FakePromptEngine()
-  engine.failure = .remote(ErrorKind.pane_busy.rawValue, "The agent is busy.")
-  let (client, _) = try composer(engine: engine)
 
-  await sendFirstPrompt("build the login page", to: client)
+  let (_, client) = try await sendFirstPrompt(
+    "build the login page", to: paneId,
+    failure: .remote(ErrorKind.pane_busy.rawValue, "The agent is busy."))
 
-  #expect(engine.prompts.count == 1)
   #expect(AgentPromptDrafts.shared.text(for: paneId) == "build the login page")
+  #expect(client.problem == "The agent is busy.")
 }
 
 @MainActor @Test func aFirstPromptThatTimedOutComesBackInTheNewPanesComposer() async throws {
+  let paneId = "first-prompt-\(#function)"
   defer { AgentPromptDrafts.shared.discard(paneId) }
-  let engine = FakePromptEngine()
-  engine.failure = .requestTimeout(RequestMethod.panePrompt.rawValue)
-  let (client, _) = try composer(engine: engine)
 
-  await sendFirstPrompt("build the login page", to: client)
+  // The client sends a mutation again when the connection is what failed, up to three times.
+  _ = try await sendFirstPrompt(
+    "build the login page", to: paneId,
+    failure: .requestTimeout(RequestMethod.panePrompt.rawValue), prompts: 3)
 
   #expect(AgentPromptDrafts.shared.text(for: paneId) == "build the login page")
+}
+
+@MainActor @Test func aFirstPromptTooLongForTheEngineComesBackToo() async throws {
+  let paneId = "first-prompt-\(#function)"
+  defer { AgentPromptDrafts.shared.discard(paneId) }
+  let long = String(repeating: "a", count: ProtocolLimits.promptBytes + 1)
+
+  let (engine, _) = try await sendFirstPrompt(long, to: paneId, prompts: 0)
+
+  #expect(engine.prompts.isEmpty)
+  #expect(AgentPromptDrafts.shared.text(for: paneId) == long)
+}
+
+@MainActor @Test func anAcceptedFirstPromptLeavesTheComposerEmpty() async throws {
+  let paneId = "first-prompt-\(#function)"
+  defer { AgentPromptDrafts.shared.discard(paneId) }
+
+  let (engine, _) = try await sendFirstPrompt("build the login page", to: paneId)
+
+  #expect(engine.prompts.first?.text == "build the login page")
+  #expect(AgentPromptDrafts.shared.text(for: paneId).isEmpty)
 }
