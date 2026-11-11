@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     Event,
-    testing::{cases, pane, text, workspace},
+    testing::{cases, harness, pane, text, workspace},
 };
 use serde_json::{Value, json};
 
@@ -432,14 +432,6 @@ fn a_name_typed_on_two_lines_is_one_line() {
             name: "one two  three".into()
         })
     );
-}
-
-fn harness(id: &str, available: bool) -> soyeht_protocol::HarnessInfo {
-    serde_json::from_value(json!({
-        "id": id, "name": id, "available": available, "capabilities": [],
-        "options": [], "authMethods": [],
-    }))
-    .unwrap()
 }
 
 #[test]

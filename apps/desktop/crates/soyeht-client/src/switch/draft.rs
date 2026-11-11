@@ -115,16 +115,12 @@ impl Draft {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Event, Snapshot, switch::HarnessSwitchView, testing::agent_pane};
+    use crate::{
+        Event, Snapshot,
+        switch::HarnessSwitchView,
+        testing::{agent_pane, harness},
+    };
     use serde_json::json;
-
-    fn harness(id: &str, available: bool) -> HarnessInfo {
-        serde_json::from_value(json!({
-            "id": id, "name": id, "available": available, "capabilities": [],
-            "options": [], "authMethods": [],
-        }))
-        .unwrap()
-    }
 
     /// A connected state with an agent pane `a` running `claude`, and the harnesses listed.
     fn state_with(harnesses: Vec<HarnessInfo>) -> State {

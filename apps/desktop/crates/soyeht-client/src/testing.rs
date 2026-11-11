@@ -101,6 +101,15 @@ pub fn event(name: soyeht_protocol::EventName, mut params: Value) -> crate::Even
     crate::Event::Notification { name, params }
 }
 
+/// A harness the engine lists, which can start or cannot.
+pub fn harness(id: &str, available: bool) -> soyeht_protocol::HarnessInfo {
+    serde_json::from_value(json!({
+        "id": id, "name": id, "available": available, "capabilities": [],
+        "options": [], "authMethods": [],
+    }))
+    .unwrap()
+}
+
 /// An agent session carrying `fields` besides the ones every session has.
 pub fn agent_session(fields: Value) -> AgentSession {
     let mut session = json!({
