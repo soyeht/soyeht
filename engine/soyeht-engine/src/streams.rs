@@ -97,7 +97,17 @@ impl Core {
         Ok(())
     }
 
+    /// Sends each subscriber what its pane has written since, and records whether any is left
+    /// behind (see `State::streams_behind`): the tick keeps its floor until they have caught up,
+    /// since nothing else says a full outbox has room again.
     pub fn pump_streams(&mut self) -> Result<()> {
+        let mut behind = false;
+        let pumped = self.pump_each_stream(&mut behind);
+        self.tick.streams_behind = behind;
+        pumped
+    }
+
+    fn pump_each_stream(&mut self, behind: &mut bool) -> Result<()> {
         for client in self
             .clients
             .values_mut()
@@ -129,6 +139,7 @@ impl Core {
                     client.outbox.send_stream(model::notification(event::STREAM_GAP,json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.next = to;
                 }
+                let started_at = subscription.next;
                 if subscription.next < through {
                     for record in pane.screen.read(
                         subscription.next,
@@ -157,6 +168,9 @@ impl Core {
                         subscription.next = end;
                     }
                 }
+                // Left short of what it was owed, after sending something or being refused: another
+                // pump is due. One that sent nothing and was not refused has nothing more to send.
+                *behind |= subscription.next < through && subscription.next != started_at;
                 if subscription.replaying && subscription.next == subscription.replay_until {
                     client.outbox.send_stream(model::notification(event::STREAM_REPLAY_DONE,json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()}))?,Arc::clone(&subscription.current));
                     subscription.replaying = false;

@@ -224,10 +224,21 @@ impl Core {
 
     /// Whether `owner` is being left alone.
     pub(crate) fn reads_paused(&self, owner: &str) -> bool {
+        self.reads_paused_until(owner).is_some()
+    }
+
+    /// When the wait of `owner` ends, if it is being left alone.
+    pub(crate) fn reads_paused_until(&self, owner: &str) -> Option<i64> {
         self.reads
             .paused_until_ms
             .get(owner)
-            .is_some_and(|until| self.now_ms() < *until)
+            .copied()
+            .filter(|until| self.now_ms() < *until)
+    }
+
+    /// Whether a read for `owner` has ended and waits to be taken by its poll.
+    pub(crate) fn read_ready(&self, owner: &str) -> bool {
+        self.reads.ready.contains_key(owner)
     }
 }
 

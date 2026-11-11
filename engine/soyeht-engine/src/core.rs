@@ -90,6 +90,8 @@ pub struct Core {
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
+    /// What the tick remembers between its runs (ADR 0147, step 1b).
+    pub(crate) tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -222,6 +224,7 @@ impl Core {
             ))),
             project_watches: Default::default(),
             skill_watches: Default::default(),
+            tick: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
@@ -242,6 +245,10 @@ impl Core {
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
+        // The event streams of the file followers raise the tick, which sleeps until a deadline.
+        let kick = core.background.kicker();
+        core.project_watches.kicked_by(Arc::clone(&kick));
+        core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {

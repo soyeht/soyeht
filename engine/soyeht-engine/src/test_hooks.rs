@@ -53,12 +53,16 @@ const INK_RECOGNIZER_VARIABLE: &str = "SOYEHT_TEST_INK_RECOGNIZER_MS";
 /// Milliseconds starting a file-event stream takes, as on a busy machine.
 const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
 
+/// Milliseconds the tick may sleep with no deadline and no event, in place of its second.
+const TICK_CEILING_VARIABLE: &str = "SOYEHT_TEST_TICK_CEILING_MS";
+
 pub struct FileHooks {
     directory: PathBuf,
     slow_disk: bool,
     usage_fixtures: Option<PathBuf>,
     poll_skills: bool,
     ink_pause: Option<std::time::Duration>,
+    tick_ceiling: Option<std::time::Duration>,
 }
 
 impl FileHooks {
@@ -82,9 +86,16 @@ impl FileHooks {
         {
             ink_pause = Some(std::time::Duration::from_millis(pause));
         }
+        let mut tick_ceiling = None;
+        if let Ok(value) = std::env::var(TICK_CEILING_VARIABLE)
+            && let Ok(milliseconds) = value.parse()
+        {
+            tick_ceiling = Some(std::time::Duration::from_millis(milliseconds));
+        }
         Self {
             directory: directory.into(),
             slow_disk,
+            tick_ceiling,
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
             ink_pause,
@@ -140,6 +151,10 @@ impl Hooks for FileHooks {
 
     fn pause_editor_autosave(&self) -> bool {
         self.marker(PAUSE_EDITOR_AUTOSAVE).is_file()
+    }
+
+    fn tick_ceiling(&self) -> Option<std::time::Duration> {
+        self.tick_ceiling
     }
 
     fn poll_skills_only(&self) -> bool {

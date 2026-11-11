@@ -21,8 +21,30 @@ pub(crate) struct Resting(RefCell<BTreeMap<&'static str, (u64, i64, Instant)>>);
 
 impl Store {
     /// The number of rows this connection has written.
-    fn change_counter(&self) -> u64 {
+    pub fn change_counter(&self) -> u64 {
         self.connection.total_changes()
+    }
+
+    /// How long until a resting poll has to ask again, for a tick that sleeps (ADR 0147, step 1b):
+    /// zero when a poll is not resting (it found work, or a write woke it), else the earliest of
+    /// its due time and the end of its rest. `None` when no poll has begun yet.
+    pub fn next_poll_wait(&self, now_ms: i64) -> Option<Duration> {
+        let seen = self.change_counter();
+        self.resting
+            .0
+            .borrow()
+            .values()
+            .map(|(at, until_ms, since)| {
+                if *at != seen || now_ms >= *until_ms {
+                    return Duration::ZERO;
+                }
+                let end = CEILING.saturating_sub(since.elapsed());
+                match u64::try_from(until_ms.saturating_sub(now_ms)) {
+                    Ok(left) if *until_ms != i64::MAX => end.min(Duration::from_millis(left)),
+                    _ => end,
+                }
+            })
+            .min()
     }
 
     /// Starts a poll: `None` while it rests (it found nothing, nothing was

@@ -69,6 +69,17 @@ impl Service {
             .collect()
     }
 
+    /// When each open file next needs the tick: its autosave (unless `saves` is off) and, while it
+    /// is watched, its disk check.
+    pub fn due_times(&self, saves: bool) -> impl Iterator<Item = (&str, i64)> {
+        self.open.iter().filter_map(move |(file_id, item)| {
+            let save = item.save_due_ms.filter(|_| saves);
+            let watch = item.file.watching.then_some(item.watch_due_ms);
+            let due = [save, watch].into_iter().flatten().min()?;
+            Some((file_id.as_str(), due))
+        })
+    }
+
     pub fn due_watches(&self, now_ms: i64) -> Vec<String> {
         self.open
             .iter()

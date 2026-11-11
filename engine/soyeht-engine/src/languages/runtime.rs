@@ -6,6 +6,7 @@ use crate::{
     ports::StorePort,
     process_start::Started,
     project_trust::project_trusted,
+    tick_due::Next,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -132,8 +133,11 @@ impl Core {
         let bytes = STANDARD
             .decode(&output.bytes)
             .map_err(|_| errors::ptyd_unavailable("Invalid language server output encoding"))?;
-        // The next read starts while the rest of the poll runs.
-        self.start_read(&owner, &instance_id, output.next_seq, false)?;
+        // The next read starts while the rest of the poll runs, unless the supervisor says when
+        // there is output: then the notice that marks the process starts it.
+        if !self.watch.is_active() {
+            self.start_read(&owner, &instance_id, output.next_seq, false)?;
+        }
         if output.next_seq == from_seq && bytes.is_empty() && !output.exited {
             return Ok(());
         }
@@ -272,13 +276,48 @@ impl Core {
         Ok(())
     }
 
+    /// The processes of the language servers that run.
+    pub(crate) fn language_server_instances(&self) -> Vec<String> {
+        self.languages
+            .keys()
+            .iter()
+            .filter_map(|key| self.languages.get(key)?.instance_id.clone())
+            .collect()
+    }
+
+    /// Whether the server `key` has something for the tick: a write to send again, a read that
+    /// ended, or, with the watch heard, output the supervisor announced. Without the watch every
+    /// run of the tick reads the server, as it always did.
+    fn language_server_has_work(&self, key: &str) -> bool {
+        let Some(server) = self.languages.get(key) else {
+            return false;
+        };
+        let Some(instance_id) = server.instance_id.as_deref() else {
+            return false;
+        };
+        !self.watch.is_active()
+            || !server.pending_writes.is_empty()
+            || self.read_ready(&crate::read_ahead::language(key))
+            || self.watch.is_marked(instance_id)
+    }
+
+    /// When the tick must poll the language servers: now, while one has work (see
+    /// [`Core::language_server_has_work`]). Their output, and the end of their process, are
+    /// announced by the supervisor and raise the tick.
+    pub(crate) fn language_servers_due(&self, next: &mut Next) {
+        if self
+            .languages
+            .keys()
+            .iter()
+            .any(|key| self.language_server_has_work(key))
+        {
+            next.now();
+        }
+    }
+
     pub(crate) fn advance_language_servers(&mut self) {
         for key in self.languages.keys() {
-            if self
-                .languages
-                .get(&key)
-                .is_none_or(|server| server.instance_id.is_none())
-            {
+            if !self.language_server_has_work(&key) {
                 continue;
             }
             // A write whose job ended without a receipt (its link was replaced meanwhile) is still

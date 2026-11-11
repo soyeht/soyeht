@@ -99,6 +99,35 @@ fn a_write_with_no_job_is_sent_again_by_the_tick_and_once() {
     );
 }
 
+#[test]
+fn a_server_with_nothing_to_do_waits_for_a_notice_when_the_watch_is_heard() {
+    let (mut core, _directory, key) = core_with_a_pending_write();
+    let wait = |core: &Core| {
+        let mut next = crate::tick_due::Next::default();
+        core.language_servers_due(&mut next);
+        next.soonest()
+    };
+    // Without the watch the server is read on every run, as it always was.
+    assert_eq!(wait(&core), Some(std::time::Duration::ZERO));
+
+    core.watch.pretend_active();
+    // A write that no job carries is work.
+    assert_eq!(wait(&core), Some(std::time::Duration::ZERO));
+    language_mut(&mut core.languages, &key)
+        .unwrap()
+        .pending_writes
+        .clear();
+    assert_eq!(wait(&core), None, "nothing is announced, nothing is read");
+    assert!(
+        core.language_server_instances()
+            .contains(&"language-process".to_owned())
+    );
+
+    // A notice of the supervisor is work, and so is a read that ended.
+    core.watch.pretend_notice("language-process", 5);
+    assert_eq!(wait(&core), Some(std::time::Duration::ZERO));
+}
+
 /// What the supervisor was asked to close.
 type Closed = Arc<std::sync::Mutex<Vec<String>>>;
 

@@ -18,7 +18,7 @@ use super::{
     persistence::{next_revision, stored_version},
     service::{FileSystemPort, Service, read_disk_from, resolve_in},
 };
-use crate::{core::Core, errors, errors::Result, model, offload::Done};
+use crate::{core::Core, errors, errors::Result, model, offload::Done, tick_due::Next};
 use soyeht_platform::log::Line;
 use soyeht_protocol::{
     EditorSaveFailure, FileAuthor, FileSaveFailedEvent, event, shared_text::SharedText,
@@ -226,6 +226,17 @@ impl Core {
             self.start_disk_job(&file_id, Effect::Watch, now);
         }
         self.editor.take_records()
+    }
+
+    /// When the tick must start the autosaves and disk checks again. A file whose job runs is
+    /// looked at when the job ends, which kicks the tick.
+    pub(crate) fn editor_due(&self, next: &mut Next, now: i64) {
+        let saves = !self.hooks.pause_editor_autosave();
+        for (file_id, due) in self.editor.due_times(saves) {
+            if !self.background.is_active(&job_key(file_id)) {
+                next.at_ms(now, due);
+            }
+        }
     }
 
     fn start_disk_job(&mut self, file_id: &str, effect: Effect, now: i64) {

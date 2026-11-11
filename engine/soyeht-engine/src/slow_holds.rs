@@ -79,6 +79,14 @@ impl SlowHolds {
         None
     }
 
+    /// When the first window of a run ends.
+    pub(crate) fn next_window_ends_ms(&self) -> Option<u64> {
+        self.runs
+            .values()
+            .map(|run| run.window_start_ms.saturating_add(SUMMARY_EVERY_MS))
+            .min()
+    }
+
     /// The summaries whose window is over at `now_ms`. A run with no slow hold for a whole
     /// window ends here.
     pub(crate) fn due(&mut self, now_ms: u64) -> Vec<Line> {
@@ -160,6 +168,23 @@ pub(crate) fn costs_of(purpose: &str) -> Option<soyeht_platform::hold_cost::Cost
         .unwrap_or_else(PoisonError::into_inner)
         .as_ref()
         .and_then(|state| state.usage.costs_of(purpose))
+}
+
+/// How long until a window of the slow holds or of the usage is over, for the tick to sleep until.
+pub(crate) fn next_emit_in() -> Option<std::time::Duration> {
+    let now = now_ms();
+    let ends = HOLDS
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .and_then(|state| {
+            let usage = state.usage.window_ends_ms(SUMMARY_EVERY_MS);
+            [state.slow.next_window_ends_ms(), usage]
+                .into_iter()
+                .flatten()
+                .min()
+        })?;
+    Some(std::time::Duration::from_millis(ends.saturating_sub(now)))
 }
 
 /// Writes the summaries and the usage of the windows that are over. The tick calls it, outside the

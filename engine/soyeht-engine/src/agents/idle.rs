@@ -17,6 +17,7 @@ use crate::{
     errors::{self, Result},
     ports::StorePort,
     streak::Streak,
+    tick_due::Next,
 };
 use std::collections::BTreeSet;
 
@@ -135,6 +136,44 @@ impl Running {
     /// True while the agent is settled and no request of it can have expired.
     pub(crate) fn is_settled(&self, now_ms: i64) -> bool {
         self.idle.quiet_until_ms.is_some_and(|until| now_ms < until)
+    }
+}
+
+impl Core {
+    /// When the tick must poll the agent of `pane`: now unless it is at rest, and then when an
+    /// open request of it can expire, or, while no watch is heard, when its pause ends. A mark
+    /// of the watch ends the rest at once, and so does a read that waits to be taken.
+    pub(crate) fn agent_poll_due(&self, pane: &str, next: &mut Next, now: i64) {
+        let Some(agent) = self.agents.get(pane) else {
+            return;
+        };
+        let owner = crate::read_ahead::agent(pane);
+        if agent.state.phase == Phase::Faulted
+            || self.pane_marked(pane)
+            || self.read_ready(&owner)
+            || !agent.is_settled(now)
+        {
+            return next.now();
+        }
+        if let Some(until) = agent.idle.quiet_until_ms {
+            next.at_ms(now, until);
+        }
+        if !self.watch.is_active() {
+            match self.reads_paused_until(&owner) {
+                Some(until) => next.at_ms(now, until),
+                None => next.now(),
+            }
+        }
+    }
+
+    /// When the tick must close the processes the agents retired: when the delay a refusal left
+    /// ends, for each agent that owes a close.
+    pub(crate) fn retired_processes_due(&self, next: &mut Next, now: i64) {
+        for agent in self.agents.values() {
+            if !agent.state.retired_processes.is_empty() {
+                next.at_ms(now, agent.idle.retired_close.due_ms);
+            }
+        }
     }
 }
 
@@ -353,6 +392,54 @@ pub(super) mod tests {
         let before = total(&drains);
         core.poll_output().unwrap();
         assert!(total(&drains) > before, "the changed agent was not read");
+        crate::test_paths::remove_after(core, root);
+    }
+
+    /// What the tick would wait for the agent `pane`, from `agent_poll_due`.
+    fn poll_due(core: &Core, pane: &str) -> Option<std::time::Duration> {
+        let mut next = Next::default();
+        core.agent_poll_due(pane, &mut next, core.now_ms());
+        next.soonest()
+    }
+
+    #[test]
+    fn a_settled_agent_is_read_on_a_pace_without_the_watch_and_on_a_notice_with_it() {
+        let (mut core, [drains, ..], root) = idle_core(1);
+        assert_eq!(
+            poll_due(&core, "agent-0"),
+            Some(std::time::Duration::ZERO),
+            "not at rest"
+        );
+        for _ in 0..4 {
+            core.poll_output().unwrap();
+        }
+        assert!(core.agents["agent-0"].is_settled(core.now_ms()));
+
+        // Without the watch it is read once per pace.
+        assert_eq!(
+            poll_due(&core, "agent-0"),
+            Some(std::time::Duration::from_millis(
+                u64::try_from(crate::read_ahead::IDLE_PACE_MS).unwrap()
+            ))
+        );
+
+        // With it, nothing but a notice, a read that ended or an open request's expiry (none
+        // here) needs the tick, and the pace no longer reads it.
+        core.watch.pretend_active();
+        core.clock = Arc::new(FixedClock(crate::read_ahead::IDLE_PACE_MS));
+        for _ in 0..50 {
+            core.poll_output().unwrap();
+        }
+        let read = total(&drains);
+        core.clock = Arc::new(FixedClock(10 * crate::read_ahead::IDLE_PACE_MS));
+        for _ in 0..50 {
+            core.poll_output().unwrap();
+        }
+        assert_eq!(total(&drains), read, "a settled agent was read on a pace");
+        assert!(poll_due(&core, "agent-0").unwrap() > std::time::Duration::from_secs(3_600));
+
+        core.watch.pretend_notice("instance-0", 5);
+        assert_eq!(poll_due(&core, "agent-0"), Some(std::time::Duration::ZERO));
         crate::test_paths::remove_after(core, root);
     }
 

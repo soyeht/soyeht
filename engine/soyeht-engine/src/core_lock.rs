@@ -55,6 +55,9 @@ struct Hold {
     acquired: Instant,
     /// From the request for the lock to the moment it was taken.
     waited: Duration,
+    /// Raised when the hold ends, so the tick looks at what it may have changed. The tick's own
+    /// holds do not raise it.
+    kick: Option<Arc<tokio::sync::Notify>>,
 }
 
 thread_local! {
@@ -86,6 +89,7 @@ fn lock_requested<'a>(
     let acquired = Instant::now();
     hold_cost::start();
     METHOD.with(|name| name.set(""));
+    let kick = (!crate::tick::OWN_HOLDS.contains(&purpose)).then(|| core.background.kicker());
     Ok(CoreGuard {
         core,
         _forbidden: soyeht_process::forbid(HOLDER),
@@ -93,6 +97,7 @@ fn lock_requested<'a>(
             purpose,
             acquired,
             waited: acquired.saturating_duration_since(requested),
+            kick,
         },
     })
 }
@@ -147,6 +152,9 @@ impl Drop for Hold {
             waited: self.waited,
             costs: hold_cost::finish(),
         });
+        if let Some(kick) = &self.kick {
+            kick.notify_one();
+        }
     }
 }
 
@@ -167,6 +175,37 @@ mod tests {
             self.code.store(code, Ordering::SeqCst);
             self.calls.fetch_add(1, Ordering::SeqCst);
         }
+    }
+
+    #[tokio::test]
+    async fn a_hold_that_is_not_the_ticks_raises_the_tick_and_the_ticks_own_does_not() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-core-kick-{}", uuid::Uuid::new_v4()));
+        let shared = Arc::new(Mutex::new(Core::open(&directory).unwrap()));
+        let kick = lock(&shared, "setup").unwrap().background.kicker();
+        let raised = |wait: Duration| {
+            let kick = Arc::clone(&kick);
+            async move { tokio::time::timeout(wait, kick.notified()).await.is_ok() }
+        };
+        // The setup hold above raised it, and so may a job the engine started when it opened:
+        // wait for quiet before asking.
+        assert!(raised(Duration::from_secs(5)).await);
+        while raised(Duration::from_millis(300)).await {}
+
+        for own in crate::tick::OWN_HOLDS {
+            drop(lock(&shared, own).unwrap());
+        }
+        assert!(
+            !raised(Duration::from_millis(100)).await,
+            "the tick's own holds do not raise it"
+        );
+        drop(lock(&shared, "dispatch").unwrap());
+        assert!(
+            raised(Duration::from_secs(5)).await,
+            "a request's hold does"
+        );
+        drop(shared);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     /// The only test that poisons a lock: `POISON_HANDLED` is one flag for the process.

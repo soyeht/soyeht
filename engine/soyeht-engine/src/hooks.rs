@@ -38,6 +38,13 @@ pub trait Hooks: Send + Sync {
         false
     }
 
+    /// The longest the tick sleeps with no deadline and no event (ADR 0147, step 1b); `None` is
+    /// the default of the shipped engine. A test raises it to show that no subsystem of the tick
+    /// relies on it.
+    fn tick_ceiling(&self) -> Option<std::time::Duration> {
+        None
+    }
+
     /// Whether the editor holds its autosaves.
     fn pause_editor_autosave(&self) -> bool {
         false
