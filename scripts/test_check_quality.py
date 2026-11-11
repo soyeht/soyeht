@@ -36,6 +36,7 @@ from check_quality import (
     CENTRAL_OBJECT_KEY,
     central_object_changes,
     central_object_counts,
+    measure_with_central_objects,
     unjustified_central_objects,
 )
 from review_report import render
@@ -65,10 +66,8 @@ CORE_FIXTURE = (
     "    pub escaped: u8,\n"
     "}\n"
 )
-CENTRAL_ZEROES = dict.fromkeys(
-    ("core_impl_files", "core_open_fields", "engine_client_extension_files",
-     "workbench_impl_files"), 0
-)
+CENTRAL_ZEROES = {key: 0 for key in (
+    "core_impl_files", "core_open_fields", "engine_client_extension_files", "workbench_impl_files")}
 
 
 def git(root: Path, *arguments: str) -> None:
@@ -284,6 +283,11 @@ class QualityRatchetTests(unittest.TestCase):
         self.assertIn("central object core_impl_files: baseline 0, actual 1", report)
         self.assertIn("justification: split next", report)
         self.assertIn("MISSING justification", render(before, after, after, "main", "SKIPPED", before))
+
+    def test_the_report_measures_central_objects_as_the_check_does(self):
+        with patch("check_quality.measure", return_value=empty_measurement()):
+            current = measure_with_central_objects(ROOT, Path("jscpd"), "machete")
+        self.assertEqual(current[CENTRAL_OBJECT_KEY], central_object_counts(ROOT))
 
     def test_missing_jscpd_has_install_command(self):
         with tempfile.TemporaryDirectory() as directory:

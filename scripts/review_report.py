@@ -35,6 +35,7 @@ from quality_core import (
 from check_quality import (
     CENTRAL_OBJECT_KEY,
     central_object_changes,
+    measure_with_central_objects,
     unjustified_central_objects,
 )
 
@@ -196,7 +197,7 @@ def main() -> int:
         before = base_measurement(commit, jscpd, machete)
         previous_baseline = base_baseline(commit, before)
         after = json.loads((ROOT / BASELINE_NAME).read_text())
-        current = measure(ROOT, jscpd, machete)
+        current = measure_with_central_objects(ROOT, jscpd, machete)
         justifications = load_justifications(ROOT)
         print(
             render(

@@ -129,6 +129,13 @@ def open_core_fields(path: Path) -> int:
     return count
 
 
+def measure_with_central_objects(repo: Path, jscpd: Path, machete: str) -> dict:
+    """The quality measurement of the tree, with the central object counts beside it."""
+    current = measure(repo, jscpd, machete)
+    current[CENTRAL_OBJECT_KEY] = central_object_counts(repo)
+    return current
+
+
 def central_object_counts(repo: Path) -> dict[str, int]:
     """How far each central object's state and behaviour are spread."""
     return {
@@ -193,8 +200,7 @@ def main() -> int:
         root = args.root.resolve()
         base = None if args.print_baseline else resolve_base(root, args.base)
         jscpd, machete = tool_paths(root)
-        current = measure(root, jscpd, machete)
-        current[CENTRAL_OBJECT_KEY] = central_object_counts(root)
+        current = measure_with_central_objects(root, jscpd, machete)
         if args.print_baseline:
             baseline = baseline_from_measurement(current)
             baseline[CENTRAL_OBJECT_KEY] = current[CENTRAL_OBJECT_KEY]
