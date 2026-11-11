@@ -207,6 +207,17 @@ does not ask the network: Windows reports a refused loopback connection only aft
 2 s, which a client cannot tell from an engine that is slow (`TimedOut`), and a window must
 tell them apart to know when to start an engine (ADR 0108).
 
+**2.6 The supervisor's Unix socket (ADR 0160).** `<data>/ptyd.sock` is a Unix socket on
+macOS and Linux, and it asks for the same proof as the Windows endpoint, with the same bytes and
+the same 2 s, before it reads the first frame. The secret is in `<data>/ptyd.sock.secret`, an
+owner-only file of one line, `soyeht-local-2 secret <64 lowercase hexadecimal digits>`, which the
+supervisor replaces with a new secret each time it starts (after its singleton lock, before it
+binds the socket) and removes when it stops. A client connects first, reads the file second, and
+refuses a file that is not owner-only. The engine's own socket (`engine.sock`) does not ask: the
+apps and the command line reach it with the kernel's word for who the peer is. A connection that
+fails the proof is dropped without a reply; the supervisor logs `local.proof_refused`. A socket with
+no secret file beside it is a supervisor from before the proof, not an absent one.
+
 ## 3. State snapshot and events without loss (R05)
 - **State change and event originate in the same database transaction.** Every
   event has an increasing `eventId`, unique per `dbId`.

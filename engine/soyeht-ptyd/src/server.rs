@@ -14,7 +14,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, PTYD_LOCK, lock_singleton},
-    local::{BindError, Listener, Stream, peer_is_same_user},
+    local::{BindError, ProvedListener, Stream, peer_is_same_user, remove_proved},
     log,
 };
 use soyeht_protocol::{
@@ -99,7 +99,9 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(LockError::Io(error)) => return Err(error.into()),
     };
     let endpoint = directory.join(PTYD_SOCKET);
-    let listener = match Listener::bind(&endpoint) {
+    // Every connection proves that it can read the secret file beside the socket before the first
+    // frame is read (ADR 0160); the engine is the one client that can.
+    let listener = match ProvedListener::bind(&endpoint) {
         Ok(listener) => listener,
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
@@ -125,8 +127,8 @@ pub fn run(directory: &Path) -> Result<()> {
         "{}",
         log::record("ptyd.ready", &[("version", &VERSION.to_string())])
     );
-    for incoming in listener.incoming() {
-        let stream = incoming?;
+    loop {
+        let stream = listener.accept()?;
         // The socket's mode and directory keep other users out; this does not depend on them.
         if let Some(reason) = refusal_reason(peer_is_same_user(&stream)) {
             log::event("ptyd.connection_refused", &[("reason", reason)]);
@@ -139,7 +141,6 @@ pub fn run(directory: &Path) -> Result<()> {
             }
         });
     }
-    Ok(())
 }
 
 /// The `reason` of `ptyd.connection_refused` for a peer that runs as another user. These are log
@@ -174,17 +175,15 @@ fn end_when_program_is_gone(
     }
 }
 
-/// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the
-/// engine removes its own. A supervisor that is killed cannot run this, and the next one
-/// replaces the file it left.
+/// The endpoint this supervisor listens on, with the secret file beside it; they are removed when
+/// the supervisor stops, as the engine removes its own. A supervisor that is killed cannot run
+/// this, and the next one replaces what it left.
 struct EndpointFile(PathBuf);
 
 impl Drop for EndpointFile {
     fn drop(&mut self) {
-        match std::fs::remove_file(&self.0) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => log::failure("ptyd.endpoint_not_removed", &error),
+        if let Err(error) = remove_proved(&self.0) {
+            log::failure("ptyd.endpoint_not_removed", &error);
         }
     }
 }

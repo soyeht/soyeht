@@ -301,6 +301,15 @@ impl Rig {
         }
         let _ = fs::remove_file(self.path.join("engine.sock"));
     }
+    /// The generation that takes the supervisor over from the engine, whatever that engine is
+    /// at: the one after the supervisor's recorded one. A fixed number would be refused as stale
+    /// once the supervisor has recorded a higher one.
+    pub fn supervisor_takeover_generation(&self) -> Option<u64> {
+        let recorded = fs::read(self.path.join("ptyd-registry.json")).ok()?;
+        let registry: serde_json::Value = serde_json::from_slice(&recorded).ok()?;
+        registry["engine_generation"].as_u64()?.checked_add(1)
+    }
+
     pub fn restart_ptyd(&mut self) {
         self.ptyd.kill().unwrap();
         self.ptyd.wait().unwrap();
@@ -435,7 +444,8 @@ impl Drop for Rig {
             let _ = child.kill();
             let _ = child.wait();
         }
-        if let Ok(mut client) = PtyClient::connect(&self.path.join("ptyd.sock"), u64::MAX)
+        if let Some(generation) = self.supervisor_takeover_generation()
+            && let Ok(mut client) = PtyClient::connect(&self.path.join("ptyd.sock"), generation)
             && let Ok(Response::Instances(instances)) = client.request(Request::List)
         {
             for instance in instances {

@@ -120,8 +120,10 @@ impl Live {
     }
 }
 
-/// Why a hello of either role is turned away before the role matters: the protocol or the engine
-/// generation is not one this supervisor serves.
+/// Why a hello of either role is turned away before the role matters: the protocol is not this
+/// supervisor's, or the engine generation is lower than the recorded one. It reads the registry
+/// and never changes it, and it runs before anything is closed or saved, so a refused hello
+/// leaves everything as it was.
 pub(super) fn hello_refusal(
     state: &State,
     version: u32,
@@ -133,6 +135,9 @@ pub(super) fn hello_refusal(
             "incompatible supervisor protocol",
         ));
     }
+    // No upper bound (ADR 0160): the engine takes its number at each start, before it reaches the
+    // supervisor, so a crash loop can leave any distance, and a peer that has not proved the secret
+    // never gets here.
     (engine_generation < state.registry.engine_generation).then_some((
         wire_kind::STALE_ENGINE_GENERATION,
         "engine generation is stale",

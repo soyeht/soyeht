@@ -3,7 +3,7 @@ use crate::{
     wire::{FEATURE_WATCH, Readable, Request, Response, Role, VERSION, Watched},
     wire_kind,
 };
-use soyeht_platform::local::{Stream, connect};
+use soyeht_platform::local::{Stream, connect_proved};
 use soyeht_protocol::frame::{read_json, write_json};
 use std::path::Path;
 use std::time::Duration;
@@ -23,7 +23,7 @@ pub struct Client {
 
 impl Client {
     pub fn connect(socket: &Path, engine_generation: u64) -> Result<Self> {
-        let stream = connect(socket)?;
+        let stream = connect_proved(socket)?;
         stream.set_read_timeout(Some(IO_TIMEOUT))?;
         stream.set_write_timeout(Some(IO_TIMEOUT))?;
         let mut client = Self {
@@ -69,7 +69,7 @@ impl Watcher {
     /// Opens a watch connection. `Error::WatchUnavailable` says the supervisor does not know the
     /// role (it is older than this engine), and the engine goes on polling.
     pub fn connect(socket: &Path, engine_generation: u64) -> Result<Self> {
-        let mut stream = connect(socket)?;
+        let mut stream = connect_proved(socket)?;
         stream.set_write_timeout(Some(IO_TIMEOUT))?;
         // The welcome of a supervisor that is stopped is not waited for for ever.
         stream.set_read_timeout(Some(IO_TIMEOUT))?;

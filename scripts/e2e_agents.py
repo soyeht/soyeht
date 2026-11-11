@@ -102,7 +102,7 @@ def open_agent(client, workspace, harness):
 
 
 def supervisor_pending(services, generation, instance):
-    with connect_endpoint(services.data / PTYD_SOCKET, timeout=5) as stream:
+    with connect_endpoint(services.data / PTYD_SOCKET, timeout=5, proved=True) as stream:
         send(stream, {"method": "hello", "params": {"version": services.ptyd_version,
                                                      "engine_generation": generation}})
         require(receive(stream)["status"] == "welcome", "supervisor handshake failed")
