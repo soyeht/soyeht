@@ -24,7 +24,10 @@ keeps the screen as it changes, so that a rule can be tried against recordings o
   The engine has no code for it.
 - **Screens, not keystrokes.** A record holds text the screen shows. The bytes the client sends
   to a pane are not in it, because the recorder sends none and has no such data. A program that
-  does not echo (a password prompt) leaves nothing to record, since nothing shows.
+  does not echo (a password prompt) leaves nothing to record, since nothing shows. Everything that
+  does show is recorded: text typed into a shell or a harness input box, and anything a program
+  prints (a `cat` of a file of secrets, a pasted token). Treat a recording as private and do not
+  share it.
 - **Local.** Recordings are written under the user's cache folder, in an owner-only directory, with
   owner-only files (`soyeht_platform::fs`). Nothing is sent anywhere.
 - **Connecting.** With no option it connects to the engine of this build's profile (the Dev
@@ -48,7 +51,7 @@ lists them):
 |---|---|
 | `--socket PATH` / `--data-dir DIR` / `--profile NAME` | which engine; the first given wins |
 | `--pane ID_OR_NAME` | record only this pane (repeat); default every terminal pane |
-| `--out DIR` | where recordings go |
+| `--out DIR` | where recordings go; the folder is made owner-only (0700), so name a new one |
 | `--max-file-mb N` | rotate a pane's file at N MB (default 16) |
 | `--keep N` | rotated files kept per pane (default 3) |
 | `--max-total-mb N` | stop writing at N MB for the run (default 256) |
@@ -66,9 +69,10 @@ time the recorder handled the output, so a recorder that fell behind stamps late
 date of the record; a run that crosses midnight continues in the next folder. A file that reaches
 its cap is renamed `<pane>.<n>.jsonl` and a new `<pane>.jsonl` begins; only the newest `--keep`
 rotated files are kept, and once the files of a run hold `--max-total-mb` the recorder drops
-records, and says so, instead of writing. A file never grows past its cap by more than the
-header and screen that start it. A file of an earlier run is never appended to; it is put aside as
-a rotated file.
+records, and says so, instead of writing. A file, and the run's total, can pass its cap by the
+header and screen that start a file. A file of an earlier run is never appended to; it is put
+aside as a rotated file. The caps count one run only: files of earlier runs are not pruned, so
+delete old date folders by hand.
 
 ## What a record holds
 
