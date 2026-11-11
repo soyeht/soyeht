@@ -216,3 +216,36 @@ private func file(_ name: String) -> AgentAttachmentDraft {
   #expect(attachments(drafts).items == returned)
   #expect(attachments(drafts).notice == AgentAttachmentRejection.tooMany.message)
 }
+
+/// The first message of a new agent is sent by the new-pane sheet after the pane exists. These
+/// tests do what the sheets do: the pane is there, and the first prompt goes to it.
+@MainActor private func sendFirstPrompt(_ text: String, to client: EngineClient) async {
+  do {
+    try await client.sendPromptNow(paneId, text: text)
+  } catch {
+    // The sheet shows the failure; what the tests look at is where the prompt went.
+  }
+}
+
+@MainActor @Test func aFirstPromptTheEngineRefusesComesBackInTheNewPanesComposer() async throws {
+  defer { AgentPromptDrafts.shared.discard(paneId) }
+  let engine = FakePromptEngine()
+  engine.failure = .remote(ErrorKind.pane_busy.rawValue, "The agent is busy.")
+  let (client, _) = try composer(engine: engine)
+
+  await sendFirstPrompt("build the login page", to: client)
+
+  #expect(engine.prompts.count == 1)
+  #expect(AgentPromptDrafts.shared.text(for: paneId) == "build the login page")
+}
+
+@MainActor @Test func aFirstPromptThatTimedOutComesBackInTheNewPanesComposer() async throws {
+  defer { AgentPromptDrafts.shared.discard(paneId) }
+  let engine = FakePromptEngine()
+  engine.failure = .requestTimeout(RequestMethod.panePrompt.rawValue)
+  let (client, _) = try composer(engine: engine)
+
+  await sendFirstPrompt("build the login page", to: client)
+
+  #expect(AgentPromptDrafts.shared.text(for: paneId) == "build the login page")
+}
