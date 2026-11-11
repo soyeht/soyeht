@@ -4,6 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use soyeht_platform::fs::{self, TEMPORARY_PREFIX, WriteMode, is_temporary_name};
+use soyeht_platform::testing::scratch_dir;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
@@ -19,10 +20,7 @@ struct Scratch(PathBuf);
 
 impl Scratch {
     fn new(name: &str) -> Self {
-        let directory = std::env::temp_dir().join(format!("soyeht-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&directory);
-        std::fs::create_dir_all(&directory).unwrap();
-        Self(directory)
+        Self(scratch_dir(name))
     }
 }
 

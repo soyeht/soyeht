@@ -112,6 +112,11 @@ impl Retention {
     }
 }
 
+// The seeded generator of the fuzz tests, so a failing sequence repeats.
+#[cfg(test)]
+#[path = "../../soyeht-protocol/tests/fuzz_support/mod.rs"]
+mod fuzz_support;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,24 +259,13 @@ mod tests {
         }
     }
 
-    /// A small deterministic generator, so a failing sequence repeats.
-    struct Sequence(u64);
-
-    impl Sequence {
-        fn below(&mut self, bound: u64) -> u64 {
-            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-            let mut z = self.0;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-            (z ^ (z >> 31)) % bound
-        }
-    }
+    use super::fuzz_support::Rng;
 
     #[test]
     fn random_appends_reads_and_acknowledgements_match_the_one_byte_model() {
         for seed in 0..300 {
-            let mut random = Sequence(seed);
-            let limit = 1 + random.below(40) as usize;
+            let mut random = Rng::new(seed);
+            let limit = 1 + random.below(40);
             let mut buffer = Retention::new(limit).unwrap();
             let mut model = OneByteAtATime {
                 bytes: VecDeque::new(),
@@ -290,8 +284,8 @@ mod tests {
                             0 => 0,
                             1 => limit.saturating_sub(1),
                             2 => limit,
-                            3 => limit + 1 + random.below(2 * limit as u64) as usize,
-                            _ => random.below(limit as u64 + 3) as usize,
+                            3 => limit + 1 + random.below(2 * limit),
+                            _ => random.below(limit + 3),
                         };
                         let chunk: Vec<u8> = (0..length)
                             .map(|_| {
@@ -304,7 +298,7 @@ mod tests {
                     }
                     2 => {
                         // Behind, at and past what was written, so the refused ones are tried.
-                        let seq = random.below(model.next + 3);
+                        let seq = random.below(model.next as usize + 3) as u64;
                         assert_eq!(
                             buffer.acknowledge(seq).is_ok(),
                             model.acknowledge(seq),
@@ -312,8 +306,8 @@ mod tests {
                         );
                     }
                     _ => {
-                        let requested = random.below(model.next + 3);
-                        let maximum = random.below(limit as u64 + 5) as usize;
+                        let requested = random.below(model.next as usize + 3) as u64;
+                        let maximum = random.below(limit + 5);
                         let read = buffer.read(requested, maximum, false);
                         let Some((from_seq, bytes, gap)) = model.read(requested, maximum) else {
                             assert!(matches!(read, Err(Error::CursorAhead)), "{context}");

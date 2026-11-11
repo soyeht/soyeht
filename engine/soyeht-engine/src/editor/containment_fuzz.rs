@@ -4,6 +4,7 @@
 //! read through, written, created or replaced.
 use super::service::{FileSystemPort, SystemFiles, resolve_in};
 use crate::agents::filesystem;
+use soyeht_platform::testing::scratch_dir;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -46,8 +47,7 @@ struct Fixture {
 
 impl Fixture {
     fn new(name: &str) -> Self {
-        let base = std::env::temp_dir().join(format!("soyeht-fuzz-{name}-{}", std::process::id()));
-        drop(fs::remove_dir_all(&base));
+        let base = scratch_dir(&format!("fuzz-{name}"));
         let base = {
             fs::create_dir_all(base.join("x/y/root/dir")).unwrap();
             soyeht_platform::fs::canonicalize(&base).unwrap()
@@ -116,8 +116,6 @@ impl Fixture {
             before,
             "{what} changed something outside the workspace"
         );
-        // The hard link inside the workspace keeps the bytes of the file it names.
-        assert!(!std::env::temp_dir().join("new.txt").exists(), "{what}");
     }
 }
 
