@@ -73,6 +73,20 @@ fn would_spawn(bytes: &[u8]) -> bool {
     false
 }
 
+/// Sends `input` and everything the supervisor says back until it ends the connection.
+fn send(mut stream: soyeht_platform::local::Stream, input: &[u8]) -> Vec<u8> {
+    stream
+        .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
+        .unwrap();
+    // The peer may close before all of the input is written; that is the supervisor ending
+    // the connection, not a failure of the test.
+    let _ = stream.write_all(input);
+    let _ = stream.shutdown(Shutdown::Write);
+    let mut answer = Vec::new();
+    let _ = stream.read_to_end(&mut answer);
+    answer
+}
+
 #[test]
 fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     let directory = std::env::temp_dir().join(format!("soyeht-fuzz-ptyd-{}", std::process::id()));
@@ -136,16 +150,7 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
         if would_spawn(input) {
             return;
         }
-        let mut stream = connect_proved(&socket).unwrap();
-        stream
-            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
-            .unwrap();
-        // The peer may close before all of the input is written; that is the supervisor ending
-        // the connection, not a failure of the test.
-        let _ = stream.write_all(input);
-        let _ = stream.shutdown(Shutdown::Write);
-        let mut answer = Vec::new();
-        let _ = stream.read_to_end(&mut answer);
+        let answer = send(connect_proved(&socket).unwrap(), input);
         // Everything the supervisor sent back is a whole, well-formed response.
         let mut reader = answer.as_slice();
         while let Some(response) = read_json::<Response>(&mut reader)
@@ -158,14 +163,7 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     // A connection that has not proved the secret (ADR 0160) is sent the same framed garbage:
     // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
-        let mut stream = connect(&socket).unwrap();
-        stream
-            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
-            .unwrap();
-        let _ = stream.write_all(input);
-        let _ = stream.shutdown(Shutdown::Write);
-        let mut answer = Vec::new();
-        let _ = stream.read_to_end(&mut answer);
+        let answer = send(connect(&socket).unwrap(), input);
         assert!(
             answer.len() <= 64,
             "an unproved peer was answered: {answer:?}"
