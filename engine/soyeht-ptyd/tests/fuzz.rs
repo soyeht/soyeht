@@ -5,6 +5,7 @@
 
 use serde_json::{Value, json};
 use soyeht_platform::local::{connect, connect_proved};
+use soyeht_platform::testing::scratch_dir;
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Request, Response, VERSION};
 use std::io::{Read, Write};
@@ -73,25 +74,43 @@ fn would_spawn(bytes: &[u8]) -> bool {
     false
 }
 
-/// Sends `input` and everything the supervisor says back until it ends the connection.
+/// The longest the supervisor may take to end a connection whose input has ended. It is below
+/// the harness's own deadline for a case, so a hang is reported here, with the case.
+const END_OF_CONNECTION: Duration = Duration::from_secs(10);
+
+/// The supervisor's answer to a peer that sent its nonce: its own nonce and its proof, 32 bytes
+/// each (`NONCE_BYTES` and `PROOF_BYTES` of the local endpoint, which are private).
+const PROOF_ANSWER: usize = 64;
+
+/// Sends `input` and everything the supervisor says back until it ends the connection. A
+/// supervisor that does not end it within [`END_OF_CONNECTION`] fails the case.
 fn send(mut stream: soyeht_platform::local::Stream, input: &[u8]) -> Vec<u8> {
-    stream
-        .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
-        .unwrap();
+    stream.set_read_timeout(Some(END_OF_CONNECTION)).unwrap();
     // The peer may close before all of the input is written; that is the supervisor ending
     // the connection, not a failure of the test.
     let _ = stream.write_all(input);
     let _ = stream.shutdown(Shutdown::Write);
     let mut answer = Vec::new();
-    let _ = stream.read_to_end(&mut answer);
+    if let Err(error) = stream.read_to_end(&mut answer) {
+        // A timeout is the supervisor not ending the connection (the platforms name it
+        // differently). Any other error is the peer closing on unread input, which keeps what was
+        // read so far.
+        assert!(
+            !matches!(
+                error.kind(),
+                std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+            ),
+            "the supervisor did not end the connection in {END_OF_CONNECTION:?}: {error}"
+        );
+    }
     answer
 }
 
 #[test]
 fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
-    let directory = std::env::temp_dir().join(format!("soyeht-fuzz-ptyd-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&directory);
-    std::fs::create_dir_all(&directory).unwrap();
+    // A short name: the socket in it has a path limit of about a hundred bytes. The daemon
+    // removes the folder when it is dropped.
+    let directory = scratch_dir("ptyd");
     let mut daemon = Daemon {
         child: Daemon::launch(&directory),
         directory,
@@ -165,8 +184,9 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
         let answer = send(connect(&socket).unwrap(), input);
         assert!(
-            answer.len() <= 64,
-            "an unproved peer was answered: {answer:?}"
+            answer.is_empty() || answer.len() == PROOF_ANSWER,
+            "an unproved peer was answered with {} bytes: {answer:?}",
+            answer.len()
         );
     });
 

@@ -14,6 +14,9 @@ serde_json.workspace = true
 uuid.workspace = true
 base64.workspace = true
 
+[dev-dependencies]
+soyeht-platform = { path = "../soyeht-platform", features = ["test-support"] }
+
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
 
