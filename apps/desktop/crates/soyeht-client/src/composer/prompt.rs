@@ -76,4 +76,31 @@ mod tests {
         );
         assert!(state.problem.is_some());
     }
+
+    /// The failures that end a send without the engine having taken the message: it refused it, it
+    /// did not answer in time, the connection went, or the queue was full.
+    fn failures() -> Vec<crate::Error> {
+        vec![
+            crate::Error::Timeout("pane.prompt".into()),
+            crate::Error::Disconnected,
+            crate::Error::Busy,
+            crate::Error::Invalid("a refusal"),
+        ]
+    }
+
+    #[test]
+    fn a_message_the_engine_did_not_take_is_not_lost() {
+        for error in failures() {
+            let mut state = connected(&[("a", "agent")]);
+            let Submission::Send(command) = state.submit_prompt("a", "hello", vec![attachment()])
+            else {
+                panic!("a connected engine is sent the message");
+            };
+            assert!(
+                command.failure(&error).is_some(),
+                "{error:?}: the window emptied the composer when it queued the message, and \
+                 nothing tells it to put the message back when the engine fails to take it"
+            );
+        }
+    }
 }
