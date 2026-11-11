@@ -295,6 +295,8 @@ impl Core {
             pane_id,
             text,
             attachments: Vec::new(),
+            // The Android composer does not take a refused message back yet.
+            typed: None,
         });
     }
 
