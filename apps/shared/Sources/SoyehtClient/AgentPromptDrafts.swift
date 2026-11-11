@@ -34,6 +34,25 @@ public final class AgentPromptDrafts {
     return created
   }
 
+  /// Sends what is typed in the pane's composer with the files attached to it, and empties both.
+  /// False, with nothing changed, when there is no text to send. `expanding` turns the typed
+  /// text into the prompt the engine receives (a slash command becomes its instruction);
+  /// `beforeSend` runs once the composer is empty and the prompt is about to leave.
+  @discardableResult
+  func submit(
+    _ paneId: String, to client: EngineClient, expanding: (String) -> String,
+    beforeSend: () -> Void = {}
+  ) -> Bool {
+    let text = text(for: paneId).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty else { return false }
+    set("", for: paneId)
+    beforeSend()
+    client.sendPrompt(
+      paneId, text: expanding(text),
+      attachments: attachments(for: paneId, linkHostFiles: !client.pairedDevice).take())
+    return true
+  }
+
   func discard(_ paneId: String) {
     texts[paneId] = nil
     staged[paneId] = nil
