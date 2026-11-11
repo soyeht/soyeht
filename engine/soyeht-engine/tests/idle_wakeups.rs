@@ -24,6 +24,8 @@ use support::*;
 const SETTLE: Duration = Duration::from_secs(6);
 /// How long the switches are counted.
 const WINDOW: Duration = Duration::from_secs(6);
+/// The longest the median echo of a key may take in an idle shell.
+const ECHO_LIMIT: Duration = Duration::from_millis(400);
 /// The most an idle engine may switch contexts per second. The tick of 10 ms made 450 to 560 of
 /// them with no pane and with a few shells; a tick that wakes for a deadline or an event makes a
 /// few tens.
@@ -151,5 +153,115 @@ fn an_engine_with_idle_shells_does_not_wake_on_every_tick() {
     assert!(
         engine < ENGINE_LIMIT_PER_SECOND,
         "an engine with 5 idle shells made {engine:.0} context switches a second"
+    );
+}
+
+/// Types one key at a time into an idle shell, a pause apart so that the tick is asleep, and
+/// returns how long each took from the request to the frame that carries its echo.
+fn echo_latencies(keys: usize) -> Vec<Duration> {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let (workspace, pane) = client.create(&rig);
+    for index in 1..5 {
+        client.call(
+            "pane.create",
+            json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":format!("pane-{index}")}),
+        );
+    }
+    let mut watcher = rig.client();
+    let (info, _) = watcher.tail(&pane);
+    let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
+    watcher
+        .socket
+        .set_read_timeout(Some(Duration::from_millis(300)))
+        .unwrap();
+    // A login shell that is still starting drops what is typed before it reads the terminal.
+    let deadline = Instant::now() + Duration::from_secs(90);
+    let mut seen = Vec::new();
+    for attempt in 0.. {
+        assert!(Instant::now() < deadline, "the shell never answered");
+        client.call(
+            "pane.input",
+            json!({"paneId":pane,"bytes":base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "echo RE\"\"ADY\n"),
+                "idempotencyKey":format!("ready-{attempt}")}),
+        );
+        while let Ok(Some(soyeht_protocol::frame::Frame::Terminal {
+            pane_ref: found,
+            bytes,
+            ..
+        })) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket)
+        {
+            if u64::from(found) == pane_ref {
+                seen.extend(bytes);
+            }
+        }
+        if seen.windows(7).any(|part| part == b"READY\r\n") {
+            break;
+        }
+    }
+    thread::sleep(Duration::from_secs(3));
+    watcher
+        .socket
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    while let Ok(Some(_)) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket) {
+        watcher
+            .socket
+            .set_read_timeout(Some(Duration::from_millis(100)))
+            .unwrap();
+    }
+    watcher
+        .socket
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+    let mut latencies = Vec::new();
+    for key in 0..keys {
+        let letter = char::from(b'a' + u8::try_from(key % 26).unwrap());
+        let started = Instant::now();
+        client.call(
+            "pane.input",
+            json!({"paneId":pane,"bytes":base64::Engine::encode(&base64::engine::general_purpose::STANDARD, letter.to_string()),
+                "idempotencyKey":format!("key-{key}")}),
+        );
+        loop {
+            let frame = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket)
+                .unwrap()
+                .expect("the echo");
+            if let soyeht_protocol::frame::Frame::Terminal {
+                pane_ref: found,
+                bytes,
+                ..
+            } = frame
+                && u64::from(found) == pane_ref
+                && bytes.contains(&(letter as u8))
+            {
+                break;
+            }
+        }
+        latencies.push(started.elapsed());
+        thread::sleep(Duration::from_millis(250));
+    }
+    latencies.sort();
+    latencies
+}
+
+#[test]
+fn the_echo_of_a_key_in_an_idle_shell_does_not_wait_for_the_tick() {
+    let latencies = echo_latencies(40);
+    let at =
+        |numerator: usize| latencies[(latencies.len() * numerator / 100).min(latencies.len() - 1)];
+    eprintln!(
+        "echo of a key in an idle shell (5 idle shells): p50 {:?}, p90 {:?}, p99 {:?}, max {:?}",
+        at(50),
+        at(90),
+        at(99),
+        latencies.last().unwrap()
+    );
+    // The echo is read when the supervisor says it has output. An echo that waited for the tick's
+    // ceiling (a second) or for a sweep would put the median there; a busy host does not.
+    assert!(
+        at(50) < ECHO_LIMIT,
+        "the median echo of a key took {:?}",
+        at(50)
     );
 }
