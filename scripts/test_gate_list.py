@@ -232,6 +232,11 @@ class StepListTests(unittest.TestCase):
         self.assertIn("e2e:core", found)
         self.assertIn("swift:test-shared", found)
 
+    def test_the_attack_tests_take_the_engine_build_as_a_prerequisite(self):
+        # They start the supervisor and the fake programs that only the workspace build leaves beside them.
+        self.assertEqual(post_merge_gate.PREREQUISITES["security:attacks"], ("engine:build",))
+        self.assertEqual(post_merge_gate.REMOTE_PREREQUISITES["security:attacks"], "engine:build")
+
     def test_the_fast_swift_client_test_builds_the_programs_it_starts_itself(self):
         # It sits in the `swift` area, so the e2e builds may have run on another host.
         text = (ROOT / "scripts/check_all.sh").read_text()

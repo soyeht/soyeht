@@ -41,6 +41,8 @@ PREREQUISITES: dict[str, tuple[str, ...]] = {
        ("core", "agents", "tasks", "editor", "web", "writing", "real-acp", "real-agent-messaging",
         "real-harnesses")},
     "swift:test-shared": ("swift:engine-binaries",),
+    # The attack tests start the supervisor and the fake programs the workspace build leaves beside them.
+    "security:attacks": ("engine:build",),
 }
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
 
@@ -48,7 +50,8 @@ REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
 TO_STDOUT = Path("-")  # as a log: the gate's output stays on this process's standard output
 # remote_gate.sh runs `engine:test` and `engine:test-changed` against the programs `engine:build`
 # builds; without that build a test of the CLI fails for a reason that is not the commit's.
-REMOTE_PREREQUISITES = {"engine:test": "engine:build", "engine:test-changed": "engine:build"}
+REMOTE_PREREQUISITES = {"engine:test": "engine:build", "engine:test-changed": "engine:build",
+                        "security:attacks": "engine:build"}
 # What `check_all.sh` prints when the host lacks the Windows target: the step passes, unlinted.
 WINDOWS_LINT_SKIPPED = b"skipped the Windows lint"
 # After ssh exits, the longest the gate reads what is left in its pipe (a process that inherited the
