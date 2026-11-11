@@ -138,10 +138,7 @@ class QualityRatchetTests(unittest.TestCase):
         # A metric the older baseline did count still cannot grow.
         before[SWALLOWED_KEY]["rust_ok"] = 1
         after[SWALLOWED_KEY]["rust_ok"] = 2
-        self.assertEqual(
-            [change.key for change in baseline_relaxations(before, after)],
-            ["swallowed_errors.rust_ok"],
-        )
+        self.assertEqual([change.key for change in baseline_relaxations(before, after)], ["swallowed_errors.rust_ok"])
 
     def test_percentage_is_informational_not_in_the_baseline(self):
         measured = empty_measurement()
@@ -158,9 +155,7 @@ class QualityRatchetTests(unittest.TestCase):
         actual = copy.deepcopy(baseline)
         actual["loose_literals"] = {new_file: {"padding": 1}}
         changes = differences(baseline, actual)
-        self.assertEqual(
-            [change.direction for change in changes], ["RELAXATION", "IMPROVEMENT"]
-        )
+        self.assertEqual([change.direction for change in changes], ["RELAXATION", "IMPROVEMENT"])
 
     def test_existing_file_cap_cannot_grow_and_must_follow_shrinking_file(self):
         baseline = empty_measurement()
@@ -178,10 +173,7 @@ class QualityRatchetTests(unittest.TestCase):
         actual = copy.deepcopy(baseline)
         actual["oversized_files"]["apps/mac/Sources/New.swift"] = 801
         actual["loose_literals"]["apps/mac/Sources/New.swift"] = {"padding": 1}
-        self.assertEqual(
-            [change.direction for change in differences(baseline, actual)],
-            ["RELAXATION", "RELAXATION"],
-        )
+        self.assertEqual([change.direction for change in differences(baseline, actual)], ["RELAXATION", "RELAXATION"])
 
     def test_any_engine_production_panic_fails_whatever_the_baseline_says(self):
         baseline = empty_measurement()
@@ -192,10 +184,7 @@ class QualityRatchetTests(unittest.TestCase):
         baseline[PANIC_KEY] = 5  # an edited baseline cannot buy headroom
         self.assertEqual([c.key for c in differences(baseline, actual)], [PANIC_KEY])
         reason = {PANIC_KEY: {"value": 1, "reason": "no reason is enough"}}
-        self.assertEqual(
-            [c.key for c in unjustified_relaxations(empty_measurement(), actual, reason)],
-            [PANIC_KEY],
-        )
+        self.assertEqual([c.key for c in unjustified_relaxations(empty_measurement(), actual, reason)], [PANIC_KEY])
         actual[PANIC_KEY] = 0
         self.assertEqual(differences(baseline, actual), [])
 
@@ -259,10 +248,7 @@ class QualityRatchetTests(unittest.TestCase):
         raised = copy.deepcopy(previous)
         raised["oversized_files"]["engine/big.rs"] = 900
         key = "oversized_files.engine/big.rs"
-        self.assertEqual(
-            [change.key for change in unjustified_relaxations(previous, raised, {})],
-            [key],
-        )
+        self.assertEqual([change.key for change in unjustified_relaxations(previous, raised, {})], [key])
         stale = {key: {"value": 850, "reason": "an older, smaller raise"}}
         self.assertEqual(len(unjustified_relaxations(previous, raised, stale)), 1)
         blank = {key: {"value": 900, "reason": "  "}}
@@ -281,20 +267,23 @@ class QualityRatchetTests(unittest.TestCase):
         after["oversized_files"]["engine/existing.rs"] = 901
         after["oversized_files"]["engine/new.rs"] = 810
         after["loose_literals"]["apps/mac/Sources/New.swift"] = {"font_name": 1}
-        reasons = {
-            "oversized_files.engine/new.rs": {"value": 810, "reason": "split in #999"}
-        }
-        report = render(
-            before, after, after, "main", "SKIPPED (not installed)", None, reasons
-        )
+        reasons = {"oversized_files.engine/new.rs": {"value": 810, "reason": "split in #999"}}
+        report = render(before, after, after, "main", "SKIPPED (not installed)", None, reasons)
         self.assertEqual(report.count("🔴 "), 5)  # heading plus four loosened entries
         self.assertIn("written justification required", report)
-        self.assertIn(
-            "engine/new.rs: cap 800, actual 810; split the file — "
-            "justification: split in #999",
-            report,
-        )
+        self.assertIn("engine/new.rs: cap 800, actual 810; split the file — justification: split in #999", report)
         self.assertEqual(report.count("MISSING justification"), 3)
+
+    def test_report_marks_a_central_object_relaxation_red_with_its_reason(self):
+        before = empty_measurement()
+        before[CENTRAL_OBJECT_KEY] = dict(CENTRAL_ZEROES)
+        after = copy.deepcopy(before)
+        after[CENTRAL_OBJECT_KEY]["core_impl_files"] = 1
+        reasons = {f"{CENTRAL_OBJECT_KEY}.core_impl_files": {"value": 1, "reason": "split next"}}
+        report = render(before, after, after, "main", "SKIPPED", before, reasons)
+        self.assertIn("central object core_impl_files: baseline 0, actual 1", report)
+        self.assertIn("justification: split next", report)
+        self.assertIn("MISSING justification", render(before, after, after, "main", "SKIPPED", before))
 
     def test_missing_jscpd_has_install_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -492,13 +481,19 @@ class QualityRatchetTests(unittest.TestCase):
             (core / "one.rs").write_text("impl Core {\n}\n")
             (core / "two.rs").write_text("impl Core {\n}\n\nimpl Core {\n}\n")
             (core / "generic.rs").write_text("impl<T> Core<T> {\n}\n")
-            (core / "trait.rs").write_text("impl Display for Core {\n}\n")
+            (core / "qualified.rs").write_text("impl crate::core::Core {\n}\n")
+            (core / "nested.rs").write_text("impl<T: Into<String>> Core {\n}\n")
+            (core / "trait.rs").write_text("impl Display for Core {\n}\n\nimpl Display for crate::core::Core {\n}\n")
             (core / "tests.rs").write_text("impl Core {\n}\n")
+            (core / "lib.rs").write_text("#[cfg(test)]\nmod x_tests;\n")
+            (core / "x_tests.rs").write_text("impl Core {\n}\n")
+            (core / "inline.rs").write_text("#[cfg(test)]\nmod fixture {\n    impl Core {\n    }\n}\n")
             (core / "tests").mkdir()
             (core / "tests/more.rs").write_text("impl Core {\n}\n")
             desktop = root / "apps/desktop/crates/soyeht-desktop/src"
             desktop.mkdir(parents=True)
             (desktop / "flow.rs").write_text("impl Workbench {\n}\n")
+            (desktop / "qualified.rs").write_text("impl crate::app::Workbench {\n}\n")
             (desktop / "trait.rs").write_text("impl Display for Workbench {\n}\n")
             shared = root / "apps/shared/Sources/SoyehtClient"
             shared.mkdir(parents=True)
@@ -512,10 +507,10 @@ class QualityRatchetTests(unittest.TestCase):
             self.assertEqual(
                 central_object_counts(root),
                 {
-                    "core_impl_files": 3,
+                    "core_impl_files": 5,
                     "core_open_fields": 3,
                     "engine_client_extension_files": 1,
-                    "workbench_impl_files": 1,
+                    "workbench_impl_files": 2,
                 },
             )
 

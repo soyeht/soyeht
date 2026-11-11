@@ -214,10 +214,12 @@ ADR when you change a boundary.
   it, saying why dropping the error is correct. `uv run python scripts/check_swallowed_errors.py`
   lists every counted site, and `--exempt` the others with the form that exempts them.
 - The four counts of `central_objects` may not grow: the engine files that hold an inherent
-  `impl Core`, the `pub`, `pub(crate)` and `pub(super)` fields of `struct Core`, the shared-client
-  files with an `extension EngineClient`, and the desktop files with an inherent `impl Workbench`,
-  production code only. New state belongs in a domain struct with private fields, not on `Core`,
-  `EngineClient` or `Workbench`.
+  `impl Core`, including a path-qualified one such as `impl crate::core::Core`, the `pub`,
+  `pub(crate)` and `pub(super)` fields of `struct Core`, the shared-client files with an
+  `extension EngineClient`, and the desktop files with an inherent `impl Workbench`, again
+  path-qualified ones included, production code only. Test code is not counted: crate `tests/`,
+  `#[cfg(test)]` modules kept in their own files or inline. New state belongs in a domain struct
+  with private fields, not on `Core`, `EngineClient` or `Workbench`.
 - Ending a child process: kill it if it still runs, then reap it within a bound, through
   `soyeht_platform::process::end_child` (a `std::process::Child`) or, for a supervisor child,
   `soyeht_ptyd::child::Child::end`. Do not write `let _ = child.kill(); let _ = child.wait();`.

@@ -32,6 +32,11 @@ from quality_core import (
     tool_paths,
     unjustified_relaxations,
 )
+from check_quality import (
+    CENTRAL_OBJECT_KEY,
+    central_object_changes,
+    unjustified_central_objects,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -137,9 +142,15 @@ def render(
         )
     lines.append("cargo-machete: PASS")
     lines.append(f"Periphery: {periphery}")
-    relaxations = baseline_relaxations(
-        previous_baseline or baseline_from_measurement(before), after
+    previous = previous_baseline or baseline_from_measurement(before)
+    central = (
+        central_object_changes(previous, after)
+        if CENTRAL_OBJECT_KEY in previous
+        else []
     )
+    relaxations = baseline_relaxations(previous, after) + [
+        change for change in central if change.direction == "RELAXATION"
+    ]
     if relaxations:
         lines.append(
             "🔴 BASELINE RELAXATION — written justification required in "
@@ -153,7 +164,11 @@ def render(
             )
     else:
         lines.append("Baseline relaxations: none")
-    drift = differences(after, current)
+    drift = differences(after, current) + (
+        central_object_changes(after, current)
+        if CENTRAL_OBJECT_KEY in after
+        else []
+    )
     regressions = [c.message for c in drift if c.direction == "RELAXATION"]
     improvements = [c.message for c in drift if c.direction == "IMPROVEMENT"]
     if regressions:
@@ -195,7 +210,13 @@ def main() -> int:
             )
         )
         failed = bool(differences(after, current)) or bool(
+            central_object_changes(after, current)
+            if CENTRAL_OBJECT_KEY in after
+            else []
+        ) or bool(
             unjustified_relaxations(previous_baseline, after, justifications)
+        ) or bool(
+            unjustified_central_objects(previous_baseline, after, justifications)
         )
         return 1 if failed else 0
     except (
