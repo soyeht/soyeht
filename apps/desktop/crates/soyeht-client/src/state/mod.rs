@@ -112,6 +112,8 @@ pub struct State {
     /// The agent the person asked for that could not start, until the window takes it back to
     /// its form: what they typed is not lost.
     failed_start: Option<NewAgent>,
+    /// The messages the engine did not take, until the window puts them back in their composers.
+    pub(crate) returned_prompts: Vec<crate::composer::ReturnedPrompt>,
     /// Panes closed since the last snapshot. The engine may still announce one more update
     /// about a pane as it closes; it must not bring the pane back.
     closed: HashSet<String>,
@@ -154,6 +156,7 @@ impl Default for State {
             confirmed_layouts: HashMap::new(),
             starts: HashMap::new(),
             failed_start: None,
+            returned_prompts: Vec::new(),
             closed: HashSet::new(),
         }
     }
@@ -360,6 +363,7 @@ impl State {
             Event::WorkspaceOpened { ticket, workspace } => {
                 self.workspace_opened(ticket, workspace)
             }
+            Event::PromptReturned(returned) => self.return_prompt(returned),
             Event::OpenFailed { ticket } => {
                 self.fail_request(ticket);
                 Vec::new()

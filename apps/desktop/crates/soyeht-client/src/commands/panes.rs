@@ -53,6 +53,7 @@ pub(super) fn request(command: &Command) -> Option<Request> {
             pane_id,
             text,
             attachments,
+            ..
         } => Request::PanePrompt(PanePromptParams {
             pane_id: pane_id.clone(),
             text: text.clone(),
