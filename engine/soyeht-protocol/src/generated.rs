@@ -185,6 +185,14 @@ pub enum ErrorKind {
     WorkspaceFolderMissing,
     #[serde(rename = "push_unavailable")]
     PushUnavailable,
+    #[serde(rename = "ink_unsupported")]
+    InkUnsupported,
+    #[serde(rename = "ink_language_unavailable")]
+    InkLanguageUnavailable,
+    #[serde(rename = "ink_limit_exceeded")]
+    InkLimitExceeded,
+    #[serde(rename = "ink_recognition_failed")]
+    InkRecognitionFailed,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RpcError {
@@ -5231,6 +5239,8 @@ pub enum EngineCapability {
     SubscriptionUsage,
     #[serde(rename = "push")]
     Push,
+    #[serde(rename = "ink-recognition")]
+    InkRecognition,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
@@ -6439,6 +6449,50 @@ pub struct PaneExperimentHookResult {
     #[serde(rename = "recorded")]
     pub recorded: bool,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkPoint {
+    #[serde(rename = "x")]
+    pub x: f64,
+    #[serde(rename = "y")]
+    pub y: f64,
+    #[serde(rename = "t")]
+    pub t: u32,
+}
+pub type InkStroke = Vec<InkPoint>;
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkRecognizeParams {
+    #[serde(rename = "strokes")]
+    pub strokes: Vec<InkStroke>,
+    #[serde(rename = "languages")]
+    pub languages: Vec<String>,
+    #[serde(rename = "maxCandidates", skip_serializing_if = "Option::is_none")]
+    pub max_candidates: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkCandidate {
+    #[serde(rename = "text")]
+    pub text: String,
+    #[serde(rename = "score", skip_serializing_if = "Option::is_none")]
+    pub score: Option<f64>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct InkRecognizeResult {
+    #[serde(rename = "candidates")]
+    pub candidates: Vec<InkCandidate>,
+    #[serde(rename = "recognizer")]
+    pub recognizer: String,
+    #[serde(rename = "language")]
+    pub language: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum InkUnsupportedReason {
+    #[serde(rename = "no_os_support")]
+    NoOsSupport,
+    #[serde(rename = "language_pack_missing")]
+    LanguagePackMissing,
+    #[serde(rename = "model_not_installed")]
+    ModelNotInstalled,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -6738,6 +6792,8 @@ pub enum Request {
     WritingBeatDelete(WritingBeatDeleteParams),
     #[serde(rename = "pane.experiment.hook")]
     PaneExperimentHook(PaneExperimentHookParams),
+    #[serde(rename = "ink.recognize")]
+    InkRecognize(InkRecognizeParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -7362,6 +7418,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "PaneExperimentHookParams",
         "PaneExperimentHookResult",
         true,
+    ),
+    (
+        "ink.recognize",
+        "InkRecognizeParams",
+        "InkRecognizeResult",
+        false,
     ),
 ];
 pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
@@ -8992,6 +9054,7 @@ pub mod method {
     pub const WRITING_BEAT_PUT: &str = "writing.beat.put";
     pub const WRITING_BEAT_DELETE: &str = "writing.beat.delete";
     pub const PANE_EXPERIMENT_HOOK: &str = "pane.experiment.hook";
+    pub const INK_RECOGNIZE: &str = "ink.recognize";
 }
 pub mod method_family {
     pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
@@ -9168,5 +9231,9 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::AdapterNotAcknowledged => -32041,
         ErrorKind::WorkspaceFolderMissing => -32042,
         ErrorKind::PushUnavailable => -32043,
+        ErrorKind::InkUnsupported => -32044,
+        ErrorKind::InkLanguageUnavailable => -32045,
+        ErrorKind::InkLimitExceeded => -32046,
+        ErrorKind::InkRecognitionFailed => -32047,
     }
 }

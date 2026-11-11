@@ -8,23 +8,40 @@
 //! (`lock_usage`), whether it was slow or not. Holds
 //! that repeat are logged by the rule of `slow_holds`: the first, a much longer
 //! one, and a summary each minute.
+//!
+//! A lock that a panic poisoned is not recovered: the state it guards may be half changed, and
+//! every request would go on failing. The first caller that finds it logs the fact and ends the
+//! process through [`crate::hooks::Hooks::end_process`], so the service manager or the window
+//! starts a new engine (ADR 0159).
 
 use crate::{
     core::Core,
     errors::{Error, Result},
+    hooks::Hooks,
     lock_usage::Observation,
 };
-use soyeht_platform::hold_cost;
+use soyeht_platform::{hold_cost, log};
 use std::{
     cell::Cell,
     ops::{Deref, DerefMut},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{
+        Arc, Mutex, MutexGuard,
+        atomic::{AtomicBool, Ordering},
+    },
     time::{Duration, Instant},
 };
 
 pub type Shared = Arc<Mutex<Core>>;
 
 const HOLDER: &str = "Core";
+
+/// The exit code of an engine that found its Core lock poisoned (`EX_SOFTWARE` of sysexits), apart
+/// from the 1 of a start that failed, so the log and the service manager's history tell them apart.
+/// Every service definition restarts a program that ends with a failure code (contract 13).
+pub const POISONED_EXIT_CODE: i32 = 70;
+
+/// Set by the first caller that finds the lock poisoned: only that one logs and ends the process.
+static POISON_HANDLED: AtomicBool = AtomicBool::new(false);
 
 pub struct CoreGuard<'a> {
     core: MutexGuard<'a, Core>,
@@ -63,7 +80,9 @@ fn lock_requested<'a>(
     purpose: &'static str,
     requested: Instant,
 ) -> Result<CoreGuard<'a>> {
-    let core = shared.lock().map_err(|_| Error::EngineStatePoisoned)?;
+    let core = shared
+        .lock()
+        .map_err(|poisoned| poisoned_core(&poisoned.get_ref().hooks))?;
     let acquired = Instant::now();
     hold_cost::start();
     METHOD.with(|name| name.set(""));
@@ -76,6 +95,17 @@ fn lock_requested<'a>(
             waited: acquired.saturating_duration_since(requested),
         },
     })
+}
+
+/// What a caller does on finding the Core lock poisoned: log the fact once (its kind, never the
+/// panic's message), end the process, and fail the request if the process is still there.
+fn poisoned_core(hooks: &Arc<dyn Hooks>) -> Error {
+    let error = Error::EngineStatePoisoned;
+    if !POISON_HANDLED.swap(true, Ordering::SeqCst) {
+        log::failure("engine.core_poisoned", &error);
+        hooks.end_process(POISONED_EXIT_CODE);
+    }
+    error
 }
 
 /// Runs `operation` under the lock on a blocking thread, for async callers.
@@ -123,6 +153,53 @@ impl Drop for Hold {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::AtomicI32;
+
+    /// Records the exit the engine asks for instead of ending the test process.
+    #[derive(Default)]
+    struct RecordedExit {
+        calls: AtomicI32,
+        code: AtomicI32,
+    }
+
+    impl Hooks for RecordedExit {
+        fn end_process(&self, code: i32) {
+            self.code.store(code, Ordering::SeqCst);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    /// The only test that poisons a lock: `POISON_HANDLED` is one flag for the process.
+    #[test]
+    fn a_panic_under_the_core_lock_ends_the_engine_once_with_its_own_code() {
+        let directory =
+            std::env::temp_dir().join(format!("soyeht-core-poison-{}", uuid::Uuid::new_v4()));
+        let exit = Arc::new(RecordedExit::default());
+        let shared = Arc::new(Mutex::new(
+            Core::open_with(&directory, Arc::clone(&exit) as Arc<dyn Hooks>).unwrap(),
+        ));
+        drop(lock(&shared, "healthy").unwrap());
+        assert_eq!(exit.calls.load(Ordering::SeqCst), 0);
+
+        let panicking = Arc::clone(&shared);
+        let thread = std::thread::spawn(move || {
+            let _core = lock(&panicking, "poisoning").unwrap();
+            panic!("a bug under the lock");
+        });
+        assert!(thread.join().is_err());
+
+        assert!(matches!(
+            lock(&shared, "after_panic"),
+            Err(Error::EngineStatePoisoned)
+        ));
+        assert_eq!(exit.calls.load(Ordering::SeqCst), 1);
+        assert_eq!(exit.code.load(Ordering::SeqCst), POISONED_EXIT_CODE);
+        // Callers that arrive while the process is ending fail without ending it again.
+        assert!(lock(&shared, "second").is_err());
+        assert_eq!(exit.calls.load(Ordering::SeqCst), 1);
+        drop(shared);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn a_command_under_the_core_lock_is_refused_and_allowed_after_it() {

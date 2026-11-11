@@ -588,6 +588,12 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ExperimentHookEvent": return try codec(SoyehtProtocol.ExperimentHookEvent.self, data)
         case "PaneExperimentHookParams": return try codec(SoyehtProtocol.PaneExperimentHookParams.self, data)
         case "PaneExperimentHookResult": return try codec(SoyehtProtocol.PaneExperimentHookResult.self, data)
+        case "InkPoint": return try codec(SoyehtProtocol.InkPoint.self, data)
+        case "InkStroke": return try codec(SoyehtProtocol.InkStroke.self, data)
+        case "InkRecognizeParams": return try codec(SoyehtProtocol.InkRecognizeParams.self, data)
+        case "InkCandidate": return try codec(SoyehtProtocol.InkCandidate.self, data)
+        case "InkRecognizeResult": return try codec(SoyehtProtocol.InkRecognizeResult.self, data)
+        case "InkUnsupportedReason": return try codec(SoyehtProtocol.InkUnsupportedReason.self, data)
     default: throw NSError(domain: "Unknown schema", code: 1)
     }
 }

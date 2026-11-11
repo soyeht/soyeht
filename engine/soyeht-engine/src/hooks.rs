@@ -11,10 +11,18 @@
 //! code a person's engine runs.
 
 use crate::{core::Core, editor::FileSystemPort, errors::Result, model::RunningPane};
+use soyeht_ink::Recognizer;
 use soyeht_usage::host::Host;
 use std::sync::Arc;
 
 pub trait Hooks: Send + Sync {
+    /// Ends the process with `code`. The engine calls it when it cannot go on, for example on a
+    /// poisoned Core lock (ADR 0159), so that the service manager starts a new one. A test
+    /// overrides it to record the call; the default is the only place the engine exits from.
+    fn end_process(&self, code: i32) {
+        std::process::exit(code)
+    }
+
     /// Runs before an agent pane is polled; an error fails that poll.
     fn before_agent_poll(&self, _core: &mut Core, _pane: &str) -> Result<()> {
         Ok(())
@@ -49,6 +57,11 @@ pub trait Hooks: Send + Sync {
     /// Whether every local client counts as the signed Mac app, which a test program is not.
     fn attests_local_ui(&self) -> bool {
         false
+    }
+
+    /// A recognizer that replaces the system's for `ink.recognize`.
+    fn ink_recognizer(&self) -> Option<Box<dyn Recognizer>> {
+        None
     }
 
     /// A host that replaces the machine's files, commands and network for the usage sources.

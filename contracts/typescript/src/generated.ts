@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing" | "trust";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded" | "platform_unsupported" | "git_unavailable" | "file_not_text" | "file_too_large" | "adapter_not_acknowledged" | "workspace_folder_missing" | "push_unavailable";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded" | "platform_unsupported" | "git_unavailable" | "file_not_text" | "file_too_large" | "adapter_not_acknowledged" | "workspace_folder_missing" | "push_unavailable" | "ink_unsupported" | "ink_language_unavailable" | "ink_limit_exceeded" | "ink_recognition_failed";
 
 export interface RpcError {
   "code": number;
@@ -2904,7 +2904,7 @@ export interface EditorReviewRequestedEvent {
 
 export type ClientCapability = "web_host";
 
-export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push";
+export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push" | "ink-recognition";
 
 export type WebInteractionMode = "structured" | "human";
 
@@ -3562,6 +3562,33 @@ export interface PaneExperimentHookResult {
   "recorded": boolean;
 }
 
+export interface InkPoint {
+  "x": number;
+  "y": number;
+  "t": number;
+}
+
+export type InkStroke = Array<InkPoint>;
+
+export interface InkRecognizeParams {
+  "strokes": Array<InkStroke>;
+  "languages": Array<string>;
+  "maxCandidates"?: number;
+}
+
+export interface InkCandidate {
+  "text": string;
+  "score"?: number;
+}
+
+export interface InkRecognizeResult {
+  "candidates": Array<InkCandidate>;
+  "recognizer": string;
+  "language": string;
+}
+
+export type InkUnsupportedReason = "no_os_support" | "language_pack_missing" | "model_not_installed";
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -3711,6 +3738,7 @@ export interface Methods {
   "writing.beat.put": { params: WritingBeatPutParams; result: WritingBeatResult };
   "writing.beat.delete": { params: WritingBeatDeleteParams; result: WritingBeatResult };
   "pane.experiment.hook": { params: PaneExperimentHookParams; result: PaneExperimentHookResult };
+  "ink.recognize": { params: InkRecognizeParams; result: InkRecognizeResult };
 }
 
 export interface Events {

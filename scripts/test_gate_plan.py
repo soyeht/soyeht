@@ -64,7 +64,7 @@ class AreaTests(unittest.TestCase):
 
     def test_an_engine_crate_selects_it_and_its_reverse_dependencies(self):
         result = plan("engine/soyeht-vcs/src/lib.rs")
-        self.assertEqual(result.areas, ("always", "engine", "e2e"))
+        self.assertEqual(result.areas, ("always", "engine", "swift", "e2e"))
         self.assertEqual(result.engine_crates, ("soyeht-engine", "soyeht-vcs"))
 
     def test_unit_tests_do_not_follow_the_edges_that_only_integration_tests_use(self):
@@ -73,15 +73,18 @@ class AreaTests(unittest.TestCase):
         self.assertNotIn("soyeht-cli", plan("engine/soyeht-ptyd/src/lib.rs").engine_crates)
         self.assertNotIn("soyeht-platform", plan("engine/soyeht-editor/src/lib.rs").engine_crates)
 
-    def test_an_engine_change_leaves_the_swift_tests_to_the_full_tier(self):
+    def test_an_engine_change_that_reaches_a_program_selects_swift_for_its_integration_test(self):
+        # `swift:test-shared-fast` runs the Swift client against the programs the suites start;
+        # the rest of the Swift tests stay with the full tier.
         for path in ("engine/soyeht-engine/src/x.rs", "engine/soyeht-ptyd/src/x.rs",
                      "engine/soyeht-cli/src/x.rs", "engine/soyeht-store/src/x.rs"):
             with self.subTest(path=path):
-                self.assertNotIn("swift", plan(path).areas)
+                self.assertIn("swift", plan(path).areas)
+                self.assertIn("e2e", plan(path).areas)
 
     def test_a_crate_the_desktop_uses_selects_desktop_too(self):
         self.assertEqual(plan("engine/soyeht-platform/src/fs.rs").areas,
-                         ("always", "engine", "desktop", "android_core", "e2e"))
+                         ("always", "engine", "desktop", "android_core", "swift", "e2e"))
         self.assertIsNotNone(plan("engine/soyeht-platform/src/fs.rs").engine_crates)
 
     def test_an_engine_file_outside_every_crate_tests_the_workspace(self):
@@ -158,7 +161,7 @@ class AreaTests(unittest.TestCase):
 
     def test_areas_combine(self):
         result = plan("docs/x.md", "apps/desktop/crates/a/src/b.rs", "engine/soyeht-editor/src/lib.rs")
-        self.assertEqual(result.areas, ("always", "engine", "desktop", "e2e"))
+        self.assertEqual(result.areas, ("always", "engine", "desktop", "swift", "e2e"))
         self.assertIn("soyeht-editor", result.engine_crates)
 
     def test_full_plan_has_every_area(self):
@@ -254,13 +257,14 @@ class EndToEndSelectionTests(unittest.TestCase):
         # soyeht-editor is a dependency of soyeht-engine, so its reverse closure holds the engine.
         result = plan("engine/soyeht-editor/src/lib.rs")
         self.assertEqual(result.engine_crates, ("soyeht-editor", "soyeht-engine"))
-        self.assertEqual(result.areas, ("always", "engine", "e2e"))
+        self.assertEqual(result.areas, ("always", "engine", "swift", "e2e"))
 
     def test_a_library_crate_that_no_program_depends_on_does_not_select_e2e(self):
         leaf = [*PACKAGES, Package("soyeht-leaf", "engine/soyeht-leaf", ("soyeht-editor",))]
         result = make_plan(["engine/soyeht-leaf/src/lib.rs"], leaf, DESKTOP_DEPS)
         self.assertEqual(result.engine_crates, ("soyeht-leaf",))
         self.assertEqual(result.areas, ("always", "engine"))
+        self.assertNotIn("swift", result.areas)
 
     def test_the_whole_workspace_selects_e2e(self):
         for path in ("engine/rustfmt.toml", "engine/Cargo.lock", "contracts/protocol.json"):
@@ -360,7 +364,7 @@ class ReviewTests(unittest.TestCase):
 class RenderTests(unittest.TestCase):
     def test_shell_output_is_assignments_only(self):
         text = gate_plan.render_shell(plan("engine/soyeht-vcs/src/lib.rs"))
-        self.assertIn("GATE_AREAS='always engine e2e'", text)
+        self.assertIn("GATE_AREAS='always engine swift e2e'", text)
         self.assertIn("GATE_ENGINE_TEST_ARGS='-p soyeht-engine -p soyeht-vcs'", text)
 
     def test_shell_output_for_everything_tests_the_workspace(self):
@@ -461,6 +465,13 @@ class MainHealthTests(unittest.TestCase):
         self.assertIn("main is RED", warning)
         self.assertIn("engine:test", warning)
         self.assertIn("b" * 12, warning)
+
+    def test_a_host_failure_is_a_note_that_names_no_commit(self):
+        note = gate_plan.main_health_warning(self.health(
+            {"sha": "a" * 40, "result": "host", "failed_step": "engine:test"}))
+        self.assertTrue(note.startswith("NOTE:"))
+        self.assertIn("engine:test", note)
+        self.assertIn("not a commit", note)
 
     def test_a_flaky_head_is_a_note(self):
         note = gate_plan.main_health_warning(self.health(
