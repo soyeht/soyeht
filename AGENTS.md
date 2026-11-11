@@ -267,6 +267,10 @@ A request to the supervisor waits too (up to `soyeht_ptyd::client::IO_TIMEOUT`):
 lock with `Core::settle_supervisor`, never through `pty_request` in new code (ADR 0117, 0119).
 A poll that keeps its place in the tick takes its read from `read_ahead`; a close nobody waits
 for is `Core::close_process`, and a send nobody waits for is `Core::send_later`.
+The tick sleeps until the earliest deadline its subsystems report (`tick_due.rs`) and is raised
+by an event, so new work in `poll_output` reports when it needs the tick, or starts only from an
+event that raises it (ADR 0147, step 1b); `tests/tick_deadlines.rs` runs the engine with the
+ceiling at a minute to show that none relies on the safety net.
 `tests/blocking_io_rule.rs` and `tests/core_lock.rs` enforce this; the first counts the callers
 of `pty_request` that have not moved yet, and the count may not grow.
 

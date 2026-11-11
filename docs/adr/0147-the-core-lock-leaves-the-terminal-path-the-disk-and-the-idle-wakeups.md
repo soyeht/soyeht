@@ -427,6 +427,63 @@ a second.
   check that every producer of work sets.
 - Acceptance: the counts of step 1a (ticks per second at 0 panes), and the meter as before.
 
+**As built (change 1b).** The plan held, with these differences, which are the boundaries that moved:
+
+- **A subsystem says when it needs the tick; it does not store a `next_due`.** After each run the
+  tick calls `Core::tick_wait` (`tick_due.rs`), which asks each subsystem for its deadline in the
+  engine clock and takes the earliest, never later than the ceiling. The deadline of a retry, an
+  autosave or a burst of file events is data the subsystem already had (`due_ms`, `save_due_ms`,
+  `Burst::due_ms`); a second field would be a second copy. The ceiling is `Hooks::tick_ceiling`
+  (default one second), so a test can raise it.
+- **The tick is raised by events, and the list of what produces work is not enumerated.** Every
+  background job that ends, every hold of the Core lock that is not the tick's own (a request, an
+  offload's apply, a connection closing) and every file event raises a `kick`; the tick then runs in
+  full once the floor of one interval since its last start has passed. A request is how nearly every
+  subsystem gets new work (a pane to spawn, a file to autosave, a task to dispatch), and there are
+  about 300 places that do it, so the rule is that the lock raises the tick, not that each place says
+  so. The 1a wake (`woken`) stays for what is worth applying at once (a read that found output, a
+  notice), and also schedules a full run.
+- **A run that wrote to the store runs again after the floor.** What a subsystem wrote may give
+  another one work (a task reaches a state that a review waits for), and most of the task steps
+  poll the store, so the chain of such steps moves at the floor and stops on the first run that
+  writes nothing. The polls that rest (`Store::begin_poll`) report their own wake: `next_poll_wait`
+  is zero for a poll that is not at rest and the end of the rest for one that is, so the loops, the
+  retries of blocked tasks and the expiry of web permissions have their deadlines from the rows.
+- **Agents at rest are read on a notice or the sweep, not on a pace.** With the watch heard, a
+  settled agent (`Idle`) is not read every `IDLE_PACE_MS`: a mark of the watch ends the rest, as
+  1a said, and so does a read that ended and waits to be taken. The pace stays for the engine
+  without a watch. An agent that is not settled keeps the floor, and a settled one has the deadline
+  of its first open request.
+- **Language servers move to the marks** (1a left them). With the watch heard a server is read when
+  it is marked, when a read ended, or when a write is pending; its process is part of the sweep
+  now, so a notice that never came costs a second here too. Without the watch it is read on every
+  run as before.
+- **What keeps the floor, because nothing announces it:** a shell, an agent or a language server
+  while no watch is heard (the polling of 1a), the harness switches, the experiment captures, the
+  rest of a replay of a pane's history to a client (`streams_behind`: a pump carries one batch), and
+  the task polls that are not at rest.
+- **What the idle engine still wakes for:** the sweep and the ceiling (once a second each), the
+  disk check of an open file the editor watches (250 ms for each, a read of the file; the project
+  watch could report it by events), the skills probe (2 s), the scan of the local servers (5 s, one
+  `lsof`), the usage schedule (15 s, a task of its own), and the supervisor's own exit poll, which is
+  other work. The first of these that costs on a laptop with an editor open is the disk check.
+- **Counts** (release build, the test engine, on a host whose load average was 12 to 26, three runs
+  of each, main and this change one after the other): context switches a second of the engine fell
+  from 468 to 499 with no pane and from 457 to 501 with five idle shells to 15 to 20 and 46 to 59;
+  its CPU from 1.3 to 1.6% and 1.5 to 1.8% of a core to under 0.2% (`ps` has a resolution of 10 ms,
+  so a window of six seconds cannot say less); the supervisor's 10 to 12 a second are its own exit
+  poll and did not move. The median echo of a key typed into an idle shell, from the request to the
+  frame that carries the echo, was 2.1 to 19.3 ms before and 1.1 to 6.4 ms after, the spread being
+  the host's. The meter on a quiet host decides.
+- **Tests.** `tick_due` has unit cases for the deadlines of each family and for the ceiling;
+  `tests/idle_wakeups.rs` counts the context switches of the engine with no pane and with five
+  idle shells and fails above 150 a second (main made 440 to 500 in either case), and fails if the
+  median echo of a key in an idle shell takes 400 ms (the tick's ceiling would put it at a second);
+  `tests/tick_deadlines.rs` runs an engine whose ceiling is a minute and checks, without sending
+  a request (a request raises the tick and would hide a missing deadline), that a shell's output,
+  the editor's autosave and disk watch, the project panel, the skills and the reconnection to a
+  restarted supervisor still happen within seconds.
+
 ### Step 3. Persistent segment handle; write-behind only if the data asks for it
 
 Every record appended to a pane's segment file opens the file, truncates it to the recorded size
