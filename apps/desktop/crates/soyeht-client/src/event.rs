@@ -1,5 +1,5 @@
 use crate::{
-    attachments::Draft, catalogue::Catalogue, editor::EditorEvent, preferences::Preferences,
+    catalogue::Catalogue, composer::ReturnedPrompt, editor::EditorEvent, preferences::Preferences,
     snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
 };
 use serde_json::Value;
@@ -53,11 +53,7 @@ pub enum Event {
     WorkspaceOpened { ticket: u64, workspace: Workspace },
     /// The engine did not take a message sent from the composer of `pane_id` (`Command::Prompt`):
     /// what was typed and the files attached to it, to put back.
-    PromptReturned {
-        pane_id: String,
-        typed: String,
-        attachments: Vec<Draft>,
-    },
+    PromptReturned(ReturnedPrompt),
     /// The request to open a pane that `ticket` names failed.
     OpenFailed { ticket: u64 },
     /// The engine did not store the arrangement of a workspace (`Command::SetLayout`).

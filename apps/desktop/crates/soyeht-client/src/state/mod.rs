@@ -363,14 +363,7 @@ impl State {
             Event::WorkspaceOpened { ticket, workspace } => {
                 self.workspace_opened(ticket, workspace)
             }
-            Event::PromptReturned {
-                pane_id,
-                typed,
-                attachments,
-            } => {
-                self.return_prompt(pane_id, typed, attachments);
-                Vec::new()
-            }
+            Event::PromptReturned(returned) => self.return_prompt(returned),
             Event::OpenFailed { ticket } => {
                 self.fail_request(ticket);
                 Vec::new()

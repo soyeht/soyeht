@@ -12,7 +12,7 @@
 //!
 //! [`Staged::restore`]: crate::attachments::Staged::restore
 
-use crate::{Command, Connection, State, attachments::Draft};
+use crate::{Command, Connection, Effect, State, attachments::Draft};
 
 /// What Return in the composer does with the message it holds.
 #[derive(Debug, Clone, PartialEq)]
@@ -75,25 +75,21 @@ impl State {
 
     /// The engine did not take a message sent from the composer of `pane_id`. Messages that
     /// failed one after the other come back in the order they were sent.
-    pub(crate) fn return_prompt(&mut self, pane_id: String, typed: String, files: Vec<Draft>) {
-        if self.pane(&pane_id).is_none() {
-            return;
-        }
-        match self
-            .returned_prompts
-            .iter_mut()
-            .find(|held| held.pane_id == pane_id)
-        {
-            Some(held) => {
-                held.typed = returned_text(&held.typed, &typed);
-                held.attachments.extend(files);
+    pub(crate) fn return_prompt(&mut self, returned: ReturnedPrompt) -> Vec<Effect> {
+        if self.pane(&returned.pane_id).is_some() {
+            match self
+                .returned_prompts
+                .iter_mut()
+                .find(|held| held.pane_id == returned.pane_id)
+            {
+                Some(held) => {
+                    held.typed = returned_text(&held.typed, &returned.typed);
+                    held.attachments.extend(returned.attachments);
+                }
+                None => self.returned_prompts.push(returned),
             }
-            None => self.returned_prompts.push(ReturnedPrompt {
-                pane_id,
-                typed,
-                attachments: files,
-            }),
         }
+        Vec::new()
     }
 
     /// The messages the engine did not take, once, for the window to put back. A pane that is gone

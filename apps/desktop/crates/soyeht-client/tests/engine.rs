@@ -659,14 +659,10 @@ fn a_prompt_the_engine_refuses_comes_back_with_its_text_and_files() {
     let prompt = remote.expect("pane.prompt");
     remote.send(&not_found(&prompt, "Pane not found"));
     match next(&inbox) {
-        Event::PromptReturned {
-            pane_id,
-            typed,
-            attachments,
-        } => {
-            assert_eq!(pane_id, "t1");
-            assert_eq!(typed, "  look\n", "exactly as it was typed");
-            assert_eq!(attachments, vec![file]);
+        Event::PromptReturned(returned) => {
+            assert_eq!(returned.pane_id, "t1");
+            assert_eq!(returned.typed, "  look\n", "exactly as it was typed");
+            assert_eq!(returned.attachments, vec![file]);
         }
         other => panic!("expected the prompt back, got {other:?}"),
     }

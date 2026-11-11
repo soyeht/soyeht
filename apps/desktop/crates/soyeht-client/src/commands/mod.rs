@@ -10,6 +10,7 @@ mod workspaces;
 
 use crate::{
     attachments::{Draft, Upload},
+    composer::ReturnedPrompt,
     editor::EditorCommand,
     event::Event,
     preference_requests,
@@ -373,11 +374,11 @@ impl Command {
                 attachments,
                 typed: Some(typed),
                 ..
-            } => Some(Event::PromptReturned {
+            } => Some(Event::PromptReturned(ReturnedPrompt {
                 pane_id: pane_id.clone(),
                 typed: typed.clone(),
                 attachments: attachments.clone(),
-            }),
+            })),
             // The arrangement on screen goes back to the stored one, and the person is told.
             Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
                 workspace_id: workspace_id.clone(),
