@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_platform::local::connect;
+use soyeht_platform::local::{connect, connect_proved};
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Request, Response, VERSION};
 use std::io::{Read, Write};
@@ -85,9 +85,10 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     drop(daemon.connect(1));
     let socket = daemon.directory.join("ptyd.sock");
 
-    // Any request before the hello is refused with the one error, and nothing is executed.
+    // Any request before the hello is refused with the one error, and nothing is executed. The
+    // connection has proved the secret (ADR 0160), as every client of the supervisor does.
     for value in request_values() {
-        let mut stream = connect(&socket).unwrap();
+        let mut stream = connect_proved(&socket).unwrap();
         stream
             .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
@@ -135,7 +136,7 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
         if would_spawn(input) {
             return;
         }
-        let mut stream = connect(&socket).unwrap();
+        let mut stream = connect_proved(&socket).unwrap();
         stream
             .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
             .unwrap();
@@ -152,6 +153,23 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
         {
             drop(response);
         }
+    });
+
+    // A connection that has not proved the secret (ADR 0160) is sent the same framed garbage:
+    // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
+    fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
+        let mut stream = connect(&socket).unwrap();
+        stream
+            .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
+            .unwrap();
+        let _ = stream.write_all(input);
+        let _ = stream.shutdown(Shutdown::Write);
+        let mut answer = Vec::new();
+        let _ = stream.read_to_end(&mut answer);
+        assert!(
+            answer.len() <= 64,
+            "an unproved peer was answered: {answer:?}"
+        );
     });
 
     // The supervisor still serves a good client, and has not died.
