@@ -178,6 +178,47 @@ impl State {
         Some(workspace_id)
     }
 
+    /// What a pane split from `pane_id` is made like: the same kind (the harness of an agent, none
+    /// for a terminal) and the folder the pane is in, when it has one.
+    pub fn split_template(&self, pane_id: &str) -> (Option<String>, Option<String>) {
+        let pane = self.pane(pane_id);
+        let harness = pane.and_then(|pane| pane.agent.as_ref().map(|agent| agent.harness.clone()));
+        let cwd = pane
+            .map(|pane| pane.cwd.clone())
+            .filter(|cwd| !cwd.is_empty());
+        (harness, cwd)
+    }
+
+    /// The request that opens the pane `ticket` waits for: an agent running `harness`, else a
+    /// terminal. A pane starts in the folder it is asked for (a split's: that of the pane it
+    /// splits), else in the folder of its workspace, as the Mac asks.
+    pub fn open_pane_request(
+        &self,
+        workspace_id: String,
+        harness: Option<String>,
+        cwd: Option<String>,
+        ticket: u64,
+    ) -> Command {
+        let cwd = cwd.or_else(|| {
+            self.workspace(&workspace_id)
+                .map(|workspace| workspace.path.clone())
+        });
+        match harness {
+            Some(harness) => Command::CreateAgent {
+                workspace_id,
+                acknowledged: self.acknowledged_package(&harness),
+                harness,
+                cwd,
+                ticket,
+            },
+            None => Command::CreateTerminal {
+                workspace_id,
+                cwd,
+                ticket,
+            },
+        }
+    }
+
     /// The engine answered request `ticket` with the pane it opened.
     pub(crate) fn opened(&mut self, ticket: u64, pane_id: String) -> Vec<Effect> {
         let Some(expected) = self

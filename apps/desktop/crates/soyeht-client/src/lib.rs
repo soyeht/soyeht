@@ -51,6 +51,7 @@ pub mod state;
 pub mod streams;
 pub mod switch;
 pub mod tasks;
+pub mod terminal_input;
 pub mod terminal_state;
 #[cfg(test)]
 mod testing;
