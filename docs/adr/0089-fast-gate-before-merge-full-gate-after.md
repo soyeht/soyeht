@@ -62,8 +62,10 @@ pull request that lowers a baseline must not run everything.
 parent, and records the result, the duration and the per-step times in
 `.cache/main-health/<sha>.json`, with `latest.json` and `last_green.json`. When it is red
 it reruns the failing step once on the same commit; a pass is recorded as flaky and blames
-no commit. Otherwise it takes the first-parent commits since the last green main and
-searches them with the failing step only (`check_all.sh --only STEP_ID`, with the step it
+no commit. Otherwise it runs the failing step on the last green main as a control (rerun
+once when it fails): a step that fails there both times is the host's, recorded as `host`, and no
+commit is blamed. Only when the control passes does it take the first-parent commits since the
+last green main and search them with the failing step only (`check_all.sh --only STEP_ID`, with the step it
 depends on; a binary search, which is exact for the few squash commits between two runs). A
 commit that cannot run the step or cannot be checked out is skipped, and the candidates are
 reported. It reports the culprit commit, the failing step and the log, and exits non-zero.

@@ -24,7 +24,9 @@ Each layer depends only on the layers listed above it.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
    identity, the native data directory, the structured log line). It has no Soyeht dependencies, and these system
-   calls live there (ADR 0086). A crate above it may keep a `cfg` module for a concern
+   calls live there (ADR 0086). It also holds `hold_cost`, an accounting facility like `log`
+   and not an operating-system seam: the time a hold of the engine's Core lock spent on
+   statements, segment files and the file port (ADR 0147). A crate above it may keep a `cfg` module for a concern
    specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation, the
    desktop's `os_notify`), under the rule below: the same public shape on every system.
    `engine/soyeht-process`, the bounded runner for every external command the engine
@@ -41,6 +43,9 @@ Each layer depends only on the layers listed above it.
      `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
      canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.
+   - `soyeht-ink`: handwriting recognition (ADR 0158): limits, the rasterizer and the recognizer
+     trait, with Apple Vision on the Mac and a typed refusal elsewhere. It depends on
+     `soyeht-protocol` and `soyeht-process` only.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself, and the Mac app
@@ -69,7 +74,10 @@ Each layer depends only on the layers listed above it.
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
    run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-desktop` the
    views, and its `theme` module holds the palettes and tokens generated from
-   `contracts/design-tokens.json`, the same source the Swift side is generated from.
+   `contracts/design-tokens.json`, the same source the Swift side is generated from. Two small
+   crates of ours stand in for dependencies of GPUI whose licenses a product may not ship
+   (ADR 0149): `crates/ztracing` for Zed's GPL-3.0 crate of that name, and
+   `shims/wayland-protocols-plasma` for the LGPL-2.1 protocol crate (blur stays off).
    Three seams belong to the window, each the same on every system: the log also goes to a
    rotating file (`soyeht_platform::log::to_file`, ADR 0101); a window that finds no engine
    asks a registered login service to start (`soyeht service start`, ADR 0136) or else starts
@@ -111,7 +119,8 @@ ADR when you change a boundary.
   frame, popup gaps, glyph sizes and the sizes of views the Mac does not have. A size both
   clients draw (a sheet, a popover, a field, a column) is a token of a shared section
   (`layout`, `composer`, ...) that the Mac reads as `DesignTokens`; the same number as a Mac
-  literal and a `desktop` token is the copy this rule stops. `contracts/test_design_tokens.py`
+  literal and a `desktop` token is the copy this rule stops. The `eink` section and `einkPalette` (the
+  Android e-ink mode, ADR 0155) are read by the Kotlin output alone. `contracts/test_design_tokens.py`
   proves a token that replaces a Mac literal against the pre-generation Mac source
   (`INLINE_LITERALS`), and a token with no such source is listed in `ADDED_AFTER_GENERATION`.
 - Once a generated form exists, use it. Do not hand-type a method or event name,
@@ -130,14 +139,19 @@ ADR when you change a boundary.
   the engine sends against the contract; the merge gate builds and tests with it, so a field
   the contract does not have fails the request or, for a background publication, the engine
   integration rig and the end-to-end run that read the engine log.
+- A handler reads the parameters of its request through the generated `...Params` type of the
+  method (deserialize once, then read typed fields), never `params["field"]` on a `Value`: an
+  optional field that changes then fails to compile instead of at run time.
+  `scripts/check_params_reads.py` holds the count of those reads down.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
   the same file. Change the vectors first.
 - The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
-  request, greeting and reconnect timings, the terminal input chunk, the `caps` (waiting messages
-  read, links found in one text, pages of a model catalogue, tool calls the ticker lists), the
-  usage and context band thresholds and ring opacities, the weekly-window rule, provider names and which
-  configuration selector is the model, effort or permission one. Use `ClientPolicy` and
+  request, greeting and reconnect timings, the web read's settle poll and deadline share, the
+  terminal input chunk, the `caps` (waiting messages read, links found in one text, pages of a model
+  catalogue, tool calls the ticker lists), the usage and context band thresholds and ring opacities,
+  the weekly-window rule, provider names and which configuration selector is the model, effort or
+  permission one. Use `ClientPolicy` and
   `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
   `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately
   (the usage presentation, the pane layout and each kind of pane's floor, of which the desktop
@@ -158,6 +172,11 @@ ADR when you change a boundary.
   `contracts/vectors/update.json`; change the vectors first
   (`uv run python contracts/test_update_manifest.py --write`). The private signing key never
   enters the repository: `scripts/release_manifest.py` reads it from the environment.
+- Third-party notices: `THIRD-PARTY-NOTICES.txt` is generated from the lock files by
+  `uv run python scripts/third_party_notices.py generate` (ADR 0149) and ships in every package
+  (`package_common.LICENSE_DOCUMENTS`). A change to `Cargo.lock`, a `Package.resolved` or the Android
+  `build.gradle.kts` commits the regenerated file with it, and a dependency whose license is outside
+  `scripts/third_party/policy.json` (no GPL, AGPL or LGPL alone) fails `third-party-notices:check`.
 - Canonical paths come from `soyeht_platform::fs::canonicalize` only. The standard
   `canonicalize` gives Windows' `\\?\C:\...` form, which `cmd.exe` and `git` read differently;
   `engine/soyeht-platform/tests/canonical_paths.rs` fails on any other use.
@@ -319,12 +338,18 @@ inherit the main actor.
   (`e2e:*`, with the `engine:build-product` and `engine:build-test-engine` builds and the TCC
   guard around them) run when the engine selection is the whole workspace or its reverse
   closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
-  engine crate does. The unit tests of the gate scripts (`post_merge*`, `main_watch*`,
-  `check_quality`, `gate_list`, `gate_timings`) are the `gate_scripts` area: a change under
+  engine crate does. That selection also selects `swift` for `swift:test-shared-fast`: it builds
+  the engine programs and runs the one Swift test that drives them
+  (`nativeClientReconnectsAndDrivesItsOwnShellAndEditor`, `scripts/e2e_swift_client.py`, on the
+  suites' staged copy of the programs, inside the TCC guard's bracket when the e2e steps run on
+  this Mac; about one to two minutes), so an engine change that
+  breaks the Swift client's integration test fails before the merge, not after it. The unit tests
+  of the gate scripts (`post_merge*`, `main_watch*`, `check_quality`, `gate_list`,
+  `gate_timings`) are the `gate_scripts` area: a change under
   `scripts/`, `contracts/*.py` or `.githooks/` selects it. The fast tier leaves out the engine
-  integration tests (`tests/` directories), the Swift and dictation tests, the Mac and iOS app
-  builds, the editor measurement on the VM and the ignored timing tests: they are `full`
-  steps. A change to the gate scripts (`check_all.sh`,
+  integration tests (`tests/` directories), the rest of the Swift tests and the dictation tests,
+  the Mac and iOS app builds, the editor measurement on the VM and the ignored timing tests: they
+  are `full` steps. A change to the gate scripts (`check_all.sh`,
   `gate_*`, `post_merge*`, `main_watch*`, `remote_gate*`, `e2e*`, the app build scripts) runs
   the full tier instead, and the log says why; a change to their unit tests alone
   (`scripts/test_*.py`) does not. A file that another directory reads (an `include_str!`, a
@@ -363,22 +388,36 @@ inherit the main actor.
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit, and
   the steps the failed run never reached still run), then finds the culprit commit by running only the failing step on the commits since the last
   green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed
-  and only the editor measurement on the VM is missing). `main_watch.py --apply` then reverts a
-  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step and the
-  log, merged with `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
-  a flaky run, a revert, or a revert that does not apply, and it never forces a push or touches
+  and only the editor measurement on the VM is missing). A probe first runs the steps its step
+  reads from earlier in the run (`PREREQUISITES` in `post_merge_gate.py`: the builds of the engine
+  programs for the suites and the Swift tests, the TCC snapshot), so no commit is judged against
+  programs built from another one. Before it names any commit, even when the range holds only
+  one, it runs the failing step the same way on the last green main, on today's host (the control
+  run). A control that fails is run once more, as the head was. A step that fails both times is the
+  host's or the environment's (a network failure during an install, a full disk, a toolchain
+  update, stale programs): the run is recorded as `host`, no commit is blamed and nothing is
+  reverted. A control that cannot run blames nobody either, and the note keeps the commits since. Only
+  a step that passes on the last green main and fails at the head can have a culprit.
+  `main_watch.py --apply` then reverts a
+  single confirmed culprit: a branch `main-watch/revert-<sha>`, a pull request "Revert <subject>" naming the failing step, the
+  two commits and the log file (no text of the log, which is local and unscanned), merged with
+  `gh pr merge --squash`. It does not revert an ambiguous culprit (candidates),
+  a flaky or `host` run, a revert, or a revert that does not apply, and it never forces a push or touches
   another branch; `--dry-run` is the default. It writes `watch.json` in the health directory, with
   the flaky steps that are `chronic` (2 or more flakes in the last 10 runs, from `flakes.json`): fix
   them, never skip them. With
   `--remote HOST --remote-root PATH` the engine, desktop, e2e and timing steps run on a Linux host
   through `scripts/remote_gate.sh` (`docs/dev-local.md`). The plan prints a warning while
-  `latest.json` says main is red, and a note while it says flaky. The editor measurement on the VM is collected separately,
+  `latest.json` says main is red, and a note while it says flaky or `host`. The editor measurement on the VM is collected separately,
   when the editor hash changes. Run `--tier full` yourself before a merge when you want
   certainty.
 - Red main is fixed by the automatic revert of a confirmed culprit. Its author re-lands a
   fixed change (a new pull request through the fast gate); when the revert could not be made,
   they fix forward or revert by hand within the hour. No other change merges into the
-  affected area while main is red.
+  affected area while main is red. A `host` result has no culprit to revert: `main_watch.py`
+  exits 1 and `watch.json` says `host`, which tells the coordinator to fix the environment; the
+  pass stays open, so a later pass, or `post_merge.py --force`, runs the head again (a pass comes
+  back to it no sooner than `HOST_RETRY_SECONDS`).
 - Review: `gate_plan.py` prints `review: required` when a change touches the engine core
   (`soyeht-engine` `core*`, `dispatch*`, `server*`, `agents/`, and `soyeht-store`), the
   protocol and `contracts/profiles.json`, an editor, security-sensitive code (all of

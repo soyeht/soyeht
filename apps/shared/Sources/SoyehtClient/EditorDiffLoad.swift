@@ -62,6 +62,9 @@ extension EngineClient {
         }
       }
     } catch {
+      if let workspaceId = editorFiles[fileId]?.file.workspaceId {
+        noteMissingWorkspaceFolder(error, workspaceId: workspaceId)
+      }
       updateEditor(fileId) {
         if $0.diff.revision == revision {
           $0.diff = .failed(revision: revision, reason: error.localizedDescription)

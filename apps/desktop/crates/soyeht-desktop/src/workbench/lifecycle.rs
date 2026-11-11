@@ -126,7 +126,7 @@ impl Workbench {
         let workspace_id = workspace.workspace_id.clone();
         let ticket = self.next_ticket();
         self.state.expect_open(ticket, &workspace_id);
-        self.request_pane(workspace_id, harness, ticket, cx);
+        self.request_pane(workspace_id, harness, None, ticket, cx);
     }
 
     pub(crate) fn next_ticket(&mut self) -> u64 {
@@ -140,31 +140,14 @@ impl Workbench {
         &mut self,
         workspace_id: String,
         harness: Option<String>,
+        cwd: Option<String>,
         ticket: u64,
         cx: &mut Context<Self>,
     ) {
-        // A pane starts in the folder of its workspace, as the Mac asks.
-        let cwd = self
+        let command = self
             .state
-            .workspace(&workspace_id)
-            .map(|workspace| workspace.path.clone());
-        self.send_open(
-            match harness {
-                Some(harness) => Command::CreateAgent {
-                    workspace_id,
-                    harness,
-                    cwd,
-                    ticket,
-                },
-                None => Command::CreateTerminal {
-                    workspace_id,
-                    cwd,
-                    ticket,
-                },
-            },
-            ticket,
-            cx,
-        );
+            .open_pane_request(workspace_id, harness, cwd, ticket);
+        self.send_open(command, ticket, cx);
     }
 
     /// Sends the command that opens the pane `ticket` waits for. A queue that refuses it releases

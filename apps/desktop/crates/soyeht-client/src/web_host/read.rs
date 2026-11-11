@@ -22,7 +22,7 @@ use super::{
 use ::image::{RgbImage, imageops};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use soyeht_protocol::{WebReadLink, limits};
+use soyeht_protocol::{WebReadLink, client_policy, limits};
 use std::time::{Duration, Instant};
 
 const SCRIPT: &str = include_str!("js/read.js");
@@ -40,7 +40,7 @@ const MAX_LINE_PIXELS: f64 = 400.0;
 /// A scroll that moves the page more than this share of a screen leaves a gap.
 const OVERSHOOT: f64 = 0.98;
 /// How long the walk waits for a scroll, and what it loads, to stop moving.
-const SETTLE_POLL: Duration = Duration::from_millis(80);
+const SETTLE_POLL: Duration = Duration::from_millis(client_policy::WEB_READ_SETTLE_POLL_MS);
 const SETTLE_POLLS: u32 = 24;
 /// How many polls in a row the page must be still to be taken as settled.
 const STEADY_POLLS: u32 = 3;
@@ -377,7 +377,10 @@ pub(super) fn read(
             usize::try_from(screens).unwrap_or(limits::WEB_READ_SCREENS)
         })
         .clamp(1, limits::WEB_READ_SCREENS);
-    let budget = Duration::from_millis(u64::from(timeout_ms) * 4 / 5);
+    // A read spends the policy's share of the command's time; the rest is left for the answer.
+    let budget = Duration::from_secs_f64(
+        f64::from(timeout_ms) / 1000.0 * client_policy::WEB_READ_DEADLINE_SHARE,
+    );
     let capture = walk(page, screens, true, Instant::now() + budget)?;
     let info = page.info();
     let reference = attachment(&capture.png);

@@ -2,21 +2,16 @@
 
 use super::*;
 
-/// An `npx` that writes the Claude Code executable its adapter was told to drive (nothing when it
-/// was told none) to the returned file, then starts the fake agent as the registry's package
-/// runner would.
+/// The `node` that runs the installed Claude adapter (the first start installs it with the rig's
+/// `npm`). It writes the Claude Code executable its adapter was told to drive (nothing when it
+/// was told none) to the returned file, then starts the fake agent.
 #[cfg(unix)]
 fn install_recording_runner(rig: &Rig) -> PathBuf {
     let seen = rig.path.join("claude-executable-seen");
-    write_script(
-        &rig.path.join("bin/npx"),
-        &format!(
-            "#!/bin/sh\nprintf '%s' \"$CLAUDE_CODE_EXECUTABLE\" > '{}'\nexec '{}' --state-dir '{}'\n",
-            seen.display(),
-            sibling_binary("soyeht-fake-acp").display(),
-            rig.path.join("claude-native").display()
-        ),
-    );
+    rig.install_fake_locked_adapter_runner(&format!(
+        "printf '%s' \"$CLAUDE_CODE_EXECUTABLE\" > '{}'",
+        seen.display()
+    ));
     seen
 }
 
@@ -36,31 +31,6 @@ fn install_claude(rig: &Rig, version: &str) {
         fs::remove_file(&link).unwrap();
     }
     std::os::unix::fs::symlink(file, link).unwrap();
-}
-
-/// A rig whose engine searches the rig's `bin` and the system's, and nothing else: the machine's
-/// own `claude`, if any, must not be on its path.
-#[cfg(unix)]
-fn rig_with_own_search_path() -> Rig {
-    let mut rig = Rig::new();
-    let shell_directory = rig.path.join("shell");
-    fs::create_dir(&shell_directory).unwrap();
-    write_script(
-        &shell_directory.join("bash"),
-        &format!(
-            "#!/bin/sh\nprintf '\\036%s\\037' '{}:/usr/bin:/bin'\n",
-            rig.path.join("bin").display()
-        ),
-    );
-    rig.kill_engine();
-    // The first engine may have logged its own choice before it was stopped; the test counts only
-    // the choices of the engine that searches the rig's path.
-    if let Err(error) = fs::remove_file(rig.path.join("engine.log")) {
-        assert_eq!(error.kind(), std::io::ErrorKind::NotFound, "{error}");
-    }
-    rig.login_shell = Some(shell_directory.join("bash"));
-    rig.start();
-    rig
 }
 
 /// Opens an agent pane on the Claude harness and returns the Claude Code executable its adapter
@@ -104,7 +74,7 @@ fn executable_the_adapter_is_told(
 #[cfg(unix)]
 #[test]
 fn the_adapter_drives_the_claude_on_the_search_path_only_while_it_is_new_enough() {
-    let rig = rig_with_own_search_path();
+    let rig = Rig::with_own_search_path();
     let seen = install_recording_runner(&rig);
     let mut client = rig.client();
     let workspace = create_workspace(&mut client, "Own CLI", &rig.path, "own-cli-workspace");
@@ -149,7 +119,7 @@ fn the_adapter_drives_the_claude_on_the_search_path_only_while_it_is_new_enough(
 #[cfg(unix)]
 #[test]
 fn a_switch_to_the_harness_gives_its_adapter_the_claude_the_person_has() {
-    let rig = rig_with_own_search_path();
+    let rig = Rig::with_own_search_path();
     let seen = install_recording_runner(&rig);
     install_claude(&rig, "2.1.312");
     let (mut client, pane) = rig.agent();

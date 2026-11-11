@@ -6,6 +6,7 @@ use crate::{
 };
 use serde_json::{Value, json};
 use soyeht_acp::{Message, RpcError};
+use soyeht_protocol::{ErrorKind, error_code};
 use soyeht_store::agents::{self, NativeRequest};
 use std::path::Path;
 use uuid::Uuid;
@@ -31,6 +32,30 @@ pub fn finish(
         .answers
         .push((request.request_id.clone(), json!({"native":native.value()})));
     changes.outgoing.push(native);
+}
+
+/// The answer to a write the engine refuses because of where it is, not because it failed: the
+/// generated code of `invalid_params`, as the path is not one an agent may give. (`-32002`, the
+/// code of `unauthorized`, is what an adapter reads as "session not found".)
+fn write_refused(message: impl Into<String>) -> RpcError {
+    let message = message.into();
+    i32::try_from(error_code(&ErrorKind::InvalidParams)).map_or_else(
+        |_| failure(message.clone()),
+        |code| RpcError {
+            code,
+            message: message.clone(),
+            data: None,
+        },
+    )
+}
+
+/// The answer to a write that failed: the refusal of a path keeps its code, the rest are failures.
+fn write_failure(error: &errors::Error) -> RpcError {
+    if filesystem::is_control_refusal(error) {
+        write_refused(error.to_string())
+    } else {
+        failure(error.to_string())
+    }
 }
 
 pub fn failure(message: impl Into<String>) -> RpcError {
@@ -147,6 +172,15 @@ impl Core {
         let content = request.params["content"]
             .as_str()
             .ok_or_else(|| failure("Text content is required"))?;
+        // The one place a path is refused, before the editor sees it: a file the editor tracks is
+        // written by another route than the file API.
+        if filesystem::is_repository_control(root, path) {
+            // The kind only, so that an agent that probes for the folder shows in the log.
+            soyeht_platform::log::event("engine.agent_write_refused", &[("reason", "git_folder")]);
+            return Err(write_refused(
+                "A repository's .git folder is not written by an agent",
+            ));
+        }
         let recovering = request.public.get("started").is_some();
         let tracked = self
             .prepare_agent_write(pane, path, content, recovering)
@@ -165,7 +199,7 @@ impl Core {
                     .map_err(|error| failure(error.to_string()))?;
             } else {
                 filesystem::write_with_key(root, path, content, &request.request_id)
-                    .map_err(|error| failure(error.to_string()))?;
+                    .map_err(|error| write_failure(&error))?;
             }
         }
         Ok((json!({}), tracked))
@@ -222,3 +256,6 @@ pub fn require_session(state: &super::state::State, params: &Value) -> Result<()
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests;

@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated: 2026-11-04
+Last updated: 2026-11-08
 
 This policy covers Soyeht Next: the Mac app, the Windows and Linux app, the iPhone and iPad app,
 the Android app (not yet released) and the engine and command line that run on your computer. Soyeht is
@@ -14,19 +14,23 @@ against the source in that repository.
   talk to. We receive no data about you, your devices, your terminals or your agents.
 - **No analytics, no advertising, no tracking.** None of the apps contains an analytics,
   advertising or crash-reporting library, and the iPhone and iPad app declares in its privacy
-  manifest that it does not track you and collects no data.
+  manifest that it does not track you and collects no data. The one exception is Google's ML Kit
+  in the Android app, only if you turn on handwriting on the device: it sends diagnostics and usage metrics to
+  Google (see "Handwriting on Android" below). What you write is not among the data Google lists.
 - **Your work stays on your computer.** Terminals, prompts, agent conversations, files and settings
   live on the computer that runs the engine. Your iPhone, iPad or Android phone talks only to that
   computer, over your own private network.
 - **A few requests leave your devices, and each one is listed in this document**: the update check,
-  push alerts through Apple, dictation, optional model downloads, the usage meters, and the agents
-  and web pages you choose to run. None of them goes to a server run by Soyeht.
+  dictation, optional model downloads (and, on Android, the diagnostics and usage metrics of
+  Google's handwriting library), the usage meters, and the agents and web pages you choose to run.
+  None of them goes to a server run by Soyeht. Push notifications are not part of this release
+  (see "Push notifications" below).
 
 ## What stays on your devices
 
 **On the computer that runs the engine** (the Mac, or the Windows or Linux computer), Soyeht keeps
 in its own data folder: your workspaces and panes, conversations and tasks, settings, the list of
-paired devices and their public keys, the push tokens your phones registered, and log files. The
+paired devices and their public keys, and log files. The
 folder and its files are readable only by your user. Nothing in it is uploaded. The logs record
 event names and failure kinds, never the text of a message, the output of a terminal or a file path
 (`docs/adr/0088-one-platform-log-and-failure-streaks.md`).
@@ -39,8 +43,9 @@ such as the theme and the terminal text size are kept in the app's own preferenc
 reads the pairing QR code on the device; the image is not stored or sent.
 
 **On Android** (the app is not published yet), the credential is sealed with a key in the Android
-Keystore, in the app's private storage, and the app opts out of backup. Its only permission is
-network access, which it uses to reach your computer.
+Keystore, in the app's private storage, and the app opts out of backup. It asks for two
+permissions: network access, which it uses to reach your computer, and the camera, which reads the
+pairing QR code; the image is not stored or sent.
 
 You can remove all of it. "Forget this Mac" in the phone app deletes the credential from the phone
 and asks the Mac to drop the phone's push token when the Mac is reachable; revoking the phone on
@@ -76,17 +81,24 @@ privacy statement applies to that download.
 
 ### Push notifications (iPhone and iPad)
 
-When an agent stops to ask you something and a phone is paired, the engine on your computer sends an
-alert straight to Apple's push service (APNs). There is no Soyeht server in between, and push works
-only when the engine on your computer has been given Apple push credentials
-(`docs/push-notifications.md`); without them push is off. The message the engine sends contains the
-same generic title and text for every question ("An agent needs you. Open Soyeht to see what it
-asks."), plus random identifiers of the Mac, workspace, pane and request so that a tap opens the
-right pane. It never contains what the agent asked: no command, file path or question text. The
-phone shows that detail itself, from its own private connection to your computer
-(`engine/soyeht-engine/src/push/payload.rs`, `contracts/vectors/push-permission.json`). To deliver the
-alert, your phone's push token is registered on your computer and used from there with Apple. Apple
-handles the token and the alert under its own privacy policy.
+**Push notifications are not part of Soyeht 0.1.0.** The iPhone and iPad app does not ask for
+notification permission, does not ask Apple for a push token and does not send one to your
+computer, and the engine on your computer sends nothing to Apple's push service (APNs). The app
+does these things only when the engine it is paired with says it can send push alerts, and an
+engine says so only when it has been given Apple push credentials (`docs/push-notifications.md`),
+which only works for an app build you sign yourself. The release engine has none. An engine
+without them also refuses a token if a program sends one (`push_unavailable`) and keeps nothing.
+
+Push is meant to return through a relay. Until then, if you turn it on for your own build, this is
+what happens: when an agent stops to ask you something and a phone is paired, the engine sends an
+alert straight to APNs, with no Soyeht server in between. The message contains the same generic
+title and text for every question ("An agent needs you. Open Soyeht to see what it asks."), plus
+random identifiers of the Mac, workspace, pane and request so that a tap opens the right pane. It
+never contains what the agent asked: no command, file path or question text. The phone shows that
+detail itself, from its own private connection to your computer
+(`engine/soyeht-engine/src/push/payload.rs`, `contracts/vectors/push-permission.json`). To deliver
+the alert, your phone's push token is registered on your computer and used from there with Apple.
+Apple handles the token and the alert under its own privacy policy.
 
 ### Dictation (voice to text in the message box)
 
@@ -104,6 +116,32 @@ The Nemotron dictation model (about 642 MB) is downloaded only after you press I
 Preferences. It is fetched from the Hugging Face model hub (`huggingface.co`) and then runs
 entirely on your device; nothing about you is sent beyond what any download request reveals, such as
 the IP address. You can delete it again with "Remove download" in Preferences. Nothing is downloaded before you ask.
+
+### Handwriting on Android (optional, off by default)
+
+On Android 13 and older you can turn on "Handwriting on this device" in Settings: the pen then writes in the message
+field, read on the device by Google's ML Kit Digital Ink Recognition. It is off until you turn it on. While it is off,
+the app does not start ML Kit (the component that would start it at launch is removed from the app) and no new data is
+collected. Metrics that ML Kit queued before you turned it off may still be sent later, because its transport can run
+again when the app starts. Turning it on starts ML Kit, and from then on **ML Kit sends diagnostics and usage metrics
+to Google**. The
+[ML Kit data disclosure](https://developers.google.com/ml-kit/android-data-disclosure) lists them as: the device's
+manufacturer, model, system version and build, and the machine-learning hardware accelerators it has; the app's package
+name and version; the API configuration; the size of the input and of the output; the feature version; performance
+metrics such as latency; events (feature initializations, model downloads, recognitions, resource releases) and their
+error codes; the languages configured; and per-installation identifiers, which Google says are not intended to uniquely
+identify a user or a physical device. Google says it encrypts this data in transit (HTTPS) and does not transfer it to
+third parties. The [ML Kit terms](https://developers.google.com/ml-kit/terms) require us to tell you this.
+
+The content of what you write (your strokes, and the text read from them) is not in the data Google lists, and the
+ML Kit terms say that the processing of the input "fully happens on-device" and that ML Kit "does not send that data
+and the resultant outputs to Google servers"; Soyeht sends it nowhere either. After you turn it on, the language model
+is not downloaded until you press Install, which fetches it from Google's servers; like the download above, that shows
+your device's IP address to Google. Outside Install, once it is on, the terms also say ML Kit "may contact Google
+servers from time to time in order to receive things like bug fixes, updated models", which shows the address too. You can remove the model there. Soyeht itself sends nothing. While it is off the pen
+works as a finger. On Android 14 and later the system's own handwriting is used and ML Kit is not involved. If the app
+is listed on Google Play, its data-safety form declares these data
+(`docs/adr/0157-the-android-app-writes-with-the-pen-on-the-message-field.md`).
 
 ### The agents you run
 
@@ -165,8 +203,8 @@ Apple's service.
 For the App Store listing of Soyeht Next for iPhone and iPad, the data-collection answer is **Data
 Not Collected**. The app sends nothing to the developer or to any third party that the developer
 controls, and the listing's privacy manifest is `apps/ios/Resources/PrivacyInfo.xcprivacy`. The
-sections above describe the system services that act on your behalf: Apple's push and speech
-services, and downloads you start yourself.
+sections above describe the system services that act on your behalf: Apple's speech services,
+and downloads you start yourself.
 
 ## Children
 

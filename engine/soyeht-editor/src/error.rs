@@ -1,3 +1,4 @@
+use soyeht_protocol::ErrorKind;
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,5 +32,22 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+/// The protocol kind the engine presents for an editor failure. The mapping lives beside the
+/// failures it names, so a new one cannot be added without deciding what a client sees.
+impl From<&Error> for ErrorKind {
+    fn from(error: &Error) -> Self {
+        match error {
+            Error::ParserLanguage | Error::ParserStopped => ErrorKind::InternalError,
+            Error::InvalidPosition
+            | Error::InvalidRange
+            | Error::OverlappingEdits
+            | Error::EditTooLarge
+            | Error::ViewportTooLarge
+            | Error::EmptySearch
+            | Error::SearchPattern => ErrorKind::InvalidParams,
+        }
+    }
+}
 
 pub type Result<T> = std::result::Result<T, Error>;

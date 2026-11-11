@@ -14,15 +14,16 @@ use crate::{
 };
 use gpui::{Context, Entity, ScrollHandle};
 use soyeht_client::{
-    State, attachments::Staged, pane_close::Closing, slash, text_input::keys::Completion,
+    State,
+    agent::{disclosure::Disclosures, window::TranscriptWindow},
+    attachments::Staged,
+    composer::DraftBeat,
+    pane_close::Closing,
+    slash,
+    text_input::keys::Completion,
     transcript_rows::Rows,
 };
-use std::{
-    cell::RefCell,
-    collections::{HashMap, HashSet},
-    rc::Rc,
-    time::Instant,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Default)]
 pub(crate) struct PaneUi {
@@ -38,8 +39,8 @@ pub(crate) struct PaneUi {
     pub chip_scroll: ScrollHandle,
     /// The sideways scroll of the composer's attachment chips.
     pub attachment_scroll: ScrollHandle,
-    /// How many messages beyond `TAIL` the transcript draws.
-    pub extra: usize,
+    /// How many messages of the transcript are drawn.
+    pub window: TranscriptWindow,
     /// The files attached to the pane's next message, with the latest refusal.
     pub staged: Option<Staged>,
     /// The composer's "/" list: which row is chosen and which query it was closed for.
@@ -47,13 +48,9 @@ pub(crate) struct PaneUi {
     /// The loop panel the pane is editing.
     pub loop_form: Option<LoopForm>,
     /// When the composer's draft was last announced to the engine.
-    pub draft_beat: Option<Instant>,
-    /// The thoughts the person has opened, by message.
-    pub open_thoughts: HashSet<String>,
-    /// How many pages of a long reply the person asked for, by message (see `markdown::shown`).
-    pub reply_pages: HashMap<String, usize>,
-    /// The subagent rows the person has opened, by subagent.
-    pub open_subagents: HashSet<String>,
+    pub draft_beat: DraftBeat,
+    /// The thoughts, subagent rows and reply pages the person has opened.
+    pub open: Disclosures,
     /// The fields of the questions the agent asks, by request and field.
     pub form_fields: HashMap<(String, String), Entity<ComposerField>>,
     /// What an editor pane keeps: the scroll, the find bar, the tabs' and the panel's scroll.
@@ -89,11 +86,7 @@ impl PaneUi {
                 .as_ref()
                 .is_some_and(|open| &open.request_id == request)
         });
-        let held = |message: &String| view.messages().iter().any(|m| &m.local_id == message);
-        if !self.open_thoughts.is_empty() {
-            self.open_thoughts.retain(held);
-        }
-        self.reply_pages.retain(|message, _| held(message));
+        self.open.forget_gone(view);
     }
 }
 
@@ -112,19 +105,18 @@ impl PaneUis {
 
     pub fn thought_is_open(&self, pane_id: &str, message_id: &str) -> bool {
         self.get(pane_id)
-            .is_some_and(|ui| ui.open_thoughts.contains(message_id))
+            .is_some_and(|ui| ui.open.thought_is_open(message_id))
     }
 
     /// The pages of the reply `message_id` that are drawn: the first, until the person asks for more.
     pub fn reply_pages(&self, pane_id: &str, message_id: &str) -> usize {
         self.get(pane_id)
-            .and_then(|ui| ui.reply_pages.get(message_id).copied())
-            .unwrap_or(1)
+            .map_or(1, |ui| ui.open.reply_pages(message_id))
     }
 
     pub fn subagent_is_open(&self, pane_id: &str, subagent_id: &str) -> bool {
         self.get(pane_id)
-            .is_some_and(|ui| ui.open_subagents.contains(subagent_id))
+            .is_some_and(|ui| ui.open.subagent_is_open(subagent_id))
     }
 
     /// The pane's state, made when first needed.
@@ -259,7 +251,6 @@ mod tests {
     use super::*;
     use serde_json::json;
     use soyeht_client::{Event, Snapshot};
-    use std::time::Instant;
 
     fn state_with(agents: &[&str]) -> State {
         let pane = |id: &str| {
@@ -303,14 +294,22 @@ mod tests {
             rows: Rc::default(),
             chip_scroll: ScrollHandle::new(),
             attachment_scroll: ScrollHandle::new(),
-            extra: 50,
+            window: {
+                let mut window = TranscriptWindow::default();
+                window.reveal_page();
+                window
+            },
             staged: Some(Staged::default()),
             slash: slash::List::default(),
             loop_form: None,
-            draft_beat: Some(Instant::now()),
-            open_thoughts: HashSet::from(["thought".to_owned()]),
-            reply_pages: HashMap::from([("reply".to_owned(), 2)]),
-            open_subagents: HashSet::from(["subagent".to_owned()]),
+            draft_beat: DraftBeat::default(),
+            open: {
+                let mut open = Disclosures::default();
+                open.toggle_thought("thought");
+                open.show_more_of_reply("reply");
+                open.toggle_subagent("subagent");
+                open
+            },
             form_fields: HashMap::new(),
             editor: EditorUi::default(),
             terminal: Default::default(),
@@ -334,8 +333,8 @@ mod tests {
         ));
         assert!(uis.get("closed").is_none());
         let kept = uis.get("kept").unwrap();
-        assert_eq!(kept.extra, 50);
-        assert!(kept.open_subagents.contains("subagent"));
+        assert_eq!(kept.window.limit(), 2 * soyeht_client::agent::TAIL);
+        assert!(kept.open.subagent_is_open("subagent"));
         uis.forget_closed(&state_with(&[]), &mut Replies::default());
         assert!(uis.is_empty());
     }
@@ -345,7 +344,7 @@ mod tests {
         let mut uis = PaneUis::default();
         *uis.of("kept") = used();
         uis.forget_closed(&state_with(&["kept"]), &mut Replies::default());
-        assert!(uis.get("kept").unwrap().open_thoughts.is_empty());
+        assert!(!uis.thought_is_open("kept", "thought"));
         assert_eq!(uis.reply_pages("kept", "reply"), 1);
     }
 }

@@ -38,7 +38,8 @@ use std::{
 };
 
 pub use git::{
-    GIT_UNAVAILABLE_MESSAGE, ReadOnlyGit, require_git, require_git_with, run_git, run_git_with,
+    GIT_UNAVAILABLE_MESSAGE, ReadOnlyGit, require_config_environment, require_git,
+    require_git_with, run_git, run_git_with,
 };
 use system::Running;
 
@@ -139,6 +140,10 @@ pub enum Error {
     },
     /// `git` was not started: it would open the system installer, or it is not installed.
     GitUnavailable,
+    /// `git` is older than the version that reads settings from the environment.
+    GitTooOld {
+        found: String,
+    },
 }
 
 /// A failure to run a command logs as a bounded label, never as message text: the text names the
@@ -154,11 +159,17 @@ impl soyeht_platform::log::Failure for Error {
             Self::OutputTooLarge { .. } => "output_too_large".to_owned(),
             Self::UnderLock { .. } => "under_lock".to_owned(),
             Self::GitUnavailable => "git_not_started".to_owned(),
+            Self::GitTooOld { .. } => "git_too_old".to_owned(),
         }
     }
 }
 
 impl Error {
+    /// `git` cannot be used here: it was not started, or it is too old for what was asked.
+    pub fn git_is_unusable(&self) -> bool {
+        matches!(self, Self::GitUnavailable | Self::GitTooOld { .. })
+    }
+
     pub fn timed_out(&self) -> bool {
         matches!(self, Self::TimedOut { .. })
     }
@@ -192,6 +203,10 @@ impl fmt::Display for Error {
                 "{program} was refused because the {holder} lock is held; blocking work runs off that lock"
             ),
             Self::GitUnavailable => formatter.write_str(GIT_UNAVAILABLE_MESSAGE),
+            Self::GitTooOld { found } => write!(
+                formatter,
+                "Soyeht needs git 2.31 or newer to run worktrunk without starting programs a repository names ({found}). Update git, then try again."
+            ),
         }
     }
 }

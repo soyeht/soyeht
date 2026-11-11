@@ -25,11 +25,14 @@ impl Rng {
     }
 
     pub fn next_u64(&mut self) -> u64 {
-        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
-        let mut z = self.0;
-        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-        z ^ (z >> 31)
+        // SplitMix64: a step, two rounds of xor-shift and multiply, and a last xor-shift.
+        const STEP: u64 = 0x9E37_79B9_7F4A_7C15;
+        const ROUNDS: [(u32, u64); 2] = [(30, 0xBF58_476D_1CE4_E5B9), (27, 0x94D0_49BB_1331_11EB)];
+        self.0 = self.0.wrapping_add(STEP);
+        let mixed = ROUNDS.iter().fold(self.0, |z, &(shift, factor)| {
+            (z ^ (z >> shift)).wrapping_mul(factor)
+        });
+        mixed ^ (mixed >> 31)
     }
 
     /// A number below `limit` (0 when `limit` is 0).

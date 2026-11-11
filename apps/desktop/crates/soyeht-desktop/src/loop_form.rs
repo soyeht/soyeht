@@ -4,26 +4,13 @@
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
 use crate::workbench::Workbench;
 use gpui::{Context, Entity};
-use soyeht_client::{
-    Command,
-    loops::{self, Form},
-};
+use soyeht_client::loops::{Choice, Panel};
 use soyeht_protocol::{AgentPaneRole, LoopStopWhen, Pane};
 
-/// The option whose choices the panel lists under its options.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Choice {
-    Role,
-    Interval,
-    Rounds,
-    Stop,
-}
-
+/// The panel being edited and the field of its prompt.
 pub(crate) struct LoopForm {
-    pub form: Form,
-    pub role: AgentPaneRole,
+    pub panel: Panel,
     pub prompt: Entity<ComposerField>,
-    pub choice: Option<Choice>,
 }
 
 impl Workbench {
@@ -38,13 +25,9 @@ impl Workbench {
     /// Makes the panel of `pane` from its loop the first time it is drawn after opening.
     pub(crate) fn ensure_loop_form(&mut self, pane: &Pane, cx: &mut Context<Self>) {
         if self.loop_form(&pane.pane_id).is_none() {
-            let form = Form::initial(self.state.loop_of(&pane.pane_id));
-            let role = pane
-                .agent
-                .as_ref()
-                .map_or(AgentPaneRole::Worker, |agent| agent.role.clone());
+            let panel = Panel::open(pane, self.state.loop_of(&pane.pane_id));
             let prompt = new_field(self.theme.palette(), cx);
-            prompt.update(cx, |field, cx| field.insert(&form.prompt, cx));
+            prompt.update(cx, |field, cx| field.insert(&panel.form.prompt, cx));
             // Return in the prompt adds a line, as in any text area.
             cx.subscribe(
                 &prompt,
@@ -56,39 +39,24 @@ impl Workbench {
                 },
             )
             .detach();
-            self.panes.of(&pane.pane_id).loop_form = Some(LoopForm {
-                form,
-                role,
-                prompt,
-                choice: None,
-            });
+            self.panes.of(&pane.pane_id).loop_form = Some(LoopForm { panel, prompt });
         }
     }
 
     pub(crate) fn toggle_loop(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        if let Some(form) = self.loop_form_mut(pane_id) {
-            form.form.enabled = !form.form.enabled;
-            cx.notify();
-        }
+        self.edit_loop(pane_id, cx, Panel::toggle_enabled);
     }
 
     pub(crate) fn show_choices(&mut self, pane_id: &str, choice: Choice, cx: &mut Context<Self>) {
-        if let Some(form) = self.loop_form_mut(pane_id) {
-            form.choice = if form.choice == Some(choice) {
-                None
-            } else {
-                Some(choice)
-            };
-            cx.notify();
-        }
+        self.edit_loop(pane_id, cx, |panel| panel.show_choices(choice));
     }
 
     pub(crate) fn pick_interval(&mut self, pane_id: &str, seconds: u32, cx: &mut Context<Self>) {
-        self.edit_loop(pane_id, cx, |form| form.form.interval = seconds);
+        self.edit_loop(pane_id, cx, |panel| panel.pick_interval(seconds));
     }
 
     pub(crate) fn pick_rounds(&mut self, pane_id: &str, rounds: u32, cx: &mut Context<Self>) {
-        self.edit_loop(pane_id, cx, |form| form.form.max_rounds = rounds);
+        self.edit_loop(pane_id, cx, |panel| panel.pick_rounds(rounds));
     }
 
     pub(crate) fn pick_stop(
@@ -97,22 +65,21 @@ impl Workbench {
         stop_when: LoopStopWhen,
         cx: &mut Context<Self>,
     ) {
-        self.edit_loop(pane_id, cx, |form| form.form.stop_when = stop_when);
+        self.edit_loop(pane_id, cx, |panel| panel.pick_stop(stop_when));
     }
 
     pub(crate) fn pick_role(&mut self, pane_id: &str, role: AgentPaneRole, cx: &mut Context<Self>) {
-        self.edit_loop(pane_id, cx, |form| form.role = role);
+        self.edit_loop(pane_id, cx, |panel| panel.pick_role(role));
     }
 
     fn edit_loop(
         &mut self,
         pane_id: &str,
         cx: &mut Context<Self>,
-        change: impl FnOnce(&mut LoopForm),
+        change: impl FnOnce(&mut Panel),
     ) {
         if let Some(form) = self.loop_form_mut(pane_id) {
-            change(form);
-            form.choice = None;
+            change(&mut form.panel);
             cx.notify();
         }
     }
@@ -123,27 +90,12 @@ impl Workbench {
             return;
         };
         let prompt = form.prompt.read(cx).draft().text().to_owned();
-        if !loops::can_apply(form.form.enabled, &prompt) {
+        let Some(requests) = form.panel.apply(pane, &prompt) else {
             return;
+        };
+        for request in requests {
+            self.send(request);
         }
-        let (role, form) = (form.role.clone(), form.form.clone());
-        let current = pane.agent.as_ref().map(|agent| agent.role.clone());
-        if current.as_ref() != Some(&role) {
-            self.send(Command::SetRole {
-                pane_id: pane.pane_id.clone(),
-                role,
-            });
-        }
-        let (interval, max_rounds, stop_when, enabled) =
-            (form.interval, form.max_rounds, form.stop_when, form.enabled);
-        self.send(Command::SetLoop {
-            pane_id: pane.pane_id.clone(),
-            prompt,
-            interval,
-            max_rounds,
-            stop_when,
-            enabled,
-        });
         self.close_menu(cx);
     }
 }

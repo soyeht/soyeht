@@ -1,0 +1,5 @@
+The ML Kit Terms of Service
+
+This component is distributed by Google under the ML Kit Terms of Service, which are not an open-source license.
+The terms are published at https://developers.google.com/ml-kit/terms and apply to the use and redistribution of
+the ML Kit libraries in an app. They give no right to the source code of the libraries.

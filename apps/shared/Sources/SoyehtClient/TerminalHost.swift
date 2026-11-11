@@ -126,6 +126,10 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
       local: TerminalGrid(cols: terminal.cols, rows: terminal.rows),
       announced: selection == revision, requestInFlight: requestInFlight(for: pane))
     selection = revision
+    #if os(macOS)
+      // Output that arrived for the old grid is read on it.
+      if case .adopt = action { (view as? TerminalSurface)?.flushOutput() }
+    #endif
     perform(action, on: terminal)
   }
 
@@ -180,7 +184,11 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
     #else
       let isReceivingOutput = false
     #endif
-    if acceptsInput && !feeding && !isReceivingOutput { sendInput(Data(data)) }
+    guard acceptsInput && !feeding && !isReceivingOutput else { return }
+    #if os(macOS)
+      (source as? TerminalSurface)?.noteUserInput()
+    #endif
+    sendInput(Data(data))
   }
 
   public func setTerminalTitle(source: TerminalView, title: String) {}

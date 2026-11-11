@@ -702,3 +702,53 @@ fn a_move_replaces_a_divider_drag_that_was_still_showing() {
         "no draft is left over"
     );
 }
+
+#[test]
+fn a_split_is_made_like_the_pane_it_splits() {
+    let mut state = State::default();
+    state.apply(Event::Connected(Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: vec![
+            crate::testing::agent_pane("a", "w", json!({"harness": "claude"})),
+            pane("t", "w", "terminal"),
+        ],
+        ..Snapshot::default()
+    }));
+    assert_eq!(
+        state.split_template("a"),
+        (Some("claude".to_owned()), Some("/work".to_owned()))
+    );
+    assert_eq!(state.split_template("t"), (None, Some("/work".to_owned())));
+    assert_eq!(state.split_template("gone"), (None, None));
+}
+
+#[test]
+fn a_pane_opens_in_the_folder_it_is_asked_for_else_in_the_one_of_its_workspace() {
+    let (state, _) = connected(&[("a", "terminal")]);
+    assert_eq!(
+        state.open_pane_request("w".into(), None, None, 3),
+        Command::CreateTerminal {
+            workspace_id: "w".into(),
+            cwd: Some("/work".into()),
+            ticket: 3,
+        }
+    );
+    assert_eq!(
+        state.open_pane_request("w".into(), Some("claude".into()), Some("/other".into()), 4),
+        Command::CreateAgent {
+            workspace_id: "w".into(),
+            harness: "claude".into(),
+            acknowledged: None,
+            cwd: Some("/other".into()),
+            ticket: 4,
+        }
+    );
+    assert_eq!(
+        state.open_pane_request("gone".into(), None, None, 5),
+        Command::CreateTerminal {
+            workspace_id: "gone".into(),
+            cwd: None,
+            ticket: 5,
+        }
+    );
+}

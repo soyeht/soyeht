@@ -652,49 +652,17 @@ extension EngineClient {
   /// engine apply the harness's preferred mode.
   public func createAgentPaneNow(
     directory: URL, harness: String, model: String?, effort: String?,
-    permissionMode: String? = nil, selectPane: Bool = true
+    permissionMode: String? = nil, selectPane: Bool = true, workspaceId pinned: String? = nil
   ) async throws -> String {
-    let path = directory.standardizedFileURL.path
-    let workspaceId = try await workspaceId(for: directory, path: path)
-    let result = try await mutation(
-      .paneCreate,
+    try await createPaneNow(
+      directory: directory, workspaceId: pinned, selecting: selectPane
+    ) { workspaceId, path in
       PaneCreateParams(
         workspaceId: workspaceId, mode: .agent, cwd: path,
         idempotencyKey: UUID().uuidString, harness: harness, model: model,
-        effort: effort, permissionMode: permissionMode))
-    let paneId = try result.decoded(PaneCreateResult.self).paneId
-    if selectPane { select(paneId) }
-    return paneId
-  }
-
-  public func sendPrompt(
-    _ paneId: String, text: String, attachments: [AgentAttachmentDraft] = []
-  ) {
-    perform {
-      try await self.sendPromptNow(paneId, text: text, attachments: attachments)
+        effort: effort, permissionMode: permissionMode,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness)))
     }
-  }
-
-  public func sendPromptNow(
-    _ paneId: String, text: String, attachments drafts: [AgentAttachmentDraft] = []
-  ) async throws {
-    let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty else { return }
-    let draft = agentWebDrafts[paneId]
-    let prompt = draft.map { $0.markdown + "\n\n## Request\n\n" + text } ?? text
-    guard prompt.utf8.count <= ProtocolLimits.promptBytes else {
-      throw ClientFailure.invalidFrame
-    }
-    let (attachments, frames) = Self.promptAttachments(web: draft, drafts: drafts)
-    _ = try await mutation(
-      .panePrompt,
-      PanePromptParams(
-        paneId: paneId, text: prompt, origin: .human,
-        attachments: attachments.isEmpty ? nil : attachments,
-        idempotencyKey: UUID().uuidString),
-      attachments: frames)
-    agentWebDrafts.removeValue(forKey: paneId)
-    try await loadAgentPane(paneId, replacing: false)
   }
 
   public func attachWebElements(
@@ -759,6 +727,7 @@ extension EngineClient {
       .paneHarnessSwitch,
       PaneHarnessSwitchParams(
         paneId: paneId, harness: harness, model: model, effort: effort,
+        acknowledgedPackage: HarnessPickerModel.acknowledgedPackage(for: self.harness(id: harness)),
         idempotencyKey: UUID().uuidString),
       timeoutSeconds: engineDeadlineTimeout(ProtocolLimits.harnessSwitchTimeoutSec)
     ).decoded(PaneHarnessSwitchResult.self)

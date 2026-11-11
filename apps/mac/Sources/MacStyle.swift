@@ -51,6 +51,7 @@ extension LocalizedStringKey.StringInterpolation {
   }
 
   enum Space {
+    static let x1: CGFloat = DesignTokens.Space.x1
     static let x2: CGFloat = DesignTokens.Space.x2
     static let x3: CGFloat = DesignTokens.Space.x3
     static let x4: CGFloat = DesignTokens.Space.x4
@@ -58,11 +59,14 @@ extension LocalizedStringKey.StringInterpolation {
     static let x6: CGFloat = DesignTokens.Space.x6
     static let x7: CGFloat = DesignTokens.Space.x7
     static let x8: CGFloat = DesignTokens.Space.x8
+    static let x9: CGFloat = DesignTokens.Space.x9
     static let x10: CGFloat = DesignTokens.Space.x10
     static let x12: CGFloat = DesignTokens.Space.x12
     static let x14: CGFloat = DesignTokens.Space.x14
     static let x16: CGFloat = DesignTokens.Space.x16
     static let x18: CGFloat = DesignTokens.Space.x18
+    static let x20: CGFloat = DesignTokens.Space.x20
+    static let x22: CGFloat = DesignTokens.Space.x22
   }
 
   enum TypeScale {
@@ -70,6 +74,7 @@ extension LocalizedStringKey.StringInterpolation {
     static let small: CGFloat = DesignTokens.TypeScale.small
     static let control: CGFloat = DesignTokens.TypeScale.control
     static let caption: CGFloat = DesignTokens.TypeScale.caption
+    static let label: CGFloat = DesignTokens.TypeScale.label
     static let body: CGFloat = DesignTokens.TypeScale.body
     static let subheading: CGFloat = DesignTokens.TypeScale.subheading
     static let heading: CGFloat = DesignTokens.TypeScale.heading
@@ -159,8 +164,8 @@ extension LocalizedStringKey.StringInterpolation {
 
   private static func proseFamily(_ family: WritingFont) -> String {
     switch family {
-    case .reading_serif: "Newsreader"
-    case .classic_serif: "Times New Roman"
+    case .reading_serif: DesignTokens.Fonts.reading
+    case .classic_serif: DesignTokens.Fonts.classicSerif
     case .sans: chromeFamily
     }
   }

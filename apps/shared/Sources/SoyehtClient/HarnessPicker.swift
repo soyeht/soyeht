@@ -213,13 +213,28 @@ public enum HarnessPickerModel {
     }
   }
 
+  /// What starting an adapter that a package runner fetches does, before the person starts it
+  /// (ADR 0143): the package it downloads and runs, and whether the engine installs it from a
+  /// lockfile it carries or the runner fetches it and its dependencies unchecked.
+  static func downloadNotice(for harness: HarnessInfo) -> String {
+    guard let package = harness.package else {
+      return "Starting it downloads and runs this agent's adapter package, "
+        + "which Soyeht has not checked."
+    }
+    if harness.packageLocked == true {
+      return "Starting it installs \(package) once from a lockfile Soyeht carries, "
+        + "with every package checked, then runs it from there."
+    }
+    return "Starting it downloads and runs \(package) and its dependencies from the package "
+      + "registry. Soyeht has not checked them."
+  }
+
   public static func statusReason(for harness: HarnessInfo) -> String {
     let reason = harness.setupReason ?? fallbackReason(for: setupState(for: harness))
     return switch reason {
     case .never_started: "Installed; this agent has not been started yet. You can start it now."
     case .executable_missing: "Executable not found on the engine's launch PATH."
-    case .registry_package_unverified:
-      "The adapter runner is available; its package has not been verified locally. Starting it will check the package."
+    case .registry_package_unverified: downloadNotice(for: harness)
     case .authentication_required: "This agent requires sign-in before it can start."
     case .session_failed: "The agent started, but its session failed. Try starting it again."
     case .launch_failed: "The agent could not start. Check its installation and try again."
@@ -232,6 +247,15 @@ public enum HarnessPickerModel {
   /// and nothing for a ready one, whose "opened successfully" is no news while choosing a model.
   public static func pickerNotice(for harness: HarnessInfo) -> String? {
     setupState(for: harness) == .ready ? nil : statusReason(for: harness)
+  }
+
+  /// The package a person acknowledges by starting `harness` from a picker that shows its notice
+  /// (ADR 0143): the one the runner downloads unchecked. `nil` when the engine installs the
+  /// package from its lockfile, or the harness downloads none. The engine starts an unchecked
+  /// package only once this exact `name@version` was sent by a person.
+  public static func acknowledgedPackage(for harness: HarnessInfo?) -> String? {
+    guard let harness, harness.packageLocked != true else { return nil }
+    return harness.package
   }
 
   private static func fallbackReason(for state: HarnessSetupState) -> HarnessSetupReason? {

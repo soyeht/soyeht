@@ -1,11 +1,11 @@
 use crate::{
-    catalogue::Catalogue, editor::EditorEvent, preferences::Preferences, snapshot::Snapshot,
-    streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
+    catalogue::Catalogue, composer::ReturnedPrompt, editor::EditorEvent, preferences::Preferences,
+    snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
 };
 use serde_json::Value;
 use soyeht_protocol::{
-    AgentCommand, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, PromptItem,
-    SkillsListResult, Task, TranscriptMessage, UsageReading, Workspace,
+    AgentCommand, EngineReadinessResult, EventName, HarnessInfo, LoopConfig, ProjectTrust,
+    PromptItem, SkillsListResult, Task, TranscriptMessage, UsageReading, Workspace,
 };
 
 /// What the connection tells the application, in the order it happened.
@@ -51,6 +51,9 @@ pub enum Event {
     Opened { ticket: u64, pane_id: String },
     /// The workspace a request to open a folder (`Command::CreateWorkspace`) made.
     WorkspaceOpened { ticket: u64, workspace: Workspace },
+    /// The engine did not take a message sent from the composer of `pane_id` (`Command::Prompt`):
+    /// what was typed and the files attached to it, to put back.
+    PromptReturned(ReturnedPrompt),
     /// The request to open a pane that `ticket` names failed.
     OpenFailed { ticket: u64 },
     /// The engine did not store the arrangement of a workspace (`Command::SetLayout`).
@@ -82,6 +85,13 @@ pub enum Event {
     Supervisor { connected: bool },
     /// The settings Preferences shows.
     Preferences(Preferences),
+    /// The engine's answer to a request to trust, or restrict, the folder of a workspace.
+    ProjectTrust {
+        workspace_ids: Vec<String>,
+        trust: ProjectTrust,
+    },
+    /// The request to set the trust of a folder failed.
+    ProjectTrustFailed,
     /// What the engine told an editor pane.
     Editor(EditorEvent),
     /// What the engine told the writing panes and the lists of their sections.

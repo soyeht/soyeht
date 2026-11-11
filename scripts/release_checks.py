@@ -12,6 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import third_party_licenses
 from release_manifest import sha256_of
 
 CHECKSUMS = "SHA256SUMS"
@@ -24,12 +25,15 @@ DEVELOPER_ID = "Authority=Developer ID Application:"
 DIRECTORIES = {0x10B: 96, 0x20B: 112}
 CERTIFICATE_TABLE = 4
 
-# The packages a complete release holds: (system, architecture, extension). A Linux build of the
-# other architecture needs a host of that architecture and is not part of the first releases.
+# The packages a complete release holds: (system, architecture, extension). A Linux package is built
+# on a host of its own architecture (`package_linux.py` does not cross-build), so a release needs one
+# Linux host of each (docs/release.md).
 REQUIRED = (
     ("macos", "aarch64", "dmg"),
     ("linux", "x86_64", "deb"),
     ("linux", "x86_64", "AppImage"),
+    ("linux", "aarch64", "deb"),
+    ("linux", "aarch64", "AppImage"),
     ("windows", "x86_64", "exe"),
     ("windows", "aarch64", "exe"),
 )
@@ -54,6 +58,19 @@ def read_build_sha(path):
     if len(text) != 40 or any(c not in "0123456789abcdef" for c in text):
         raise MarkerError(f"{path} does not hold a full commit id")
     return text
+
+
+def exception_problems(policy=None):
+    """One line for each license exception still in `scripts/third_party/policy.json` that nobody accepted. An
+    exception lets the gate pass what is already in the tree (ADR 0149); a release must not ship one the owner has
+    not accepted (`accepted` of the entry, with who and the date), and never ships a copyleft one."""
+    policy = policy or third_party_licenses.load_policy()
+    return [
+        f"{package} is under {license} and still has an exception in scripts/third_party/policy.json: "
+        "remove the dependency, or have the owner accept it, before a release"
+        for package, license in sorted(policy.exceptions)
+        if (package, license) not in policy.accepted
+    ]
 
 
 def package_name(version, system, architecture, extension):

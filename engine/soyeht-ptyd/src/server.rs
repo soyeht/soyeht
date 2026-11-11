@@ -14,7 +14,7 @@ use crate::{
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_platform::{
     fs::{LockError, PTYD_LOCK, lock_singleton},
-    local::{BindError, Listener, Stream, peer_is_same_user},
+    local::{BindError, ProvedListener, Stream, peer_is_same_user, remove_proved},
     log,
 };
 use soyeht_protocol::{
@@ -35,6 +35,10 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+mod watch;
+
+use watch::{Watchers, hello_refusal, welcome};
+
 struct Live {
     master: Mutex<File>,
     resizer: Option<Resizer>,
@@ -43,11 +47,19 @@ struct Live {
     guard: Option<Mutex<Guard>>,
     exited: AtomicBool,
     read_done: AtomicBool,
+    instance_id: String,
+    watchers: Arc<Watchers>,
+    /// Whether the exit has been announced to the watches: once, after both of the flags above.
+    exit_announced: AtomicBool,
 }
 
 struct OutputState {
     retention: Retention,
     pending: Option<Pending>,
+    /// A notice for output is on its way to the watches and the engine has not read since. It is
+    /// cleared by the read, in the same critical section, so a chunk that arrives after the read
+    /// is announced and one that arrives before it is read.
+    told: bool,
 }
 
 struct State {
@@ -57,6 +69,7 @@ struct State {
     live: BTreeMap<String, Arc<Live>>,
     active: Option<(String, Stream)>,
     inputs: BTreeMap<String, (String, String, usize)>,
+    watchers: Arc<Watchers>,
 }
 
 fn error(kind: &str, message: &str) -> Response {
@@ -86,7 +99,9 @@ pub fn run(directory: &Path) -> Result<()> {
         Err(LockError::Io(error)) => return Err(error.into()),
     };
     let endpoint = directory.join(PTYD_SOCKET);
-    let listener = match Listener::bind(&endpoint) {
+    // Every connection proves that it can read the secret file beside the socket before the first
+    // frame is read (ADR 0160); the engine is the one client that can.
+    let listener = match ProvedListener::bind(&endpoint) {
         Ok(listener) => listener,
         Err(BindError::PathNotEndpoint) => return Err(Error::SocketPathNotSocket),
         Err(BindError::Io(error)) => return Err(error.into()),
@@ -106,13 +121,14 @@ pub fn run(directory: &Path) -> Result<()> {
         live: BTreeMap::new(),
         active: None,
         inputs: BTreeMap::new(),
+        watchers: Arc::default(),
     }));
     println!(
         "{}",
         log::record("ptyd.ready", &[("version", &VERSION.to_string())])
     );
-    for incoming in listener.incoming() {
-        let stream = incoming?;
+    loop {
+        let stream = listener.accept()?;
         // The socket's mode and directory keep other users out; this does not depend on them.
         if let Some(reason) = refusal_reason(peer_is_same_user(&stream)) {
             log::event("ptyd.connection_refused", &[("reason", reason)]);
@@ -125,7 +141,6 @@ pub fn run(directory: &Path) -> Result<()> {
             }
         });
     }
-    Ok(())
 }
 
 /// The `reason` of `ptyd.connection_refused` for a peer that runs as another user. These are log
@@ -160,17 +175,15 @@ fn end_when_program_is_gone(
     }
 }
 
-/// The endpoint this supervisor listens on; it is removed when the supervisor stops, as the
-/// engine removes its own. A supervisor that is killed cannot run this, and the next one
-/// replaces the file it left.
+/// The endpoint this supervisor listens on, with the secret file beside it; they are removed when
+/// the supervisor stops, as the engine removes its own. A supervisor that is killed cannot run
+/// this, and the next one replaces what it left.
 struct EndpointFile(PathBuf);
 
 impl Drop for EndpointFile {
     fn drop(&mut self) {
-        match std::fs::remove_file(&self.0) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => log::failure("ptyd.endpoint_not_removed", &error),
+        if let Err(error) = remove_proved(&self.0) {
+            log::failure("ptyd.endpoint_not_removed", &error);
         }
     }
 }
@@ -184,26 +197,19 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     let Request::Hello {
         version,
         engine_generation,
+        role,
     } = request
     else {
         return refuse(&mut stream, wire_kind::UNAUTHORIZED, "hello required");
     };
+    if role == Role::Watch {
+        return watch::serve(stream, &shared, version, engine_generation);
+    }
     let connection_id = Uuid::new_v4().to_string();
     {
         let mut state = lock(&shared, "state")?;
-        if version != VERSION {
-            return refuse(
-                &mut stream,
-                wire_kind::VERSION_UNSUPPORTED,
-                "incompatible supervisor protocol",
-            );
-        }
-        if engine_generation < state.registry.engine_generation {
-            return refuse(
-                &mut stream,
-                wire_kind::STALE_ENGINE_GENERATION,
-                "engine generation is stale",
-            );
+        if let Some((kind, message)) = hello_refusal(&state, version, engine_generation) {
+            return refuse(&mut stream, kind, message);
         }
         if engine_generation == state.registry.engine_generation && state.active.is_some() {
             return refuse(
@@ -218,19 +224,16 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             state.registry.engine_generation = prior_generation;
             return Err(error);
         }
+        if engine_generation != prior_generation {
+            // The watches followed the request connection of the generation before this one.
+            state.watchers.close_all();
+        }
         if let Some((_, old)) = state.active.take() {
             // ignored: the superseded engine connection may already be closed; either way it ends here.
             let _ = old.shutdown(Shutdown::Both);
         }
         state.active = Some((connection_id.clone(), stream.try_clone()?));
-        if let Err(error) = send(
-            &mut stream,
-            &Response::Welcome {
-                version: VERSION,
-                supervisor_id: state.supervisor_id.clone(),
-                supervisor_generation: state.registry.supervisor_generation,
-            },
-        ) {
+        if let Err(error) = send(&mut stream, &welcome(&state)) {
             state.active = None;
             return Err(error);
         }
@@ -287,6 +290,10 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
             from_seq,
         } => execute_drain(state, &instance_id, from_seq),
         Request::Ack { instance_id, seq } => execute_ack(state, &instance_id, seq),
+        Request::Watch { .. } => Ok(error(
+            wire_kind::OPERATION_FAILED,
+            "watching needs a connection with the watch role",
+        )),
     }
 }
 
@@ -357,10 +364,14 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         output: Mutex::new(OutputState {
             retention: Retention::new(limits::PTY_RETENTION_BYTES)?,
             pending: pipes.then(Pending::default),
+            told: false,
         }),
         guard: guard.map(Mutex::new),
         exited: AtomicBool::new(false),
         read_done: AtomicBool::new(false),
+        instance_id: instance.instance_id.clone(),
+        watchers: Arc::clone(&state.watchers),
+        exit_announced: AtomicBool::new(false),
     });
     state
         .registry
@@ -434,7 +445,7 @@ fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
             if child.try_wait()?.is_none() {
                 child.end(reach(&live));
             }
-            live.exited.store(true, Ordering::Release);
+            live.mark_exited();
         }
     }
     Ok(Response::Ok)
@@ -555,11 +566,17 @@ fn execute_drain(state: &State, instance_id: &str, from_seq: u64) -> Result<Resp
     let Some(live) = state.live.get(instance_id) else {
         return Ok(error(wire_kind::NOT_FOUND, "process not found"));
     };
-    let output = lock(&live.output, "output")?.retention.read(
-        from_seq,
-        limits::TERMINAL_PAYLOAD_BYTES,
-        live.exited.load(Ordering::Acquire) && live.read_done.load(Ordering::Acquire),
-    );
+    let output = {
+        let mut state = lock(&live.output, "output")?;
+        // The read and the clearing of the flag are one critical section: output that arrives
+        // after it is announced, and output that arrived before it is in what is read.
+        state.told = false;
+        state.retention.read(
+            from_seq,
+            limits::TERMINAL_PAYLOAD_BYTES,
+            live.exited_and_drained(),
+        )
+    };
     Ok(match output {
         Ok(output) => Response::Output(output),
         Err(failure) => error(failure.wire_kind(), "invalid output cursor"),
@@ -597,6 +614,18 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                         log::event("ptyd.output_offset_exhausted", &[]);
                         break;
                     }
+                    // One notice per read: the flag stays set until the engine reads.
+                    let announce = reading.watchers.any() && !output.told;
+                    output.told |= announce;
+                    let end_seq = output.retention.end_seq();
+                    drop(output);
+                    if announce {
+                        reading.watchers.announce(&Readable {
+                            instance_id: reading.instance_id.clone(),
+                            end_seq,
+                            exited: false,
+                        });
+                    }
                 }
                 Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -608,16 +637,35 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 Err(_) => break,
             }
         }
-        reading.read_done.store(true, Ordering::Release);
+        reading.mark_read_done();
     });
     thread::spawn(move || {
+        // The wait runs without the child's lock, which a kill or a close takes to end it.
+        let waiter = match live.child.lock() {
+            Ok(child) => child.exit_waiter(),
+            // ignored: the poisoning is logged by name just below
+            Err(_) => {
+                log::event("ptyd.child_lock_poisoned", &[]);
+                live.mark_exited();
+                return;
+            }
+        };
         loop {
+            // A wait that failed still gets one look at the child, so an exit that happened is
+            // recorded and collected; only a child that is still running makes it give up.
+            let wait_failed = match waiter.wait() {
+                Ok(()) => false,
+                Err(error) => {
+                    log::failure("ptyd.child_wait_failed", &error);
+                    true
+                }
+            };
             let exit = match live.child.lock() {
                 Ok(mut child) => child.try_wait(),
                 // ignored: the poisoning is logged by name just below
                 Err(_) => {
                     log::event("ptyd.child_lock_poisoned", &[]);
-                    live.exited.store(true, Ordering::Release);
+                    live.mark_exited();
                     break;
                 }
             };
@@ -633,7 +681,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     let code = guarded_code.unwrap_or_else(|| status.code().unwrap_or(-1));
                     let Ok(mut state) = shared.lock() else {
                         log::event("ptyd.state_lock_poisoned", &[]);
-                        live.exited.store(true, Ordering::Release);
+                        live.mark_exited();
                         break;
                     };
                     if let Some(instance) = state.registry.instances.get_mut(&key) {
@@ -641,7 +689,7 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                     }
                     // Published after the status, under the lock a `List` takes, so a reader
                     // that sees the process exited also finds its exit status.
-                    live.exited.store(true, Ordering::Release);
+                    live.mark_exited();
                     if state.registry.save(&state.directory).is_err() {
                         log::event("ptyd.registry_write_failed", &[]);
                     }
@@ -649,9 +697,15 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                 }
                 Err(error) => {
                     log::failure("ptyd.child_wait_failed", &error);
-                    live.exited.store(true, Ordering::Release);
+                    live.mark_exited();
                     break;
                 }
+                Ok(None) if wait_failed => {
+                    live.mark_exited();
+                    break;
+                }
+                // Not collectable yet, which a wait that returned does not leave: look again
+                // after a pause rather than spin.
                 Ok(None) => thread::sleep(Duration::from_millis(10)),
             }
         }

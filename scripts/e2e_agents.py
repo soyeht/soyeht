@@ -18,12 +18,14 @@ from generated_profile import PTYD_SOCKET
 
 
 def until(action, message, seconds=20):
+    """The first truthy `action()` within `seconds`; `message` may be a function of no arguments,
+    called only on a timeout, so a failure can say what it last saw."""
     deadline = time.monotonic() + seconds
     while True:
         value = action()
         if value:
             return value
-        require(time.monotonic() < deadline, message)
+        require(time.monotonic() < deadline, message() if callable(message) else message)
         time.sleep(0.02)
 
 
@@ -100,7 +102,7 @@ def open_agent(client, workspace, harness):
 
 
 def supervisor_pending(services, generation, instance):
-    with connect_endpoint(services.data / PTYD_SOCKET, timeout=5) as stream:
+    with connect_endpoint(services.data / PTYD_SOCKET, timeout=5, proved=True) as stream:
         send(stream, {"method": "hello", "params": {"version": services.ptyd_version,
                                                      "engine_generation": generation}})
         require(receive(stream)["status"] == "welcome", "supervisor handshake failed")
@@ -284,6 +286,17 @@ def acceptance_queue(services, client, pane, results):
     return client
 
 
+def replaced(current, before):
+    """Whether a pane has a process of the new supervisor and its agent session is open again."""
+    return (current["generation"] > before["generation"] and current["state"] in ("idle", "starting")
+            and current["phrase"] == "Agent session ready")
+
+
+def describe_pane(current, before):
+    return (f"generation {before['generation']} -> {current['generation']}, "
+            f"state {current['state']!r}, phrase {current['phrase']!r}")
+
+
 def acceptance_supervisor_loss(services, client, workspace, pane, results):
     without = open_agent(client, workspace, "no-load")
     turn(services, client, without, "no resume history")
@@ -292,9 +305,8 @@ def acceptance_supervisor_loss(services, client, workspace, pane, results):
                  if item["kind"] == "message"]
     services.launcher.crash("ptyd")
     for key in (pane, without):
-        until(lambda key=key: client.pane(key)["generation"] > old[key]["generation"]
-              and client.pane(key)["state"] in ("idle", "starting")
-              and client.pane(key)["phrase"] == "Agent session ready", "supervisor replacement was not reconciled")
+        until(lambda key=key: replaced(client.pane(key), old[key]),
+              lambda key=key: "supervisor replacement was not reconciled: " + describe_pane(client.pane(key), old[key]))
     require(client.pane(pane)["agent"]["sessionId"] == old[pane]["agent"]["sessionId"], "supported load lost native session")
     require(client.pane(without)["agent"]["sessionId"] != old[without]["agent"]["sessionId"], "unsupported load reused a lost session")
     require(events(services, "pane.session_lost", without), "unsupported load was silent")

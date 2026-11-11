@@ -117,8 +117,9 @@ a service that is registered and not current. The Mac app does so at every launc
 the registration of an app dragged from Downloads to Applications, and leaves a right registration
 alone: a person who ran `service stop` does not find the services started again by the next
 launch, and the system announces no new background item. `install` itself writes a definition file
-only when its bytes differ from what is there. The Mac app does not register from a disk image or
-a translocated path, which are gone when the image is ejected or the app is moved. A program that
+only when its bytes differ from what is there. The released Mac app registers only from `/Applications` or
+`~/Applications`, and not from a disk image, a translocated path or any other folder, which are gone
+when the image is ejected or the app is moved (ADR 0120, "Amendment: where the app may run"). A program that
 runs when its folder moves keeps running; if it ends before the repair, the system cannot restart
 it from the old path.
 
@@ -178,6 +179,10 @@ runs on, and the new engine adopts the processes. The supervisor lost alone cost
 the time to restart; the engine reconnects as it already does. On Windows a task that ended
 with exit code 0 is not restarted until the next logon, and neither is a task whose 999
 restarts are spent.
+
+The engine ends itself on purpose in one case besides a failed start: it finds its Core lock poisoned
+by a panic, logs `engine.core_poisoned` and exits with code 70 (ADR 0159). Every definition above
+restarts a program that ends with a failure code, so the engine is back after the restart delay.
 
 On the Mac, launchd can still be removing a job for a moment after `bootout`, and then refuses a
 new `bootstrap` with error 5 ("Input/output error") or 37 ("Operation already in progress"). The
