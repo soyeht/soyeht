@@ -140,29 +140,33 @@ impl Running {
 }
 
 impl Core {
-    /// When the tick must poll the agent of `pane`: now unless it is at rest, and then when an
-    /// open request of it can expire, or, while no watch is heard, when its pause ends. A mark
-    /// of the watch ends the rest at once, and so does a read that waits to be taken.
+    /// Whether the poll of the agent `pane` can wait. It is at rest and nothing needs it: no mark
+    /// of the watch, no read that ended and waits to be taken. It then waits for its pace, or,
+    /// with the watch heard, for the notice that marks it.
+    pub(crate) fn agent_may_rest(&self, pane: &str) -> bool {
+        let owner = crate::read_ahead::agent(pane);
+        self.agents[pane].is_settled(self.now_ms())
+            && !self.pane_marked(pane)
+            && !self.read_ready(&owner)
+            && (self.reads_paused(&owner) || self.watch.is_active())
+    }
+
+    /// When the tick must poll the agent of `pane`: now unless it may rest, and then when an open
+    /// request of it can expire, or, while no watch is heard, when its pause ends.
     pub(crate) fn agent_poll_due(&self, pane: &str, next: &mut Next, now: i64) {
         let Some(agent) = self.agents.get(pane) else {
             return;
         };
-        let owner = crate::read_ahead::agent(pane);
-        if agent.state.phase == Phase::Faulted
-            || self.pane_marked(pane)
-            || self.read_ready(&owner)
-            || !agent.is_settled(now)
-        {
+        if agent.state.phase == Phase::Faulted || !self.agent_may_rest(pane) {
             return next.now();
         }
         if let Some(until) = agent.idle.quiet_until_ms {
             next.at_ms(now, until);
         }
-        if !self.watch.is_active() {
-            match self.reads_paused_until(&owner) {
-                Some(until) => next.at_ms(now, until),
-                None => next.now(),
-            }
+        if let Some(until) = self.reads_paused_until(&crate::read_ahead::agent(pane))
+            && !self.watch.is_active()
+        {
+            next.at_ms(now, until);
         }
     }
 

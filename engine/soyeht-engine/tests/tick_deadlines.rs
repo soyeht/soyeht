@@ -91,25 +91,6 @@ fn listen_for_output(client: &mut Client, pane_ref: u64, text: &str) -> bool {
     false
 }
 
-/// Types into the shell until it answers: a login shell that is still starting drops what is typed
-/// before it reads the terminal.
-fn wait_for_shell(client: &mut Client, watcher: &mut Client, pane: &str, pane_ref: u64) {
-    let deadline = Instant::now() + Duration::from_secs(90);
-    let mut seen = Vec::new();
-    for attempt in 0.. {
-        assert!(Instant::now() < deadline, "the shell never answered");
-        client.call(
-            "pane.input",
-            json!({"paneId":pane,"bytes":STANDARD.encode("echo RE\"\"ADY\n"),
-                "idempotencyKey":format!("ready-{attempt}")}),
-        );
-        read_output(watcher, pane_ref, Duration::from_millis(300), &mut seen);
-        if contains(&seen, b"READY\r\n") {
-            return;
-        }
-    }
-}
-
 /// Waits without a request until `ready` holds.
 fn wait_without_asking(ready: impl Fn() -> bool) -> bool {
     let deadline = Instant::now() + WITHIN;

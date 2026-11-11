@@ -430,7 +430,7 @@ a second.
 **As built (change 1b).** The plan held, with these differences, which are the boundaries that moved:
 
 - **A subsystem says when it needs the tick; it does not store a `next_due`.** After each run the
-  tick calls `Core::tick_wait` (`tick_due.rs`), which asks each subsystem for its deadline in the
+  tick calls `tick_due::wait`, which asks each subsystem for its deadline in the
   engine clock and takes the earliest, never later than the ceiling. The deadline of a retry, an
   autosave or a burst of file events is data the subsystem already had (`due_ms`, `save_due_ms`,
   `Burst::due_ms`); a second field would be a second copy. The ceiling is `Hooks::tick_ceiling`

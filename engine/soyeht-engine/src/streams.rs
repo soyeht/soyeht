@@ -103,7 +103,7 @@ impl Core {
     pub fn pump_streams(&mut self) -> Result<()> {
         let mut behind = false;
         let pumped = self.pump_each_stream(&mut behind);
-        self.tick.streams_behind = behind;
+        self.note_streams_behind(behind);
         pumped
     }
 

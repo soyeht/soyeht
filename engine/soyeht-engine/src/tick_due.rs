@@ -69,72 +69,70 @@ pub(crate) struct State {
     pub(crate) streams_behind: bool,
 }
 
-impl Core {
-    /// How long the tick may sleep, from the end of a run: the earliest deadline of every
-    /// subsystem the tick drives, or the ceiling. Zero means it has work now.
-    pub(crate) fn tick_wait(&self) -> Duration {
-        let ceiling = self.hooks.tick_ceiling().unwrap_or(CEILING);
-        let now = self.now_ms();
-        let mut next = Next::default();
-        self.file_and_service_dues(&mut next, now);
-        self.link_due(&mut next, now);
-        // The pump runs whether or not there is a link.
-        if self.tick.streams_behind {
-            next.now();
-        }
-        // The rest of the tick runs only with a link to the supervisor, and the connection that
-        // makes one kicks the tick.
-        if self.ptyd.is_some() {
-            self.supervisor_dues(&mut next, now);
-            self.task_dues(&mut next, now);
-        }
-        next.soonest().map_or(ceiling, |wait| wait.min(ceiling))
+/// How long the tick may sleep, from the end of a run: the earliest deadline of every subsystem
+/// the tick drives, or the ceiling. Zero means it has work now.
+pub(crate) fn wait(core: &Core) -> Duration {
+    let ceiling = core.hooks.tick_ceiling().unwrap_or(CEILING);
+    let now = core.now_ms();
+    let mut next = Next::default();
+    file_and_service_dues(core, &mut next, now);
+    core.link_due(&mut next, now);
+    // The pump runs whether or not there is a link.
+    if core.streams_behind() {
+        next.now();
     }
-
-    /// The editor, the project panel, the skills, the local servers, the input receipts and the
-    /// web commands: what the tick does before it needs the supervisor.
-    fn file_and_service_dues(&self, next: &mut Next, now: i64) {
-        self.editor_due(next, now);
-        if let Some(due) = self.project_watches.next_due_ms() {
-            next.at_ms(now, due);
-        }
-        if let Some(due) = self.skill_watches.next_due_ms() {
-            next.at_ms(now, due);
-        }
-        if self.web.unavailable().is_none() {
-            next.at_ms(now, self.web.next_refresh_ms());
-        }
-        self.input_receipts_due(next, now);
-        self.web_commands_due(next, now);
+    // The rest of the tick runs only with a link to the supervisor, and the connection that
+    // makes one kicks the tick.
+    if core.ptyd.is_some() {
+        supervisor_dues(core, &mut next, now);
+        task_dues(core, &mut next, now);
     }
+    next.soonest().map_or(ceiling, |wait| wait.min(ceiling))
+}
 
-    /// What the tick does for the panes and the processes behind them.
-    fn supervisor_dues(&self, next: &mut Next, now: i64) {
-        self.retries_due(next, now);
-        self.output_due(next, now);
-        self.language_servers_due(next);
-        if !self.harness_switches.is_empty()
-            || !self.terminal_captures.is_empty()
-            || !self.agent_captures.is_empty()
-        {
-            next.now();
-        }
-        if let Some(deadline) = self.capture_restore_deadline {
-            next.at(deadline);
-        }
-        self.retired_processes_due(next, now);
+/// The editor, the project panel, the skills, the local servers, the input receipts and the web
+/// commands: what the tick does before it needs the supervisor.
+fn file_and_service_dues(core: &Core, next: &mut Next, now: i64) {
+    core.editor_due(next, now);
+    if let Some(due) = core.project_watches.next_due_ms() {
+        next.at_ms(now, due);
     }
+    if let Some(due) = core.skill_watches.next_due_ms() {
+        next.at_ms(now, due);
+    }
+    if core.web.unavailable().is_none() {
+        next.at_ms(now, core.web.next_refresh_ms());
+    }
+    core.input_receipts_due(next, now);
+    core.web_commands_due(next, now);
+}
 
-    /// The tasks. A task has work when the store says
-    /// its poll is not at rest, or when a poll of its own is due; a write to the store, by a
-    /// request or by the tick itself, makes the tick run again (see [`crate::tick`]).
-    fn task_dues(&self, next: &mut Next, now: i64) {
-        if let Some(wait) = self.store.next_poll_wait(now) {
-            next.within(wait);
-        }
-        if let Some(due) = self.task_revision_due.values().min() {
-            next.at_ms(now, *due);
-        }
+/// What the tick does for the panes and the processes behind them.
+fn supervisor_dues(core: &Core, next: &mut Next, now: i64) {
+    core.retries_due(next, now);
+    core.output_due(next, now);
+    crate::languages::watching::due(core, next);
+    if !core.harness_switches.is_empty()
+        || !core.terminal_captures.is_empty()
+        || !core.agent_captures.is_empty()
+    {
+        next.now();
+    }
+    if let Some(deadline) = core.capture_restore_deadline {
+        next.at(deadline);
+    }
+    core.retired_processes_due(next, now);
+}
+
+/// The tasks. A task has work when the store says its poll is not at rest, or when a poll of its
+/// own is due; a write to the store, by a request or by the tick itself, makes the tick run again
+/// (see [`crate::tick`]).
+fn task_dues(core: &Core, next: &mut Next, now: i64) {
+    if let Some(wait) = core.store.next_poll_wait(now) {
+        next.within(wait);
+    }
+    if let Some(due) = core.task_revision_due.values().min() {
+        next.at_ms(now, *due);
     }
 }
 
@@ -219,18 +217,18 @@ pub(crate) mod tests {
     #[test]
     fn an_engine_with_nothing_to_do_sleeps_until_the_ceiling() {
         let (core, directory) = quiet_core();
-        assert_eq!(core.tick_wait(), CEILING);
+        assert_eq!(wait(&core), CEILING);
         crate::test_paths::remove_after(core, directory);
     }
 
     #[test]
     fn the_ceiling_is_the_hooks_and_a_deadline_still_comes_first() {
         let (core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
-        let wait = core.tick_wait();
-        assert!(wait > CEILING, "the ceiling moved: {wait:?}");
+        let waited = wait(&core);
+        assert!(waited > CEILING, "the ceiling moved: {waited:?}");
         assert!(
-            wait <= Duration::from_secs(5),
-            "the scan of the local servers, due in five seconds, comes first: {wait:?}"
+            waited <= Duration::from_secs(5),
+            "the scan of the local servers, due in five seconds, comes first: {waited:?}"
         );
         crate::test_paths::remove_after(core, directory);
     }
@@ -239,7 +237,7 @@ pub(crate) mod tests {
     fn the_probe_of_the_skill_folders_is_the_first_deadline_of_a_quiet_engine() {
         let (core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
         // The probe was due two seconds after the first run, three hundred milliseconds ago.
-        assert_eq!(core.tick_wait(), Duration::from_millis(1_700));
+        assert_eq!(wait(&core), Duration::from_millis(1_700));
         crate::test_paths::remove_after(core, directory);
     }
 
@@ -248,9 +246,9 @@ pub(crate) mod tests {
         let (mut core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
         let moved = core.now_ms() + 2_000;
         core.clock = Arc::new(Manual(AtomicI64::new(moved)));
-        assert_eq!(core.tick_wait(), Duration::ZERO);
+        assert_eq!(wait(&core), Duration::ZERO);
         core.poll_output().unwrap();
-        assert!(core.tick_wait() > Duration::ZERO, "the run took the probe");
+        assert!(wait(&core) > Duration::ZERO, "the run took the probe");
         crate::test_paths::remove_after(core, directory);
     }
 
@@ -261,7 +259,7 @@ pub(crate) mod tests {
         core.input_receipts
             .push(Waiting::for_test("a", "op-a", queued));
         assert_eq!(
-            core.tick_wait(),
+            wait(&core),
             Duration::from_millis(u64::try_from(LINGER_MS).unwrap())
         );
         crate::test_paths::remove_after(core, directory);
@@ -271,17 +269,13 @@ pub(crate) mod tests {
     fn a_shell_is_polled_until_the_watch_is_heard_and_then_read_on_a_notice_or_the_sweep() {
         let (mut core, directory) = quiet_core();
         let id = insert_terminal_pane(&mut core, &directory, "shell", false);
-        assert_eq!(
-            core.tick_wait(),
-            Duration::ZERO,
-            "polling, as it always was"
-        );
+        assert_eq!(wait(&core), Duration::ZERO, "polling, as it always was");
 
         // Listening: the first sweep marks the pane, and a read that reaches the end clears it.
         core.watch.pretend_active();
         core.watch.sweep(std::iter::once("shell-instance"));
         assert!(core.pane_marked(&id));
-        assert_eq!(core.tick_wait(), Duration::ZERO, "a marked pane is read");
+        assert_eq!(wait(&core), Duration::ZERO, "a marked pane is read");
         core.watch.note_read(
             "shell-instance",
             &ReadSummary {
@@ -291,14 +285,14 @@ pub(crate) mod tests {
                 found: false,
             },
         );
-        let wait = core.tick_wait();
+        let waited = wait(&core);
         assert!(
-            wait > Duration::from_millis(900) && wait <= crate::supervisor_watch::SWEEP,
-            "an idle pane waits for the next sweep: {wait:?}"
+            waited > Duration::from_millis(900) && waited <= crate::supervisor_watch::SWEEP,
+            "an idle pane waits for the next sweep: {waited:?}"
         );
 
         core.watch.pretend_notice("shell-instance", 5);
-        assert_eq!(core.tick_wait(), Duration::ZERO, "a notice marks it");
+        assert_eq!(wait(&core), Duration::ZERO, "a notice marks it");
         crate::test_paths::remove_after(core, directory);
     }
 
@@ -312,10 +306,10 @@ pub(crate) mod tests {
         // No supervisor listens: the connection failed and the retry waits.
         core.poll_output().unwrap();
         assert!(core.ptyd.is_none());
-        let wait = core.tick_wait();
+        let waited = wait(&core);
         assert!(
-            wait > Duration::ZERO && wait <= Duration::from_secs(2),
-            "the retry delay of a link that is down: {wait:?}"
+            waited > Duration::ZERO && waited <= Duration::from_secs(2),
+            "the retry delay of a link that is down: {waited:?}"
         );
         crate::test_paths::remove_after(core, directory);
     }

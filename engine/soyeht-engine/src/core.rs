@@ -91,7 +91,7 @@ pub struct Core {
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
     /// What the tick remembers between its runs (ADR 0147, step 1b).
-    pub(crate) tick: crate::tick_due::State,
+    tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -159,6 +159,15 @@ fn engine_signing_key(store: &Store) -> Result<ed25519_dalek::SigningKey> {
 }
 
 impl Core {
+    /// Whether the last pump left a subscriber behind (see `tick_due`).
+    pub(crate) fn streams_behind(&self) -> bool {
+        self.tick.streams_behind
+    }
+
+    pub(crate) fn note_streams_behind(&mut self, behind: bool) {
+        self.tick.streams_behind = behind;
+    }
+
     /// Makes the address this engine shows for pairing follow the port of `profile`.
     pub fn use_port_of(&mut self, profile: &Profile) {
         self.pair_address = loopback_address(profile);

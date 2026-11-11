@@ -322,7 +322,7 @@ impl crate::core::Core {
     /// Once a second, marks every pane's process for a read whatever the notices said, so a notice
     /// that never came costs a second and not the output.
     pub(crate) fn sweep_watch(&mut self) {
-        let servers = self.language_server_instances();
+        let servers = crate::languages::watching::instances(self);
         let instances = self
             .panes
             .values()

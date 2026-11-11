@@ -3,7 +3,7 @@
 //! schedule starts here too.
 //!
 //! The tick does not run on a period (ADR 0147, step 1b). Each run ends by asking
-//! [`Core::tick_wait`] how long the subsystems can do without it, and the loop sleeps that long,
+//! [`tick_due::wait`] how long the subsystems can do without it, and the loop sleeps that long,
 //! or until something raises it. What raises it, and why nothing is left to a timer alone:
 //!
 //! - a **kick** (`Background::kicker`) says something may have changed: a background job ended,
@@ -59,7 +59,7 @@ fn run_once(core: &mut Core, due_prune: bool) -> Run {
 /// A run that wrote to the store may have given another subsystem work.
 fn wait_after(core: &Core, changes: u64) -> Duration {
     if core.store.change_counter() == changes {
-        core.tick_wait()
+        crate::tick_due::wait(core)
     } else {
         Duration::ZERO
     }
@@ -141,7 +141,6 @@ mod tests {
     use super::*;
     use crate::{ports::StorePort, tick_due::CEILING};
     use serde_json::json;
-    use soyeht_protocol::Workspace;
 
     #[test]
     fn a_run_that_wrote_to_the_store_runs_again_and_a_quiet_one_sleeps() {
@@ -149,14 +148,7 @@ mod tests {
         let changes = core.store.change_counter();
         assert_eq!(wait_after(&core, changes), CEILING, "nothing was written");
 
-        let workspace = Workspace {
-            workspace_id: "second".into(),
-            name: "Second".into(),
-            path: directory.to_string_lossy().into(),
-            layout: json!({}),
-        };
-        StorePort::mutate(&mut core.store, "test", "second", "seed", |change| {
-            change.insert_workspace(&workspace)?;
+        StorePort::mutate(&mut core.store, "test", "write", "seed", |_| {
             Ok((json!({}), Vec::new()))
         })
         .unwrap();

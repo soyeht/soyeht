@@ -68,19 +68,21 @@ fn context_switches(pid: u32) -> u64 {
     }
 }
 
-/// CPU seconds the process has used, from `ps` (`[[dd-]hh:]mm:ss[.ff]`, whole seconds on Linux).
-fn cpu_seconds(pid: u32) -> f64 {
-    let output = std::process::Command::new("ps")
-        .args(["-o", "time=", "-p", &pid.to_string()])
-        .output()
-        .unwrap();
-    let text = String::from_utf8(output.stdout).unwrap();
-    let text = text.trim();
-    let (days, clock) = text.split_once('-').unwrap_or(("0", text));
-    let seconds = clock.split(':').fold(0.0, |total, part| {
-        total * 60.0 + part.parse::<f64>().unwrap()
+/// Starts `count` more shells in `workspace` and waits until each has a process.
+fn start_shells(client: &mut Client, workspace: &str, count: usize) {
+    let panes: Vec<String> = (0..count)
+        .map(|index| {
+            let created = client.call(
+                "pane.create",
+                json!({"workspaceId":workspace,"mode":"terminal",
+                    "idempotencyKey":format!("shell-{index}")}),
+            );
+            created["paneId"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    wait_until("the shells started", || {
+        panes.iter().all(|pane| !client.pane(pane)["pid"].is_null())
     });
-    days.parse::<f64>().unwrap() * 86_400.0 + seconds
 }
 
 /// Context switches a second of the engine and of the supervisor over [`WINDOW`], with `panes`
@@ -90,20 +92,7 @@ fn idle_switches(panes: usize) -> (f64, f64) {
     if panes > 0 {
         let mut client = rig.client();
         let (workspace, _) = client.create(&rig);
-        for index in 1..panes {
-            let pane = client.call(
-                "pane.create",
-                json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":format!("pane-{index}")}),
-            )["paneId"]
-                .as_str()
-                .unwrap()
-                .to_owned();
-            let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT;
-            while client.pane(&pane)["pid"].is_null() {
-                assert!(Instant::now() < deadline, "a pane never started");
-                thread::sleep(Duration::from_millis(20));
-            }
-        }
+        start_shells(&mut client, &workspace, panes - 1);
     }
     thread::sleep(SETTLE);
     if panes > 0 {
@@ -162,54 +151,18 @@ fn echo_latencies(keys: usize) -> Vec<Duration> {
     let rig = Rig::new();
     let mut client = rig.client();
     let (workspace, pane) = client.create(&rig);
-    for index in 1..5 {
-        client.call(
-            "pane.create",
-            json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":format!("pane-{index}")}),
-        );
-    }
+    start_shells(&mut client, &workspace, 4);
     let mut watcher = rig.client();
     let (info, _) = watcher.tail(&pane);
     let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_millis(300)))
-        .unwrap();
-    // A login shell that is still starting drops what is typed before it reads the terminal.
-    let deadline = Instant::now() + Duration::from_secs(90);
-    let mut seen = Vec::new();
-    for attempt in 0.. {
-        assert!(Instant::now() < deadline, "the shell never answered");
-        client.call(
-            "pane.input",
-            json!({"paneId":pane,"bytes":base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "echo RE\"\"ADY\n"),
-                "idempotencyKey":format!("ready-{attempt}")}),
-        );
-        while let Ok(Some(soyeht_protocol::frame::Frame::Terminal {
-            pane_ref: found,
-            bytes,
-            ..
-        })) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket)
-        {
-            if u64::from(found) == pane_ref {
-                seen.extend(bytes);
-            }
-        }
-        if seen.windows(7).any(|part| part == b"READY\r\n") {
-            break;
-        }
-    }
+    wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
+    // Let the shell settle: its prompt and the sweep of what it printed are over.
     thread::sleep(Duration::from_secs(3));
     watcher
         .socket
-        .set_read_timeout(Some(Duration::from_secs(10)))
+        .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
-    while let Ok(Some(_)) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket) {
-        watcher
-            .socket
-            .set_read_timeout(Some(Duration::from_millis(100)))
-            .unwrap();
-    }
+    while let Ok(Some(_)) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket) {}
     watcher
         .socket
         .set_read_timeout(Some(Duration::from_secs(10)))

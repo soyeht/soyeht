@@ -470,14 +470,7 @@ impl Core {
         }
         // An idle agent that said nothing is read at a slower pace (see `read_ahead`).
         let owner = crate::read_ahead::agent(pane);
-        let marked = self.pane_marked(pane);
-        // With the watch heard, a settled agent is read when the supervisor says it has output
-        // (a mark), not on a pace; a read that ended and waits to be taken is taken at once.
-        if self.agents[pane].is_settled(self.now_ms())
-            && !marked
-            && !self.read_ready(&owner)
-            && (self.reads_paused(&owner) || self.watch.is_active())
-        {
+        if self.agent_may_rest(pane) {
             return Ok(());
         }
         let hooks = Arc::clone(&self.hooks);
