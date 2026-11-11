@@ -95,6 +95,7 @@ def render(components):
                 lines.append(f"      source code: https://crates.io/crates/{component.name}/{component.version}")
             if component.url:
                 lines.append(f"      {component.url}")
+            lines += [f"      {note}" for note in component.notes]
             lines += [f"      {line}" for line in component.copyright]
         lines.append("")
     lines.append("2. License and notice texts\n")
