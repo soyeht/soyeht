@@ -129,14 +129,17 @@ pub(super) fn serve<S>(
         if let Some(oldest) = evicted {
             oldest.close();
         }
-        let (ready, pending) = (ready.clone(), Arc::clone(&pending));
+        let (ready, listed, held) = (ready.clone(), Arc::clone(&pending), Arc::clone(&raw));
         let spawned = thread::Builder::new()
             .name("local-handshake".into())
             .spawn(move || {
-                let proved = endpoint::serve(&*raw, &token);
-                if let Ok(mut waiting) = pending.lock() {
-                    waiting.release(number);
-                }
+                let proved = endpoint::serve(&*held, &token);
+                // Leave the admitted ones before anything else is done with the connection, so
+                // that eviction, which closes what it finds there, cannot close one that proved.
+                // One that was evicted first is closed already and is not handed on.
+                let admitted = listed
+                    .lock()
+                    .is_ok_and(|mut waiting| waiting.release(number));
                 if let Err(error) = &proved
                     && error.kind() == io::ErrorKind::PermissionDenied
                 {
@@ -146,14 +149,20 @@ pub(super) fn serve<S>(
                     crate::log::event("local.proof_refused", &[]);
                 }
                 if proved.is_ok()
-                    && let Ok(stream) = raw.duplicate()
+                    && admitted
+                    && let Ok(stream) = held.duplicate()
                 {
                     // The listener was dropped when this fails: nobody is left to take it.
                     drop(ready.send(Ok(stream)));
                 }
             });
         if spawned.is_err() {
-            // Out of threads: this connection is dropped, which its client sees as a reset.
+            // Out of threads: leave the admitted ones and close this connection, which its
+            // client sees as a reset (the closure that held the other handle is gone).
+            if let Ok(mut waiting) = pending.lock() {
+                waiting.release(number);
+            }
+            raw.close();
             thread::sleep(Duration::from_millis(50));
         }
     }

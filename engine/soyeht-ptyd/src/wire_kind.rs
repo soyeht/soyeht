@@ -7,9 +7,6 @@
 pub const UNAUTHORIZED: &str = "unauthorized";
 pub const VERSION_UNSUPPORTED: &str = "version_unsupported";
 pub const STALE_ENGINE_GENERATION: &str = "stale_engine_generation";
-/// A `hello` whose engine generation is further past the recorded one than
-/// [`crate::wire::MAX_GENERATION_STEP`] allows.
-pub const GENERATION_JUMP: &str = "generation_jump";
 pub const ENGINE_CONNECTED: &str = "engine_connected";
 pub const ALREADY_AUTHENTICATED: &str = "already_authenticated";
 pub const OPERATION_FAILED: &str = "operation_failed";

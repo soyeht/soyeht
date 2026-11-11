@@ -20,13 +20,14 @@
 //! as a client can afford to wait, so an engine that is absent looks the same as one that is
 //! slow.
 
+#[cfg(unix)]
+use crate::fs::OpenOptionsPrivateExt as _;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 use std::{
     collections::VecDeque,
-    fs::File,
     io,
     io::{Read, Write},
     net::TcpStream,
@@ -37,7 +38,7 @@ use std::{
 use {
     super::BindError,
     std::{
-        fs,
+        fs::{self, File},
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},
     },
 };
@@ -54,6 +55,14 @@ const MAGIC: &str = "soyeht-local-2";
 /// The second word of the secret file of a Unix socket (an endpoint file has a port there).
 #[cfg(unix)]
 const SECRET: &str = "secret";
+
+/// The size of a secret file: the magic, `secret`, the 64 digits and the newline, with a space
+/// between the words.
+#[cfg(unix)]
+const SECRET_FILE_BYTES: u64 = (MAGIC.len() + 1 + SECRET.len() + 1 + TOKEN_BYTES * 2 + 1) as u64;
+/// What a reader tolerates past that size (a trailing blank or two), before it refuses the file.
+#[cfg(unix)]
+const SECRET_FILE_SLACK: u64 = 8;
 
 pub(super) type Token = [u8; TOKEN_BYTES];
 pub(super) type Nonce = [u8; NONCE_BYTES];
@@ -165,9 +174,13 @@ impl<T> Admission<T> {
         (self.next, evicted)
     }
 
-    /// Forgets a connection whose exchange ended.
-    pub(super) fn release(&mut self, number: u64) {
+    /// Forgets a connection whose exchange ended. It returns whether the connection was still
+    /// admitted: `false` means it was evicted to make room, and its owner has closed it or is
+    /// about to.
+    pub(super) fn release(&mut self, number: u64) -> bool {
+        let before = self.entries.len();
         self.entries.retain(|(entry, _)| *entry != number);
+        self.entries.len() < before
     }
 
     /// Forgets the connections `keep` rejects. Only the asynchronous flavour sweeps its
@@ -324,15 +337,24 @@ pub(super) fn write_secret(path: &Path, token: &Token) -> io::Result<()> {
 /// proves nothing about who holds the secret.
 #[cfg(unix)]
 pub(super) fn read_secret(path: &Path) -> io::Result<Token> {
-    let mut file = File::open(path)?;
+    // Not through a link: a link planted where the file should be is not the supervisor's.
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .open_no_follow(path)?;
     if !crate::fs::file_is_owner_only(&file)? {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
             "the secret file is not owner-only",
         ));
     }
+    // The file has one known size; read no more than it and a little slack, so a file that was
+    // swapped for something large costs a refusal and not memory.
     let mut text = String::new();
-    file.read_to_string(&mut text)?;
+    file.take(SECRET_FILE_BYTES + SECRET_FILE_SLACK + 1)
+        .read_to_string(&mut text)?;
+    if text.len() as u64 > SECRET_FILE_BYTES + SECRET_FILE_SLACK {
+        return Err(invalid());
+    }
     let (kind, token) = parse_line(&text)?;
     if kind == SECRET {
         Ok(token)
@@ -472,6 +494,37 @@ mod tests {
         assert!(verify(&token, Side::Client, &client, &server, &good).is_err());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_secret_file_is_read_without_following_a_link_and_never_past_its_size() {
+        let directory = crate::testing::scratch_dir("secret-file");
+        let path = directory.join("the.secret");
+        let token = [9; TOKEN_BYTES];
+        write_secret(&path, &token).unwrap();
+        assert_eq!(read_secret(&path).unwrap(), token);
+        assert_eq!(
+            fs::metadata(&path).unwrap().len(),
+            SECRET_FILE_BYTES,
+            "the size the reader expects is the size the writer makes"
+        );
+
+        // A link where the file should be is refused, even to a good file.
+        let link = directory.join("link");
+        std::os::unix::fs::symlink(&path, &link).unwrap();
+        assert!(read_secret(&link).is_err());
+
+        // A file past its size and the slack is refused without being read whole.
+        let large = directory.join("large");
+        let mut text = fs::read_to_string(&path).unwrap();
+        text.push_str(&" ".repeat(SECRET_FILE_SLACK as usize + 1));
+        fs::write(&large, &text).unwrap();
+        crate::fs::set_private_file(&large).unwrap();
+        assert_eq!(
+            read_secret(&large).unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
     #[test]
     fn at_capacity_the_oldest_connection_makes_room() {
         let mut admission = Admission::new(2);
@@ -481,8 +534,9 @@ mod tests {
         assert!(none.is_none());
         let (third, evicted) = admission.admit("third");
         assert_eq!(evicted, Some("first"));
-        admission.release(first);
-        admission.release(third);
+        assert!(!admission.release(first), "the evicted one is gone already");
+        assert!(admission.release(third));
+        assert!(!admission.release(third));
         let (_, none) = admission.admit("fourth");
         assert!(none.is_none());
     }

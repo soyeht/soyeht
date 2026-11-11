@@ -1,4 +1,4 @@
-# ADR 0160: The supervisor asks for a proof on Unix, and a hello moves its generation by a step
+# ADR 0160: The supervisor asks for a proof on Unix
 
 - Status: accepted. Extends ADR 0003 (the supervisor channel) and ADR 0086 (the local endpoint).
 - Date: 2026-11-10
@@ -50,34 +50,38 @@ and a second implementation next to the Windows one. In front of the protocol it
 **The secret is replaced at each supervisor start, and read at each connection.** The supervisor
 holds its singleton lock first, then writes the new secret, then binds the socket. A client connects
 first and reads the secret second, so one that meets a supervisor that has just restarted reads
-the secret that the new one wrote before it bound. The client refuses a secret file that is not
+the secret that the new one wrote before it bound. The client opens the file without following a link, refuses one that is not
 owner-only (`file_is_owner_only`), as one that others can read or write says nothing about who holds
-the secret. The supervisor removes the socket and the secret file when it stops; one that is killed
+the secret, and reads no more than the file's one line and a little slack. The supervisor removes the socket and the secret file when it stops; one that is killed
 leaves them and the next replaces both. A socket with no secret file beside it is a supervisor from
 before this change: `connect_proved` fails with `InvalidData`, not `NotFound`, so the engine does
 not read it as an absent supervisor and start a second one.
 
-**A hello moves the generation by a step.** `wire::MAX_GENERATION_STEP` is 16: a hello (of either
-role) whose generation is more than 16 past the recorded one is refused with the new kind
-`generation_jump`, before anything is closed or saved. The same refusal path, `hello_refusal`,
-already returned for a stale generation before touching the state; the bound is a second condition
-in it, so a refused hello of any kind leaves the registry, the live engine connection and the
-watches as they were. I chose the step from how the engine counts. It does not count connections:
-`next_engine_generation` adds one to a number in its database at each start of the engine, before
-it tries the supervisor. The recorded number can therefore trail the engine's only by the starts
-that never reached the supervisor: a crash loop before the first tick, or a supervisor that was
-down. One step past the recorded number is a normal restart, a handful covers a person's restarts,
-and 16 covers a crash loop under the service manager's restart delay for several minutes while
-staying far from any number that would shut the engine out. A smaller step buys little: a caller
-that holds the secret can raise the generation by the step as often as it likes, so the bound is
-not what keeps a stranger out (the proof is); it keeps one mistaken or hostile number from making
-the real engine unreachable for good. A supervisor whose registry has recorded no engine
-(generation 0: a new data directory, or a registry that was deleted) holds the first hello to
-nothing, since there is no recorded number to be ahead of, and it would otherwise refuse a real
-engine that is at 300 for ever. The error is `generation_jump` for the engine, which maps an
-unknown supervisor kind to `ptyd_unavailable`. Recovery after a jump that really happened is to
-stop the supervisor and delete `ptyd-registry.json`, which costs nothing the supervisor keeps: it
-marks every process of a previous start as closed when it loads the registry.
+**A hello has no upper bound on the generation.** A hello (of either role) whose generation is
+lower than the recorded one is refused with `stale_engine_generation`, before anything is closed
+or saved (`hello_refusal`, which reads the registry and never changes it, so a refused hello of any
+kind leaves the registry, the live engine connection and the watches as they were). One that is
+higher takes over, however far. I first bounded the step (16 past the recorded number) and took it
+out: the engine does not count connections. `next_engine_generation` adds one to a number in its
+database early in `Core::open_with`, and the supervisor learns the number only when the engine
+connects to it. An engine that crashes between the two (a restore error, running out of memory)
+and is restarted by the service manager every second burns a number per start, so the next good
+engine can be any distance ahead. A bound makes that engine unreachable for good, until someone
+deletes `ptyd-registry.json`, which is the lockout the bound was meant to prevent. It bought almost
+nothing in return: a peer that has not proved the secret never reaches `hello`, and one that has
+can read the engine's database and signal the supervisor anyway. The proof, and the stale check
+that stops an old engine from taking the supervisor back, stay. A holder of the secret can still
+raise the recorded number past what the real engine will present; that is inside the strength the
+proof claims (below), and recovery is the same as before: stop the supervisor and delete
+`ptyd-registry.json`, which costs nothing the supervisor keeps, since it marks every process of a
+previous start as closed when it loads the registry.
+
+**The protocol version is 6.** An engine of this build cannot talk to a supervisor of the previous
+one (no secret file) and the other way round, so `soyeht_ptyd::wire::VERSION` goes from 5 to 6.
+ADR 0122 says a release that changes the supervisor's protocol counts as a supervisor change, and
+the Windows installer compares `soyeht-ptyd --protocol-version`, which prints this number
+(ADR 0123); with the bump both treat this release as one that restarts the supervisor and ends the
+terminals, after the person confirms.
 
 ## What the proof stops, and what it does not
 
@@ -97,15 +101,14 @@ has had since ADR 0086; a boundary against the user's own unconfined processes i
   the unconfined process too on the Mac, and is no use on Linux or Windows, which need the same
   rule. It stays a question for the signed-app check that the engine already makes for some methods
   (ADR 0128 and contract 08, section 2).
-- **A bound that counts connections, not starts.** The engine's number is not a count of
-  connections, so it could not be compared with one.
-- **No special case for an empty registry.** A real engine would be shut out for good by a deleted
-  registry file, which the recovery above is meant to avoid needing.
+- **A bound on the step.** Rejected above: a crash loop of the engine before it reaches the
+  supervisor can leave any distance, so a bound shuts the next good engine out.
 
 ## Consequences
 
-- A supervisor started before this change cannot be reached by an engine of this one (its socket
-  has no secret file), and the other way round (the first bytes of the exchange are not a frame).
+- A supervisor started before this change (protocol version 5) cannot be reached by an engine of
+  this one (its socket has no secret file), and the other way round (the first bytes of the
+  exchange are not a frame).
   A supervisor is replaced only by a restart, which ends its terminals, so the first release that
   carries this one is also the first that needs that restart. Contract 07 already says an update of
   the supervisor warns that it stops the agents.
@@ -116,6 +119,7 @@ has had since ADR 0086; a boundary against the user's own unconfined processes i
   whether something listens (`connect`) still works, and costs the supervisor one thread for as
   long as the peer stays silent, at most the 2 seconds of the exchange.
 - The end-to-end cleanup and the engine test rig, which closed processes with a generation of
-  `u64::MAX`, take the recorded generation plus one.
+  `u64::MAX` (which would now be accepted and would stale the real engine), take the recorded
+  generation plus one.
 - `hmac`, `sha2` and `getrandom` become dependencies of `soyeht-platform` on every system; they
   were its dependencies on Windows and in its tests.

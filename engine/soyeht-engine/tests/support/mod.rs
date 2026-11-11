@@ -302,8 +302,8 @@ impl Rig {
         let _ = fs::remove_file(self.path.join("engine.sock"));
     }
     /// The generation that takes the supervisor over from the engine, whatever that engine is
-    /// at: the one after the supervisor's recorded one. The supervisor lets a hello raise its
-    /// generation by a step and not by any number (ADR 0160), so `u64::MAX` is refused.
+    /// at: the one after the supervisor's recorded one. A fixed number would be refused as stale
+    /// once the supervisor has recorded a higher one.
     pub fn supervisor_takeover_generation(&self) -> Option<u64> {
         let recorded = fs::read(self.path.join("ptyd-registry.json")).ok()?;
         let registry: serde_json::Value = serde_json::from_slice(&recorded).ok()?;

@@ -1,7 +1,8 @@
-//! Who may talk to the supervisor, and how far a generation may move it (ADR 0160): a process
-//! that cannot read the secret file is refused before it can start or read anything, a refused
-//! hello leaves the live engine and the registry as they were, and a jump past the step is
-//! refused. The restarts that the real engine goes through still reconnect.
+//! Who may talk to the supervisor, and which generation takes it over (ADR 0160): a process that
+//! cannot read the secret file is refused before it can start or read anything, a refused hello
+//! leaves the live engine and the registry as they were, and a generation lower than the recorded
+//! one is refused however far a higher one jumps. The restarts that the real engine goes through
+//! still reconnect.
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -155,36 +156,36 @@ fn a_wrong_proof_changes_nothing_and_does_not_close_the_live_engine() {
 }
 
 #[test]
-fn a_generation_past_the_step_is_refused_and_one_at_the_step_is_not() {
+fn an_engine_that_crash_looped_past_any_number_of_starts_takes_over_and_a_stale_one_is_refused() {
     let (daemon, mut engine) = Daemon::start();
-    let before = registry(&daemon);
+    let recorded = recorded_generation(&daemon);
 
-    for generation in [1 + MAX_GENERATION_STEP + 1, 100, u64::MAX] {
-        match Client::connect(&socket(&daemon), generation) {
-            Err(Error::Remote { kind, .. }) => assert_eq!(kind, wire_kind::GENERATION_JUMP),
-            other => panic!("generation {generation}: {:?}", other.err()),
-        }
-        // The same hello of a watch is turned away the same way.
-        assert!(matches!(
-            Watcher::connect(&socket(&daemon), generation),
-            Err(Error::Remote { ref kind, .. }) if kind == wire_kind::GENERATION_JUMP
-        ));
-        // Nothing was saved and nothing was closed.
-        assert_eq!(registry(&daemon), before);
-        assert_still_serving(&mut engine);
-    }
-
-    // The last number the step allows is an engine that restarted that many times without
-    // reaching the supervisor, and it takes over.
-    let allowed = 1 + MAX_GENERATION_STEP;
-    let mut newer = daemon.connect(allowed);
-    assert_eq!(recorded_generation(&daemon), allowed);
+    // The engine takes its number at each start, before it reaches the supervisor, so a crash
+    // loop leaves a gap of any size between the recorded number and the next good engine's.
+    let mut newer = daemon.connect(recorded + 1000);
+    assert_eq!(recorded_generation(&daemon), recorded + 1000);
     assert_still_serving(&mut newer);
     assert!(engine.request(Request::List).is_err());
+
+    // The old engine, and any lower number, is refused as stale for a request and a watch,
+    // and nothing is saved or closed.
+    let before = registry(&daemon);
+    for generation in [recorded, recorded + 999] {
+        match Client::connect(&socket(&daemon), generation) {
+            Err(Error::Remote { kind, .. }) => assert_eq!(kind, wire_kind::STALE_ENGINE_GENERATION),
+            other => panic!("generation {generation}: {:?}", other.err()),
+        }
+        assert!(matches!(
+            Watcher::connect(&socket(&daemon), generation),
+            Err(Error::Remote { ref kind, .. }) if kind == wire_kind::STALE_ENGINE_GENERATION
+        ));
+        assert_eq!(registry(&daemon), before);
+        assert_still_serving(&mut newer);
+    }
 }
 
 #[test]
-fn the_first_engine_a_supervisor_meets_is_not_held_to_the_step() {
+fn a_supervisor_with_no_recorded_engine_takes_any_first_number() {
     let (mut daemon, first) = Daemon::start();
     drop(first);
     // Starting over: a registry that recorded no engine has nothing to be ahead of.
@@ -195,11 +196,6 @@ fn the_first_engine_a_supervisor_meets_is_not_held_to_the_step() {
     let mut engine = daemon.connect(500);
     assert_still_serving(&mut engine);
     assert_eq!(recorded_generation(&daemon), 500);
-    // From there it holds.
-    assert!(matches!(
-        Client::connect(&socket(&daemon), 500 + MAX_GENERATION_STEP + 1),
-        Err(Error::Remote { ref kind, .. }) if kind == wire_kind::GENERATION_JUMP
-    ));
 }
 
 #[test]
