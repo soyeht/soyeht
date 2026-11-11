@@ -2,6 +2,7 @@
 //! page reaching for the listener, a message past the frame limit, and a prompt past the size
 //! limit. The engine refuses the excess and keeps serving the person's own client.
 use super::attack_pairing::listener_address;
+use super::attack_wire::timed_out;
 use super::*;
 use soyeht_protocol::limits;
 use std::io::Read;
@@ -60,14 +61,26 @@ fn a_message_past_the_frame_limit_ends_the_remote_connection_and_nothing_else() 
         .socket
         .send(tokio_tungstenite::tungstenite::Message::Text(text.into()));
     // Either the send fails because the engine already hung up, or the next read finds it gone.
+    // A read that times out is the engine keeping the connection, not hanging up.
     let ended = sent.is_err()
-        || matches!(
-            phone.socket.read(),
-            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_)
-        );
+        || match phone.socket.read() {
+            Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => true,
+            Err(tokio_tungstenite::tungstenite::Error::Io(error)) if timed_out(&error) => {
+                panic!("the engine kept the connection after an oversized message: {error}")
+            }
+            Err(_) => true,
+            Ok(other) => panic!("the engine answered an oversized message: {other:?}"),
+        };
     assert!(ended, "the connection survived an oversized message");
     assert!(rig.client().call("engine.status", json!({})).is_object());
 }
+
+/// Connections one remote address may hold (`SLOTS_PER_ADDRESS`), and how many this test opens.
+const PER_ADDRESS_SLOTS: usize = 16;
+const ATTEMPTS: usize = 40;
+/// Connections of the local endpoint at once (`LOCAL_SLOTS`), and how many this test opens.
+const LOCAL_SLOTS: usize = 128;
+const LOCAL_ATTEMPTS: usize = 150;
 
 #[test]
 fn one_remote_address_cannot_take_more_than_its_share_of_connections() {
@@ -75,7 +88,7 @@ fn one_remote_address_cannot_take_more_than_its_share_of_connections() {
     let address = listener_address(&rig);
     let mut held = Vec::new();
     let mut refused = 0;
-    for _ in 0..40 {
+    for _ in 0..ATTEMPTS {
         let Ok(mut stream) = TcpStream::connect(&address) else {
             refused += 1;
             continue;
@@ -91,12 +104,25 @@ fn one_remote_address_cannot_take_more_than_its_share_of_connections() {
         let mut answer = [0u8; 16];
         match stream.read(&mut answer) {
             Ok(count) if count > 0 && answer.starts_with(b"HTTP/1.1 101") => held.push(stream),
+            // A silent connection is neither admitted nor turned away.
+            Err(error) if timed_out(&error) => {
+                panic!("the engine neither upgraded nor closed the connection: {error}")
+            }
             _ => refused += 1,
         }
     }
-    // The engine admits 16 per address (`SLOTS_PER_ADDRESS`); the rest are turned away.
-    assert!(held.len() <= 16, "{} connections held", held.len());
-    assert!(refused >= 24, "only {refused} refused");
+    // The limits are private to the engine (`SLOTS_PER_ADDRESS` and `LOCAL_SLOTS` of
+    // `admission.rs`, which the crate does not export), so the test names its own copies.
+    assert!(!held.is_empty(), "no connection was admitted");
+    assert!(
+        held.len() <= PER_ADDRESS_SLOTS,
+        "{} connections held",
+        held.len()
+    );
+    assert!(
+        refused >= ATTEMPTS - PER_ADDRESS_SLOTS,
+        "only {refused} refused"
+    );
     // The person's own endpoint has places of its own.
     assert!(rig.client().call("engine.status", json!({})).is_object());
     drop(held);
@@ -108,7 +134,7 @@ fn a_flood_of_local_connections_is_bounded_and_the_engine_recovers() {
     let path = rig.path.join("engine.sock");
     let mut held = Vec::new();
     let mut turned_away = 0;
-    for _ in 0..150 {
+    for _ in 0..LOCAL_ATTEMPTS {
         let Ok(mut socket) = connect(&path) else {
             turned_away += 1;
             continue;
@@ -123,12 +149,24 @@ fn a_flood_of_local_connections_is_bounded_and_the_engine_recovers() {
         }
         match Frame::read_from(&mut socket) {
             Ok(Some(_)) => held.push(socket),
+            // An admitted connection is greeted at once, and a refused one is closed.
+            Err(soyeht_protocol::Error::Io(error)) if timed_out(&error) => {
+                panic!("the engine neither greeted nor closed the connection: {error}")
+            }
             _ => turned_away += 1,
         }
     }
-    // The engine admits 128 connections of the local endpoint (`LOCAL_SLOTS`) at once.
-    assert!(held.len() <= 128, "{} connections admitted", held.len());
-    assert!(turned_away >= 22, "only {turned_away} turned away");
+    // The limit is private to the engine (see above).
+    assert!(!held.is_empty(), "no connection was admitted");
+    assert!(
+        held.len() <= LOCAL_SLOTS,
+        "{} connections admitted",
+        held.len()
+    );
+    assert!(
+        turned_away >= LOCAL_ATTEMPTS - LOCAL_SLOTS,
+        "only {turned_away} turned away"
+    );
     drop(held);
     // The slots are free again once the flood hangs up.
     wait_until("the engine to admit a client again", || {
@@ -152,6 +190,14 @@ fn a_prompt_past_the_size_limit_is_refused_and_one_at_the_limit_is_taken() {
     );
     assert_eq!(kind(&over), "invalid_params", "{over}");
     assert!(transcript_items(&mut client, &pane).is_empty());
+    let at = client.request(
+        "pane.prompt",
+        json!({"paneId":pane,"text":"a".repeat(limits::PROMPT_BYTES),"idempotencyKey":"at"}),
+    );
+    assert!(at.get("result").is_some(), "a prompt at the limit: {at}");
+    wait_until("the prompt at the limit to reach the transcript", || {
+        !transcript_items(&mut client, &pane).is_empty()
+    });
 }
 
 #[test]
@@ -171,4 +217,27 @@ fn a_request_exactly_at_the_frame_limit_is_answered_and_one_byte_more_is_not() {
         "{}",
         &answer.to_string()[..200.min(answer.to_string().len())]
     );
+
+    // One byte more is no request at all: the engine hangs up without an answer.
+    let mut over = rig.client();
+    let mut frame = vec![limits::FRAME_KIND_JSON];
+    frame.extend_from_slice(&(limits::JSON_BYTES as u32 + 1).to_be_bytes());
+    frame.extend(std::iter::repeat_n(b' ', limits::JSON_BYTES + 1));
+    // The engine may hang up before it has read it all.
+    let _ = over.socket.write_all(&frame);
+    loop {
+        match Frame::read_from(&mut over.socket) {
+            Ok(Some(Frame::Json(bytes))) => {
+                let message: Value = serde_json::from_slice(&bytes).unwrap();
+                assert!(message.get("id").is_none(), "an answer to {message}");
+            }
+            Ok(Some(_)) => panic!("a frame that is not JSON"),
+            Ok(None) => break,
+            Err(soyeht_protocol::Error::Io(error)) if timed_out(&error) => {
+                panic!("the engine kept the connection after an oversized frame: {error}")
+            }
+            Err(_) => break,
+        }
+    }
+    assert!(rig.client().call("engine.status", json!({})).is_object());
 }
