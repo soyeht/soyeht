@@ -169,7 +169,7 @@ def holder_of(package):
 def _refuse_unread_copyleft(name, version, file, body):
     if not licenses.is_notice_file(Path(file).name) and licenses.names_copyleft(body):
         raise SourceError(
-            f"{name} {version}: {file} names a GNU license in a form this check does not recognise: "
+            f"{name} {version}: {file} names a copyleft license in a form this check does not recognise: "
             "read it, and teach `SIGNATURES` its form or list the crate in policy.json"
         )
 
@@ -188,13 +188,10 @@ def cargo_component(package, policy):
         policy = licenses.allowing(policy, declared)
     expression = declared
     bundled = policy.bundled.get(name)
-    notice_only = bundled.get("notice_only", []) if bundled else []
     if bundled:
         # A package that compiles code of another license (freetype-sys builds FreeType): both apply.
         expression = f"({declared}) AND ({bundled['license']})"
         files.update({relative: licenses.normal((folder / relative).read_text()) for relative in bundled["files"]})
-        if notice_only:  # licenses of bundled data, shipped as notices and not on the allow-list
-            policy = licenses.allowing(policy, " AND ".join(notice_only))
     try:
         chosen, kept = licenses.elect(expression, files, policy)
     except licenses.LicenseError as error:
@@ -217,10 +214,10 @@ def cargo_component(package, policy):
             continue
         kind = licenses.classify(body)
         _refuse_unread_copyleft(name, package["version"], relative, body)
-        if kind and not licenses.usable_choices(kind, policy) and kind not in notice_only:
+        if kind and not licenses.usable_choices(kind, policy):
             raise SourceError(
                 f"{name} {package['version']} bundles {relative}, a {kind} text: {kind} is not on the allow-list; "
-                "allow it for this package with `notice_only` in its `bundled` entry of policy.json, or drop the crate"
+                "drop the crate, or allow the license in policy.json if a product may ship it"
             )
         add_text(component, kind or "license of bundled code", body)
     return component
@@ -275,9 +272,15 @@ def swift_components(policy, root=ROOT):
                               elected=sorted(options[0]))
         for relative in entry["files"]:
             body = licenses.normal((SWIFT_TEXTS / identity / relative).read_text())
-            kind = "NOTICE" if licenses.is_notice_file(Path(relative).name) else licenses.classify(body)
-            if kind is None and licenses.names_copyleft(body):
-                problems.append(f"{identity}: {relative} names a GNU license in a form this check does not recognise")
+            if licenses.is_notice_file(Path(relative).name):
+                kind = "NOTICE"
+            else:
+                kind = licenses.classify(body)
+                if kind is None:
+                    if licenses.names_copyleft(body):
+                        problems.append(f"{identity}: {relative} names a copyleft license in a form this check does not recognise")
+                elif not licenses.usable_choices(kind, policy):
+                    problems.append(f"{identity}: {relative} is a {kind} text, which is not on the allow-list")
             add_text(component, kind or entry["license"], body)
         components.append(component)
     if problems:

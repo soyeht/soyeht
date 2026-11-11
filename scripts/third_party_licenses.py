@@ -95,8 +95,12 @@ def load_policy(path=POLICY):
 
 # A copyleft license is never accepted as an exception: a package under one stays refused whatever its entry says.
 # The names are matched at the start of a word, so `LicenseRef-GPL-note` and `Apache-2.0 AND LGPL-2.1-only` match
-# and `Apache-2.0` does not.
-COPYLEFT = re.compile(r"(?<![A-Z0-9])(GPL|AGPL|LGPL|MPL|EPL|CDDL|EUPL|SSPL|CC-BY-SA)", re.IGNORECASE)
+# and `Apache-2.0` does not. The spelled-out GNU names are here too, for a license text that writes "General Public
+# License" without the abbreviation.
+COPYLEFT = re.compile(
+    r"(?<![A-Z0-9])(GPL|AGPL|LGPL|GENERAL PUBLIC LICEN[SC]E|MPL|EPL|CDDL|EUPL|SSPL|CC-BY-SA)",
+    re.IGNORECASE,
+)
 
 # Who may accept an exception: only these names are taken as an acceptance.
 ACCEPTERS = frozenset({"owner"})
@@ -215,16 +219,12 @@ def classify(text):
     return None
 
 
-# A text that names one of the GNU licenses; see `names_copyleft`.
-COPYLEFT_MENTION = re.compile(r"general public licen[sc]e|\b[al]?gpl\b", re.IGNORECASE)
-
-
 def names_copyleft(text):
-    """Whether a license text that `classify` does not know names a GNU license ("GNU General Public
-    License v3.0", "GNU GPL version 3 or later", "Affero General Public License v3"). Such a text may
-    be a copyleft license in a form the signatures do not match, so the check refuses it rather than
-    ship it unread."""
-    return classify(text) is None and bool(COPYLEFT_MENTION.search(text))
+    """Whether a license text that `classify` does not know names a copyleft license ("GNU General Public
+    License v3.0", "GNU GPL version 3 or later", "Affero General Public License v3", "Licensed under GPLv3").
+    Such a text may be a copyleft license in a form the signatures do not match, so the check refuses it rather
+    than ship it unread."""
+    return classify(text) is None and bool(COPYLEFT.search(text))
 
 
 def base_identifier(identifier):

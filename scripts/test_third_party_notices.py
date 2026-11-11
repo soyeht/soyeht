@@ -61,6 +61,7 @@ class FileTests(unittest.TestCase):
                 "Version 2.0, the GNU Lesser General Public License, Version 2.1, the GNU Affero General Public License, "
                 "Version 3.0")
         self.assertEqual(licenses.classify(text), "MPL-2.0")
+        self.assertFalse(licenses.names_copyleft(text))
 
     def test_the_lgpl_and_the_bzip2_and_freetype_texts_are_told_apart(self):
         self.assertEqual(licenses.classify("GNU LESSER GENERAL PUBLIC LICENSE\nVersion 2.1, February 1999\nthe GNU General Public License Version 2"), "LGPL-2.1-or-later")
@@ -195,7 +196,7 @@ class CargoTests(unittest.TestCase):
         component = sources.cargo_component(pkg, POLICY)
         self.assertEqual(len([t for t in component.texts if t.label == "MIT"]), 3)
 
-    def test_a_nested_license_text_outside_the_allow_list_fails_unless_the_policy_names_it_for_the_package(self):
+    def test_a_nested_license_text_outside_the_allow_list_fails(self):
         gpl_text = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "Everyone is permitted to copy and distribute verbatim copies. " * 5
         pkg = package(self.directory.name, "sneaky", "MIT", {"LICENSE": MIT_TEXT})
         folder = Path(pkg["manifest_path"]).parent
@@ -203,22 +204,17 @@ class CargoTests(unittest.TestCase):
         (folder / "vendor/COPYING").write_text(gpl_text)
         with self.assertRaisesRegex(sources.SourceError, "sneaky.*vendor/COPYING.*GPL-3.0-or-later is not on the allow-list"):
             sources.cargo_component(pkg, POLICY)
-        # A LGPL text is no excuse for a GPL one: the policy lists the license for the package, one license at a time.
-        entry = {"license": "MIT", "files": [], "reason": "data only", "notice_only": ["GPL-3.0-or-later"]}
-        allowed = licenses.Policy(POLICY.allowed, POLICY.prefer, POLICY.clarify, {}, {"sneaky": entry})
-        component = sources.cargo_component(pkg, allowed)
-        self.assertIn("GPL-3.0-or-later", [t.label for t in component.texts])
-        other = package(self.directory.name, "other", "MIT", {"LICENSE": MIT_TEXT})
-        (Path(other["manifest_path"]).parent / "vendor").mkdir()
-        (Path(other["manifest_path"]).parent / "vendor/COPYING").write_text(gpl_text)
-        with self.assertRaises(sources.SourceError):
-            sources.cargo_component(other, allowed)
 
-    def test_a_gnu_text_in_a_form_the_signatures_do_not_know_fails_instead_of_shipping(self):
+    def test_a_copyleft_text_in_a_form_the_signatures_do_not_know_fails_instead_of_shipping(self):
         forms = {
             "v3": "GNU General Public License v3.0\n" + "Everyone may copy this license. " * 10,
             "gpl-or-later": "GNU GPL version 3 or later\n" + "Everyone may copy this license. " * 10,
             "affero": "Affero General Public License v3 applies to this code.\n" + "Everyone may copy this license. " * 10,
+            "gplv3": "Licensed under GPLv3\n" + "Everyone may copy this license. " * 10,
+            "eupl": "Licensed under the EUPL, Version 1.2\n" + "Everyone may copy this license. " * 10,
+            "sspl": "Server Side Public License (SSPL), version 1\n" + "Everyone may copy this license. " * 10,
+            "cddl": "Common Development and Distribution License (CDDL), version 1.0\n" + "Everyone may copy this license. " * 10,
+            "epl": "Eclipse Public License (EPL), version 2.0\n" + "Everyone may copy this license. " * 10,
         }
         for label, text in forms.items():
             self.assertTrue(licenses.names_copyleft(text), label)
@@ -228,7 +224,7 @@ class CargoTests(unittest.TestCase):
                 target = folder / where
                 target.parent.mkdir(exist_ok=True)
                 target.write_text(text)
-                with self.assertRaisesRegex(sources.SourceError, "names a GNU license"):
+                with self.assertRaisesRegex(sources.SourceError, "names a copyleft license"):
                     sources.cargo_component(pkg, POLICY)
         self.assertFalse(licenses.names_copyleft(MIT_TEXT))
         self.assertFalse(licenses.names_copyleft("GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "x " * 100))  # known: judged by its id
@@ -338,6 +334,25 @@ class RepositoryTests(unittest.TestCase):
                     sources.swift_components(POLICY)
             finally:
                 sources.SWIFT_DATA = original
+
+    def test_a_swift_text_outside_the_allow_list_fails(self):
+        pins = sources.resolved_pins()
+        identity = sorted(pins)[0]
+        _, revision, _ = pins[identity]
+        gpl = "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007\n" + "Everyone is permitted to copy and distribute verbatim copies. " * 5
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder) / "swift.json"
+            data.write_text(json.dumps({"packages": {identity: {"revision": revision, "license": "MIT", "files": ["LICENSE"]}}}))
+            texts = Path(folder) / "swift" / identity
+            texts.mkdir(parents=True)
+            (texts / "LICENSE").write_text(gpl)
+            original_data, original_texts = sources.SWIFT_DATA, sources.SWIFT_TEXTS
+            sources.SWIFT_DATA, sources.SWIFT_TEXTS = data, Path(folder) / "swift"
+            try:
+                with self.assertRaisesRegex(sources.SourceError, f"{identity}: LICENSE is a GPL-3.0-or-later text"):
+                    sources.swift_components(POLICY)
+            finally:
+                sources.SWIFT_DATA, sources.SWIFT_TEXTS = original_data, original_texts
 
     def test_the_gradle_data_matches_the_build_file(self):
         names = {c.name for c in sources.gradle_components(POLICY)}
