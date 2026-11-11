@@ -26,10 +26,14 @@ SIGNATURES = (
     ("MPL-2.0", ("Mozilla Public License Version 2.0",)),
     ("FTL", ("FreeType Project LICENSE",)),
     ("FTL", ("FREETYPE LICENSES",)),
-    ("LGPL-2.1-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 2.1, February 1999")),
-    ("GPL-3.0-or-later", ("GNU GENERAL PUBLIC LICENSE", "Version 3")),
-    ("GPL-2.0-only", ("GNU GENERAL PUBLIC LICENSE", "Version 2")),
-    ("LGPL-3.0-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE", "Version 3")),
+    # The GNU texts, the most specific first: each of the longer licenses names the shorter ones in
+    # passing (the GPL names the AGPL and the LGPL), so the title and the date of each are asked for.
+    ("AGPL-3.0-or-later", ("GNU AFFERO GENERAL PUBLIC LICENSE Version 3, 19 November 2007",)),
+    ("LGPL-3.0-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE Version 3, 29 June 2007",)),
+    ("LGPL-2.1-or-later", ("GNU LESSER GENERAL PUBLIC LICENSE Version 2.1, February 1999",)),
+    ("LGPL-2.0-only", ("GNU LIBRARY GENERAL PUBLIC LICENSE Version 2, June 1991",)),
+    ("GPL-3.0-or-later", ("GNU GENERAL PUBLIC LICENSE Version 3",)),
+    ("GPL-2.0-only", ("GNU GENERAL PUBLIC LICENSE Version 2",)),
     ("Apache-2.0", ("Apache License", "Version 2.0")),
     ("Unicode-3.0", ("UNICODE LICENSE V3",)),
     ("CC0-1.0", ("CC0 1.0 Universal",)),
@@ -91,8 +95,12 @@ def load_policy(path=POLICY):
 
 # A copyleft license is never accepted as an exception: a package under one stays refused whatever its entry says.
 # The names are matched at the start of a word, so `LicenseRef-GPL-note` and `Apache-2.0 AND LGPL-2.1-only` match
-# and `Apache-2.0` does not.
-COPYLEFT = re.compile(r"(?<![A-Z0-9])(GPL|AGPL|LGPL|MPL|EPL|CDDL|EUPL|SSPL|CC-BY-SA)", re.IGNORECASE)
+# and `Apache-2.0` does not. The spelled-out GNU names are here too, for a license text that writes "General Public
+# License" without the abbreviation.
+COPYLEFT = re.compile(
+    r"(?<![A-Z0-9])(GPL|AGPL|LGPL|GENERAL PUBLIC LICEN[SC]E|MPL|EPL|CDDL|EUPL|SSPL|CC-BY-SA)",
+    re.IGNORECASE,
+)
 
 # Who may accept an exception: only these names are taken as an acceptance.
 ACCEPTERS = frozenset({"owner"})
@@ -209,6 +217,14 @@ def classify(text):
         if all(needle.lower() in flat for needle in needles):
             return identifier
     return None
+
+
+def names_copyleft(text):
+    """Whether a license text that `classify` does not know names a copyleft license ("GNU General Public
+    License v3.0", "GNU GPL version 3 or later", "Affero General Public License v3", "Licensed under GPLv3").
+    Such a text may be a copyleft license in a form the signatures do not match, so the check refuses it rather
+    than ship it unread."""
+    return classify(text) is None and bool(COPYLEFT.search(text))
 
 
 def base_identifier(identifier):

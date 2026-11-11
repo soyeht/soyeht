@@ -22,11 +22,16 @@ ship, and nothing in the packages.
   Linux, macOS and Android crates are all in; the license files are read from the crate's folder. For a crate
   that offers a choice (`MIT OR Apache-2.0`) the entry says which one is followed and the text of the most preferred allowed alternative that the crate
   ships is used; a crate that ships no license file gets the standard SPDX text (`scripts/third_party/spdx/`)
-  and the holder its metadata names, marked as such. The license files below the top of a crate (the Unicode
+  and the holder its metadata names, marked as such. A copyright line that is only a placeholder
+  (`<year> <owner>`, as a REUSE-style license text writes it) is not a holder and is left out. The license files below the top of a crate (the Unicode
   tables of `regex-syntax`, the C code of `tree-sitter` and `ring`, the protocol files of `wayland-protocols`)
   are shipped too, and so is any `LICENSE-THIRD-PARTY` file whichever license is followed. A crate that
   compiles code of another license has a `bundled` entry in the policy: `freetype-sys` builds FreeType, which
-  is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit text is in the notices. An entry of
+  is FTL or GPLv2, and Soyeht follows the FreeType License, whose credit line (the FreeType 2.13.2 it bundles) is in its entry. A nested license file
+  classified outside the allow-list fails the check, whatever the crate's own license. A license file whose
+  text names a copyleft license in a form `SIGNATURES` does not recognise (a GNU license written without its
+  title and version, an EPL, CDDL, EUPL or SSPL text) is refused rather than shipped unread, and the same rule
+  holds for a Swift package's files. An entry of
   an MPL-2.0 component gives the address of its source (section 3.2). For the Swift packages, the pins of the four
   `Package.resolved` files against `scripts/third_party/swift.json` and the texts under
   `scripts/third_party/swift/`, which `third_party_notices.py refresh-swift --checkouts DIR` renews from
@@ -53,7 +58,7 @@ ship, and nothing in the packages.
 
 - A new dependency fails the gate until its license is allowed and the file is regenerated; the diff of
   `THIRD-PARTY-NOTICES.txt` shows the reviewer what was added.
-- The file is about 530 KB, under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
+- The file is about 500 KB (about 80 KB compressed), under the 1 MB limit of `check_repo_files.py`: the terms of the common licenses
   are kept once and the copyright lines go with each component. It grows with the dependency graph.
 - The Gradle side lists the libraries the build file declares and one line for the transitive AndroidX, Kotlin
   and Compose libraries (all Apache-2.0); it is not resolved from a Gradle dependency report.
@@ -65,8 +70,9 @@ ship, and nothing in the packages.
   attribute, written from that use, and `[patch."https://github.com/zed-industries/zed"]` in
   `apps/desktop/Cargo.toml` puts it in place of Zed's crate. `ztracing_macro` and `zlog` (and
   `tracing-subscriber` with the crates only it brought) leave the build and the lockfile; `cargo tree
-  --target all -i zlog` finds nothing. The Android workspace has no GPUI. `policy.json` has no
-  `exceptions`, so a GPL crate that comes back fails the gate. When the GPUI pin moves to a revision after
+  --target all -i zlog` finds nothing. The Android workspace has no GPUI. `policy.json` has five
+  `exceptions`, for the ML Kit libraries and the Android SDK libraries they need (ADR 0157), each accepted by the
+  owner on 2026-11-08; a GPL crate that comes back still fails the gate. When the GPUI pin moves to a revision after
   the relicense, the patch and the crate can go.
 - LGPL-2.1-or-later protocol files were in the Linux graph: the registry crate `wayland-protocols-plasma`, which
   GPUI's Linux backend (`gpui_linux`) uses only for `blur::client::{org_kde_kwin_blur, org_kde_kwin_blur_manager}`,

@@ -56,6 +56,7 @@ class Component:
     products: set = field(default_factory=set)  # the cargo workspaces that build it
     texts: list = field(default_factory=list)
     copyright: list = field(default_factory=list)  # the holders' statements, from the license files
+    notes: list = field(default_factory=list)  # lines of the entry: a credit, the source of bundled code
     elected: list = field(default_factory=list)  # the license(s) of the expression that Soyeht follows
     exception: str = ""  # the reason, for a license outside the allow-list
 
@@ -68,8 +69,8 @@ def add_text(component, label, body, standard=False):
         component.texts.append(Text(label, body))
         return
     rights, parts = licenses.explode(label, body)
-    if not standard:
-        component.copyright += [line for line in rights if line not in component.copyright]
+    if not standard:  # a REUSE-style text keeps `<year> <owner>` where a holder goes: that is no holder
+        component.copyright += [line for line in rights if line not in component.copyright and not PLACEHOLDER.search(line)]
     component.texts += [Text(*part) for part in parts]
 
 
@@ -137,6 +138,7 @@ def read_license_files(folder):
     return found
 
 
+PLACEHOLDER = re.compile(r"<(year|owner|copyright|name)[^>]*>", re.I)
 NESTED_DEPTH = 5
 NESTED_SKIPPED = {"tests", "test", "benches", "examples", "target", "fuzz", ".git", "node_modules"}
 
@@ -164,6 +166,14 @@ def holder_of(package):
     return named or f"the {package['name']} developers ({package.get('repository') or 'see the package'})"
 
 
+def _refuse_unread_copyleft(name, version, file, body):
+    if not licenses.is_notice_file(Path(file).name) and licenses.names_copyleft(body):
+        raise SourceError(
+            f"{name} {version}: {file} names a copyleft license in a form this check does not recognise: "
+            "read it, and teach `SIGNATURES` its form or list the crate in policy.json"
+        )
+
+
 def cargo_component(package, policy):
     """The component of one cargo package, with the texts of its elected license."""
     name, declared = package["name"], package["license"]
@@ -177,9 +187,9 @@ def cargo_component(package, policy):
     if exception:
         policy = licenses.allowing(policy, declared)
     expression = declared
-    if name in policy.bundled:
+    bundled = policy.bundled.get(name)
+    if bundled:
         # A package that compiles code of another license (freetype-sys builds FreeType): both apply.
-        bundled = policy.bundled[name]
         expression = f"({declared}) AND ({bundled['license']})"
         files.update({relative: licenses.normal((folder / relative).read_text()) for relative in bundled["files"]})
     try:
@@ -188,7 +198,11 @@ def cargo_component(package, policy):
         raise SourceError(f"{name} {package['version']}: {error}") from error
     url = package.get("repository") or package.get("homepage") or ""
     component = Component("Rust", name, package["version"], expression, url, exception=exception, elected=sorted(chosen))
+    if bundled:
+        component.notes += [f"credit: {bundled['credit']}"] if bundled.get("credit") else []
+        component.notes += [f"bundled source: {bundled['source']}"] if bundled.get("source") else []
     for file in kept:
+        _refuse_unread_copyleft(name, package["version"], file, files[file])
         add_text(component, "NOTICE" if licenses.is_notice_file(file) else licenses.classify(files[file]) or declared, files[file])
     for identifier in licenses.missing_texts(chosen, files, kept):
         # The package ships no such file: the standard text, and the holder its metadata names.
@@ -196,8 +210,16 @@ def cargo_component(package, policy):
         if licenses.base_identifier(identifier) in licenses.NAMES_A_HOLDER:
             component.copyright.append(f"Copyright (c) {holder_of(package)} (named by the package metadata)")
     for relative, body in nested_license_files(folder).items():
-        if relative not in files:
-            add_text(component, licenses.classify(body) or "license of bundled code", body)
+        if relative in files:
+            continue
+        kind = licenses.classify(body)
+        _refuse_unread_copyleft(name, package["version"], relative, body)
+        if kind and not licenses.usable_choices(kind, policy):
+            raise SourceError(
+                f"{name} {package['version']} bundles {relative}, a {kind} text: {kind} is not on the allow-list; "
+                "drop the crate, or allow the license in policy.json if a product may ship it"
+            )
+        add_text(component, kind or "license of bundled code", body)
     return component
 
 
@@ -250,7 +272,15 @@ def swift_components(policy, root=ROOT):
                               elected=sorted(options[0]))
         for relative in entry["files"]:
             body = licenses.normal((SWIFT_TEXTS / identity / relative).read_text())
-            kind = "NOTICE" if licenses.is_notice_file(Path(relative).name) else licenses.classify(body)
+            if licenses.is_notice_file(Path(relative).name):
+                kind = "NOTICE"
+            else:
+                kind = licenses.classify(body)
+                if kind is None:
+                    if licenses.names_copyleft(body):
+                        problems.append(f"{identity}: {relative} names a copyleft license in a form this check does not recognise")
+                elif not licenses.usable_choices(kind, policy):
+                    problems.append(f"{identity}: {relative} is a {kind} text, which is not on the allow-list")
             add_text(component, kind or entry["license"], body)
         components.append(component)
     if problems:

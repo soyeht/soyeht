@@ -367,6 +367,12 @@ impl TerminalScreen {
         self.parser.screen().bracketed_paste()
     }
 
+    /// Whether the program is on the alternate screen: a full-screen editor, pager or interface,
+    /// which draws over the shell's screen and puts it back when it ends.
+    pub fn alternate_screen(&self) -> bool {
+        self.read(false, |parser| parser.screen().alternate_screen())
+    }
+
     pub fn contents(&self) -> String {
         self.read(String::new(), |parser| parser.screen().contents())
     }
