@@ -763,6 +763,7 @@ pub mod problem;
 mod trust;
 mod writing;
 pub(crate) use layout_draft::same_panes;
+pub use writing::Companion;
 mod workspaces;
 pub use workspaces::{
     FolderOpening, FolderPathProblem, RecentFolder, RenameTarget, Started, name_of, submission,
