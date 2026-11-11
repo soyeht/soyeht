@@ -256,6 +256,8 @@ impl State {
                 pane_id: pane_id.to_owned(),
                 text: start.first_prompt().to_owned(),
                 attachments: Vec::new(),
+                // The agent's composer is the only place left to keep it if the engine refuses.
+                typed: Some(start.first_prompt().to_owned()),
             }));
         }
         let (Some((anchor, axis)), Some(pane)) = (expected.split, self.pane(pane_id).cloned())

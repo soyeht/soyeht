@@ -107,8 +107,14 @@ pub enum Command {
     /// Send the person's message, and the files attached to it, to an agent.
     Prompt {
         pane_id: String,
+        /// What the engine is sent: the typed line, with a `/skill` turned into the prompt the
+        /// harness understands.
         text: String,
         attachments: Vec<Draft>,
+        /// What the composer held when the message was sent, exactly as it was typed. When the
+        /// engine does not take the message it comes back to the composer
+        /// (`Event::PromptReturned`); `None` for a message that did not come from a composer.
+        typed: Option<String>,
     },
     /// Stop the running turn.
     Cancel {
@@ -360,6 +366,18 @@ impl Command {
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
             Self::Writing(writing) => writing.failure(),
             Self::SetProjectTrust { .. } => Some(Event::ProjectTrustFailed),
+            // Whatever the reason (a refusal, no answer in time, a connection that went, a queue
+            // that was full), the engine did not take the message: it goes back to its composer.
+            Self::Prompt {
+                pane_id,
+                attachments,
+                typed: Some(typed),
+                ..
+            } => Some(Event::PromptReturned {
+                pane_id: pane_id.clone(),
+                typed: typed.clone(),
+                attachments: attachments.clone(),
+            }),
             // The arrangement on screen goes back to the stored one, and the person is told.
             Self::SetLayout { workspace_id, .. } => Some(Event::LayoutRejected {
                 workspace_id: workspace_id.clone(),

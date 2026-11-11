@@ -615,6 +615,7 @@ fn a_prompt_with_attachments_sends_their_bytes_as_frames_before_the_request() {
             pane_id: "t1".into(),
             text: "look".into(),
             attachments: vec![upload.clone(), linked],
+            typed: None,
         })
         .unwrap();
     let Frame::Attachment { header, bytes } = read_frame(&mut remote) else {
@@ -631,6 +632,45 @@ fn a_prompt_with_attachments_sends_their_bytes_as_frames_before_the_request() {
     assert_eq!(sent[1]["path"], "/work/report.pdf");
     assert!(sent[1].get("attachmentId").is_none());
     remote.reply(&prompt, json!({}));
+    finish(&engine, remote, &path);
+}
+
+#[test]
+fn a_prompt_the_engine_refuses_comes_back_with_its_text_and_files() {
+    let (engine, inbox, mut remote, path) = connected("prompt-refused");
+    assert!(matches!(next(&inbox), Event::Connected(_)));
+    let file = Draft::new(
+        PromptAttachmentKind::File,
+        "notes.txt".into(),
+        "text/plain".into(),
+        2,
+        Source::Bytes(b"hi".to_vec()),
+        None,
+    );
+    engine
+        .send(Command::Prompt {
+            pane_id: "t1".into(),
+            text: "look".into(),
+            attachments: vec![file.clone()],
+            typed: Some("  look\n".into()),
+        })
+        .unwrap();
+    read_frame(&mut remote);
+    let prompt = remote.expect("pane.prompt");
+    remote.send(&not_found(&prompt, "Pane not found"));
+    match next(&inbox) {
+        Event::PromptReturned {
+            pane_id,
+            typed,
+            attachments,
+        } => {
+            assert_eq!(pane_id, "t1");
+            assert_eq!(typed, "  look\n", "exactly as it was typed");
+            assert_eq!(attachments, vec![file]);
+        }
+        other => panic!("expected the prompt back, got {other:?}"),
+    }
+    assert!(matches!(next(&inbox), Event::Problem { .. }));
     finish(&engine, remote, &path);
 }
 

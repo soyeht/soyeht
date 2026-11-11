@@ -321,6 +321,32 @@ fn an_agent_started_in_a_new_folder_gets_its_workspace_first_and_then_its_first_
 }
 
 #[test]
+fn a_first_message_the_engine_does_not_take_comes_back_to_the_composer_of_its_agent() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    let started = state.start_agent(7, &form("/a", "  hello\n")).unwrap();
+    let ticket = match &started.effects[..] {
+        [Effect::Send(Command::CreateAgent { ticket, .. })] => *ticket,
+        other => panic!("expected the agent to be created, got {other:?}"),
+    };
+    let effects = agent_arrives(&mut state, ticket, "p", "a");
+    let Some(Effect::Send(prompt)) = effects
+        .into_iter()
+        .find(|e| matches!(e, Effect::Send(Command::Prompt { .. })))
+    else {
+        panic!("the first message is sent");
+    };
+    let returned = prompt.failure(&crate::Error::Disconnected).unwrap();
+    state.apply(returned);
+    let back = state.take_returned_prompts();
+    assert_eq!(back.len(), 1);
+    assert_eq!(
+        (back[0].pane_id.as_str(), back[0].typed.as_str()),
+        ("p", "hello")
+    );
+}
+
+#[test]
 fn an_agent_started_in_a_folder_that_has_a_workspace_uses_it_and_a_blank_message_sends_nothing() {
     let mut state = state_with(&[("a", "/a")]);
     with_agent(&mut state);

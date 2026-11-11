@@ -6,4 +6,4 @@ mod beat;
 mod prompt;
 
 pub use beat::DraftBeat;
-pub use prompt::Submission;
+pub use prompt::{ReturnedPrompt, Submission, returned_text};

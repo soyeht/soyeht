@@ -8,7 +8,12 @@ use crate::{
     workbench::Workbench,
 };
 use gpui::{ClipboardItem, Context, Entity};
-use soyeht_client::{Command, Connection, agent::TAIL, cards::elicitation, composer::Submission};
+use soyeht_client::{
+    Command, Connection,
+    agent::TAIL,
+    cards::elicitation,
+    composer::{Submission, returned_text},
+};
 use std::time::Instant;
 
 impl Workbench {
@@ -180,20 +185,20 @@ impl Workbench {
     }
 
     /// Sends the composer's text to the agent. The text leaves the composer only once the
-    /// engine's queue has taken it: a message that could not be sent stays to be sent again.
+    /// engine's queue has taken it: a message that could not be sent stays to be sent again. One
+    /// the engine then does not take comes back (`restore_returned_prompts`).
     pub(crate) fn submit_prompt(&mut self, pane_id: &str, cx: &mut Context<Self>) {
         let Some(field) = self.panes.get(pane_id).and_then(|ui| ui.field.clone()) else {
-            return;
-        };
-        let Some(text) = field.read(cx).draft().to_send() else {
             return;
         };
         let attachments = self
             .staged(pane_id)
             .map(|staged| staged.items().to_vec())
             .unwrap_or_default();
-        let command = match self.state.submit_prompt(pane_id, &text, attachments) {
+        let typed = field.read(cx).draft().text().to_owned();
+        let command = match self.state.submit_prompt(pane_id, &typed, attachments) {
             Submission::Send(command) => command,
+            Submission::Blank => return,
             Submission::Refused => {
                 cx.notify();
                 return;
@@ -210,6 +215,24 @@ impl Workbench {
             }
         }
         cx.notify();
+    }
+
+    /// Puts back in their composers the messages the engine did not take, with their files, in
+    /// front of whatever was typed or attached since (`soyeht_client::composer`).
+    pub(crate) fn restore_returned_prompts(&mut self, cx: &mut Context<Self>) {
+        let returned = self.state.take_returned_prompts();
+        for prompt in returned {
+            let field = self.composer_field(&prompt.pane_id, cx);
+            let newer = field.read(cx).draft().text().to_owned();
+            let text = returned_text(&prompt.typed, &newer);
+            field.update(cx, |field, cx| field.replace(&text, cx));
+            self.panes
+                .of(&prompt.pane_id)
+                .staged
+                .get_or_insert_default()
+                .restore(prompt.attachments);
+            cx.notify();
+        }
     }
 
     pub(crate) fn toggle_thought(
