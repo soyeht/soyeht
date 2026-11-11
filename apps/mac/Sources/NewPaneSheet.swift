@@ -282,7 +282,7 @@ struct NewPaneSheet: View {
         let paneId = try await client.createPane(request)
         onCreated(paneId, PaneLayoutKind(mode: mode))
         if request.kind == .agent, !request.firstPrompt.isEmpty {
-          try await client.sendPromptNow(paneId, text: request.firstPrompt)
+          client.sendFirstPrompt(paneId, text: request.firstPrompt)
         }
       } catch {
         submitting = false

@@ -212,11 +212,7 @@ struct PhoneNewPaneSheet: View {
         created(paneId)
         dismiss()
         if request.kind == .agent, !request.firstPrompt.isEmpty {
-          do {
-            try await client.sendPromptNow(paneId, text: request.firstPrompt)
-          } catch {
-            client.problem = "The agent opened, but its first message was not sent."
-          }
+          client.sendFirstPrompt(paneId, text: request.firstPrompt)
         }
       } catch {
         failure = error.localizedDescription

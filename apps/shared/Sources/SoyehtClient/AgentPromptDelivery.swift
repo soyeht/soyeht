@@ -10,7 +10,14 @@ extension EngineClient {
     }
   }
 
-  public func sendPromptNow(
+  /// Sends the first message of a pane the new-pane sheet has just made. The sheet is gone by the
+  /// time the engine answers, so a message the engine does not accept comes back in the new
+  /// pane's composer (see `AgentPromptDrafts.submit`) and the failure is shown.
+  public func sendFirstPrompt(_ paneId: String, text: String) {
+    AgentPromptDrafts.shared.sendFirst(text, to: paneId, client: self)
+  }
+
+  func sendPromptNow(
     _ paneId: String, text: String, attachments drafts: [AgentAttachmentDraft] = []
   ) async throws {
     try await deliverPrompt(paneId, text: text, attachments: drafts)
