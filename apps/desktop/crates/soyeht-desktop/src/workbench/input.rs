@@ -7,10 +7,10 @@ use crate::{
 };
 use gpui::{App, Context, KeyDownEvent, ScrollWheelEvent, Window};
 use soyeht_client::{
-    Command, Connection,
     editor::keys::types_text,
     keys::{self, Modifiers},
     screen::TerminalScreen,
+    terminal_input::Typed,
     text_input::keys::Edit,
 };
 use soyeht_protocol::PaneMode;
@@ -170,28 +170,15 @@ impl Workbench {
 
     /// Typing returns the view to the live bottom, as in every terminal.
     pub(crate) fn send_input(&mut self, pane_id: &str, bytes: Vec<u8>, cx: &mut Context<Self>) {
-        if self.state.connection != Connection::Connected {
-            // Keystrokes cannot reach a dead connection; say so instead of dropping them.
-            self.state.report_disconnected();
-            cx.notify();
-            return;
-        }
-        if let Some(screen) = self.state.screen_mut(pane_id) {
-            // What is typed or pasted ends a selection, as in every terminal.
-            let selected = screen.has_selection();
-            screen.clear_selection();
-            let scrolled = screen.scrolled_back();
-            if scrolled {
-                screen.scroll_to_bottom();
-            }
-            if selected || scrolled {
-                cx.notify();
+        match self.state.type_into_terminal(pane_id, bytes) {
+            Typed::Refused => cx.notify(),
+            Typed::Send { command, redraw } => {
+                if redraw {
+                    cx.notify();
+                }
+                self.send(command);
             }
         }
-        self.send(Command::Input {
-            pane_id: pane_id.to_owned(),
-            bytes,
-        });
     }
 }
 

@@ -5,6 +5,7 @@
 use super::{Effect, State};
 use crate::{
     editor::EditorEvent,
+    pane_close::Closing,
     writing::{
         Command, WritingEvent, document, rules,
         screenplay::{self, Advance},
@@ -16,7 +17,43 @@ use soyeht_protocol::{
     WritingDocument, WritingFormatKind, WritingSection,
 };
 
+/// What the button that opens an agent beside a document does now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Companion {
+    /// The document has its agent already: this pane takes the keyboard.
+    Focus(String),
+    /// One is on its way, and a second request would open a second agent.
+    Wait,
+    /// No agent is ready to open.
+    NoAgent,
+    /// Open an agent running `harness`.
+    Open { harness: String },
+}
+
 impl State {
+    /// What opening an agent beside the document `pane_id` does: one agent is a document's
+    /// companion, and one request is enough while it is on its way.
+    pub fn companion_step(&self, pane_id: &str) -> Companion {
+        if let Some(agent) = self.companion_of(pane_id) {
+            return Companion::Focus(agent);
+        }
+        if self.companion_pending(pane_id) {
+            return Companion::Wait;
+        }
+        self.default_harness()
+            .map_or(Companion::NoAgent, |harness| Companion::Open { harness })
+    }
+
+    /// What the close button of a text or a screenplay does: the pane closes at once, or asks
+    /// first when the document has edits not saved.
+    pub fn writing_closing(&self, pane_id: &str) -> Closing {
+        let Some(file) = self.editors.file_of_pane(pane_id) else {
+            return Closing::Immediately;
+        };
+        let name = rules::file_name(Some(&file.doc.path), pane_id);
+        rules::closing(&name, file.doc.dirty || file.has_unsent())
+    }
+
     pub(super) fn writing_event(&mut self, event: WritingEvent) -> Vec<Effect> {
         match event {
             WritingEvent::Opened(opened) => {

@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     Event,
-    testing::{cases, pane, text, workspace},
+    testing::{cases, harness, pane, text, workspace},
 };
 use serde_json::{Value, json};
 
@@ -389,4 +389,78 @@ fn a_connection_lost_while_an_agent_starts_keeps_its_message_for_the_form() {
     state.apply(Event::Disconnected("gone".into()));
     assert!(state.starts.is_empty() && state.expected.is_empty());
     assert_eq!(state.take_failed_start(), Some(form("/new", "keep me")));
+}
+
+#[test]
+fn a_rename_is_sent_only_for_a_name_that_is_not_blank_and_not_the_one_it_has() {
+    let mut state = State::default();
+    state.apply(Event::Connected(crate::Snapshot {
+        workspaces: vec![workspace("w")],
+        panes: vec![pane("p", "w", "terminal")],
+        ..crate::Snapshot::default()
+    }));
+    let (in_workspace, in_pane) = (
+        RenameTarget::Workspace("w".into()),
+        RenameTarget::Pane("p".into()),
+    );
+    assert_eq!(
+        state.rename_request(&in_workspace, "  Docs "),
+        Some(Command::RenameWorkspace {
+            workspace_id: "w".into(),
+            name: "Docs".into()
+        })
+    );
+    assert_eq!(
+        state.rename_request(&in_pane, "build"),
+        Some(Command::RenamePane {
+            pane_id: "p".into(),
+            name: "build".into()
+        })
+    );
+    assert_eq!(state.rename_request(&in_workspace, "w"), None, "unchanged");
+    assert_eq!(state.rename_request(&in_pane, " \n "), None, "blank");
+}
+
+#[test]
+fn a_name_typed_on_two_lines_is_one_line() {
+    let state = State::default();
+    let target = RenameTarget::Pane("gone".into());
+    assert_eq!(
+        state.rename_request(&target, "one\ntwo\r\nthree"),
+        Some(Command::RenamePane {
+            pane_id: "gone".into(),
+            name: "one two  three".into()
+        })
+    );
+}
+
+#[test]
+fn the_start_form_opens_on_the_folder_of_the_selected_workspace_and_an_agent_that_can_start() {
+    let mut state = state_with(&[("w", "/work")]);
+    state.harnesses = vec![harness("off", false), harness("claude", true)];
+    state.select_workspace("w");
+    let form = state.new_agent_form();
+    assert_eq!(form.directory, "/work");
+    assert_eq!(form.harness, "claude");
+    assert_eq!(form.prompt, "");
+    let nothing = State::default().new_agent_form();
+    assert_eq!(
+        (nothing.directory.as_str(), nothing.harness.as_str()),
+        ("", "")
+    );
+}
+
+#[test]
+fn an_agent_that_stops_being_available_is_replaced_while_the_form_is_open() {
+    let mut state = state_with(&[("w", "/work")]);
+    state.harnesses = vec![harness("claude", true), harness("codex", true)];
+    let mut form = NewAgent {
+        harness: "codex".into(),
+        ..NewAgent::default()
+    };
+    state.choose_agent(&mut form);
+    assert_eq!(form.harness, "codex", "it can still start");
+    state.harnesses = vec![harness("claude", true), harness("codex", false)];
+    state.choose_agent(&mut form);
+    assert_eq!(form.harness, "claude");
 }

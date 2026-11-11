@@ -3,6 +3,10 @@
 
 use soyeht_protocol::{AgentSession, HarnessInfo};
 
+mod draft;
+
+pub use draft::Draft;
+
 pub use soyeht_protocol::client_policy::{
     HARNESS_SWITCH_HANDOVER as HANDOVER_EXPLANATION, HARNESS_SWITCH_TITLE as TITLE,
 };
@@ -95,13 +99,7 @@ mod tests {
 
     #[test]
     fn only_a_listed_harness_that_can_start_and_is_not_running_is_startable() {
-        let harness = |id: &str, available: bool| -> HarnessInfo {
-            serde_json::from_value(json!({
-                "id": id, "name": id, "available": available, "capabilities": [],
-                "options": [], "authMethods": [],
-            }))
-            .unwrap()
-        };
+        let harness = crate::testing::harness;
         let listed = [harness("a", true), harness("b", true), harness("c", false)];
         assert!(startable(&listed, Some("a"), "b"));
         assert!(startable(&listed, None, "a"));

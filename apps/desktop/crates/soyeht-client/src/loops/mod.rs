@@ -6,6 +6,10 @@ use crate::state::{Effect, State};
 use serde_json::Value;
 use soyeht_protocol::{EventName, LoopConfig, LoopStopWhen, LoopStoppedEvent, LoopTickEvent};
 
+mod panel;
+
+pub use panel::{Choice, Panel};
+
 pub const TITLE: &str = "Loop this pane";
 pub const PROMPT_HEADING: &str = "PROMPT";
 pub const WHEN_HEADING: &str = "WHEN";

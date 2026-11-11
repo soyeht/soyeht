@@ -13,11 +13,11 @@ use crate::{
 };
 use gpui::{AppContext, Context, Entity, FocusHandle, Focusable};
 use soyeht_client::Effect;
-use soyeht_client::state::problem::kind;
+use soyeht_client::state::{Companion, problem::kind};
 use soyeht_client::writing::{
     document::line_start,
     presentation::{self, Show, ShowInput},
-    rules::{self, DocumentDraft},
+    rules::DocumentDraft,
 };
 use soyeht_protocol::{
     PaneMode, WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection,
@@ -266,12 +266,7 @@ impl Workbench {
     /// The close button of a text or a screenplay: the pane closes at once, or asks first when
     /// the document has edits not saved.
     pub(crate) fn request_close_writing(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let Some(file) = self.state.editors.file_of_pane(pane_id) else {
-            self.close_pane(pane_id);
-            return;
-        };
-        let name = rules::file_name(Some(&file.doc.path), pane_id);
-        let closing = rules::closing(&name, file.doc.dirty || file.has_unsent());
+        let closing = self.state.writing_closing(pane_id);
         self.ask_before_closing(pane_id, closing, cx);
     }
 
@@ -281,21 +276,21 @@ impl Workbench {
         if !self.require_connection(cx) {
             return;
         }
-        // One agent is a document's companion, and one request is enough while it is on its way.
-        if let Some(agent) = self.state.companion_of(pane_id) {
-            self.run_effect(Effect::FocusPane(agent));
-            return;
-        }
-        if self.state.companion_pending(pane_id) {
-            return;
-        }
-        let Some(harness) = self.state.default_harness() else {
-            self.state.report(
-                kind::COMPANION_UNAVAILABLE,
-                "No agent is ready to open beside this document. Check Preferences.",
-            );
-            cx.notify();
-            return;
+        let harness = match self.state.companion_step(pane_id) {
+            Companion::Focus(agent) => {
+                self.run_effect(Effect::FocusPane(agent));
+                return;
+            }
+            Companion::Wait => return,
+            Companion::NoAgent => {
+                self.state.report(
+                    kind::COMPANION_UNAVAILABLE,
+                    "No agent is ready to open beside this document. Check Preferences.",
+                );
+                cx.notify();
+                return;
+            }
+            Companion::Open { harness } => harness,
         };
         let ticket = self.next_ticket();
         if let Some(workspace_id) =

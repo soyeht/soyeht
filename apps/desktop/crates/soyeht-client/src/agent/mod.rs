@@ -556,6 +556,9 @@ pub fn status_word(state: &PaneState, needs_authentication: bool, has_session: b
     state.as_str().replace('_', " ")
 }
 
+pub mod disclosure;
+pub mod window;
+
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

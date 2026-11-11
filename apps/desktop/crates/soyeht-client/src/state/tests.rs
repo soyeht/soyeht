@@ -641,3 +641,37 @@ fn a_question_put_off_comes_back_when_the_person_asks_for_it() {
     state.reopen_trust_prompt();
     assert_eq!(prompt_for(&state), Some("w1"));
 }
+
+/// A state with one pane, `d`, standing in for a document.
+fn document_state() -> State {
+    let mut state = State::default();
+    state.apply(Event::Connected(snapshot(
+        &["w"],
+        &[("d", "w", "terminal")],
+    )));
+    state
+}
+
+#[test]
+fn opening_an_agent_beside_a_document_follows_what_is_ready_and_what_is_on_its_way() {
+    let mut state = document_state();
+    assert_eq!(state.companion_step("d"), Companion::NoAgent);
+    state.harnesses = vec![crate::testing::harness("claude", true)];
+    assert_eq!(
+        state.companion_step("d"),
+        Companion::Open {
+            harness: "claude".into()
+        }
+    );
+    state.expect_split(1, "d", WorkspacePaneLayoutAxis::Horizontal);
+    assert_eq!(state.companion_step("d"), Companion::Wait);
+}
+
+#[test]
+fn closing_a_document_the_replica_holds_no_file_for_needs_no_question() {
+    let state = document_state();
+    assert_eq!(
+        state.writing_closing("d"),
+        crate::pane_close::Closing::Immediately
+    );
+}

@@ -38,23 +38,13 @@ impl Workbench {
             cx.notify();
             return;
         }
-        let form = NewAgent {
-            directory: self
-                .state
-                .selected_workspace()
-                .map(|workspace| workspace.path.clone())
-                .unwrap_or_default(),
-            ..NewAgent::default()
-        };
+        let form = self.state.new_agent_form();
         self.show_start(form, cx);
     }
 
     /// Shows the form with `form` in it, its message in the message line.
     fn show_start(&mut self, mut form: NewAgent, cx: &mut Context<Self>) {
-        form.keep_or_choose_harness(
-            self.state.harnesses(),
-            self.state.preferences().preferred_harness.as_deref(),
-        );
+        self.state.choose_agent(&mut form);
         let field = new_field(self.theme.palette(), cx);
         field.update(cx, |field, cx| field.insert(&form.prompt, cx));
         cx.subscribe(&field, |this, _, event: &ComposerEvent, cx| match event {
@@ -144,13 +134,9 @@ impl Workbench {
     /// The form as the next frame draws it: the message line's text in it, and an agent kept or
     /// chosen from the ones the engine lists now.
     pub(crate) fn start_form_now(&mut self, cx: &Context<Self>) -> Option<NewAgent> {
-        let preferred = self.state.preferences().preferred_harness.clone();
-        let harnesses = self.state.harnesses().to_vec();
         let start = self.start.as_mut()?;
         start.form.prompt = start.field.read(cx).draft().text().to_owned();
-        start
-            .form
-            .keep_or_choose_harness(&harnesses, preferred.as_deref());
+        self.state.choose_agent(&mut start.form);
         Some(start.form.clone())
     }
 
