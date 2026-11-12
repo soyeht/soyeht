@@ -15,6 +15,7 @@ import gate_remote
 import gate_worktree
 import post_merge
 import post_merge_editor
+import post_merge_gate
 import post_merge_hosts
 
 
@@ -129,10 +130,12 @@ def isolate_environment():
     """Inside a `mock.patch.dict(os.environ)`: forget the variables post_merge, gate_remote and
     remote_gate.sh read, which a watch or merge-gate wrapper may export (they would send the tests
     to a real worktree, meter or host, or to the host's slot worktree instead of `tree`). A gate
-    that runs through gate_remote.py hands them to the local half, which runs these tests."""
+    that runs through gate_remote.py hands them to the local half, which runs these tests. The seed of
+    the long fuzz run goes too: a test that expects the seed of its commit would read the gate's."""
     for name in (post_merge.WORKTREE_ENV, post_merge_editor.EDITOR_METER_ENV, post_merge_hosts.SSH_ENV,
                  gate_base.MAIN_HEALTH_DIR_ENV, gate_remote.HOST_ENV, gate_remote.ROOT_ENV,
-                 gate_remote.SLOT_ENV, *REMOTE_GATE_SCRIPT_ENV):
+                 gate_remote.SLOT_ENV, *REMOTE_GATE_SCRIPT_ENV, post_merge_gate.FUZZ_SEED_ENV,
+                 "SOYEHT_FUZZ_SEED"):
         os.environ.pop(name, None)
 
 
