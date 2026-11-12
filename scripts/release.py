@@ -9,6 +9,7 @@ npm package, the Mac and iOS Xcode projects) are rewritten here and checked here
     uv run python scripts/release.py bump major|minor|patch|revision|X.Y.Z [--dry-run]
     uv run python scripts/release.py sync [--dry-run]
     uv run python scripts/release.py check
+    uv run python scripts/release.py snapshot
 
 This script never tags, pushes, builds or signs. The packagers (`package_mac.py`,
 `package_linux.py`, `package_windows.py`) read `current(ROOT)` (the version, the revision and the
@@ -17,6 +18,7 @@ build number) and sign with credentials taken from the environment, never from t
 """
 
 import argparse
+import json
 import re
 import subprocess
 import sys
@@ -27,6 +29,7 @@ from typing import Callable
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "contracts"))
 
+import compat  # noqa: E402
 import product_version  # noqa: E402  (the contracts directory is on the path just above)
 from product_version import BUMPS, RELEASE_SOURCE, Release, Version  # noqa: E402
 
@@ -231,6 +234,27 @@ def run_generator(*arguments):
     return subprocess.run([sys.executable, str(ROOT / GENERATOR), *arguments], cwd=ROOT).returncode
 
 
+def protocol_schema(root=ROOT):
+    return json.loads((root / compat.SCHEMA).read_text())
+
+
+def snapshot_problems(root=ROOT):
+    """A release goes out only with the wire contract it ships recorded (ADR 0161)."""
+    line = compat.missing_snapshot(root, protocol_schema(root))
+    return [line] if line else []
+
+
+def snapshot_command(_arguments):
+    """Records the wire contract of the release in `contracts/released/` (never replacing one)."""
+    try:
+        written = compat.write_snapshot(ROOT, protocol_schema(), str(current().version))
+    except ValueError as failure:
+        print(f"release: {failure}", file=sys.stderr)
+        return 1
+    print(f"release: recorded {written.relative_to(ROOT).as_posix()}" if written else "release: the wire contract is already recorded")
+    return 0
+
+
 def describe(made):
     return f"{made.version} revision {made.revision} (build number {made.build_number()})"
 
@@ -293,7 +317,7 @@ def check_command(_arguments):
 
 # The commands, by name. A packaging or notarization step is added here, as one function that
 # reads `current()`; nothing below it needs to change.
-COMMANDS = {"show": show, "bump": write_command, "sync": write_command, "check": check_command}
+COMMANDS = {"show": show, "bump": write_command, "sync": write_command, "check": check_command, "snapshot": snapshot_command}
 
 
 def parser():
@@ -311,6 +335,7 @@ def parser():
     synced = commands.add_parser("sync", help="write the source's version and build number to every place, after an edit by hand")
     synced.add_argument("--dry-run", action="store_true", help="list the files that would change and write nothing")
     commands.add_parser("check", help="fail when a place disagrees with the source")
+    commands.add_parser("snapshot", help="record the wire contract of this release in contracts/released/")
     return top
 
 

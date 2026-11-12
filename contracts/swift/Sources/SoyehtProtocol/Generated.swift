@@ -386,14 +386,16 @@ public enum ReplayFrom: Codable, Sendable {
 public struct Welcome: Codable, Sendable {
     public var `engineVersion`: String
     public var `protocolVersion`: UInt32
+    public var `minProtocolVersion`: UInt32?
     public var `connectionId`: Id
     public var `role`: Role
     public var `capabilities`: [String]
     public var `dbId`: Id
     public var `engineProof`: ByteString?
-    public init(`engineVersion`: String, `protocolVersion`: UInt32, `connectionId`: Id, `role`: Role, `capabilities`: [String], `dbId`: Id, `engineProof`: ByteString? = nil) {
+    public init(`engineVersion`: String, `protocolVersion`: UInt32, `minProtocolVersion`: UInt32? = nil, `connectionId`: Id, `role`: Role, `capabilities`: [String], `dbId`: Id, `engineProof`: ByteString? = nil) {
         self.`engineVersion` = `engineVersion`
         self.`protocolVersion` = `protocolVersion`
+        self.`minProtocolVersion` = `minProtocolVersion`
         self.`connectionId` = `connectionId`
         self.`role` = `role`
         self.`capabilities` = `capabilities`

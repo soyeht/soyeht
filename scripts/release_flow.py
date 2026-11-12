@@ -126,6 +126,7 @@ def source_problems(probe=probe):
     if status:
         found.append("HEAD is not on origin/main: merge the version bump first and build from main")
     found += release.problems()
+    found += release.snapshot_problems()
     return found
 
 
@@ -145,6 +146,8 @@ def prepare(options):
         if release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])]):
             raise Refused("the version could not be raised")
     draft = ["draft", "--version", str(new.version)]
+    if not options.dry_run and release.main(["snapshot"]):
+        raise Refused("the wire contract could not be recorded")
     if options.dry_run:
         print("release: dry run: the changelog section would be:\n")
         changelog.main([*draft, "--print"])

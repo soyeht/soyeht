@@ -133,6 +133,7 @@ public enum ProtocolLimits {
 }
 
 public enum ProtocolVersion {
+    public static let min: UInt32 = 1
     public static let current: UInt32 = 1
 }
 

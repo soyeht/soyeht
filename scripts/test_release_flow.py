@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import changelog
+import compat
 import release
 import package_common
 import release_checks
@@ -19,6 +20,9 @@ import release_flow
 import release_manifest
 import update_manifest as manifest
 import ed25519
+
+# The setup below replaces it for the tests of the flow; the test of the check itself needs it.
+SNAPSHOT_PROBLEMS = release.snapshot_problems
 
 SEED = hashlib.sha256(b"soyeht release flow test key").digest()
 KEYS = [{"id": "test-key", "key": base64.b64encode(ed25519.public_key(SEED)).decode()}]
@@ -97,6 +101,8 @@ class FlowCase(unittest.TestCase):
             mock.patch.dict(release_manifest.POLICY["signature"], {"publicKeys": KEYS}),
             mock.patch.object(changelog, "CHANGELOG", self.root / "CHANGELOG.md"),
             mock.patch.object(release_checks, "exception_problems", return_value=[]),
+            # Nothing is released yet, so the repository holds no snapshot of the wire contract.
+            mock.patch.object(release, "snapshot_problems", return_value=[]),
         ):
             patch.start()
             self.addCleanup(patch.stop)
@@ -730,7 +736,8 @@ class SmallPartTests(FlowCase):
         target = str(release.next_release(current, "minor").version)
         with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
             self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=False))
-            bump.assert_called_with(["bump", "minor"])
+            bump.assert_any_call(["bump", "minor"])
+            bump.assert_called_with(["snapshot"])
             draft.assert_called_with(["draft", "--version", target, "--replace"])
         with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
             self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=True))
@@ -740,6 +747,16 @@ class SmallPartTests(FlowCase):
             self.quiet(release_flow.prepare, SimpleNamespace(target="current", dry_run=True))
             bump.assert_not_called()
             draft.assert_called_with(["draft", "--version", str(current.version), "--print"])
+
+    def test_a_release_needs_the_wire_contract_it_ships_recorded(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            schema = release.protocol_schema()
+            (root / "contracts").mkdir()
+            (root / "contracts/protocol.json").write_text(json.dumps(schema))
+            self.assertIn("release.py snapshot", "\n".join(SNAPSHOT_PROBLEMS(root)))
+            compat.write_snapshot(root, schema, "0.1.0")
+            self.assertEqual(SNAPSHOT_PROBLEMS(root), [])
 
 
 if __name__ == "__main__":

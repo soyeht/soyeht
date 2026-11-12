@@ -26,9 +26,14 @@ and Windows), CLI and agents' MCP server.
 5. **Types**: IDs are strings; 64-bit integers (offsets, sizes) travel as decimal
    strings; enums are closed strings; readers ignore unknown fields
    (allowing version N+1 to speak with N).
-6. **Protocol version is an integer.** The engine accepts current and previous
-   versions; clients specify theirs in `hello`; the engine responds with the
-   version it will use or closes with `protocol_version_unsupported`.
+6. **Protocol version is an integer, and the engine serves a range** (ADR 0161). The contract
+   names `min` and `current` (`x-protocolVersion`). The client sends in `hello` the highest
+   version it speaks; the engine welcomes it at the lower of that and its own `current`
+   (`welcome.protocolVersion`, with the engine's `minProtocolVersion`), or closes with
+   `protocol_version_unsupported` when the client is below `min`. A client accepts a welcome
+   inside its own range. From the first release the contract only grows: new methods, events,
+   optional fields and error codes; nothing is removed, renamed, retyped or made required, and
+   a break raises `min` with a written `minReason`.
 7. **One schema per method and event** (`contracts/protocol.json` in the
    repository, single source; generated Rust, Swift and TypeScript types;
    CI fails if code diverges). This contract describes; the schema defines.
@@ -60,7 +65,7 @@ local socket; isolation is per OS user, not per process.
    no `clientNonce` is answered `protocol_version_unsupported`, with the reason
    in the message, because it could not check the engine's answer.
 3. The engine responds ONCE: `welcome {engineVersion, protocolVersion,
-   connectionId, role, capabilities, dbId, engineProof?}` or an error
+   minProtocolVersion?, connectionId, role, capabilities, dbId, engineProof?}` or an error
    (`unauthorized`, `protocol_version_unsupported`) and closes. To a device,
    `engineProof = Ed25519(engine private key, bytes = "soyeht-engine-v1" ||
    nonce || clientNonce || engineId || 0x00 || deviceId)`. The device holds the

@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from client_policy import render_client_policy
+from compat import released_problems
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text, rustfmt
 from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
@@ -341,7 +342,21 @@ def frame_kinds(schema):
     return schema["x-framing"]["types"]
 
 
+def validate_protocol_versions(versions):
+    """The range of protocol versions the engine serves (ADR 0161)."""
+    if set(versions) - {"min", "current", "minReason"}:
+        raise ValueError("x-protocolVersion has only min, current and minReason")
+    low, high = versions.get("min"), versions.get("current")
+    if not all(isinstance(number, int) and not isinstance(number, bool) for number in (low, high)):
+        raise ValueError("x-protocolVersion min and current must be integers")
+    if not 1 <= low <= high:
+        raise ValueError(f"x-protocolVersion range {low}..={high} is empty")
+    if low > 1 and not str(versions.get("minReason", "")).strip():
+        raise ValueError("x-protocolVersion.minReason must say why min is above 1")
+
+
 def validate_schema(schema):
+    validate_protocol_versions(schema["x-protocolVersion"])
     allowed = {"$ref", "type", "properties", "required", "additionalProperties",
                "enum", "oneOf", "items", "minimum", "maximum", "minLength",
                "maxLength", "pattern", "contentEncoding", "description"}
@@ -464,13 +479,14 @@ def render(schema):
     ts += "\n\nexport interface Methods {\n" + "\n".join(f'  "{n}": {{ params: {type_name(m["params"], "ts")}; result: {type_name(m["result"], "ts")} }};' for n, m in schema["x-methods"].items()) + "\n}\n"
     ts += "\n" + event_registry_ts(schema) + "\n"
     outputs["contracts/typescript/src/generated.ts"] = ts
-    constants = header + f'pub const PROTOCOL_VERSION: u32 = {schema["x-protocolVersion"]};\n'
+    versions = schema["x-protocolVersion"]
+    constants = header + f'pub const MIN_PROTOCOL_VERSION: u32 = {versions["min"]};\npub const PROTOCOL_VERSION: u32 = {versions["current"]};\n'
     notes = schema.get("x-limitNotes", {})
     constants += "\n".join(f"{doc_line(notes, k, '')}pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"
     constants += "\n".join(f"pub const FRAME_KIND_{k.upper()}: u8 = {v};" for k, v in frame_kinds(schema).items()) + "\n"
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
-    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum ProtocolVersion {\n    public static let current: UInt32 = " + str(schema["x-protocolVersion"]) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum ProtocolVersion {\n    public static let min: UInt32 = " + str(versions["min"]) + "\n    public static let current: UInt32 = " + str(versions["current"]) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
     outputs.update(render_client_policy(schema, header))
     outputs.update(render_readiness(schema, header))
     outputs.update(render_settings(schema, header))
@@ -511,6 +527,10 @@ def main():
     outputs.update(render_version(load_version((ROOT / RELEASE_SOURCE).read_text())))
     token_data = (ROOT / TOKENS_PATH).read_bytes()
     outputs.update(render_tokens(json.loads(token_data)))
+    if args.check:
+        broken = released_problems(ROOT, schema)
+        if broken:
+            raise SystemExit("The wire contract only grows (ADR 0161):\n" + "\n".join(broken))
     mismatches = []
     for relative, content in outputs.items():
         path = ROOT / relative

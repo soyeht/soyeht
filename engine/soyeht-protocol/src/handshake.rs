@@ -1,10 +1,12 @@
 //! The opening of every connection, validated the same way by every client: the engine
 //! sends `auth.challenge` first, the client answers `hello`, and the answer is a [`Welcome`]
-//! that must speak this protocol version and grant the role the client asked for.
+//! that must speak a protocol version this client serves and grant the role the client asked for.
+//! The versions are a range (ADR 0161): the engine welcomes a client at the lower of the two
+//! versions, and each client accepts any welcome inside its own range.
 
 use crate::{
     AuthChallengeEvent, Error, EventName, HelloParams, Result, Role, Welcome,
-    limits::PROTOCOL_VERSION,
+    limits::{MIN_PROTOCOL_VERSION, PROTOCOL_VERSION},
 };
 use serde_json::Value;
 
@@ -30,6 +32,36 @@ pub fn hello(client: &str, client_version: &str, binding: Option<&str>) -> Hello
     }
 }
 
+/// The version the engine speaks to a client that speaks up to `client`, for an engine serving
+/// `min` to `current`: the lower of the two, or `None` when the client is older than `min`.
+/// `contracts/vectors/protocol-version.json` holds the cases, which the Swift client passes too.
+pub fn negotiate_in(client: u32, min: u32, current: u32) -> Option<u32> {
+    (client >= min).then_some(client.min(current))
+}
+
+/// [`negotiate_in`] for this build's range.
+pub fn negotiate(client: u32) -> Option<u32> {
+    negotiate_in(client, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION)
+}
+
+/// Whether a client serving `min` to `current` can speak the version an engine welcomed it at.
+pub fn accepts_in(welcomed: u32, min: u32, current: u32) -> bool {
+    (min..=current).contains(&welcomed)
+}
+
+/// The welcome must be at a version this client speaks, else the person has to update one side.
+fn expect_version(welcome: &Welcome) -> Result<()> {
+    if accepts_in(
+        welcome.protocol_version,
+        MIN_PROTOCOL_VERSION,
+        PROTOCOL_VERSION,
+    ) {
+        Ok(())
+    } else {
+        Err(Error::UnsupportedProtocolVersion)
+    }
+}
+
 /// A bound client must be an agent or its chief; an unbound one is the local human.
 pub fn expect_welcome(welcome: &Welcome, bound: bool) -> Result<()> {
     let role_matches = if bound {
@@ -37,7 +69,8 @@ pub fn expect_welcome(welcome: &Welcome, bound: bool) -> Result<()> {
     } else {
         welcome.role == Role::HumanLocal
     };
-    if welcome.protocol_version == PROTOCOL_VERSION && role_matches {
+    expect_version(welcome)?;
+    if role_matches {
         Ok(())
     } else {
         Err(Error::UnexpectedHandshake)
@@ -46,7 +79,8 @@ pub fn expect_welcome(welcome: &Welcome, bound: bool) -> Result<()> {
 
 /// A paired device is a device, not the computer's own human (ADR 0013).
 pub fn expect_device_welcome(welcome: &Welcome) -> Result<()> {
-    if welcome.protocol_version == PROTOCOL_VERSION && welcome.role == Role::HumanDevice {
+    expect_version(welcome)?;
+    if welcome.role == Role::HumanDevice {
         Ok(())
     } else {
         Err(Error::UnexpectedHandshake)
@@ -95,6 +129,20 @@ mod tests {
         assert!(expect_welcome(&welcome("agent", 1), false).is_err());
         assert!(expect_welcome(&welcome("human_local", 1), true).is_err());
         assert!(expect_welcome(&welcome("human_local", PROTOCOL_VERSION + 1), false).is_err());
+    }
+
+    #[test]
+    fn a_welcome_outside_the_range_asks_for_an_update() {
+        let outside = welcome("human_local", PROTOCOL_VERSION + 1);
+        assert!(matches!(
+            expect_welcome(&outside, false),
+            Err(Error::UnsupportedProtocolVersion)
+        ));
+        let below = welcome("human_local", MIN_PROTOCOL_VERSION - 1);
+        assert!(matches!(
+            expect_welcome(&below, false),
+            Err(Error::UnsupportedProtocolVersion)
+        ));
     }
 
     #[test]

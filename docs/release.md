@@ -90,7 +90,8 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    uv run python scripts/release_flow.py prepare current     # or minor, patch, major, X.Y.Z, revision
    ```
 
-   It runs `release.py bump` and drafts the section of `CHANGELOG.md` from the squash commits since
+   It runs `release.py bump`, records the wire contract of the release in `contracts/released/`
+   (`release.py snapshot`, ADR 0161; commit the new files with the bump) and drafts the section of `CHANGELOG.md` from the squash commits since
    the last tag (`scripts/changelog.py`). Edit the entries so they read well for a person who uses
    Soyeht, delete the line that starts with `<!-- draft:`, commit the bump and the changelog, and
    merge them as a pull request. `--dry-run` shows what it would do. Running `prepare` again replaces a

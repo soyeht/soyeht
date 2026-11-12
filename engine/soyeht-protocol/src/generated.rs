@@ -426,6 +426,8 @@ pub struct Welcome {
     pub engine_version: String,
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
+    #[serde(rename = "minProtocolVersion", skip_serializing_if = "Option::is_none")]
+    pub min_protocol_version: Option<u32>,
     #[serde(rename = "connectionId")]
     pub connection_id: Id,
     #[serde(rename = "role")]

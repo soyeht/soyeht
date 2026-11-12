@@ -293,9 +293,11 @@ public final class EngineClient {
       } ?? (.mac(capabilities: webHost == nil || webHostRefused ? nil : [.web_host]), nil)
     let welcome = try await request(.hello, .encoded(hello)).decoded(Welcome.self)
     try verification?.check(welcome)
-    guard welcome.role == (pairedDevice ? .human_device : .human_local),
-      welcome.protocolVersion == ProtocolVersion.current
-    else {
+    guard ProtocolVersion.accepts(welcome.protocolVersion) else {
+      throw ClientFailure.remote(
+        ErrorKind.protocol_version_unsupported.rawValue, ProtocolVersion.updateMessage)
+    }
+    guard welcome.role == (pairedDevice ? .human_device : .human_local) else {
       throw ClientFailure.invalidFrame
     }
     recordWelcome(welcome, client: hello.client, deviceId: credential?.deviceId)

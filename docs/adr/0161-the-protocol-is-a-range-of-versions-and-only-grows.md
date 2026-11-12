@@ -1,6 +1,6 @@
 # ADR 0161: The protocol is a range of versions, and the contract only grows
 
-- Status: proposed (design for review; nothing below is implemented yet)
+- Status: proposed (the range, the negotiation and the check are implemented; open enums wait for the owner)
 - Date: 2026-11-11
 
 ## Context
@@ -76,7 +76,7 @@ The last released contract lives in `contracts/released/`: `protocol-v<N>.json`,
 the last release whose `current` was N, one file per version in `[min, current]`, plus `index.json`
 mapping `N` to the `productVersion` of `contracts/release.json` it shipped in. The files are written
 by `scripts/release.py snapshot`, which `release_flow.py prepare` runs (it writes the file for the
-version being released and never overwrites one), and `release_flow.py publish` refuses a release
+version being released and never overwrites one), and `release_flow.py build` refuses a release
 whose `current` has no snapshot or whose snapshot differs from `protocol.json`. A pure checker
 (`contracts/compat.py`, tested with a table of allowed and forbidden diffs) compares `protocol.json`
 to every snapshot with `N >= min` and prints one line per violation. `generate.py --check` runs it,
@@ -102,12 +102,27 @@ changelog entry of the release is the place the owner reads it before publishing
 - The Rust client, the CLI, the MCP server and the Android core all go through
   `soyeht_protocol::handshake`, so one change covers them; the Swift client has its own copy of the
   rule, kept equal by a shared vector.
-- `attack_wire.rs`'s `a_hello_for_another_protocol_version_is_refused_and_gives_no_role` changes:
-  versions above `current` are welcomed at `current`; only 0 (below `min`) is refused.
+- The attack test that refused every other version is two tests now: a version above `current` is
+  welcomed at `current`; only 0 (below `min`) is refused.
 - A new engine must keep serving old shapes for ever, which is the cost of the rule. The deliberate
   `min` bump is the way out.
 
+## Defaults taken, each easy to change
+
+1. Engine-to-client enums that can grow are made open. A count showed the cost is large: of the 95
+   enums of the contract, 77 are reachable from a result or an event (19 of them from params as
+   well), 15 only from params, and 3 from neither. Converting 77 means an `unknown(String)` case in
+   each generated Swift enum and a catch-all in Rust, and every exhaustive `switch` of the Mac and
+   iOS views changes. That is above the threshold the owner set, so nothing is converted yet. Until
+   the owner decides, the check treats every engine-to-client enum as closed: a new value is a
+   break (and a new `ErrorKind` is one too). Converting one is a data change: name it in the
+   top-level `x-openEnums` list of `protocol.json`, which the check already reads.
+2. A client below `min` is refused by the engine; a client that is welcomed at a version outside
+   its range shows the update message at connect time (`protocol_version_unsupported`). The updater
+   is not blocked.
+3. Any additive change after a release raises `current`; the check fails until it is raised.
+4. A break is a deliberate `min` bump with a `minReason`.
+
 ## Not decided here
 
-- Whether the update notice should block a client below `min` (ADR 0122) or only say so at connect.
-- Which engine-to-client enums are open (phase 2 audit).
+- Which engine-to-client enums become open (item 1 above).

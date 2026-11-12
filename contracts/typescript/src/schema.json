@@ -602,6 +602,11 @@
           "minimum": 0,
           "maximum": 4294967295
         },
+        "minProtocolVersion": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295
+        },
         "connectionId": {
           "$ref": "#/$defs/Id"
         },
@@ -13050,7 +13055,10 @@
       ]
     }
   },
-  "x-protocolVersion": 1,
+  "x-protocolVersion": {
+    "min": 1,
+    "current": 1
+  },
   "x-paneNonRouteIds": [
     "agent",
     "authMethodId",
