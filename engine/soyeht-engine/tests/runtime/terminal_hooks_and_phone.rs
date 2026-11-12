@@ -260,14 +260,14 @@ fn claude_session_hook_records_only_engine_stamped_labels_on_its_private_channel
     assert_eq!(stale["error"]["data"]["kind"], "unauthorized");
 }
 
-struct Phone {
-    socket: tokio_tungstenite::tungstenite::WebSocket<std::net::TcpStream>,
-    challenge: Value,
+pub(super) struct Phone {
+    pub(super) socket: tokio_tungstenite::tungstenite::WebSocket<std::net::TcpStream>,
+    pub(super) challenge: Value,
     next: u64,
 }
 
 impl Phone {
-    fn connect(address: &str) -> Self {
+    pub(super) fn connect(address: &str) -> Self {
         let stream = std::net::TcpStream::connect(address).unwrap();
         stream
             .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
@@ -287,7 +287,7 @@ impl Phone {
         phone.challenge = message["params"].clone();
         phone
     }
-    fn read(&mut self) -> Value {
+    pub(super) fn read(&mut self) -> Value {
         loop {
             match self.socket.read().unwrap() {
                 tokio_tungstenite::tungstenite::Message::Text(text) => {
@@ -300,7 +300,7 @@ impl Phone {
             }
         }
     }
-    fn request(&mut self, method: &str, params: Value) -> Value {
+    pub(super) fn request(&mut self, method: &str, params: Value) -> Value {
         self.next += 1;
         let id = self.next;
         self.socket
@@ -317,11 +317,11 @@ impl Phone {
             }
         }
     }
-    fn hello(&mut self, key: &ed25519_dalek::SigningKey, token: &str) -> Value {
+    pub(super) fn hello(&mut self, key: &ed25519_dalek::SigningKey, token: &str) -> Value {
         self.hello_with(key, token, Some([5; 32]))
     }
     /// The engine's nonce of this connection.
-    fn nonce(&self) -> [u8; 32] {
+    pub(super) fn nonce(&self) -> [u8; 32] {
         STANDARD
             .decode(self.challenge["nonce"].as_str().unwrap())
             .unwrap()
@@ -329,7 +329,7 @@ impl Phone {
             .unwrap()
     }
     /// A `hello` that carries `client_nonce` (a phone that verifies the engine always does).
-    fn hello_with(
+    pub(super) fn hello_with(
         &mut self,
         key: &ed25519_dalek::SigningKey,
         token: &str,
@@ -353,7 +353,7 @@ impl Phone {
         self.request("hello", params)
     }
     /// Whether `welcome` carries the proof of the engine whose key the pairing link named.
-    fn engine_proved(
+    pub(super) fn engine_proved(
         &self,
         engine: &ed25519_dalek::VerifyingKey,
         welcome: &Value,
@@ -375,7 +375,7 @@ impl Phone {
 }
 
 /// The proof a phone sends for a pairing attempt: an HMAC over the challenge and the device name.
-fn pairing_proof(derived: &[u8], begin: &Value) -> String {
+pub(super) fn pairing_proof(derived: &[u8], begin: &Value) -> String {
     use hmac::{Hmac, Mac};
     use sha2::Sha256;
     let mut mac = Hmac::<Sha256>::new_from_slice(derived).unwrap();

@@ -67,3 +67,32 @@ The failure message carries the seed and the minimized input as hex. Replay it:
 Add a test to the crate's `tests/fuzz.rs` (or create one that includes the harness) with a corpus
 of valid seeds and a few tokens of the grammar, and the property. Keep the default budget to
 about a second: a target that does synced disk writes uses a few hundred cases at most.
+
+## Attack tests
+
+Each test starts a disposable engine and supervisor (`Rig`), attacks, and asserts the exact
+refusal (the error code of the contract) and the state of the disk. They are the
+`attack_*.rs` modules of `engine/soyeht-engine/tests/runtime/`, plus a hostile-repository test
+in `engine/soyeht-vcs/tests/`.
+
+| Module | Attacks |
+| --- | --- |
+| `attack_wire` | frames over the limit or of an unknown kind (closed before the payload is read); a frame cut short; JSON that is not a request; every method of the contract before the `hello` (`unauthorized`); a second `hello` (`unauthorized`, connection ended); an unsupported protocol version; an unknown agent binding; every method an agent-bound connection does not hold (`forbidden_role`) |
+| `attack_pairing` | a forged proof, a proof for another request or connection, codes never issued, weak or non-canonical device keys, forged and replayed `hello` signatures, unknown tokens, the connection limit of a device, a paired device deciding pairings or revoking others |
+| `attack_paths` | `..`, absolute paths, links that lead out and the spellings of other systems through `file.open`, `project.tree.list`, `project.tree.watch`, `project.entry.create`, `project.entry.delete`, `writing.document.create`, `writing.document.open` and an agent's file requests; pipes, link loops and files over the limit |
+| `attack_web` | `file`, `javascript`, `data`, `blob`, `about` and other schemes, credentials in an address, through every method that takes an address; the web pane limit of a workspace |
+| `attack_process` | hostile task text and a hostile folder name reach `wt` only as whole arguments |
+| `attack_floods` | more local and remote connections than the engine admits; a web page reaching for the remote listener; a message past the frame limit; a prompt past the size limit; a request exactly at the frame limit |
+| `soyeht-vcs` `hostile_repository` | a repository whose configuration names programs (monitor, filters, text conversion, pager, hooks) starts none of them when the editor reads it; a file named like an option stays a file name |
+
+Run them with
+`cargo test -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_`
+(after `cargo build --workspace --features soyeht-engine/contract-checks`, which builds the
+programs the rig starts) and `cargo test -p soyeht-vcs --test hostile_repository`.
+
+### Adding an attack
+
+Add a test to the module of its class. Assert the exact error code, and that nothing changed:
+compare the files outside the workspace before and after, or the panes and workspaces the
+request would have made. A method with a role or path rule is covered by the matrices of
+`attack_wire` and `attack_paths` without a new test; add an entry when a new method takes a path.

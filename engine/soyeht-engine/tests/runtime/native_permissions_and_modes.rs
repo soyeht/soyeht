@@ -271,7 +271,7 @@ fn wait_for_mode(client: &mut Client, pane: &str, mode: &str) {
     }
 }
 
-fn run_turn(client: &mut Client, pane: &str, text: &str) {
+pub(super) fn run_turn(client: &mut Client, pane: &str, text: &str) {
     client.call(
         "pane.prompt",
         json!({"paneId":pane,"text":text,"idempotencyKey":Uuid::new_v4().to_string()}),

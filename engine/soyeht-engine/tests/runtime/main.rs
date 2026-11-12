@@ -32,9 +32,18 @@ use uuid::Uuid;
 mod support;
 use support::*;
 
+#[path = "../../../soyeht-protocol/tests/fuzz_support/mod.rs"]
+mod fuzz_support;
+
 mod adapter_acknowledgement;
 mod adapter_directory;
 mod agent_cli_choice;
+mod attack_floods;
+mod attack_pairing;
+mod attack_paths;
+mod attack_process;
+mod attack_web;
+mod attack_wire;
 mod beat_board_and_messages;
 mod cancel_and_agent_auth;
 mod editor_agent_writes;

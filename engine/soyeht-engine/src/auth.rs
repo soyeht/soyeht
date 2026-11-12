@@ -38,11 +38,9 @@ pub fn public_key(text: &str) -> Result<VerifyingKey> {
         .map_err(|_| Error::InvalidPublicKey)?
         .try_into()
         .map_err(|_| Error::InvalidPublicKeyLength)?;
-    let key = VerifyingKey::from_bytes(&raw).map_err(|_| Error::InvalidPublicKey)?;
-    if key.is_weak() {
-        return Err(Error::WeakPublicKey);
-    }
-    Ok(key)
+    // The rule every side shares (ADR 0132): a point of the curve, written canonically (or one
+    // key would have a second fingerprint) and not of small order.
+    device_auth::verifying_key(&raw).ok_or(Error::InvalidPublicKey)
 }
 
 pub fn fingerprint(key: &VerifyingKey) -> String {
