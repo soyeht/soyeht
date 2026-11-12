@@ -35,13 +35,15 @@ Terminal output parsing is fuzzed in the `vt100` fork and in SwiftTerm, not here
 
 `cargo test -p soyeht-protocol -p soyeht-platform -p soyeht-web -p soyeht-ptyd --test fuzz` and
 `cargo test -p soyeht-engine --lib containment_fuzz` run a fixed number of cases from a fixed
-seed per target, so a run is the same every time and takes seconds. The full engine test run
-includes them.
+seed per target, so a run is the same every time and takes seconds. This is the gate step
+`security:fuzz`; the full engine test run includes the same tests.
 
 ### The long run
 
 `SOYEHT_FUZZ_SECONDS=N` makes each target run for N seconds from a fresh random seed (the seed
-is printed; `SOYEHT_FUZZ_SEED=<number>` replays one). Use release builds and a low priority:
+is printed; `SOYEHT_FUZZ_SEED=<number>` replays one). Use release builds (the second command below
+is a debug build of the engine's library tests, which a release build would compile again) and a
+low priority:
 
 ```sh
 cd engine
@@ -51,6 +53,25 @@ SOYEHT_FUZZ_SECONDS=300 nice -n 15 cargo test --release -j 4 \
 SOYEHT_FUZZ_SECONDS=300 nice -n 15 cargo test -j 4 -p soyeht-engine --lib containment_fuzz \
   -- --test-threads 2 --nocapture
 ```
+
+The full tier runs the same targets with a short budget (`security:fuzz-long`,
+`SOYEHT_FUZZ_LONG_SECONDS` per target, default 30). The protocol, platform, web and supervisor
+targets run in release builds; the engine's `containment_fuzz` runs in the debug build, because a
+release build of its library tests would build the whole engine again. Run them for minutes or
+hours before a release, or after a change to a parser, and keep any crash as a test (below).
+
+The step prints its seed (`security:fuzz-long: SOYEHT_FUZZ_SEED=...`). It is not random: it is a
+number taken from the commit id (`scripts/gate_fuzz_seed.py`), or the `SOYEHT_FUZZ_SEED` of the
+environment when there is one. The seed applies to the long run only: the short `security:fuzz`
+step keeps its fixed cases on every run, before and after the merge. The post-merge gate hands
+every run of the long step the seed of the main commit it checks, in the gate-only variable
+`SOYEHT_GATE_FUZZ_SEED` that only `security:fuzz-long` reads (`post_merge.py`, and to the host of
+`--remote` as `--fuzz-seed`): the
+rerun, the control on the last green main and each probe of the culprit search then replay the
+cases that found the crash, so the search blames the commit that introduced it, or reports it as
+reproduced on none of them, and not a different commit. To replay a crash by hand, run the
+command above with the printed `SOYEHT_FUZZ_SEED` and a `SOYEHT_FUZZ_SECONDS` at least as long as the
+failed run's. A target that fails prints the case that found it (below), which is replayed as a test.
 
 ### When a target fails
 
@@ -83,12 +104,13 @@ in `engine/soyeht-vcs/tests/`.
 | `attack_web` | `file`, `javascript`, `data`, `blob`, `about` and other schemes, credentials in an address, through every method that takes an address; the web pane limit of a workspace |
 | `attack_process` | hostile task text and a hostile folder name reach `wt` only as whole arguments |
 | `attack_floods` | more local and remote connections than the engine admits; a web page reaching for the remote listener; a message past the frame limit; a prompt past the size limit; a request exactly at the frame limit |
-| `soyeht-vcs` `hostile_repository` | a repository whose configuration names programs (monitor, filters, text conversion, pager, hooks) starts none of them when the editor reads it; a file named like an option stays a file name |
+| `soyeht-vcs` `hostile_repository` | a repository whose configuration names programs (monitor, filters, text conversion, external diff, editor, ssh command, proxy, credential and signing helpers, hooks) starts none of them when the editor reads it; a file named like an option stays a file name |
 
 Run them with
 `cargo test -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_`
 (after `cargo build --workspace --features soyeht-engine/contract-checks`, which builds the
-programs the rig starts) and `cargo test -p soyeht-vcs --test hostile_repository`.
+programs the rig starts) and `cargo test -p soyeht-vcs --test hostile_repository`. The gate step
+is `security:attacks`.
 
 ### Adding an attack
 
@@ -96,3 +118,17 @@ Add a test to the module of its class. Assert the exact error code, and that not
 compare the files outside the workspace before and after, or the panes and workspaces the
 request would have made. A method with a role or path rule is covered by the matrices of
 `attack_wire` and `attack_paths` without a new test; add an entry when a new method takes a path.
+
+## The gate steps
+
+`scripts/check_all.sh` is the only list of steps.
+
+| Step | Area and tier | Runs |
+| --- | --- | --- |
+| `security:fuzz` | `engine`, fast and full | the short fuzz run: the `fuzz` tests of the protocol, platform, web and supervisor crates, and the engine's `containment_fuzz` |
+| `security:attacks` | `engine`, fast and full | the `attack_` tests against a running engine, and the hostile-repository test |
+| `security:fuzz-long` | `engine`, full only | the same fuzz targets for `SOYEHT_FUZZ_LONG_SECONDS` each (default 30) from one seed per commit: release builds for the protocol, platform, web and supervisor targets, a debug build for the engine's |
+
+`security:attacks` needs the programs the rig starts, which `engine:build` builds earlier in the
+same run. Both fast steps run whenever the plan selects the engine, so a change to any engine
+crate is attacked, not only a change to the crates that have fuzz targets.

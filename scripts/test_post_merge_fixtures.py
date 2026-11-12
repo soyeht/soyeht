@@ -24,7 +24,8 @@ import post_merge_hosts
 # (a full disk, a network that is down), as a failure of the host and not of a commit does;
 # the file FAKE_CONTROL_ONCE makes the first `--only` run on a commit without `broken` fail (the
 # failure removes the file), as a flake of the step on the last green commit does; FAKE_INFRA=1 makes the gate unable to start;
-# FAKE_TRACE=FILE records each run's directory and arguments; FAKE_EVENTS=DIR keeps the
+# FAKE_TRACE=FILE records each run's directory and arguments; FAKE_SEEDS=FILE records the
+# SOYEHT_GATE_FUZZ_SEED and the SOYEHT_FUZZ_SEED each run was given; FAKE_EVENTS=DIR keeps the
 # `--event-file` of each run as DIR/<HEAD sha>.json. `--list` names a step per area:
 # `eng` (engine) runs on the remote host, `unit`, `sw` and `tcc` run here.
 FAKE_GATE = """#!/bin/bash
@@ -35,6 +36,7 @@ if ((list)); then printf 'always both unit\nengine both eng\nswift both sw\nswif
 timings="${SOYEHT_GATE_TIMINGS:?}"
 step="${FAKE_STEP:-unit}"
 [[ -z "${FAKE_TRACE:-}" ]] || echo "$PWD only=$only base=$base" >> "$FAKE_TRACE"
+[[ -z "${FAKE_SEEDS:-}" ]] || echo "$(git rev-parse HEAD) ${SOYEHT_GATE_FUZZ_SEED:-unset} ${SOYEHT_FUZZ_SEED:-unset}" >> "$FAKE_SEEDS"
 [[ -z "${FAKE_EVENTS:-}" || -z "$event" ]] || cp "$event" "$FAKE_EVENTS/$(git rev-parse HEAD).json"
 [[ -z "${FAKE_INFRA:-}" ]] || exit 71
 status=0

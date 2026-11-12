@@ -2,7 +2,7 @@
 # The remote side of scripts/post_merge.py --remote (docs/dev-local.md, ADR 0089).
 #
 #   remote_gate.sh --sha FULL_SHA --steps ID[,ID...] [--base FULL_SHA] [--slot NAME]
-#                  [--bundle FILE] [--engine-test-args ARGS]
+#                  [--bundle FILE] [--engine-test-args ARGS] [--fuzz-seed NUMBER]
 #   remote_gate.sh --has FULL_SHA
 #   remote_gate.sh --print-timings [--slot NAME]
 #   remote_gate.sh --print-load
@@ -26,7 +26,8 @@
 # is removed afterwards, whatever the outcome. A bundle that needs commits the host lacks fails
 # with exit 2. `--engine-test-args ARGS` is the package selection of `engine:test-changed`
 # (`-p soyeht-engine -p ...`, as the fast plan computes it); without it the step tests the whole
-# workspace.
+# workspace. `--fuzz-seed NUMBER` is the `SOYEHT_GATE_FUZZ_SEED` of `security:fuzz-long` (a number per main
+# commit, so the culprit search replays the run that failed; scripts/gate_fuzz_seed.py).
 #
 # `--slot NAME` uses the worktree `.cache/remote-gate/tree-NAME` and its own timings file, so
 # two commits can run at once on one host; a worktree takes one run at a time (exit 75 when it
@@ -73,7 +74,7 @@ if [[ -f "$env_file" ]]; then
     . "$env_file" || exit 2
     set +a
 fi
-sha="" steps="" base="" slot="" bundle="" engine_test_args="" has="" print_timings=0 print_load=0
+sha="" steps="" base="" slot="" bundle="" engine_test_args="" fuzz_seed="" has="" print_timings=0 print_load=0
 while (($#)); do
     case "$1" in
         --sha) sha="${2:?--sha needs a commit}"; shift 2 ;;
@@ -82,6 +83,7 @@ while (($#)); do
         --slot) slot="${2:?--slot needs a name}"; shift 2 ;;
         --bundle) bundle="${2:?--bundle needs a file}"; shift 2 ;;
         --engine-test-args) engine_test_args="${2:?--engine-test-args needs the arguments}"; shift 2 ;;
+        --fuzz-seed) fuzz_seed="${2:?--fuzz-seed needs a number}"; shift 2 ;;
         --has) has="${2:?--has needs a commit}"; shift 2 ;;
         --print-timings) print_timings=1; shift ;;
         --print-load) print_load=1; shift ;;
@@ -94,6 +96,10 @@ if [[ -n "$slot" && ! "$slot" =~ ^[A-Za-z0-9_-]+$ ]]; then
 fi
 if [[ -n "$engine_test_args" && ! "$engine_test_args" =~ ^(--workspace|-p\ [a-z0-9_-]+(\ -p\ [a-z0-9_-]+)*)$ ]]; then
     echo "remote_gate: bad --engine-test-args '$engine_test_args'" >&2
+    exit 64
+fi
+if [[ -n "$fuzz_seed" && ! "$fuzz_seed" =~ ^[0-9]{1,19}$ ]]; then
+    echo "remote_gate: bad --fuzz-seed '$fuzz_seed'" >&2
     exit 64
 fi
 if [[ -n "$has" && ! "$has" =~ ^[0-9a-f]{40}$ ]]; then
@@ -141,6 +147,7 @@ reenter() {
     [[ -z "$slot" ]] || command+="$(printf ' --slot %q' "$slot")"
     [[ -z "$bundle" ]] || command+="$(printf ' --bundle %q' "$bundle")"
     [[ -z "$engine_test_args" ]] || command+="$(printf ' --engine-test-args %q' "$engine_test_args")"
+    [[ -z "$fuzz_seed" ]] || command+="$(printf ' --fuzz-seed %q' "$fuzz_seed")"
     exec nix-shell "$nix_file" --run "$command"
 }
 
@@ -252,6 +259,9 @@ run_gate() {
     [[ -n "${FORBIDDEN_TERMS:-}" ]] || export SOYEHT_SKIP_FORBIDDEN_TERMS=1
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-${SOYEHT_GATE_JOBS:-32}}"
     export RUST_TEST_THREADS="${RUST_TEST_THREADS:-${SOYEHT_GATE_TEST_THREADS:-16}}"
+    # The seed of the long fuzz run, which the post-merge gate chooses per main commit. It is the
+    # gate's variable: only `security:fuzz-long` turns it into `SOYEHT_FUZZ_SEED`.
+    [[ -z "$fuzz_seed" ]] || export SOYEHT_GATE_FUZZ_SEED="$fuzz_seed"
     local gate='exec nice -n "${SOYEHT_GATE_NICE:-15}" bash scripts/check_all.sh --tier full --only "$SOYEHT_GATE_STEPS" ${SOYEHT_GATE_BASE:+--base "$SOYEHT_GATE_BASE"}'
     local -a launcher=(bash -c "$gate")
     if [[ -n "${SOYEHT_REMOTE_GATE_SHELL:-}" ]]; then

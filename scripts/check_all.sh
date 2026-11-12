@@ -333,6 +333,37 @@ step engine both engine:test-unchecked in_dir engine run_exact_rust_test \
     model::tests::without_the_checks_nothing_is_validated \
     cargo test --locked -p soyeht-engine --lib model::tests::without_the_checks_nothing_is_validated -- --exact
 step engine both engine:clippy-windows in_dir engine lint_windows
+# Security tests (docs/security-testing.md): seeded fuzz targets for everything that reads bytes a
+# peer chose, and attacks against a running engine that assert the exact refusal. They need the
+# programs of `engine:build`. The long fuzz run gives each target SOYEHT_FUZZ_LONG_SECONDS.
+security_fuzz() {
+    cargo test --locked -p soyeht-protocol -p soyeht-platform -p soyeht-web -p soyeht-ptyd --test fuzz &&
+        cargo test --locked -p soyeht-engine --features soyeht-engine/contract-checks --lib containment_fuzz
+}
+security_attacks() {
+    cargo test --locked -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_ &&
+        cargo test --locked -p soyeht-vcs --test hostile_repository
+}
+# The seed is one number per commit (scripts/gate_fuzz_seed.py), or the SOYEHT_GATE_FUZZ_SEED the
+# post-merge gate passes: the seed of the main commit it checks, so the rerun and the culprit search
+# over older commits replay the run that failed. An explicit SOYEHT_FUZZ_SEED wins, to replay a crash
+# by hand. Only this step reads the gate's variable: `security_fuzz` keeps its fixed cases.
+security_fuzz_long() {
+    local seconds="${SOYEHT_FUZZ_LONG_SECONDS:-30}" seed="${SOYEHT_FUZZ_SEED:-${SOYEHT_GATE_FUZZ_SEED:-}}"
+    if [[ -z "$seed" ]]; then
+        seed="$(cd "$repo_root" && uv run python scripts/gate_fuzz_seed.py)" || return
+    fi
+    echo "security:fuzz-long: SOYEHT_FUZZ_SEED=$seed SOYEHT_FUZZ_SECONDS=$seconds"
+    # The crates of the first run are built in release, where the fuzz is fastest. The engine's own
+    # library tests would build the whole engine again in release, so they run in the debug build.
+    SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked --release \
+        -p soyeht-protocol -p soyeht-platform -p soyeht-web -p soyeht-ptyd --test fuzz -- --test-threads 4 &&
+        SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked -p soyeht-engine \
+            --features soyeht-engine/contract-checks --lib containment_fuzz -- --test-threads 2
+}
+step engine both security:fuzz in_dir engine security_fuzz
+step engine both security:attacks in_dir engine security_attacks
+step engine full security:fuzz-long in_dir engine security_fuzz_long
 step timing full engine:timing-frame-dense in_dir engine capture_test \
     terminal_capture::tests::frame_dense_worker_headroom_reports_queue_pressure_and_time_coverage
 step timing full engine:timing-capture-cadence in_dir engine capture_test \
