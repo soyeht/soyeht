@@ -132,8 +132,11 @@ impl Core {
         let bytes = STANDARD
             .decode(&output.bytes)
             .map_err(|_| errors::ptyd_unavailable("Invalid language server output encoding"))?;
-        // The next read starts while the rest of the poll runs.
-        self.start_read(&owner, &instance_id, output.next_seq, false)?;
+        // The next read starts while the rest of the poll runs, unless the supervisor says when
+        // there is output: then the notice that marks the process starts it.
+        if !self.watch.is_active() {
+            self.start_read(&owner, &instance_id, output.next_seq, false)?;
+        }
         if output.next_seq == from_seq && bytes.is_empty() && !output.exited {
             return Ok(());
         }
@@ -274,11 +277,7 @@ impl Core {
 
     pub(crate) fn advance_language_servers(&mut self) {
         for key in self.languages.keys() {
-            if self
-                .languages
-                .get(&key)
-                .is_none_or(|server| server.instance_id.is_none())
-            {
+            if !super::watching::has_work(self, &key) {
                 continue;
             }
             // A write whose job ended without a receipt (its link was replaced meanwhile) is still

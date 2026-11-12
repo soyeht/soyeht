@@ -9,7 +9,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::{
-    process::Command,
     thread,
     time::{Duration, Instant},
 };
@@ -19,21 +18,6 @@ use support::*;
 
 const SETTLE: Duration = Duration::from_secs(3);
 const WINDOW: Duration = Duration::from_secs(10);
-
-/// CPU seconds the process has used, from `ps` (`[[dd-]hh:]mm:ss[.ff]`).
-fn cpu_seconds(pid: u32) -> f64 {
-    let output = Command::new("ps")
-        .args(["-o", "time=", "-p", &pid.to_string()])
-        .output()
-        .unwrap();
-    let text = String::from_utf8(output.stdout).unwrap();
-    let text = text.trim();
-    let (days, clock) = text.split_once('-').unwrap_or(("0", text));
-    let seconds = clock.split(':').fold(0.0, |total, part| {
-        total * 60.0 + part.parse::<f64>().unwrap()
-    });
-    days.parse::<f64>().unwrap() * 86_400.0 + seconds
-}
 
 #[test]
 #[ignore = "bench: measures wall-clock CPU; run explicitly"]

@@ -211,6 +211,9 @@ pub struct Background {
     /// Raised by a job that asked to be applied at once (see `Core::spawn_prompt_background`),
     /// so the tick applies it without waiting for its next turn.
     wake: Arc<tokio::sync::Notify>,
+    /// Raised by every job that ends, and by every other hold of the Core lock, so the tick
+    /// runs again within one interval and looks at what changed (ADR 0147, step 1b).
+    kick: Arc<tokio::sync::Notify>,
 }
 
 /// Set when a job on a thread of its own has ended and its result waits to be applied.
@@ -281,6 +284,12 @@ impl Background {
     /// The signal a job raises when it asks to be applied at once.
     pub(crate) fn woken(&self) -> Arc<tokio::sync::Notify> {
         Arc::clone(&self.wake)
+    }
+
+    /// The signal that says the tick has something to look at: a job ended, a request ran, a
+    /// file changed. The tick sleeps until its next deadline otherwise.
+    pub(crate) fn kicker(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.kick)
     }
 
     /// Whether `spawn_background` would start `key` now: it is neither running nor cooling
@@ -452,6 +461,7 @@ impl Core {
         }
         let finished = Arc::clone(&self.background.finished);
         let wake = Arc::clone(&self.background.wake);
+        let kick = Arc::clone(&self.background.kick);
         let job_key = key.clone();
         let done = own_thread.then(Done::new);
         if let Some(done) = &done {
@@ -471,6 +481,8 @@ impl Core {
                 if prompt {
                     wake.notify_one();
                 }
+                // Its result waits to be applied, and what it was for goes on from there.
+                kick.notify_one();
                 if let Some(done) = done {
                     done.end();
                 }
@@ -557,6 +569,20 @@ mod tests {
         }
         assert!(!shared.lock().unwrap().background.is_active("test.slow:1"));
         drop(shared);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_job_that_ends_raises_the_tick_even_when_its_result_can_wait() {
+        let (mut core, directory) = core();
+        let kick = core.background.kicker();
+        // Nothing asked for the result to be applied at once.
+        core.spawn_background("test.quiet".into(), || Ok(1), |_, _| Ok(()))
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(30), kick.notified())
+            .await
+            .expect("the tick was not raised");
+        drop(core);
         std::fs::remove_dir_all(directory).unwrap();
     }
 

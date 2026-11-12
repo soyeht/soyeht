@@ -24,7 +24,7 @@ use soyeht_protocol::{ProjectTreeChangedEvent, event};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path, PathBuf},
-    sync::mpsc::TryRecvError,
+    sync::{Arc, mpsc::TryRecvError},
     thread,
 };
 
@@ -44,6 +44,8 @@ pub struct Watches {
     dirty: Dirty,
     burst: Burst,
     poll_due_ms: i64,
+    /// Raised by the event streams it starts, so the tick reads what they report.
+    kick: Arc<tokio::sync::Notify>,
     /// Folder listings read since the engine started; tests assert idleness.
     reads: u64,
     /// Counts the turns that took events out of `dirty` or dropped a source. A request that
@@ -68,7 +70,7 @@ impl Watches {
         } else {
             #[cfg(test)]
             let starter: Starter = if self.force_polling {
-                |_| Source::Polling
+                |_, _| Source::Polling
             } else {
                 start_source
             };
@@ -79,7 +81,25 @@ impl Watches {
         Plan {
             starter,
             epoch: self.epoch,
+            kick: Arc::clone(&self.kick),
         }
+    }
+
+    /// The signal the event streams of this follower raise (see [`Core::open`]).
+    pub(crate) fn kicked_by(&mut self, kick: Arc<tokio::sync::Notify>) {
+        self.kick = kick;
+    }
+
+    /// When the tick must look at the folders again: when the burst in progress is ready to be
+    /// read, and the next probe while a workspace has no event source. Events themselves
+    /// kick the tick.
+    pub(crate) fn next_due_ms(&self) -> Option<i64> {
+        let polling = self
+            .sources
+            .values()
+            .any(|source| matches!(source, Source::Polling))
+            .then_some(self.poll_due_ms);
+        [self.burst.due_ms(), polling].into_iter().flatten().min()
     }
 
     /// Keeps the source a request started, once it is back under the lock, and returns the
@@ -359,10 +379,10 @@ fn drop_off_lock(source: Option<Source>) {
 }
 
 /// Starts the event source of a workspace root; where no watcher can start, it is polled.
-pub(super) type Starter = fn(&Path) -> Source;
+pub(super) type Starter = fn(&Path, Arc<tokio::sync::Notify>) -> Source;
 
-fn start_source(root: &Path) -> Source {
-    match EventStream::follow(root) {
+fn start_source(root: &Path, kick: Arc<tokio::sync::Notify>) -> Source {
+    match EventStream::follow(root, kick) {
         Some(stream) => Source::Events {
             root: root.to_owned(),
             stream,
@@ -375,6 +395,7 @@ fn start_source(root: &Path) -> Source {
 pub(super) struct Plan {
     pub(super) starter: Option<Starter>,
     pub(super) epoch: u64,
+    pub(super) kick: Arc<tokio::sync::Notify>,
 }
 
 /// What a `project.tree.watch` request makes off the Core lock.
@@ -392,7 +413,7 @@ pub(super) fn prepare_watch(root: &Path, paths: &[String], plan: Plan) -> Result
     for path in paths {
         project.directory(path).map_err(project_error)?;
     }
-    let source = plan.starter.map(|start| start(project.root()));
+    let source = plan.starter.map(|start| start(project.root(), plan.kick));
     let fingerprints = paths
         .iter()
         .map(|path| (path.clone(), project.fingerprint(path)))

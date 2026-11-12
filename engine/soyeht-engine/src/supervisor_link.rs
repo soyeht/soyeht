@@ -10,6 +10,7 @@ use crate::{
     errors::{self, Error, Result},
     streak::Streak,
     supervisor_handle::Supervisor,
+    tick_due::Next,
 };
 use soyeht_platform::{
     log::{self, Failure as _, Line},
@@ -172,6 +173,19 @@ impl Core {
             .fail(&error.failure_kind())
         {
             log::failure("engine.supervisor_start_failed", error);
+        }
+    }
+
+    /// When the tick must act on the link: a lost one is connected again when its retry delay
+    /// ends, and a link that has stayed up long enough ends the failure streak. The job that
+    /// connects kicks the tick when it ends.
+    pub(crate) fn link_due(&self, next: &mut Next, now: i64) {
+        if self.ptyd.is_some() {
+            if let Some(since) = self.supervisor_retry.connected_ms {
+                next.at_ms(now, since.saturating_add(STABLE_MS));
+            }
+        } else if !self.background.is_active(CONNECT_JOB) {
+            next.at_ms(now, self.supervisor_retry.due_ms);
         }
     }
 

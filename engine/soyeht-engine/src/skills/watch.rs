@@ -15,7 +15,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
-    sync::mpsc::{self, Receiver, TryRecvError},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, TryRecvError},
+    },
     thread,
 };
 
@@ -30,6 +33,8 @@ struct Folder {
     /// The thread that is starting the event stream; it answers once.
     starting: Option<Receiver<Option<EventStream>>>,
     fingerprint: u64,
+    /// Raised by the event stream, and when it has started, so the tick reads what it reports.
+    kick: Arc<tokio::sync::Notify>,
     /// The listing the fingerprint comes from was read before the event
     /// stream started, so one more read is due: a change in between is in no
     /// event and in no fingerprint.
@@ -45,6 +50,8 @@ pub struct Watches {
     dirty: BTreeSet<Key>,
     burst: Burst,
     probe_due_ms: i64,
+    /// Handed to every folder followed from now on.
+    kick: Arc<tokio::sync::Notify>,
     /// Never start event streams: every folder is looked at on the probe.
     polling_only: bool,
 }
@@ -69,8 +76,27 @@ impl Watches {
         self.polling_only = true;
     }
 
+    /// The signal the event streams of the folders followed from now on raise (see
+    /// [`Core::open`]).
+    pub(crate) fn kicked_by(&mut self, kick: Arc<tokio::sync::Notify>) {
+        self.kick = kick;
+    }
+
+    /// When the tick must look at the folders again: the next probe while a folder is followed,
+    /// and the end of the burst in progress. Events kick the tick.
+    pub(crate) fn next_due_ms(&self) -> Option<i64> {
+        let followed = self.user.is_some() || !self.workspaces.is_empty();
+        let probe = followed.then_some(self.probe_due_ms);
+        [self.burst.due_ms(), probe].into_iter().flatten().min()
+    }
+
     pub(super) fn follow_user(&mut self, root: &Path, listed: &[Skill]) {
-        self.user = Some(Folder::new(root, listed, self.polling_only));
+        self.user = Some(Folder::new(
+            root,
+            listed,
+            self.polling_only,
+            Arc::clone(&self.kick),
+        ));
     }
 
     pub(super) fn show(
@@ -80,13 +106,18 @@ impl Watches {
         root: &Path,
         listed: &[Skill],
     ) {
-        let polling_only = self.polling_only;
+        let (polling_only, kick) = (self.polling_only, Arc::clone(&self.kick));
         let (folder, viewers) = self
             .workspaces
             .entry(workspace_id.into())
-            .or_insert_with(|| (Folder::new(root, listed, polling_only), BTreeSet::new()));
+            .or_insert_with(|| {
+                (
+                    Folder::new(root, listed, polling_only, Arc::clone(&kick)),
+                    BTreeSet::new(),
+                )
+            });
         if folder.root != root {
-            *folder = Folder::new(root, listed, polling_only);
+            *folder = Folder::new(root, listed, polling_only, kick);
         }
         viewers.insert(connection.into());
     }
@@ -160,12 +191,18 @@ impl Watches {
 }
 
 impl Folder {
-    fn new(root: &Path, listed: &[Skill], polling_only: bool) -> Self {
+    fn new(
+        root: &Path,
+        listed: &[Skill],
+        polling_only: bool,
+        kick: Arc<tokio::sync::Notify>,
+    ) -> Self {
         let mut folder = Self {
             root: root.into(),
             events: None,
             starting: None,
             fingerprint: fingerprint(listed),
+            kick,
             catch_up: true,
             polling_only,
         };
@@ -181,7 +218,8 @@ impl Folder {
     /// Follows the folder while it exists. True when it appeared, vanished,
     /// or cannot be followed by events and must be read again.
     fn reattach(&mut self) -> bool {
-        self.reattach_with(EventStream::follow)
+        let kick = Arc::clone(&self.kick);
+        self.reattach_with(move |root| EventStream::follow(root, kick))
     }
 
     fn reattach_with(
@@ -191,7 +229,7 @@ impl Folder {
         match (self.root.is_dir(), self.events.is_some()) {
             (true, false) => {
                 if !self.polling_only && self.starting.is_none() {
-                    self.starting = start_in_background(&self.root, start);
+                    self.starting = start_in_background(&self.root, start, Arc::clone(&self.kick));
                 }
                 true
             }
@@ -248,6 +286,7 @@ impl Folder {
 fn start_in_background(
     root: &Path,
     start: impl FnOnce(&Path) -> Option<EventStream> + Send + 'static,
+    kick: Arc<tokio::sync::Notify>,
 ) -> Option<Receiver<Option<EventStream>>> {
     let (sender, receiver) = mpsc::channel();
     let root = root.to_owned();
@@ -257,6 +296,8 @@ fn start_in_background(
             // The receiver is gone when the folder was dropped meanwhile; nobody wants the
             // stream then.
             sender.send(start(&root)).unwrap_or_default();
+            // The tick takes the stream, and reads the folder once more.
+            kick.notify_one();
         });
     if let Err(error) = started {
         soyeht_platform::log::failure("engine.skill_watch_thread_failed", &error);
@@ -334,6 +375,22 @@ mod tests {
         let mut watches = followed(&root, false);
         let events = watches.inject_events(Some(WORKSPACE));
         (root, watches, events)
+    }
+
+    #[test]
+    fn a_followed_folder_is_due_at_its_probe_and_nothing_is_due_without_one() {
+        let root = temp_folder();
+        let mut watches = Watches::default();
+        assert_eq!(watches.next_due_ms(), None, "no folder, nothing to probe");
+        watches.show("connection", WORKSPACE, &root, &[]);
+        assert_eq!(settle(&mut watches, 0).len(), 1, "the catch-up read");
+        assert_eq!(watches.next_due_ms(), Some(PROBE_INTERVAL_MS));
+        // An event burst that ends sooner than the probe comes first.
+        watches.touch(workspace_key().as_deref(), 100);
+        assert_eq!(watches.next_due_ms(), Some(100 + QUIET_MS));
+        // Nobody shows the folder any more: nothing is probed.
+        watches.settled(PROBE_INTERVAL_MS, |_| false);
+        assert_eq!(watches.next_due_ms(), None);
     }
 
     #[test]
@@ -434,7 +491,7 @@ mod tests {
     fn a_slow_event_stream_start_does_not_block_and_is_caught_up_when_it_arrives() {
         let root = temp_folder();
         std::fs::create_dir_all(&root).unwrap();
-        let mut folder = Folder::new(&root, &[], true);
+        let mut folder = Folder::new(&root, &[], true, Default::default());
         folder.polling_only = false;
         assert!(folder.take_catch_up(), "the first listing is read");
         let (release, gate) = mpsc::channel::<()>();

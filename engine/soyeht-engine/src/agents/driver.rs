@@ -470,8 +470,7 @@ impl Core {
         }
         // An idle agent that said nothing is read at a slower pace (see `read_ahead`).
         let owner = crate::read_ahead::agent(pane);
-        let marked = self.pane_marked(pane);
-        if self.agents[pane].is_settled(self.now_ms()) && !marked && self.reads_paused(&owner) {
+        if self.agent_may_rest(pane) {
             return Ok(());
         }
         let hooks = Arc::clone(&self.hooks);

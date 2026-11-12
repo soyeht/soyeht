@@ -334,6 +334,16 @@ impl Core {
         Ok(())
     }
 
+    /// When the tick must give up on a command the web host has not answered. A command that
+    /// waits for the person's permission has no deadline here: the store's poll has it.
+    pub(crate) fn web_commands_due(&self, next: &mut crate::tick_due::Next, now: i64) {
+        for waiter in self.web_waiters.values() {
+            if waiter.permission.request_id.is_none() {
+                next.at_ms(now, waiter.deadline_ms);
+            }
+        }
+    }
+
     pub(crate) fn advance_web_commands(&mut self) -> Result<()> {
         self.advance_web_permissions()?;
         let now = self.now_ms();

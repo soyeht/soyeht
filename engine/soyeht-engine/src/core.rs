@@ -90,6 +90,8 @@ pub struct Core {
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
+    /// What the tick remembers between its runs (ADR 0147, step 1b).
+    tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -157,6 +159,15 @@ fn engine_signing_key(store: &Store) -> Result<ed25519_dalek::SigningKey> {
 }
 
 impl Core {
+    /// Whether the last pump left a subscriber behind (see `tick_due`).
+    pub(crate) fn streams_behind(&self) -> bool {
+        self.tick.streams_behind
+    }
+
+    pub(crate) fn note_streams_behind(&mut self, behind: bool) {
+        self.tick.streams_behind = behind;
+    }
+
     /// Makes the address this engine shows for pairing follow the port of `profile`.
     pub fn use_port_of(&mut self, profile: &Profile) {
         self.pair_address = loopback_address(profile);
@@ -210,7 +221,11 @@ impl Core {
             worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
             background: Default::default(),
             usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
-            web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
+            web: crate::web::Service::new(
+                hooks
+                    .port_scan()
+                    .unwrap_or_else(|| Box::new(crate::web::SystemPortScan::default())),
+            ),
             ink: crate::ink::Service::new(
                 hooks.ink_recognizer().map_or_else(soyeht_ink::system, Ok),
             ),
@@ -222,6 +237,7 @@ impl Core {
             ))),
             project_watches: Default::default(),
             skill_watches: Default::default(),
+            tick: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
             panes: BTreeMap::new(),
@@ -242,6 +258,10 @@ impl Core {
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
+        // The event streams of the file followers raise the tick, which sleeps until a deadline.
+        let kick = core.background.kicker();
+        core.project_watches.kicked_by(Arc::clone(&kick));
+        core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {

@@ -13,6 +13,8 @@ use std::{cell::RefCell, collections::BTreeMap, time::Duration, time::Instant};
 
 /// The longest a poll rests, however far off its next due time is.
 const CEILING: Duration = Duration::from_secs(5);
+/// The due time of a poll that has begun and not rested yet: already past.
+const NOT_AT_REST: i64 = i64::MIN;
 
 /// What each resting poll saw: the change counter, when to ask again and when
 /// it began to rest.
@@ -21,8 +23,30 @@ pub(crate) struct Resting(RefCell<BTreeMap<&'static str, (u64, i64, Instant)>>);
 
 impl Store {
     /// The number of rows this connection has written.
-    fn change_counter(&self) -> u64 {
+    pub fn change_counter(&self) -> u64 {
         self.connection.total_changes()
+    }
+
+    /// How long until a poll has to ask again, for a tick that sleeps (ADR 0147, step 1b): zero
+    /// when a poll is not resting (it has begun and not rested, it found work, a write woke it,
+    /// or its rest is over), else the time to its due time. `None` when no poll has begun yet or
+    /// every one waits for a write. The end of a rest with no due time is not a wake of its own:
+    /// the tick's ceiling, which is shorter than [`CEILING`], is what sees a write by another
+    /// process.
+    pub fn next_poll_wait(&self, now_ms: i64) -> Option<Duration> {
+        let seen = self.change_counter();
+        self.resting
+            .0
+            .borrow()
+            .values()
+            .filter_map(|(at, until_ms, since)| {
+                if *at != seen || now_ms >= *until_ms || since.elapsed() >= CEILING {
+                    return Some(Duration::ZERO);
+                }
+                let left = u64::try_from(until_ms.saturating_sub(now_ms)).ok()?;
+                (*until_ms != i64::MAX).then(|| Duration::from_millis(left))
+            })
+            .min()
     }
 
     /// Starts a poll: `None` while it rests (it found nothing, nothing was
@@ -39,7 +63,16 @@ impl Store {
             .is_some_and(|(at, until_ms, since)| {
                 *at == seen && now_ms < *until_ms && since.elapsed() < CEILING
             });
-        (!resting).then_some(seen)
+        if resting {
+            return None;
+        }
+        // From here until it rests the poll is not at rest, which `next_poll_wait` reports.
+        self.resting
+            .0
+            .borrow_mut()
+            .entry(poll)
+            .or_insert((seen, NOT_AT_REST, Instant::now()));
+        Some(seen)
     }
 
     /// Records that `poll`, begun at `seen`, found nothing to do until
@@ -96,6 +129,43 @@ mod tests {
     use super::*;
     use std::fs;
     use uuid::Uuid;
+
+    fn open() -> (Store, std::path::PathBuf) {
+        let root = std::env::temp_dir().join(format!("soyeht-resting-{}", Uuid::new_v4()));
+        (Store::open(&root).unwrap(), root)
+    }
+
+    #[test]
+    fn the_tick_waits_for_the_poll_that_is_not_at_rest_and_for_the_due_time_of_a_rest() {
+        let (store, root) = open();
+        assert_eq!(store.next_poll_wait(0), None, "no poll has begun");
+
+        // A poll that began and found work has not rested: it is due now.
+        let seen = store.begin_poll("found_work", 0).unwrap();
+        assert_eq!(store.next_poll_wait(0), Some(Duration::ZERO));
+
+        // A rest ends at its due time, and the earliest of the polls wins.
+        store.rest("found_work", seen, 300);
+        assert_eq!(store.next_poll_wait(100), Some(Duration::from_millis(200)));
+        assert_eq!(store.next_poll_wait(300), Some(Duration::ZERO));
+        let other = store.begin_poll("other", 100).unwrap();
+        store.rest("other", other, 150);
+        assert_eq!(store.next_poll_wait(100), Some(Duration::from_millis(50)));
+
+        // A rest with no due time waits for a write, and the tick's ceiling covers the rest.
+        store.rest("found_work", seen, i64::MAX);
+        store.rest("other", other, i64::MAX);
+        assert_eq!(store.next_poll_wait(100), None);
+
+        // A write ends every rest.
+        store
+            .connection
+            .execute("UPDATE metadata SET value=value WHERE key='db_id'", [])
+            .unwrap();
+        assert_eq!(store.next_poll_wait(100), Some(Duration::ZERO));
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn a_poll_rests_until_a_write_or_its_due_time() {
