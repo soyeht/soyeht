@@ -451,8 +451,10 @@ a second.
   that waits on a row is not left for the ceiling) and its due time for one that is, so the loops,
   the retries of blocked tasks and the expiry of web permissions have their deadlines from the
   rows. The end of a rest with no due time (5 s) is not a wake of its own: the tick's ceiling is
-  shorter, and is what sees a write by another process. A poll that keeps finding a row it cannot
-  advance (a review that waits for its agent) is not at rest and keeps the floor, as it did.
+  shorter, and is what sees a write by another process. A task poll that ends without advancing its
+  rows (an error, or only rows it cannot move this time) rests for a retry delay of one second
+  rather than staying not at rest. The poll of reviews keeps finding a row it cannot advance (a
+  review that waits for its agent), so it is not at rest and keeps the floor, as it did.
 - **A failed background apply cools down for a second.** A job whose apply failed is not started
   again for `BACKGROUND_RETRY_AFTER`; a job with no deadline of its own is tried again at the next
   kick or at the ceiling, whichever is first.

@@ -2,7 +2,7 @@
 
 use super::{
     api::parameters,
-    events, looping, next_version,
+    events, looping, next_version, poll_once,
     worktree::{self, PreparedWorktree, WorktreePort},
 };
 use crate::{
@@ -273,9 +273,14 @@ impl Core {
     }
 
     fn advance_dispatch_rows(&mut self, own: Option<(&str, &str)>) -> Result<()> {
-        let Some(seen) = self.store.begin_poll("task_dispatches", self.now_ms()) else {
-            return Ok(());
-        };
+        poll_once(self, "task_dispatches", |core| {
+            Ok(!core.advance_dispatch_checkpoints(own)?)
+        })
+    }
+
+    /// Advances the dispatch rows, and says whether one still waits: `Ok(false)` when every row
+    /// was done. The failure is the one of the caller's own row, if it has one.
+    fn advance_dispatch_checkpoints(&mut self, own: Option<(&str, &str)>) -> Result<bool> {
         let pending = self.store.dispatch_checkpoints().map_err(errors::storage)?;
         let mut waiting = false;
         let mut own_failure = None;
@@ -293,10 +298,7 @@ impl Core {
                 }
             }
         }
-        if !waiting {
-            self.store.rest("task_dispatches", seen, i64::MAX);
-        }
-        own_failure.map_or(Ok(()), Err)
+        own_failure.map_or(Ok(waiting), Err)
     }
 
     fn advance_task_dispatch(

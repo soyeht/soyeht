@@ -68,6 +68,30 @@ fn core_with_claimed_tasks(comments: Vec<Comment>) -> (Core, std::path::PathBuf)
     (core, directory)
 }
 
+/// A core with the task `A-1`, in progress with no owner and a dispatch checkpoint that names no
+/// pane, so its dispatch cannot advance.
+fn core_with_waiting_dispatch() -> (Core, std::path::PathBuf) {
+    let (mut core, directory) = core_with_workspace(WORKSPACE);
+    StorePort::mutate(
+        &mut core.store,
+        "test",
+        "tasks",
+        "seed-waiting-dispatch",
+        |change| {
+            let mut task = task_fixture(TaskState::InProgress);
+            task.workspace_id = WORKSPACE.into();
+            task.task_id = "A-1".into();
+            task.owner_pane_id = None;
+            change.insert_task(&task)?;
+            // Its checkpoint names no pane, so the dispatch cannot advance.
+            change.save_dispatch_checkpoint(WORKSPACE, "A-1", &opened(None))?;
+            Ok((json!({}), Vec::new()))
+        },
+    )
+    .unwrap();
+    (core, directory)
+}
+
 fn stage(core: &Core, task: &str) -> String {
     core.store
         .dispatch_checkpoint(WORKSPACE, task)
@@ -125,6 +149,48 @@ fn a_dispatch_row_that_cannot_advance_does_not_stop_the_rows_after_it() {
     assert_eq!(stage(&core, "A-1"), "prompt_accepted");
     assert_eq!(stage(&core, "A-2"), "prompt_accepted");
     assert!(first_text(&core, "pane-2").contains("# Do the work"));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_dispatch_row_that_waits_rests_for_the_retry_delay() {
+    let (mut core, directory) = core_with_waiting_dispatch();
+
+    core.advance_task_dispatches().unwrap();
+
+    crate::tasks::assert_poll_rests_for_retry(&core);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_store_write_ends_the_rest_of_a_task_poll_that_is_waiting() {
+    let (mut core, directory) = core_with_waiting_dispatch();
+
+    core.advance_task_dispatches().unwrap();
+    crate::tasks::assert_poll_rests_for_retry(&core);
+
+    // Any write ends the rest: the poll asks again now, not at its retry delay.
+    StorePort::mutate(
+        &mut core.store,
+        "test",
+        "tasks-write",
+        "write-another-row",
+        |change| {
+            let mut task = task_fixture(TaskState::Todo);
+            task.workspace_id = WORKSPACE.into();
+            task.task_id = "A-2".into();
+            task.owner_pane_id = None;
+            change.insert_task(&task)?;
+            Ok((json!({}), Vec::new()))
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        core.store.next_poll_wait(core.now_ms()),
+        Some(std::time::Duration::ZERO),
+        "a store write ends the rest of the waiting poll"
+    );
     std::fs::remove_dir_all(directory).unwrap();
 }
 

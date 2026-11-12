@@ -1,4 +1,4 @@
-use super::{PhraseFacts, events, next_version, phrase};
+use super::{PhraseFacts, events, next_version, phrase, poll_once};
 use crate::{
     agents::{Changes, state::State},
     core::Core,
@@ -149,9 +149,15 @@ impl Core {
 
     fn advance_dependency_blocks(&mut self) -> Result<()> {
         // A dependency block ends only when a task row changes.
-        let Some(seen) = self.store.begin_poll("dependency_blocks", self.now_ms()) else {
-            return Ok(());
-        };
+        poll_once(self, "dependency_blocks", |core| {
+            core.advance_dependency_rows()?;
+            Ok(true)
+        })
+    }
+
+    /// The dependency blocks whose dependency has closed. A block that cannot end yet waits for the
+    /// write that changes its dependency, which the change counter reports.
+    fn advance_dependency_rows(&mut self) -> Result<()> {
         let blocked = self.store.blocked_tasks().map_err(errors::storage)?;
         for task in blocked {
             let Some(blocking) = task.blocking.as_ref() else {
@@ -179,7 +185,6 @@ impl Core {
                 _ => {}
             }
         }
-        self.store.rest("dependency_blocks", seen, i64::MAX);
         Ok(())
     }
 
@@ -421,6 +426,42 @@ mod tests {
         assert_eq!(waiting.state, TaskState::InProgress);
         assert_eq!(waiting.owner_pane_id.as_deref(), Some("pane-1"));
         assert_eq!(waiting.phrase, "blocked: dependency cancelled");
+    }
+
+    #[test]
+    fn a_dependency_block_that_cannot_advance_rests_for_the_retry_delay() {
+        let (mut core, directory) = crate::test_panes::core_with_workspace("workspace-1");
+        StorePort::mutate(
+            &mut core.store,
+            "test",
+            "tasks",
+            "seed-blocked-task",
+            |change| {
+                let mut task = task_fixture(TaskState::InProgress);
+                task.workspace_id = "workspace-1".into();
+                task.task_id = "A-1".into();
+                task.owner_pane_id = None;
+                task.blocking = Some(Blocking {
+                    kind: BlockingKind::Dependency,
+                    reason: "waiting".into(),
+                    dependency_task_id: Some("A-2".into()),
+                    retry_count: None,
+                });
+                change.insert_task(&task)?;
+                Ok((json!({}), Vec::new()))
+            },
+        )
+        .unwrap();
+
+        // The dependency is gone, so the poll fails instead of advancing its row.
+        let error = core.advance_task_blocking().unwrap_err();
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::InternalError
+        );
+
+        crate::tasks::assert_poll_rests_for_retry(&core);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
