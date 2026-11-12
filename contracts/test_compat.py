@@ -187,9 +187,9 @@ class OpenEnumTests(unittest.TestCase):
             with self.subTest(names), self.assertRaises(ValueError):
                 validate_open_enums(self.listed(*names))
 
-    def test_an_enum_the_engine_reads_from_a_client_stays_closed(self):
-        with self.assertRaises(ValueError):
-            validate_open_enums(self.listed("Mode"))
+    def test_an_enum_a_client_sends_can_be_open_too(self):
+        # The engine has no `Unknown` value to read a novel one into.
+        validate_open_enums(self.listed("Mode"))
 
     def test_a_value_called_unknown_would_clash_with_the_catch_all(self):
         opened = self.listed("Kind")

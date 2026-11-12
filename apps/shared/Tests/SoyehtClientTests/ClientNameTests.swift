@@ -30,3 +30,9 @@ import Testing
     #expect(accepted == (item["accepted"] == .bool(true)), "\(item["name"].string ?? "")")
   }
 }
+
+@Test func aWelcomeOutsideTheRangeAsksForAnUpdate() {
+  #expect(throws: ClientFailure.self) { try ProtocolVersion.require(ProtocolVersion.current + 1) }
+  #expect(ClientFailure.unsupportedProtocolVersion.errorDescription == ClientPolicy.updateSoyeht)
+  #expect((try? ProtocolVersion.require(ProtocolVersion.current)) != nil)
+}

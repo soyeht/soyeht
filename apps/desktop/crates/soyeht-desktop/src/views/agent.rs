@@ -222,9 +222,9 @@ pub(super) fn transcript_row(
             .as_ref()
             .map(|output| terminal_block(&owner_of(pane_id, &message.local_id), output, palette)),
         // A subagent's row is drawn from its group, with the activity it owns under it.
-        // A kind a later engine adds has no row here; the rest of the conversation still reads.
-        TranscriptKind::Usage | TranscriptKind::Subagent | TranscriptKind::Unknown => None,
-        TranscriptKind::Message | TranscriptKind::System => {
+        TranscriptKind::Usage | TranscriptKind::Subagent => None,
+        // A kind a later engine adds is read as the text it carries, as the Mac and iPhone do.
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown => {
             Some(text_row(line, palette, markdown, cx))
         }
     }
@@ -236,18 +236,20 @@ pub(super) fn row_weight(line: MessageRow, markdown: &mut Replies) -> usize {
     let message = line.message;
     match message.kind {
         TranscriptKind::Thought if line.open => shown_reply(line, markdown).weight(),
-        TranscriptKind::Message | TranscriptKind::System
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown
             if message.role == TranscriptRole::Assistant && message.agent_message.is_none() =>
         {
             shown_reply(line, markdown).weight()
         }
-        TranscriptKind::Message | TranscriptKind::System => text_weight(message.text.len()),
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown => {
+            text_weight(message.text.len())
+        }
         TranscriptKind::Terminal => message
             .terminal
             .as_ref()
             .map_or(1, |output| text_weight(output.bytes.len() / 4 * 3)),
         TranscriptKind::Plan => message.plan.as_ref().map_or(1, |plan| 1 + plan.len()),
-        TranscriptKind::Usage | TranscriptKind::Subagent | TranscriptKind::Unknown => 0,
+        TranscriptKind::Usage | TranscriptKind::Subagent => 0,
         TranscriptKind::Tool | TranscriptKind::Thought | TranscriptKind::Handover => 1,
     }
 }

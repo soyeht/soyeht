@@ -11,7 +11,8 @@ use serde_json::{Value, json};
 use soyeht_platform::log::{Failure as _, Line};
 use soyeht_protocol::{
     Actor, AttachmentRef, ClientCapability, EngineCapability, HelloParams, Role, Welcome,
-    attachment::AttachmentAssembler, event, frame::Frame, handshake, limits, method, method_family,
+    attachment::AttachmentAssembler, client_policy, event, frame::Frame, handshake, limits, method,
+    method_family,
 };
 use std::collections::BTreeMap;
 use uuid::Uuid;
@@ -191,7 +192,7 @@ impl Core {
             return Err(errors::unauthorized("Handshake already completed"));
         }
         let version = handshake::negotiate(hello.protocol_version)
-            .ok_or_else(|| errors::protocol_version_unsupported("Update Soyeht on this device"))?;
+            .ok_or_else(|| errors::protocol_version_unsupported(client_policy::UPDATE_SOYEHT))?;
         let web_host_claims = hello
             .capabilities
             .as_deref()
@@ -257,7 +258,6 @@ impl Core {
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: version,
-            min_protocol_version: Some(limits::MIN_PROTOCOL_VERSION),
             connection_id: connection.into(),
             role,
             capabilities: self.capabilities(),

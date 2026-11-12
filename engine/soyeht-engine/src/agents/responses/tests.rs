@@ -110,3 +110,17 @@ fn an_error_to_session_new_forgets_the_updates_held_for_it() {
     assert!(state.held_updates.is_empty());
     std::fs::remove_dir_all(&directory).unwrap();
 }
+
+#[test]
+fn a_stop_reason_the_engine_does_not_know_is_refused_not_passed_on() {
+    assert_eq!(
+        decode_stop_reason(&json!({"stopReason":"end_turn"})).unwrap(),
+        TurnStopReason::EndTurn
+    );
+    // The ACP layer already names only the reasons it recognises; a reason it let through that the
+    // contract lacks is refused here, as an internal error.
+    assert!(decode_stop_reason(&json!({"stopReason":"stop_everything"})).is_err());
+    assert!(
+        serde_json::from_value::<TurnStopReason>(Value::String("stop_everything".into())).is_err()
+    );
+}

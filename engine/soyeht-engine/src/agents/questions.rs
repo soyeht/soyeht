@@ -223,6 +223,12 @@ fn permission_presentation(
     })
 }
 
+/// The options an agent offers; one of a kind this engine does not know is refused.
+fn native_options(params: &Value) -> Result<Vec<PermissionOption>> {
+    serde_json::from_value(params["options"].clone())
+        .map_err(|_| invalid("Invalid native permission options"))
+}
+
 fn public_question(
     method: &str,
     params: &Value,
@@ -231,8 +237,7 @@ fn public_question(
     pane_names: &PaneNames<'_>,
 ) -> Result<(Value, &'static str)> {
     let event = if method == "session/request_permission" {
-        let options: Vec<PermissionOption> = serde_json::from_value(params["options"].clone())
-            .map_err(|_| invalid("Invalid native permission options"))?;
+        let options = native_options(params)?;
         if options.is_empty()
             || options.len() > 32
             || options.iter().any(|option| {

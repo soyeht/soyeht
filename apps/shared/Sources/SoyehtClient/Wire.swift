@@ -4,6 +4,8 @@ import SoyehtProtocol
 
 public enum ClientFailure: Error, LocalizedError, Sendable {
   case disconnected, invalidFrame, invalidSnapshot, invalidStream, timeout
+  /// The engine welcomed this app at a protocol version it does not speak (ADR 0161).
+  case unsupportedProtocolVersion
   case requestTimeout(String)
   case editorCommand(String)
   case webHost(ErrorKind, String)
@@ -21,6 +23,7 @@ public enum ClientFailure: Error, LocalizedError, Sendable {
     case .invalidSnapshot: "Received state is incomplete."
     case .invalidStream: "The screen needs to synchronize again."
     case .timeout: "The engine did not respond in time."
+    case .unsupportedProtocolVersion: ClientPolicy.updateSoyeht
     case .requestTimeout(let method): "The engine did not respond to \(method) in time."
     case .editorCommand(let message): message
     case .webHost(_, let message): message

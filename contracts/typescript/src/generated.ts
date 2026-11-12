@@ -147,7 +147,6 @@ export type ReplayFrom = TailSelector | StreamCursor;
 export interface Welcome {
   "engineVersion": string;
   "protocolVersion": number;
-  "minProtocolVersion"?: number;
   "connectionId": Id;
   "role": Role;
   "capabilities": Array<string>;

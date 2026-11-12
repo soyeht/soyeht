@@ -17,12 +17,6 @@ extension ProtocolVersion {
   /// Fails with the instruction to update when the engine welcomed this client at a version it
   /// does not speak.
   static func require(_ welcomed: UInt32) throws {
-    guard accepts(welcomed) else {
-      throw ClientFailure.remote(ErrorKind.protocol_version_unsupported.rawValue, updateMessage)
-    }
+    guard accepts(welcomed) else { throw ClientFailure.unsupportedProtocolVersion }
   }
-
-  /// What the person is told when the welcome is at a version this app does not speak.
-  private static let updateMessage =
-    "This app and the Mac speak different versions of Soyeht. Update Soyeht on the older one."
 }

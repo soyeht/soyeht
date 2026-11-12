@@ -104,10 +104,12 @@ fn item(message: &TranscriptMessage, revision: u64) -> ConversationItem {
         streaming: !message.complete,
         tool_state: message.tool.as_ref().map(|tool| match tool.status {
             ToolStatus::Pending => ToolState::Pending,
-            // A status this build does not know is shown as under way.
-            ToolStatus::InProgress | ToolStatus::Unknown => ToolState::Running,
+            ToolStatus::InProgress => ToolState::Running,
             ToolStatus::Completed => ToolState::Done,
             ToolStatus::Failed => ToolState::Failed,
+            // A status this build does not know: under way until the message is complete, then done.
+            ToolStatus::Unknown if message.complete => ToolState::Done,
+            ToolStatus::Unknown => ToolState::Running,
         }),
         from_agent: message
             .agent_message
@@ -136,11 +138,13 @@ pub(crate) fn conversation(state: &State, pane_id: &str) -> Option<Conversation>
                     name: option.name.clone(),
                     kind: match option.kind {
                         PermissionOptionKind::AllowOnce => OptionKind::Allow,
-                        PermissionOptionKind::AllowAlways => OptionKind::AllowAlways,
-                        // An option of a kind this build does not know is the cautious one.
-                        PermissionOptionKind::RejectOnce
-                        | PermissionOptionKind::RejectAlways
-                        | PermissionOptionKind::Unknown => OptionKind::Reject,
+                        // An option of a kind this build does not know gets the neutral tone.
+                        PermissionOptionKind::AllowAlways | PermissionOptionKind::Unknown => {
+                            OptionKind::AllowAlways
+                        }
+                        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
+                            OptionKind::Reject
+                        }
                     },
                 })
                 .collect(),

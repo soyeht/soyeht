@@ -641,7 +641,7 @@ fn permission_title(kind: &PermissionRequestKind) -> &'static str {
     match kind {
         PermissionRequestKind::WebSession => "Use the signed-in web session?",
         PermissionRequestKind::WebEvaluate => "Run page code?",
-        PermissionRequestKind::Agent | PermissionRequestKind::Unknown => "Agent permission",
+        PermissionRequestKind::Agent => "Agent permission",
     }
 }
 

@@ -30,7 +30,7 @@ and Windows), CLI and agents' MCP server.
 6. **Protocol version is an integer, and the engine serves a range** (ADR 0161). The contract
    names `min` and `current` (`x-protocolVersion`). The client sends in `hello` the highest
    version it speaks; the engine welcomes it at the lower of that and its own `current`
-   (`welcome.protocolVersion`, with the engine's `minProtocolVersion`), or closes with
+   (`welcome.protocolVersion`), or closes with
    `protocol_version_unsupported` when the client is below `min`. A client accepts a welcome
    inside its own range. From the first release the contract only grows: new methods, events,
    optional fields and error codes; nothing is removed, renamed, retyped or made required, and
@@ -66,7 +66,7 @@ local socket; isolation is per OS user, not per process.
    no `clientNonce` is answered `protocol_version_unsupported`, with the reason
    in the message, because it could not check the engine's answer.
 3. The engine responds ONCE: `welcome {engineVersion, protocolVersion,
-   minProtocolVersion?, connectionId, role, capabilities, dbId, engineProof?}` or an error
+   connectionId, role, capabilities, dbId, engineProof?}` or an error
    (`unauthorized`, `protocol_version_unsupported`) and closes. To a device,
    `engineProof = Ed25519(engine private key, bytes = "soyeht-engine-v1" ||
    nonce || clientNonce || engineId || 0x00 || deviceId)`. The device holds the

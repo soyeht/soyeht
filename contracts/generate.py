@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from client_policy import render_client_policy
-from compat import directions, released_problems, surface
+from compat import released_problems
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text, rustfmt
 from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
@@ -63,8 +63,10 @@ def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, Partia
     if "enum" in schema:
         fields = [f'    #[serde(rename = {json.dumps(v, ensure_ascii=False)})]\n    {variant(v)},' for v in schema["enum"]]
         if name in opened:
-            # A value a later engine adds reads as `Unknown`; the engine itself never builds one.
-            fields.append("    /// A value this build does not know (ADR 0161).\n    #[serde(other)]\n    Unknown,")
+            # A client built with `open-enums` reads a value a later engine adds as `Unknown`. The
+            # engine is built without the feature, so the variant does not exist there: it cannot
+            # read one from anywhere or publish one. `Unknown` is never written out either.
+            fields.append('    /// A value this build does not know (ADR 0161).\n    #[cfg(feature = "open-enums")]\n    #[serde(other, skip_serializing)]\n    Unknown,')
         return derive + f"\npub enum {name} {{\n" + "\n".join(fields) + "\n}"
     if "oneOf" in schema:
         fields = [f"    V{i}({type_name(t, 'rust')})," for i, t in enumerate(schema["oneOf"])]
@@ -399,14 +401,12 @@ def validate_protocol_versions(versions):
 
 
 def validate_open_enums(schema):
-    """The engine-to-client enums that may gain values (ADR 0161): a client keeps what it cannot name."""
-    up, _ = directions(surface(schema))
+    """The enums that may gain values (ADR 0161): a client keeps what it cannot name. The engine is
+    built without the variant that holds it, so it still refuses such a value wherever it reads one."""
     for name in schema.get("x-openEnums", []):
         enum = schema["$defs"].get(name, {}).get("enum")
         if not enum:
             raise ValueError(f"x-openEnums names {name}, which is not an enum")
-        if name in up:
-            raise ValueError(f"x-openEnums names {name}, which the engine reads from a client: it would accept a value it does not know")
         if "unknown" in enum or "Unknown" in [variant(value) for value in enum]:
             raise ValueError(f"x-openEnums names {name}, which already has a value that the catch-all case would clash with")
     if len(set(schema.get("x-openEnums", []))) != len(schema.get("x-openEnums", [])):
@@ -529,7 +529,7 @@ def render(schema):
     rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + event_params_rust(schema) + "\n" + rust_names(schema) + "\n"
     rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items())
     if "ErrorKind" in opened:
-        rust += f"\n        ErrorKind::Unknown => {schema['x-errorCodes']['internal_error']},"
+        rust += f"\n        #[cfg(feature = \"open-enums\")]\n        ErrorKind::Unknown => {schema['x-errorCodes']['internal_error']},"
     rust += "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = rustfmt(rust)

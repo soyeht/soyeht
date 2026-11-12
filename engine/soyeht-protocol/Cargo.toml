@@ -19,6 +19,9 @@ uuid.workspace = true
 # Checks the engine's events and results against the generated models (ADR 0090).
 # Off in every shipping build.
 contract-checks = []
+# A client reads a value a later engine adds to an open enum (`x-openEnums`) as `Unknown` instead of
+# refusing it (ADR 0161). Only the clients turn it on; the engine does not have the variant at all.
+open-enums = []
 
 [dev-dependencies]
 soyeht-protocol = { path = ".", features = ["contract-checks"] }

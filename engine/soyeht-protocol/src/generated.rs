@@ -194,7 +194,8 @@ pub enum ErrorKind {
     #[serde(rename = "ink_recognition_failed")]
     InkRecognitionFailed,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -429,8 +430,6 @@ pub struct Welcome {
     pub engine_version: String,
     #[serde(rename = "protocolVersion")]
     pub protocol_version: u32,
-    #[serde(rename = "minProtocolVersion", skip_serializing_if = "Option::is_none")]
-    pub min_protocol_version: Option<u32>,
     #[serde(rename = "connectionId")]
     pub connection_id: Id,
     #[serde(rename = "role")]
@@ -931,7 +930,8 @@ pub enum EngineReachabilityReason {
     #[serde(rename = "loopback_only")]
     LoopbackOnly,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -969,7 +969,8 @@ pub enum ReadinessSystem {
     #[serde(rename = "other")]
     Other,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1398,7 +1399,8 @@ pub enum PromptStatus {
     #[serde(rename = "cancelled")]
     Cancelled,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1431,7 +1433,8 @@ pub enum TranscriptKind {
     #[serde(rename = "subagent")]
     Subagent,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1445,7 +1448,8 @@ pub enum PermissionOptionKind {
     #[serde(rename = "reject_always")]
     RejectAlways,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1506,7 +1510,8 @@ pub enum ToolStatus {
     #[serde(rename = "failed")]
     Failed,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -1723,7 +1728,8 @@ pub enum AgentLoginPhase {
     #[serde(rename = "signing_out")]
     SigningOut,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -2084,7 +2090,8 @@ pub enum SubagentStatus {
     #[serde(rename = "disconnected")]
     Disconnected,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -3091,7 +3098,8 @@ pub enum TurnStopReason {
     #[serde(rename = "error")]
     Error,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -3211,7 +3219,8 @@ pub enum TaskReviewState {
     #[serde(rename = "approved")]
     Approved,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4134,7 +4143,8 @@ pub enum UsageState {
     #[serde(rename = "unavailable")]
     Unavailable,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4162,7 +4172,8 @@ pub enum UsageUnavailableReason {
     #[serde(rename = "plan_expired")]
     PlanExpired,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4194,7 +4205,8 @@ pub enum UsageSource {
     #[serde(rename = "opencode_local_history")]
     OpencodeLocalHistory,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -4399,7 +4411,8 @@ pub enum LspState {
     #[serde(rename = "restricted")]
     Restricted,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -5930,7 +5943,8 @@ pub enum PermissionRequestKind {
     #[serde(rename = "web_evaluate")]
     WebEvaluate,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -6431,7 +6445,8 @@ pub enum HarnessSetupState {
     #[serde(rename = "check_setup")]
     CheckSetup,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -6451,7 +6466,8 @@ pub enum HarnessSetupReason {
     #[serde(rename = "environment_unavailable")]
     EnvironmentUnavailable,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -6471,7 +6487,8 @@ pub enum HarnessEnvironmentIssue {
     #[serde(rename = "invalid_output")]
     InvalidOutput,
     /// A value this build does not know (ADR 0161).
-    #[serde(other)]
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
     Unknown,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -9294,6 +9311,7 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::InkLanguageUnavailable => -32045,
         ErrorKind::InkLimitExceeded => -32046,
         ErrorKind::InkRecognitionFailed => -32047,
+        #[cfg(feature = "open-enums")]
         ErrorKind::Unknown => -32018,
     }
 }

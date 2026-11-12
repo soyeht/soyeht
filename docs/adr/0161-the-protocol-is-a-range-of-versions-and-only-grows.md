@@ -1,6 +1,6 @@
 # ADR 0161: The protocol is a range of versions, and the contract only grows
 
-- Status: proposed (the range, the negotiation and the check are implemented; open enums wait for the owner)
+- Status: proposed (implemented on its branch; the owner has not accepted it yet)
 - Date: 2026-11-11
 
 ## Context
@@ -19,8 +19,8 @@ engine accepts current and previous versions"; the code does not do that.
 
 `x-protocolVersion` becomes `{"min": 1, "current": 1}`. `current` is the version this build speaks;
 `min` is the oldest version it still serves. Generated: Rust `PROTOCOL_VERSION` (= `current`) and
-`MIN_PROTOCOL_VERSION`; Swift `ProtocolVersion.current` and `.min`; the same two values in the
-TypeScript output. Nobody types either number.
+`MIN_PROTOCOL_VERSION`; Swift `ProtocolVersion.current` and `.min`. (The TypeScript output carries
+the range only inside `schema.json`.) Nobody types either number.
 
 ### Negotiation
 
@@ -28,16 +28,18 @@ TypeScript output. Nobody types either number.
 field.
 
 - The engine refuses a `hello` below `min` with `protocol_version_unsupported` (no new error code).
-  The message tells the person which side to update ("update Soyeht on this device").
+  The message is one text of `x-clientPolicy` (`texts.updateSoyeht`): "update Soyeht on the older
+  one".
 - Otherwise it welcomes at `min(client version, current)`. `welcome.protocolVersion` is the
-  negotiated version, and the engine keeps it on the connection. The welcome also carries an
-  optional `minProtocolVersion` (additive), so a client can say what to update.
+  negotiated version; the engine only echoes it in the welcome and keeps nothing on the connection
+  (nothing branches on it yet; the day something does, the connection records it).
 - The client accepts a welcome whose version is in its own `[min, current]` and refuses anything
-  else (`UnexpectedHandshake` in Rust, `invalidFrame` today in Swift, which should say "update
-  Soyeht on the Mac"). A phone newer than its Mac therefore works when the Mac's version is at or
-  above the phone's `min`; the phone, not the engine, decides that.
-- Equality checks go away. The three client checks share one rule, `handshake::accepts_welcome`
-  (Rust) and its Swift counterpart over one vector file in `contracts/vectors/`.
+  else (`Error::UnsupportedProtocolVersion` in Rust, `ClientFailure.unsupportedProtocolVersion` in
+  Swift; both say the same `updateSoyeht` text). A phone newer than its Mac therefore works when the
+  Mac's version is at or above the phone's `min`; the phone, not the engine, decides that.
+- Equality checks go away. The rule is `handshake::negotiate_in` and `accepts_in` (Rust, with
+  `negotiate` and the client check as wrappers for this build's range) and
+  `ProtocolVersion.accepts` (Swift), over one vector file in `contracts/vectors/`.
 
 The negotiated version selects no wire shape: the contract below is additive, so one set of shapes
 serves every version in the range. It is for the engine to withhold something a client at an older
@@ -118,14 +120,19 @@ changelog entry of the release is the place the owner reads it before publishing
    `AgentLoginPhase`), the usage states, sources and reasons (`UsageState`, `UsageSource`,
    `UsageUnavailableReason`), and `LspState`, `ReadinessSystem`, `SubagentStatus`,
    `TaskReviewState` and `EngineReachabilityReason`. A client keeps a value it does not know
-   (Swift `unknown(String)`, which keeps the text and sends it back; Rust `Unknown`, which the
-   engine never builds) and shows it as a generic state. The generator refuses an open enum the
-   engine also reads from a client, since the engine would then accept a value it cannot handle;
-   that is why `PaneMode`, `TaskState`, `UsageProvider` and `EditorLanguage` stay closed for now
-   (opening them first needs the engine to refuse `Unknown` in a request). `PaneState` and
-   `TaskCheckState` already have a value called `unknown`, which the catch-all would clash with.
-   An open enum cannot be closed again (the check refuses it). The rest are closed: a new value of
-   one of them is a break, which a deliberate `min` bump makes.
+   (Swift `unknown(String)`, which keeps the text and writes it back; Rust `Unknown`, a unit
+   variant) and shows it as a generic state or as the text it carries.
+   The Rust variant exists only with the `open-enums` feature of `soyeht-protocol`, which only the
+   Windows and Linux client and the Android core turn on (their cargo workspaces). The engine, the
+   CLI and the MCP server are built without it, so for them `Unknown` is not a value of the type:
+   wherever the engine reads one of these enums (a request, an agent's update or permission
+   options, its stop reason, a stored row) a value nobody defined is refused exactly as before, and
+   it cannot publish one. The variant is also never written out (`skip_serializing`), so a client
+   cannot send it back. A test per read site of the engine and one over every open enum prove it.
+   `PaneState` and `TaskCheckState` already have a value called `unknown`, which the catch-all
+   would clash with, so they stay closed. An open enum cannot be closed again (the check refuses
+   it). The rest are closed: a new value of one of them is a break, which a deliberate `min` bump
+   makes.
 2. A client below `min` is refused by the engine; a client that is welcomed at a version outside
    its range shows the update message at connect time (`protocol_version_unsupported`). The updater
    is not blocked.
@@ -134,5 +141,6 @@ changelog entry of the release is the place the owner reads it before publishing
 
 ## Not decided here
 
-- Whether `PaneMode`, `TaskState`, `UsageProvider` and `EditorLanguage` become open, which needs the
-  engine to refuse `Unknown` in a request first.
+- Whether `PaneMode`, `TaskState`, `UsageProvider` and `EditorLanguage` become open. The engine can
+  now refuse an unknown value in a request (it has no `Unknown`), so the only cost left is the
+  `unknown` case in the Mac and iPhone views that switch over them.

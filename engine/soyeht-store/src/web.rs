@@ -292,9 +292,7 @@ fn encode_permission_kind(kind: &PermissionRequestKind) -> Result<&'static str> 
     match kind {
         PermissionRequestKind::WebSession => Ok("web_session"),
         PermissionRequestKind::WebEvaluate => Ok("web_evaluate"),
-        PermissionRequestKind::Agent | PermissionRequestKind::Unknown => {
-            Err(Error::InvalidWebPermission)
-        }
+        PermissionRequestKind::Agent => Err(Error::InvalidWebPermission),
     }
 }
 

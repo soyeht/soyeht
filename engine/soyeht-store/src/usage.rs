@@ -118,8 +118,6 @@ fn validate(reading: &UsageReading, observed_at_unix_sec: i64) -> Result<()> {
             reading.primary.is_some() || reading.activity.is_some()
         }
         UsageState::LoginNeeded | UsageState::NoAccess | UsageState::Unavailable => true,
-        // Only a later engine writes a state this one does not know.
-        UsageState::Unknown => false,
     };
     let windows_match = reading
         .primary
