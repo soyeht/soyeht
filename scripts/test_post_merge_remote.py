@@ -253,6 +253,7 @@ exec {self.fake_ssh} "$@"
             self.assertIn(" --fuzz-seed 4242", arguments(remote, self.shas[0], ["eng"], None, None, ""))
         with mock.patch.dict(os.environ):
             os.environ.pop("SOYEHT_GATE_FUZZ_SEED", None)
+            os.environ.pop("SOYEHT_FUZZ_SEED", None)
             self.assertNotIn("--fuzz-seed", arguments(remote, self.shas[0], ["eng"], None, None, ""))
             seeds = self.root.parent / "seeds.txt"
             environment = {**os.environ, "FAKE_SEEDS": str(seeds)}
