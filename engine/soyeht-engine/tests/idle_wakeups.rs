@@ -149,49 +149,18 @@ fn an_engine_with_idle_shells_does_not_wake_on_every_tick() {
 /// returns how long each took from the request to the frame that carries its echo.
 fn echo_latencies(keys: usize) -> Vec<Duration> {
     let rig = Rig::new();
-    let mut client = rig.client();
-    let (workspace, pane) = client.create(&rig);
+    let (mut client, mut watcher, workspace, pane, pane_ref) = watched_shell(&rig);
     start_shells(&mut client, &workspace, 4);
-    let mut watcher = rig.client();
-    let (info, _) = watcher.tail(&pane);
-    let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
     wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
-    // Let the shell settle: its prompt and the sweep of what it printed are over.
-    thread::sleep(Duration::from_secs(3));
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_millis(100)))
-        .unwrap();
-    while let Ok(Some(_)) = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket) {}
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
+    settle_shell(&mut watcher, Duration::from_secs(3));
     let mut latencies = Vec::new();
     for key in 0..keys {
-        let letter = char::from(b'a' + u8::try_from(key % 26).unwrap());
-        let started = Instant::now();
-        client.call(
-            "pane.input",
-            json!({"paneId":pane,"bytes":base64::Engine::encode(&base64::engine::general_purpose::STANDARD, letter.to_string()),
-                "idempotencyKey":format!("key-{key}")}),
-        );
-        loop {
-            let frame = soyeht_protocol::frame::Frame::read_from(&mut watcher.socket)
-                .unwrap()
-                .expect("the echo");
-            if let soyeht_protocol::frame::Frame::Terminal {
-                pane_ref: found,
-                bytes,
-                ..
-            } = frame
-                && u64::from(found) == pane_ref
-                && bytes.contains(&(letter as u8))
-            {
-                break;
-            }
-        }
-        latencies.push(started.elapsed());
+        latencies.push(type_letter_and_wait_for_echo(
+            &mut client,
+            &mut watcher,
+            (&pane, pane_ref),
+            key,
+        ));
         thread::sleep(Duration::from_millis(250));
     }
     latencies.sort();

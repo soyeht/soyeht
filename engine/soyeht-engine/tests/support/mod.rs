@@ -28,7 +28,7 @@ mod search_path;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
 pub use {
-    processes::{cpu_seconds, wait_for_shell},
+    processes::*,
     ticker::{Ticker, longest_gap},
 };
 

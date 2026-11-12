@@ -15,14 +15,8 @@
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use serde_json::{Value, json};
-use soyeht_protocol::frame::Frame;
-use std::{
-    collections::BTreeMap,
-    fs,
-    time::{Duration, Instant},
-};
+use serde_json::Value;
+use std::{collections::BTreeMap, fs, time::Duration};
 
 mod support;
 use support::*;
@@ -136,48 +130,18 @@ fn log_len(rig: &Rig) -> usize {
 /// Types `keys` letters one request each into an idle shell, `gap` after the echo of each, and
 /// returns what the log says of that and how long each echo took.
 fn type_keys(rig: &Rig, keys: usize, gap: Duration) -> Typed {
-    let mut client = rig.client();
-    let (_, pane) = client.create(rig);
-    let mut watcher = rig.client();
-    let (info, _) = watcher.tail(&pane);
-    let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
+    let (mut client, mut watcher, _, pane, pane_ref) = watched_shell(rig);
     wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
-    std::thread::sleep(SETTLE);
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_millis(100)))
-        .unwrap();
-    while let Ok(Some(_)) = Frame::read_from(&mut watcher.socket) {}
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_secs(10)))
-        .unwrap();
+    settle_shell(&mut watcher, SETTLE);
     let start = log_len(rig);
     let mut echoes = Vec::new();
     for key in 0..keys {
-        let letter = char::from(b'a' + u8::try_from(key % 26).unwrap());
-        let started = Instant::now();
-        client.call(
-            "pane.input",
-            json!({"paneId":pane,"bytes":STANDARD.encode(letter.to_string()),
-                "idempotencyKey":format!("key-{key}")}),
-        );
-        loop {
-            let frame = Frame::read_from(&mut watcher.socket)
-                .unwrap()
-                .expect("the echo");
-            if let Frame::Terminal {
-                pane_ref: found,
-                bytes,
-                ..
-            } = frame
-                && u64::from(found) == pane_ref
-                && bytes.contains(&(letter as u8))
-            {
-                break;
-            }
-        }
-        echoes.push(started.elapsed());
+        echoes.push(type_letter_and_wait_for_echo(
+            &mut client,
+            &mut watcher,
+            (&pane, pane_ref),
+            key,
+        ));
         std::thread::sleep(gap);
     }
     std::thread::sleep(FLUSH);
@@ -248,16 +212,8 @@ fn report(name: &str, keys: usize, typed: &Typed) {
 #[test]
 fn an_idle_shell_makes_no_commit_and_no_request() {
     let rig = Rig::with_environment(&[MEASURE]);
-    let mut client = rig.client();
-    let (_, pane) = client.create(&rig);
-    let mut watcher = rig.client();
-    let (info, _) = watcher.tail(&pane);
-    wait_for_shell(
-        &mut client,
-        &mut watcher,
-        &pane,
-        info["binaryPaneRef"].as_u64().unwrap(),
-    );
+    let (mut client, mut watcher, _, pane, pane_ref) = watched_shell(&rig);
+    wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
     std::thread::sleep(SETTLE);
     let start = log_len(&rig);
     std::thread::sleep(Duration::from_secs(5));
@@ -271,51 +227,38 @@ fn an_idle_shell_makes_no_commit_and_no_request() {
     assert_eq!(window.commits, 0, "an idle shell made commits");
 }
 
-/// Keys that follow each other within the linger of an outcome: the outcome of one is recorded
-/// with the intent of the next.
-#[test]
-fn a_burst_of_keys_costs_the_commits_and_requests_of_the_current_engine() {
-    const KEYS: usize = 200;
+/// Types `keys` letters `gap` apart and holds what they cost to `commits_per_key` commits a key,
+/// a tenth more for a loaded host that stalls a key past the linger, and two supervisor requests
+/// a key for the input itself: its bytes and the confirmation of the operation before.
+fn assert_cost(name: &str, keys: usize, gap: Duration, commits_per_key: usize) {
     let rig = Rig::with_environment(&[MEASURE]);
-    let typed = type_keys(&rig, KEYS, BURST_GAP);
-    report("burst", KEYS, &typed);
+    let typed = type_keys(&rig, keys, gap);
+    report(name, keys, &typed);
     let window = &typed.window;
-    // Measured on main: one commit a key (its intent, which also records the outcome before it),
-    // with a few more when a loaded host stalls a key past the linger; and two supervisor requests a key for the input itself: its
-    // bytes and the confirmation of the operation before.
     assert!(
-        window.commits <= (KEYS + KEYS / 10) as u64,
-        "{} commits for {KEYS} keys",
+        window.commits <= (commits_per_key * keys + keys / 10) as u64,
+        "{} commits for {keys} keys",
         window.commits
     );
     assert!(
-        window.input_requests() <= 2 * KEYS + 2,
-        "{} supervisor requests of the input for {KEYS} keys",
+        window.input_requests() <= 2 * keys + 2,
+        "{} supervisor requests of the input for {keys} keys",
         window.input_requests()
     );
 }
 
-/// Keys that are each alone: the outcome waits out its linger and is recorded by itself, and the
-/// confirmation of its operation is sent on its own.
+/// Keys that follow each other within the linger of an outcome: the outcome of one is recorded
+/// with the intent of the next, so a key costs one commit (measured on main).
 #[test]
-fn keys_typed_apart_cost_the_commits_and_requests_of_the_current_engine() {
-    const KEYS: usize = 100;
-    let rig = Rig::with_environment(&[MEASURE]);
-    let typed = type_keys(&rig, KEYS, ALONE_GAP);
-    report("alone", KEYS, &typed);
-    let window = &typed.window;
-    // Measured on main: two commits a key (the intent, then the outcome after its linger) and the
-    // same two requests of the input itself.
-    assert!(
-        window.commits <= (2 * KEYS + KEYS / 10) as u64,
-        "{} commits for {KEYS} keys",
-        window.commits
-    );
-    assert!(
-        window.input_requests() <= 2 * KEYS + 2,
-        "{} supervisor requests of the input for {KEYS} keys",
-        window.input_requests()
-    );
+fn a_burst_of_keys_costs_one_commit_and_two_requests_each() {
+    assert_cost("burst", 200, BURST_GAP, 1);
+}
+
+/// Keys that are each alone: the outcome waits out its linger and is recorded by itself, so a
+/// key costs two commits (measured on main), and the confirmation is sent on its own.
+#[test]
+fn keys_typed_apart_cost_two_commits_and_two_requests_each() {
+    assert_cost("alone", 100, ALONE_GAP, 2);
 }
 
 /// The echo of a key with the probe off, as a person feels it.
