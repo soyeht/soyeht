@@ -14,7 +14,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use support::Rig;
+use support::{Rig, wait_for_shell};
 
 /// More than three reads of the supervisor (64 KiB each) and less than the 2 MiB it keeps.
 const BURST: usize = 200_000;
@@ -82,50 +82,6 @@ fn burst(bytes: usize, stopped: Option<Duration>, limit: Duration) -> (Rig, Vec<
         }
     }
     (rig, received, started.elapsed())
-}
-
-/// Types a marker until the shell echoes it back from its output.
-fn wait_for_shell(
-    client: &mut support::Client,
-    watcher: &mut support::Client,
-    pane: &str,
-    pane_ref: u64,
-) {
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_millis(300)))
-        .unwrap();
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let mut seen = Vec::new();
-    for attempt in 0.. {
-        assert!(Instant::now() < deadline, "the shell never answered");
-        client.call(
-            "pane.input",
-            json!({"paneId":pane,"bytes":STANDARD.encode("echo RE\"\"ADY\n"),
-                "idempotencyKey":format!("ready-{attempt}")}),
-        );
-        while let Ok(Some(frame)) = Frame::read_from(&mut watcher.socket) {
-            if let Frame::Terminal {
-                pane_ref: found,
-                bytes,
-                ..
-            } = frame
-                && u64::from(found) == pane_ref
-            {
-                seen.extend(bytes);
-            }
-        }
-        if String::from_utf8_lossy(&seen).contains("READY\r\n") {
-            break;
-        }
-    }
-    // Everything the marker caused has been read.
-    thread::sleep(Duration::from_millis(300));
-    while let Ok(Some(_)) = Frame::read_from(&mut watcher.socket) {}
-    watcher
-        .socket
-        .set_read_timeout(Some(Duration::from_secs(30)))
-        .unwrap();
 }
 
 fn engine_log(rig: &Rig) -> String {

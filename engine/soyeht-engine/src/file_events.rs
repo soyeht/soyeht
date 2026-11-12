@@ -7,7 +7,7 @@ use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::{
     path::Path,
     sync::{
-        Mutex,
+        Arc, Mutex,
         mpsc::{self, Receiver},
     },
 };
@@ -63,12 +63,19 @@ pub(crate) struct EventStream {
 }
 
 impl EventStream {
-    /// Follows `root` and everything below it; `None` where no watcher can start.
-    pub(crate) fn follow(root: &Path) -> Option<Self> {
+    /// Follows `root` and everything below it; `None` where no watcher can start. Each event
+    /// kicks the tick, which sleeps until its next deadline otherwise (ADR 0147, step 1b).
+    pub(crate) fn follow(root: &Path, kick: Arc<tokio::sync::Notify>) -> Option<Self> {
         #[cfg(feature = "test-hooks")]
         slow_start::wait();
         let (sender, receiver) = mpsc::channel();
-        let Ok(mut watcher) = notify::recommended_watcher(sender) else {
+        let queue = move |event: notify::Result<Event>| {
+            // The receiver is gone once the stream was dropped: nobody wants the event then.
+            if sender.send(event).is_ok() {
+                kick.notify_one();
+            }
+        };
+        let Ok(mut watcher) = notify::recommended_watcher(queue) else {
             return unavailable("create");
         };
         if watcher.watch(root, RecursiveMode::Recursive).is_err() {
@@ -110,6 +117,12 @@ impl Burst {
         self.started_ms.is_some_and(|started| {
             now - self.last_event_ms >= QUIET_MS || now - started >= BURST_LIMIT_MS
         })
+    }
+
+    /// When the burst in progress is ready to be read, if there is one.
+    pub(crate) fn due_ms(&self) -> Option<i64> {
+        self.started_ms
+            .map(|started| (self.last_event_ms + QUIET_MS).min(started + BURST_LIMIT_MS))
     }
 
     /// Starts the next burst from nothing.

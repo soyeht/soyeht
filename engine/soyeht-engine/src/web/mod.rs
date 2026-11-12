@@ -90,6 +90,11 @@ impl Service {
         Ok(Refresh { servers, changed })
     }
 
+    /// When the next scan is due, for the tick to sleep until.
+    pub(crate) fn next_refresh_ms(&self) -> i64 {
+        self.next_refresh_ms
+    }
+
     /// Why local servers cannot be listed on this system, if they cannot.
     pub fn unavailable(&self) -> Option<&'static str> {
         self.unavailable

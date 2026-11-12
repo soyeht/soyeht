@@ -300,15 +300,49 @@ async fn the_event_source_starts_before_the_first_listing_is_read() {
     // A source that changes the folder while it starts: a listing read before the start
     // would miss the change, and no event would report it.
     let plan = Plan {
-        starter: Some(|root| {
+        starter: Some(|root, _| {
             fs::write(root.join("src/during_start.rs"), "").unwrap();
             Source::Polling
         }),
         epoch: 0,
+        kick: Default::default(),
     };
     let prepared = prepare_watch(&root, &["src".to_owned()], plan).unwrap();
     assert_ne!(prepared.fingerprints[0].1, before);
     assert_eq!(prepared.fingerprints[0].1, project.fingerprint("src"));
+}
+
+#[tokio::test]
+async fn the_tick_is_due_when_a_burst_of_events_has_been_quiet_long_enough() {
+    let mut followed = Followed::watching(&[""]).await;
+    let due = |followed: &Followed| followed.fixture.core.project_watches.next_due_ms();
+    assert_eq!(
+        due(&followed),
+        None,
+        "events kick the tick; nothing is polled"
+    );
+
+    followed.emit(CREATED, &["src/new.rs"]);
+    followed.step(0);
+    let seen = followed.fixture.core.now_ms();
+    assert_eq!(due(&followed), Some(seen + crate::file_events::QUIET_MS));
+
+    // Read: the burst is over, and nothing is due again until the next event.
+    followed.step(crate::file_events::QUIET_MS);
+    assert_eq!(due(&followed), None);
+}
+
+#[tokio::test]
+async fn a_workspace_with_no_event_source_is_due_every_second() {
+    let mut fixture = polling(&[""]).await;
+    fixture.notifications().await;
+    let polled = fixture.core.now_ms();
+    fixture.core.advance_project_tree().unwrap();
+    let due = fixture.core.project_watches.next_due_ms().unwrap();
+    assert!(
+        due > polled && due <= polled + 1_000,
+        "due {due}, polled {polled}"
+    );
 }
 
 #[tokio::test]

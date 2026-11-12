@@ -201,7 +201,9 @@ impl Core {
         if self.hooks.poll_skills_only() {
             self.skill_watches.poll_only();
         }
-        self.skill_watches.follow_user(user.store.root(), &listed);
+        if self.hooks.follows_user_skills() {
+            self.skill_watches.follow_user(user.store.root(), &listed);
+        }
         Ok(())
     }
 

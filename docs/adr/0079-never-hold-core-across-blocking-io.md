@@ -157,8 +157,9 @@ line is written after the lock is released.
 subsystem (editor, project tree, local servers, web commands, harness
 switches, retired agents, experiment captures, the task steps) in isolation,
 logs its failure under its name, and always drains the panes.
-`TICK_INTERVAL` (10 ms) and `PRUNE_EVERY_TICKS` (6000, once a minute) are
-named constants.
+The tick no longer has a period of its own: its floor of 10 ms, its ceiling of one second and the
+minute between prunes are named constants, and a subsystem says when it needs the tick (ADR 0147,
+step 1b).
 
 **Enforcement.**
 

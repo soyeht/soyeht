@@ -23,10 +23,14 @@ use uuid::Uuid;
 
 mod language_servers;
 mod locked_adapter;
+mod processes;
 mod search_path;
 mod ticker;
 #[allow(unused_imports)] // each test crate uses the part it needs
-pub use ticker::{Ticker, longest_gap};
+pub use {
+    processes::{cpu_seconds, wait_for_shell},
+    ticker::{Ticker, longest_gap},
+};
 
 // Process-heavy integration tests share the runner. Wait for the observable
 // effect rather than assuming it will occur within one scheduling quantum.

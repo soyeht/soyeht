@@ -32,6 +32,34 @@ fn open_main(fixture: &mut EditorFixture) -> String {
 }
 
 #[tokio::test]
+async fn an_open_file_is_due_for_its_disk_check_unless_its_job_is_running() {
+    let mut fixture = EditorFixture::new(&[("main.rs", "fn main() {}\n")]).await;
+    let file_id = open_main(&mut fixture);
+    let due = |fixture: &EditorFixture| {
+        let mut next = crate::tick_due::Next::default();
+        fixture.core.editor_due(&mut next, fixture.core.now_ms());
+        next.soonest()
+    };
+    fixture.at(1_000);
+    fixture.core.advance_editor_effects();
+    assert_eq!(
+        due(&fixture),
+        Some(std::time::Duration::from_millis(
+            u64::try_from(TICK_MS).unwrap()
+        )),
+        "the next check of a watched file"
+    );
+
+    // A job that is running ends with a kick of the tick, so the file waits for it.
+    fixture.at(1_000 + TICK_MS);
+    fixture
+        .core
+        .background
+        .busy(&format!("editor.disk:{file_id}"));
+    assert_eq!(due(&fixture), None);
+}
+
+#[tokio::test]
 async fn a_watch_on_a_vanished_file_backs_off_and_logs_few_times() {
     let mut fixture = EditorFixture::new(&[("main.rs", "fn main() {}\n")]).await;
     let file_id = open_main(&mut fixture);

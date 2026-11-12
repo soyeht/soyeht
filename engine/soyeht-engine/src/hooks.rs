@@ -10,7 +10,9 @@
 //! in the test program: the rule against blocking IO under the Core lock (ADR 0079) is for
 //! code a person's engine runs.
 
-use crate::{core::Core, editor::FileSystemPort, errors::Result, model::RunningPane};
+use crate::{
+    core::Core, editor::FileSystemPort, errors::Result, model::RunningPane, ports::PortScanPort,
+};
 use soyeht_ink::Recognizer;
 use soyeht_usage::host::Host;
 use std::sync::Arc;
@@ -38,9 +40,28 @@ pub trait Hooks: Send + Sync {
         false
     }
 
+    /// The longest the tick sleeps with no deadline and no event (ADR 0147, step 1b); `None` is
+    /// the default of the shipped engine. A test raises it to show that no subsystem of the tick
+    /// relies on it.
+    fn tick_ceiling(&self) -> Option<std::time::Duration> {
+        None
+    }
+
+    /// A scan of the listening ports that replaces the system's. A test that follows the deadlines
+    /// of the tick uses one that cannot list, so the scan every five seconds is not one of them.
+    fn port_scan(&self) -> Option<Box<dyn PortScanPort>> {
+        None
+    }
+
     /// Whether the editor holds its autosaves.
     fn pause_editor_autosave(&self) -> bool {
         false
+    }
+
+    /// Whether the user's skill folder is followed from the start. A test that follows the
+    /// deadlines of the tick leaves it out, so its probe every two seconds is not one of them.
+    fn follows_user_skills(&self) -> bool {
+        true
     }
 
     /// Whether skill folders are read on the probe instead of by file events.

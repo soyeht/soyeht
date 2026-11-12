@@ -35,6 +35,31 @@ async fn connect(core: &mut Core, capabilities: Value) -> (String, outbox::Recei
 }
 
 #[tokio::test]
+async fn a_command_the_host_has_not_answered_is_a_deadline_of_the_tick() {
+    // A quiet engine whose ceiling is a minute: its first deadline is the skills probe, at 1.7 s.
+    let (mut core, root) =
+        crate::tick_due::tests::quiet_core_with(Some(std::time::Duration::from_secs(60)));
+    let (_host, _host_receiver) = connect(&mut core, json!(["web_host"])).await;
+    let (caller, _caller_receiver) = connect(&mut core, json!([])).await;
+    let pane = create_web_pane(&mut core, &caller, &root);
+    // The requests wrote to the store; the polls rest again on a run of the tick.
+    core.poll_output().unwrap();
+    let quiet = crate::tick_due::wait(&core);
+    assert!(quiet > std::time::Duration::from_millis(100), "{quiet:?}");
+
+    let raw = navigate_params(&pane, "operation");
+    let params = command_params(&pane, "operation");
+    core.queue_web_command(&caller, json!(44), "web.navigate", &raw, params)
+        .unwrap();
+    // The command was given 100 ms to be answered.
+    assert_eq!(
+        crate::tick_due::wait(&core),
+        std::time::Duration::from_millis(100)
+    );
+    crate::test_paths::remove_after(core, root);
+}
+
+#[tokio::test]
 async fn one_local_host_routes_typed_bounded_results_and_disconnects_fail_waiters() {
     let root = temp_root();
     let mut core = Core::open(&root).unwrap();

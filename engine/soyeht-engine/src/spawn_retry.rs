@@ -15,6 +15,7 @@ use crate::{
     core::Core,
     errors::{self, Result},
     streak::Streak,
+    tick_due::Next,
 };
 use soyeht_platform::log::Line;
 use soyeht_protocol::PaneState;
@@ -273,6 +274,19 @@ impl Core {
         self.settle_supervisor_call("engine.pane_close_failed", started);
     }
 
+    /// When the tick must try again the starts and the closes that failed on a working link.
+    pub(crate) fn retries_due(&self, next: &mut Next, now: i64) {
+        let retries = &self.supervisor_retry;
+        for pending in retries
+            .spawn_retries
+            .0
+            .values()
+            .chain(retries.close_retries.0.values())
+        {
+            next.at_ms(now, pending.due_ms);
+        }
+    }
+
     /// The tick's part: starts again each pane whose retry is due. A pane that closed, or
     /// got a process meanwhile, is forgotten.
     pub(crate) fn advance_spawn_retries(&mut self) -> Result<()> {
@@ -377,6 +391,26 @@ mod tests {
         core.spawn(&id).unwrap();
         assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 1);
         (core, directory, id, calls, clock)
+    }
+
+    #[test]
+    fn a_pane_waiting_for_a_retry_is_a_deadline_of_the_tick() {
+        let [spawn, resize] = started();
+        let (core, directory, _id, _calls, clock) =
+            failed_first_start(vec![failed_start(), spawn, resize]);
+        let due = |core: &Core| {
+            let mut next = crate::tick_due::Next::default();
+            core.retries_due(&mut next, core.now_ms());
+            next.soonest()
+        };
+        let wait = due(&core).unwrap();
+        assert!(
+            wait > std::time::Duration::ZERO && wait <= std::time::Duration::from_secs(1),
+            "the delay of the first retry: {wait:?}"
+        );
+        clock.0.fetch_add(10_000, Ordering::SeqCst);
+        assert_eq!(due(&core), Some(std::time::Duration::ZERO));
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]

@@ -227,6 +227,23 @@ impl Watch {
         }
     }
 
+    /// When the tick must act on the watch: the next sweep while it is active and a process is
+    /// live, and the next try of a watch that is wanted and not running. Notices wake the tick.
+    pub(crate) fn next_due(&self, live: bool) -> Option<Duration> {
+        self.shared.with(|inner| {
+            if inner.active {
+                let since = inner.last_sweep.map_or(SWEEP, |at| at.elapsed());
+                return live.then(|| SWEEP.saturating_sub(since));
+            }
+            if !self.wanted || inner.running || inner.unsupported {
+                return None;
+            }
+            Some(inner.retry_at.map_or(Duration::ZERO, |at| {
+                at.saturating_duration_since(Instant::now())
+            }))
+        })
+    }
+
     /// Marks every process in `instances` for a read when a second has passed since the last
     /// sweep. Returns whether it did.
     pub(crate) fn sweep<'a>(&self, instances: impl Iterator<Item = &'a str>) -> bool {
@@ -305,11 +322,13 @@ impl crate::core::Core {
     /// Once a second, marks every pane's process for a read whatever the notices said, so a notice
     /// that never came costs a second and not the output.
     pub(crate) fn sweep_watch(&mut self) {
+        let servers = crate::languages::watching::instances(self);
         let instances = self
             .panes
             .values()
             .filter(|pane| !pane.stored.closed)
-            .filter_map(|pane| pane.stored.instance_id.as_deref());
+            .filter_map(|pane| pane.stored.instance_id.as_deref())
+            .chain(servers.iter().map(String::as_str));
         self.watch.sweep(instances);
     }
 
@@ -318,6 +337,32 @@ impl crate::core::Core {
         let socket = self.directory.join(soyeht_protocol::profile::PTYD_SOCKET);
         self.watch
             .keep(socket, self.generation, self.background.woken());
+    }
+
+    /// When the tick must read the processes of the panes: now for a pane the supervisor said
+    /// has output, for an agent that is not at rest and for every pane while no watch is heard
+    /// (the engine polls then, as it always did); otherwise at the next sweep or the next
+    /// deadline of an agent.
+    pub(crate) fn output_due(&self, next: &mut crate::tick_due::Next, now: i64) {
+        // A language server is a process the sweep marks too.
+        let mut live = !crate::languages::watching::instances(self).is_empty();
+        for (id, pane) in &self.panes {
+            if pane.stored.closed
+                || pane.stored.instance_id.is_none()
+                || self.capture_restore_pending(id)
+            {
+                continue;
+            }
+            live = true;
+            if self.agents.contains_key(id) {
+                self.agent_poll_due(id, next, now);
+            } else if !self.watch.is_active() || self.pane_marked(id) {
+                next.now();
+            }
+        }
+        if let Some(wait) = self.watch.next_due(live) {
+            next.within(wait);
+        }
     }
 
     /// Whether the supervisor said the process of pane `id` has output to read.
@@ -464,6 +509,44 @@ mod tests {
             exited,
             found,
         }
+    }
+
+    #[test]
+    fn the_sweep_is_due_while_a_process_lives_and_a_wanted_watch_is_tried_until_it_runs() {
+        let mut watch = Watch::default();
+        assert_eq!(watch.next_due(true), None, "no link, no watch");
+
+        // Heard: the next sweep, and only while a process is live.
+        watch.pretend_active();
+        assert_eq!(watch.next_due(false), None);
+        assert_eq!(watch.next_due(true), Some(Duration::ZERO), "never swept");
+        watch.shared.with(|inner| {
+            inner.last_sweep = Some(Instant::now() - Duration::from_millis(400));
+        });
+        let due = watch.next_due(true).unwrap();
+        assert!(
+            due > Duration::from_millis(500) && due <= Duration::from_millis(600),
+            "{due:?}"
+        );
+
+        // Wanted and not running: tried now, or when the retry is due; never when unsupported.
+        watch.link_made();
+        assert_eq!(watch.next_due(false), Some(Duration::ZERO));
+        watch.shared.with(|inner| {
+            inner.retry_at = Some(Instant::now() + Duration::from_secs(30));
+        });
+        assert!(watch.next_due(false).unwrap() > Duration::from_secs(29));
+        watch.shared.with(|inner| inner.unsupported = true);
+        assert_eq!(watch.next_due(false), None);
+        watch.shared.with(|inner| {
+            inner.unsupported = false;
+            inner.running = true;
+        });
+        assert_eq!(
+            watch.next_due(false),
+            None,
+            "a watch that runs needs no try"
+        );
     }
 
     #[test]

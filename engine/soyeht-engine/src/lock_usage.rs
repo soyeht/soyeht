@@ -122,6 +122,12 @@ impl Usage {
             .map(|(_, aggregate)| aggregate.costs)
     }
 
+    /// When the window in progress is over, if there is one.
+    pub(crate) fn window_ends_ms(&self, window_ms: u64) -> Option<u64> {
+        self.window_start_ms
+            .map(|start| start.saturating_add(window_ms))
+    }
+
     /// The lines of the window when it is over at `now_ms`, and a fresh window.
     pub(crate) fn due(&mut self, now_ms: u64, window_ms: u64) -> Vec<Line> {
         let Some(start) = self.window_start_ms else {

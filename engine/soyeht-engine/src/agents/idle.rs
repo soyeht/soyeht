@@ -17,6 +17,7 @@ use crate::{
     errors::{self, Result},
     ports::StorePort,
     streak::Streak,
+    tick_due::Next,
 };
 use std::collections::BTreeSet;
 
@@ -135,6 +136,48 @@ impl Running {
     /// True while the agent is settled and no request of it can have expired.
     pub(crate) fn is_settled(&self, now_ms: i64) -> bool {
         self.idle.quiet_until_ms.is_some_and(|until| now_ms < until)
+    }
+}
+
+impl Core {
+    /// Whether the poll of the agent `pane` can wait. It is at rest and nothing needs it: no mark
+    /// of the watch, no read that ended and waits to be taken. It then waits for its pace, or,
+    /// with the watch heard, for the notice that marks it.
+    pub(crate) fn agent_may_rest(&self, pane: &str) -> bool {
+        let owner = crate::read_ahead::agent(pane);
+        self.agents[pane].is_settled(self.now_ms())
+            && !self.pane_marked(pane)
+            && !self.read_ready(&owner)
+            && (self.reads_paused(&owner) || self.watch.is_active())
+    }
+
+    /// When the tick must poll the agent of `pane`: now unless it may rest, and then when an open
+    /// request of it can expire, or, while no watch is heard, when its pause ends.
+    pub(crate) fn agent_poll_due(&self, pane: &str, next: &mut Next, now: i64) {
+        let Some(agent) = self.agents.get(pane) else {
+            return;
+        };
+        if agent.state.phase == Phase::Faulted || !self.agent_may_rest(pane) {
+            return next.now();
+        }
+        if let Some(until) = agent.idle.quiet_until_ms {
+            next.at_ms(now, until);
+        }
+        if let Some(until) = self.reads_paused_until(&crate::read_ahead::agent(pane))
+            && !self.watch.is_active()
+        {
+            next.at_ms(now, until);
+        }
+    }
+
+    /// When the tick must close the processes the agents retired: when the delay a refusal left
+    /// ends, for each agent that owes a close.
+    pub(crate) fn retired_processes_due(&self, next: &mut Next, now: i64) {
+        for agent in self.agents.values() {
+            if !agent.state.retired_processes.is_empty() {
+                next.at_ms(now, agent.idle.retired_close.due_ms);
+            }
+        }
     }
 }
 
@@ -356,6 +399,54 @@ pub(super) mod tests {
         crate::test_paths::remove_after(core, root);
     }
 
+    /// What the tick would wait for the agent `pane`, from `agent_poll_due`.
+    fn poll_due(core: &Core, pane: &str) -> Option<std::time::Duration> {
+        let mut next = Next::default();
+        core.agent_poll_due(pane, &mut next, core.now_ms());
+        next.soonest()
+    }
+
+    #[test]
+    fn a_settled_agent_is_read_on_a_pace_without_the_watch_and_on_a_notice_with_it() {
+        let (mut core, [drains, ..], root) = idle_core(1);
+        assert_eq!(
+            poll_due(&core, "agent-0"),
+            Some(std::time::Duration::ZERO),
+            "not at rest"
+        );
+        for _ in 0..4 {
+            core.poll_output().unwrap();
+        }
+        assert!(core.agents["agent-0"].is_settled(core.now_ms()));
+
+        // Without the watch it is read once per pace.
+        assert_eq!(
+            poll_due(&core, "agent-0"),
+            Some(std::time::Duration::from_millis(
+                u64::try_from(crate::read_ahead::IDLE_PACE_MS).unwrap()
+            ))
+        );
+
+        // With it, nothing but a notice, a read that ended or an open request's expiry (none
+        // here) needs the tick, and the pace no longer reads it.
+        core.watch.pretend_active();
+        core.clock = Arc::new(FixedClock(crate::read_ahead::IDLE_PACE_MS));
+        for _ in 0..50 {
+            core.poll_output().unwrap();
+        }
+        let read = total(&drains);
+        core.clock = Arc::new(FixedClock(10 * crate::read_ahead::IDLE_PACE_MS));
+        for _ in 0..50 {
+            core.poll_output().unwrap();
+        }
+        assert_eq!(total(&drains), read, "a settled agent was read on a pace");
+        assert!(poll_due(&core, "agent-0").unwrap() > std::time::Duration::from_secs(3_600));
+
+        core.watch.pretend_notice("instance-0", 5);
+        assert_eq!(poll_due(&core, "agent-0"), Some(std::time::Duration::ZERO));
+        crate::test_paths::remove_after(core, root);
+    }
+
     fn retired(instance_id: &str, supervisor_id: &str) -> super::super::state::RetiredAgentProcess {
         super::super::state::RetiredAgentProcess {
             instance_key: format!("key-{instance_id}"),
@@ -526,13 +617,10 @@ pub(super) mod tests {
         crate::test_paths::remove_after(core, root);
     }
 
-    #[test]
-    fn cleanup_visits_only_agents_that_retired_a_process() {
-        let (mut core, _, root) = idle_core(2);
-        assert!(core.panes_with_retired_processes().is_empty());
-        core.agents
-            .get_mut("agent-1")
-            .unwrap()
+    /// Makes `agent-1` owe the close of a process it retired.
+    fn retire_a_process(core: &mut Core) -> &mut Running {
+        let agent = core.agents.get_mut("agent-1").unwrap();
+        agent
             .state
             .retired_processes
             .push(super::super::state::RetiredAgentProcess {
@@ -540,7 +628,35 @@ pub(super) mod tests {
                 instance_id: "old-instance".into(),
                 supervisor_id: "idle-supervisor".into(),
             });
+        agent
+    }
+
+    #[test]
+    fn cleanup_visits_only_agents_that_retired_a_process() {
+        let (mut core, _, root) = idle_core(2);
+        assert!(core.panes_with_retired_processes().is_empty());
+        retire_a_process(&mut core);
         assert_eq!(core.panes_with_retired_processes(), ["agent-1"]);
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn a_refused_close_of_a_retired_process_is_a_deadline_of_the_tick() {
+        let (mut core, _, root) = idle_core(2);
+        let now = core.now_ms();
+        let mut next = Next::default();
+        core.retired_processes_due(&mut next, now);
+        assert_eq!(next.soonest(), None, "nothing is retired");
+
+        retire_a_process(&mut core)
+            .idle
+            .retired_close_refused(now, "refused");
+        core.retired_processes_due(&mut next, now);
+        assert_eq!(
+            next.soonest(),
+            Some(std::time::Duration::from_millis(500)),
+            "the delay a refusal left"
+        );
         crate::test_paths::remove_after(core, root);
     }
 

@@ -13,6 +13,7 @@
 //! Nothing weaker is promised than before: the intent is durable before the write to the terminal,
 //! as it was, and the confirmation of an operation still follows the commit of its outcome.
 
+use crate::tick_due::Next;
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -153,6 +154,17 @@ impl Core {
             }
         }
         failure.map_or(Ok(()), Err)
+    }
+
+    /// When the tick must record the outcome that has waited longest, and look at the intents
+    /// nobody retried.
+    pub(crate) fn input_receipts_due(&self, next: &mut Next, now: i64) {
+        if let Some(waiting) = self.input_receipts.first() {
+            next.at_ms(now, waiting.queued_ms.saturating_add(LINGER_MS));
+        }
+        for due in self.orphan_inputs.values() {
+            next.at_ms(now, *due);
+        }
     }
 
     /// The tick: records the outcomes that have waited for the next input long enough.

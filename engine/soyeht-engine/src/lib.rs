@@ -63,6 +63,7 @@ mod test_panes;
 #[cfg(test)]
 mod test_paths;
 mod tick;
+mod tick_due;
 pub mod transport;
 pub mod ui_attestation;
 pub mod usage;
