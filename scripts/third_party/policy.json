@@ -115,7 +115,8 @@
       "files": [
         "freetype2/docs/FTL.TXT"
       ],
-      "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit text below is in the notices."
+      "reason": "The crate (MIT) compiles the FreeType 2 sources it bundles, which are licensed FTL or GPLv2 at the user's choice. Soyeht follows the FreeType License, which asks for a credit: the credit line of its entry and the license text are in the notices.",
+      "credit": "Portions of this software are copyright \u00a9 2023 The FreeType Project (www.freetype.org). All rights reserved. (FreeType 2.13.2, bundled by freetype-sys 0.20.1)"
     }
   }
 }

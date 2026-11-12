@@ -262,6 +262,8 @@ class StagingTests(unittest.TestCase):
         text = package.copyright_text()
         self.assertIn("/usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt", text)
         self.assertIn("Apache-2.0", text)
+        paragraphs = text.strip().split("\n\n")
+        self.assertTrue(any(p.startswith("License: see-notices\n ") for p in paragraphs), "a standalone License paragraph")
 
     def test_relative_targets_become_absolute(self):
         self.assertTrue(Path(package.absolute("target")).is_absolute())
@@ -417,6 +419,41 @@ class LauncherTests(unittest.TestCase):
     def test_the_folder_is_the_persons_alone(self):
         self.run_launcher()
         self.assertEqual(self.programs.parent.stat().st_mode & 0o777, 0o700)
+
+
+class ResearchToolsDoNotShipTests(unittest.TestCase):
+    """The screen recorder (docs/research/terminal-screen-recorder.md) is an example of
+    soyeht-client, which `cargo build` never builds, and no packager names it."""
+
+    def test_no_packager_lists_it_or_asks_cargo_for_examples(self):
+        import package_common
+        import package_mac
+        import package_windows
+
+        listed = {
+            *package.ENGINE_PROGRAMS,
+            *package.DESKTOP_PROGRAMS,
+            *package_windows.ENGINE_PROGRAMS,
+            *package_windows.DESKTOP_PROGRAMS,
+            *package_common.ENGINE_PACKAGES,
+            *(name for name, _ in package_mac.PROGRAMS),
+        }
+        self.assertNotIn("screen_recorder", listed)
+        for source in ("package_common.py", "package_mac.py", "package_linux.py",
+                       "package_windows.py", "release_flow.py"):
+            text = (package_common.ROOT / "scripts" / source).read_text(encoding="utf-8")
+            for forbidden in ("--example", "--all-targets", "screen_recorder"):
+                self.assertNotIn(forbidden, text, f"{source} mentions {forbidden}")
+
+    def test_it_is_declared_as_an_example_and_as_no_program(self):
+        import package_common
+
+        root = package_common.ROOT
+        manifest = (root / "apps/desktop/crates/soyeht-client/Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('[[example]]\nname = "screen_recorder"', manifest)
+        for cargo in [*root.glob("apps/desktop/crates/*/Cargo.toml"), *root.glob("engine/*/Cargo.toml")]:
+            text = cargo.read_text(encoding="utf-8")
+            self.assertNotIn('[[bin]]\nname = "screen_recorder"', text, str(cargo))
 
 
 if __name__ == "__main__":
