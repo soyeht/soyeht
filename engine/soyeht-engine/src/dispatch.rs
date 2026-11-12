@@ -190,12 +190,8 @@ impl Core {
         if client.actor.is_some() || client.pair_request.is_some() {
             return Err(errors::unauthorized("Handshake already completed"));
         }
-        // A client below the floor has to update; a newer one is welcomed at the engine's version.
-        let protocol_version = handshake::negotiate(hello.protocol_version).ok_or_else(|| {
-            errors::protocol_version_unsupported(
-                "This app is too old for this Mac: update Soyeht on this device",
-            )
-        })?;
+        let version = handshake::negotiate(hello.protocol_version)
+            .ok_or_else(|| errors::protocol_version_unsupported("Update Soyeht on this device"))?;
         let web_host_claims = hello
             .capabilities
             .as_deref()
@@ -260,7 +256,7 @@ impl Core {
         client.web_host = wants_web_host;
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
-            protocol_version,
+            protocol_version: version,
             min_protocol_version: Some(limits::MIN_PROTOCOL_VERSION),
             connection_id: connection.into(),
             role,
