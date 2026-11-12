@@ -237,7 +237,8 @@ def copyright_text():
         " On Debian systems the full text of the Apache License 2.0 is in\n"
         " /usr/share/common-licenses/Apache-2.0.\n\n"
         "Files: usr/lib/soyeht/*\nCopyright: the authors of the components built into the programs\n"
-        "License: see-notices\n The licenses and copyright notices of those components are in\n"
+        "License: see-notices\n\n"
+        "License: see-notices\n The licenses and copyright notices of the components built into the programs are in\n"
         " /usr/share/doc/soyeht/THIRD-PARTY-NOTICES.txt.\n"
     )
 

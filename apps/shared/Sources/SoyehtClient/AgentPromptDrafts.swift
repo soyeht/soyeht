@@ -77,6 +77,14 @@ public final class AgentPromptDrafts {
     return true
   }
 
+  /// Sends the first message of a new agent under the rules of `submit`. The new-pane sheet holds
+  /// that message in its form and not in the composer, so it goes through the composer for the
+  /// way back: a refused first message is in the new pane's composer, not lost with the sheet.
+  func sendFirst(_ text: String, to paneId: String, client: EngineClient) {
+    set(text, for: paneId)
+    submit(paneId, to: client, expanding: { $0 })
+  }
+
   /// Puts a refused prompt back in its composer, in front of whatever was typed since.
   private func restore(
     typed: String, files: [AgentAttachmentDraft], to paneId: String, client: EngineClient

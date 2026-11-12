@@ -745,6 +745,7 @@ Rust crates (817)
   freetype-sys 0.20.1  ((MIT) AND (FTL OR GPL-2.0-only))  [apps/desktop]
       following: FTL and MIT
       https://github.com/PistonDevelopers/freetype-sys.git
+      credit: Portions of this software are copyright © 2023 The FreeType Project (www.freetype.org). All rights reserved. (FreeType 2.13.2, bundled by freetype-sys 0.20.1)
       Copyright (c) 2014 PistonDevelopers
   fs-err 2.11.0  (MIT/Apache-2.0)  [apps/android]
       following: MIT

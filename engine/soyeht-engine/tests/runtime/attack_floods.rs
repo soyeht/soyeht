@@ -210,7 +210,9 @@ fn a_request_exactly_at_the_frame_limit_is_answered_and_one_byte_more_is_not() {
     let request = json!({"jsonrpc":"2.0","id":7001,"method":"engine.status","params":{"pad":pad}});
     let body = serde_json::to_vec(&request).unwrap();
     assert_eq!(body.len(), limits::JSON_BYTES);
-    Frame::Json(body).write_to(&mut client.socket).unwrap();
+    Frame::Json(body.clone())
+        .write_to(&mut client.socket)
+        .unwrap();
     let answer = client.wait(7001);
     assert!(
         answer.get("result").is_some(),
@@ -218,11 +220,15 @@ fn a_request_exactly_at_the_frame_limit_is_answered_and_one_byte_more_is_not() {
         &answer.to_string()[..200.min(answer.to_string().len())]
     );
 
-    // One byte more is no request at all: the engine hangs up without an answer.
+    // One byte more is no request at all: the engine hangs up without an answer. The body is
+    // the same valid request plus one trailing space, so only its length can refuse it: were
+    // the limit one byte looser, it would be parsed and answered.
     let mut over = rig.client();
+    let mut oversized = body;
+    oversized.push(b' ');
     let mut frame = vec![limits::FRAME_KIND_JSON];
-    frame.extend_from_slice(&(limits::JSON_BYTES as u32 + 1).to_be_bytes());
-    frame.extend(std::iter::repeat_n(b' ', limits::JSON_BYTES + 1));
+    frame.extend_from_slice(&(oversized.len() as u32).to_be_bytes());
+    frame.extend_from_slice(&oversized);
     // The engine may hang up before it has read it all.
     let _ = over.socket.write_all(&frame);
     loop {
