@@ -7,7 +7,8 @@
 //! recorded, the intent is still there: a retry finds it, sends the same operation key, and the
 //! supervisor, which keeps the operation until the engine confirms it, answers once. So the reply
 //! may go before the outcome is durable, and the outcome waits for the next write of an input
-//! (the commit of its intent carries it) or for a quiet moment ([`LINGER_MS`]), and the supervisor
+//! (the commit of its intent carries it) or for a quiet moment ([`LINGER_MS`], or the engine
+//! stopping, which records it and sends the confirmation), and the supervisor
 //! is told to forget the operation only after that.
 //!
 //! Nothing weaker is promised than before: the intent is durable before the write to the terminal,
@@ -21,9 +22,13 @@ use crate::{
 use soyeht_ptyd::wire::Request;
 use soyeht_store::domain::FinishedInput;
 
-/// How long an outcome waits for the next input before it is recorded alone. A person types
-/// faster than this, so the keystrokes of a burst share their commits.
-pub(crate) const LINGER_MS: i64 = 250;
+/// How long an outcome waits for the next input before it is recorded alone. A person who is
+/// typing pauses for less than this between keys, so the keys share their commits: one commit a
+/// key, not two (ADR 0147, step R). A quarter second left a key typed after a short pause to be
+/// recorded by itself. An outcome that waits is answered to a retry from memory, its intent is
+/// durable, and the engine records it when it stops, so the only cost of waiting is that a crash
+/// leaves it to the orphan sweep ([`ORPHAN_AFTER_S`]), which it already did.
+pub(crate) const LINGER_MS: i64 = 3_000;
 
 /// How long after it was recorded an intent whose operation the supervisor holds is left for its
 /// client to retry before it is forgotten: a client retries within seconds.

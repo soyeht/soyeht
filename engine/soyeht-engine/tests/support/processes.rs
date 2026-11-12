@@ -47,6 +47,64 @@ pub fn wait_for_shell(client: &mut Client, watcher: &mut Client, pane: &str, pan
         .unwrap();
 }
 
+/// A terminal pane in a new workspace of `rig` and a second client that watches its output:
+/// both clients, the workspace, the pane and the pane's reference in the frames.
+pub fn watched_shell(rig: &super::Rig) -> (Client, Client, String, String, u64) {
+    let mut client = rig.client();
+    let (workspace, pane) = client.create(rig);
+    let mut watcher = rig.client();
+    let (info, _) = watcher.tail(&pane);
+    let pane_ref = info["binaryPaneRef"].as_u64().unwrap();
+    (client, watcher, workspace, pane, pane_ref)
+}
+
+/// Lets a started shell settle (its prompt and the sweep of what it printed are over) and reads
+/// away what the watcher was sent, so the next frames are the ones a test causes.
+pub fn settle_shell(watcher: &mut Client, settle: Duration) {
+    thread::sleep(settle);
+    watcher
+        .socket
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
+    while let Ok(Some(_)) = Frame::read_from(&mut watcher.socket) {}
+    watcher
+        .socket
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .unwrap();
+}
+
+/// Types the `key`th letter of the alphabet into `pane` as one request and waits for the frame of
+/// the watcher that carries its echo; how long that took.
+pub fn type_letter_and_wait_for_echo(
+    client: &mut Client,
+    watcher: &mut Client,
+    (pane, pane_ref): (&str, u64),
+    key: usize,
+) -> Duration {
+    let letter = char::from(b'a' + u8::try_from(key % 26).unwrap());
+    let started = Instant::now();
+    client.call(
+        "pane.input",
+        json!({"paneId":pane,"bytes":base64::Engine::encode(&base64::engine::general_purpose::STANDARD, letter.to_string()),
+            "idempotencyKey":format!("key-{key}")}),
+    );
+    loop {
+        let frame = Frame::read_from(&mut watcher.socket)
+            .unwrap()
+            .expect("the echo");
+        if let Frame::Terminal {
+            pane_ref: found,
+            bytes,
+            ..
+        } = frame
+            && u64::from(found) == pane_ref
+            && bytes.contains(&(letter as u8))
+        {
+            return started.elapsed();
+        }
+    }
+}
+
 /// CPU seconds the process has used, from `ps` (`[[dd-]hh:]mm:ss[.ff]`, whole seconds on Linux).
 pub fn cpu_seconds(pid: u32) -> f64 {
     let output = std::process::Command::new("ps")

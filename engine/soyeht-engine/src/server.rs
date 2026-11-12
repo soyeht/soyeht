@@ -165,6 +165,7 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         Ok(())
     })
     .await?;
+    crate::last_follow_ups::send(&core).await;
     fs::remove_file(socket)?;
     ended
 }

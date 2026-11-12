@@ -469,7 +469,7 @@ impl Core {
     /// registry in place, for a Core that is not shared yet: a link made on a running engine
     /// is read by its connect job (see [`Registry`]).
     pub(crate) fn adopt_supervisor(&mut self, client: Client) -> Result<()> {
-        let supervisor = Supervisor::new(Box::new(client));
+        let supervisor = Supervisor::new(self.hooks.supervisor_port(Box::new(client)));
         let registry = Registry::read(&supervisor)?;
         self.adopt_registry(supervisor, registry)
     }

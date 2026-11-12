@@ -310,6 +310,41 @@ connection returns the engine to polling at the tick interval until it is made a
 - Test: the statement counter of `soyeht_store::test_support` (`statements_started`) gets a case per
   path, asserting the counts fall and no reply precedes the intent.
 
+**Step R, second measurement: the linger of an outcome (3 s).** `typing_cost` counts the commits and
+the supervisor requests of a typed key from the engine's own log. Step R made a burst of keys cost one
+commit a key, but a key typed more than a quarter second after the one before still cost two: the
+outcome waited 250 ms for a next input, did not get one, and was recorded alone by the tick (a commit
+under the Core lock, with its disk flush). Typing apart (400 ms between keys) measured 2.00 commits a
+key and the input itself made 2.00 requests to the supervisor (the bytes and the confirmation of the
+operation before). `LINGER_MS` is now 3000, and the same typing measures 1.00 commits a key.
+
+- **Why it is safe.** The intent is durable before the bytes reach the terminal, as before. A retry of
+  an input whose outcome waits is answered from memory, and one that finds only the intent sends the
+  same operation key to a supervisor that still holds the operation, which answers once. The
+  supervisor forgets an operation only after the engine confirms it, and the engine confirms it only
+  after the outcome is recorded, so a longer wait lengthens how long the supervisor keeps an
+  operation and nothing else. Its table is bounded at 1024 operations; every input records the
+  outcomes that wait and confirms them, so an engine under typing holds a few, not the bound, and an
+  idle one holds what the last key left for 3 s. The orphan sweep (60 s from the intent) skips an
+  operation whose outcome waits.
+- **When the engine stops.** It records the waiting outcomes and then gives the supervisor the
+  confirmations that records queued, in up to three rounds that share one bound of two seconds, so
+  a graceful stop does not leave them to the next engine. A supervisor that does not answer within
+  the bound ends the rounds and does not hold the exit longer; the next engine confirms a receipt
+  whose outcome is recorded when it links (`reconcile_registry`).
+- **The crash window.** If the engine ends without stopping (a kill, a crash, power) within the
+  linger of a key, the outcome is not recorded and the operation is not confirmed. The intent is in
+  the database and the supervisor holds the operation, so the next engine finds both: a retry of the
+  key sends the same operation key and is answered once, and one nobody retries is forgotten by the
+  sweep a minute after the intent. The window was 250 ms and is 3 s; what it can lose is unchanged:
+  the record that a finished input finished, never the input. Nothing is acknowledged to a client
+  that is not durable as an intent.
+- **Cost.** An outcome that waits makes the tick wake once at the end of the linger, as it did.
+  Typing with pauses longer than 3 s costs two commits a key, as before.
+- **Not done.** Carrying the confirmation inside the next `Input` request would take the supervisor
+  requests of a key from 2 to 1, but changes the supervisor wire and its version (ADR 0122); the
+  saving off the lock is about 50 microseconds a request, so it is not scheduled.
+
 ### Step 2. The terminal path no longer needs the Core lock
 
 This is the structural step. It is three changes, because one is too large to review.
@@ -648,7 +683,7 @@ The rule test grows with the work, so a regression is a red test.
   first that moves something and adds a ratchet), to point here and to say what is left under the lock.
 - After step 2, terminal **output and acknowledgements** no longer depend on the cost of any request.
   Keystroke echo still takes the Core lock (the input is recorded and its receipt is made durable under
-  it: two commits per key), so it improves with step R and step 4, not with step 2. After step 1 a
+  it: two commits per key before step R, and one after the second measurement of step R), so it improves with step R and step 4, not with step 2. After step 1 a
   machine with open panes and nothing happening is idle. After steps 4 and 5 a stalled disk or a stalled
   mount delays the request that asked, and nothing else.
 - Each change can be reverted alone.

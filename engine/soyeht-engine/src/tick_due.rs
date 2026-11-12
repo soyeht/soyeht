@@ -254,14 +254,14 @@ pub(crate) mod tests {
 
     #[test]
     fn an_outcome_waiting_for_the_next_input_is_a_deadline() {
+        // Queued so long ago that the linger ends before the probe of the skill folders (1.7 s)
+        // and the ceiling: the outcome's deadline is what the wait is.
         let (mut core, directory) = quiet_core();
-        let queued = core.now_ms();
+        let left = 500;
+        let queued = core.now_ms() - LINGER_MS + left;
         core.input_receipts
             .push(Waiting::for_test("a", "op-a", queued));
-        assert_eq!(
-            wait(&core),
-            Duration::from_millis(u64::try_from(LINGER_MS).unwrap())
-        );
+        assert_eq!(wait(&core), Duration::from_millis(left.unsigned_abs()));
         crate::test_paths::remove_after(core, directory);
     }
 

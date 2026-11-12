@@ -6,7 +6,12 @@
 use crate::database::{Error, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::Value;
-use std::{cell::Cell, path::Path, time::Duration};
+use std::{
+    cell::Cell,
+    path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 thread_local! {
     static STATEMENTS: Cell<u64> = const { Cell::new(0) };
@@ -16,6 +21,19 @@ thread_local! {
 /// code path runs no SQL.
 pub(crate) fn statement_started() {
     STATEMENTS.with(|count| count.set(count.get() + 1));
+}
+
+static COMMITS: AtomicU64 = AtomicU64::new(0);
+
+/// Counts a commit of any connection a store opened, in a transaction or not.
+pub(crate) fn commit_made() {
+    COMMITS.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Commits made by every store of this process since it began, for a test that counts the
+/// durable writes of a code path.
+pub fn commits_made() -> u64 {
+    COMMITS.load(Ordering::Relaxed)
 }
 
 /// Statements started by stores opened on this thread, since the thread began.

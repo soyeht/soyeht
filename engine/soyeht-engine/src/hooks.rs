@@ -11,7 +11,11 @@
 //! code a person's engine runs.
 
 use crate::{
-    core::Core, editor::FileSystemPort, errors::Result, model::RunningPane, ports::PortScanPort,
+    core::Core,
+    editor::FileSystemPort,
+    errors::Result,
+    model::RunningPane,
+    ports::{PortScanPort, SupervisorPort},
 };
 use soyeht_ink::Recognizer;
 use soyeht_usage::host::Host;
@@ -83,6 +87,29 @@ pub trait Hooks: Send + Sync {
     /// A recognizer that replaces the system's for `ink.recognize`.
     fn ink_recognizer(&self) -> Option<Box<dyn Recognizer>> {
         None
+    }
+
+    /// Whether [`Hooks::lock_held`] wants to hear of every hold of the Core lock. Asked as the lock
+    /// is taken, so a hook that does not measure costs the hold nothing.
+    fn watches_holds(&self) -> bool {
+        false
+    }
+
+    /// A hold of the Core lock for `purpose` (and, for a request, its `method`) has ended: how
+    /// long the lock was held and how long the caller waited for it. Runs after the lock is
+    /// released, on the thread that held it.
+    fn lock_held(
+        &self,
+        _purpose: &str,
+        _method: &str,
+        _held: std::time::Duration,
+        _waited: std::time::Duration,
+    ) {
+    }
+
+    /// The link to the supervisor, which a test may wrap to see the requests the engine makes.
+    fn supervisor_port(&self, port: Box<dyn SupervisorPort>) -> Box<dyn SupervisorPort> {
+        port
     }
 
     /// A host that replaces the machine's files, commands and network for the usage sources.

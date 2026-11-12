@@ -21,7 +21,7 @@ use soyeht_protocol::{
     profile::{PTYD_LOG, PTYD_SOCKET},
 };
 use soyeht_ptyd::{client::Client, wire_kind};
-use std::{collections::BTreeMap, io, path::PathBuf};
+use std::{collections::BTreeMap, io, path::PathBuf, sync::Arc};
 
 /// Delay after the first failed attempt is twice this; the delay doubles up to the cap.
 const RETRY_BASE_MS: i64 = 100;
@@ -234,6 +234,7 @@ impl Core {
     fn start_connect(&mut self) {
         let socket = self.directory.join(PTYD_SOCKET);
         let generation = self.generation;
+        let hooks = Arc::clone(&self.hooks);
         // On a thread of its own: connecting to a socket of the local system can wait for as
         // long as the supervisor does not accept (a full backlog), and a shared worker must not
         // wait with it. One attempt runs at a time, so at most one such thread exists.
@@ -245,7 +246,7 @@ impl Core {
                     .map_err(|_| errors::ptyd_unavailable("Supervisor unavailable"))?;
                 // The registry is read here, with the link not yet the engine's, so the
                 // reconciliation under the lock sends the supervisor nothing it waits for.
-                let supervisor = Supervisor::new(Box::new(client));
+                let supervisor = Supervisor::new(hooks.supervisor_port(Box::new(client)));
                 let registry = Registry::read(&supervisor)?;
                 Ok((supervisor, registry))
             },
