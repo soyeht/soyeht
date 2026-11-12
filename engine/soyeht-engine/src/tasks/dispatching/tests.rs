@@ -129,6 +129,33 @@ fn a_dispatch_row_that_cannot_advance_does_not_stop_the_rows_after_it() {
 }
 
 #[test]
+fn a_dispatch_row_that_waits_rests_for_the_retry_delay() {
+    let (mut core, directory) = core_with_workspace(WORKSPACE);
+    StorePort::mutate(
+        &mut core.store,
+        "test",
+        "tasks",
+        "seed-waiting-dispatch",
+        |change| {
+            let mut task = task_fixture(TaskState::InProgress);
+            task.workspace_id = WORKSPACE.into();
+            task.task_id = "A-1".into();
+            task.owner_pane_id = None;
+            change.insert_task(&task)?;
+            // Its checkpoint names no pane, so the dispatch cannot advance.
+            change.save_dispatch_checkpoint(WORKSPACE, "A-1", &opened(None))?;
+            Ok((json!({}), Vec::new()))
+        },
+    )
+    .unwrap();
+
+    core.advance_task_dispatches().unwrap();
+
+    crate::tasks::assert_poll_rests_for_retry(&core);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn the_caller_gets_the_error_of_its_own_row_and_not_the_error_of_another() {
     let (mut core, directory) = core_with_claimed_tasks(Vec::new());
 

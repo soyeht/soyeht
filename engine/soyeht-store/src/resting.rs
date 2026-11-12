@@ -43,7 +43,8 @@ impl Store {
                 if *at != seen || now_ms >= *until_ms || since.elapsed() >= CEILING {
                     return Some(Duration::ZERO);
                 }
-                let left = u64::try_from(until_ms.saturating_sub(now_ms)).ok()?;
+                // The negative case returned above, so the difference is the time left.
+                let left = until_ms.saturating_sub(now_ms).unsigned_abs();
                 (*until_ms != i64::MAX).then(|| Duration::from_millis(left))
             })
             .min()
