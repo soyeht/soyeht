@@ -90,6 +90,7 @@ import signal
 import sys
 import tempfile
 import time
+from contextlib import ExitStack
 from pathlib import Path
 
 import gate_flakes
@@ -99,7 +100,7 @@ from gate_worktree import (WORKTREE_PREFIX, InfrastructureError, git, prepare_pe
                            remove_stale_worktrees, scratch_root)
 from post_merge_editor import (EDITOR_METER_ENV, EDITOR_STEP, GREEN_RESULTS, NEEDS_MEASUREMENT,
                                NEEDS_MEASUREMENT_EXIT, install_editor_meter, lacks_measurement, measured_since)
-from post_merge_gate import INFRASTRUCTURE_EXITS, failing_step, run_gate
+from post_merge_gate import INFRASTRUCTURE_EXITS, failing_step, fuzz_seed_of, run_gate
 from post_merge_hosts import Remote
 from post_merge_investigate import investigate, settle_missing_measurement
 from post_merge_records import (archive_previous_run, commit_info, host_retry_due, parent_of, read_record, report,
@@ -118,6 +119,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
     health.mkdir(parents=True, exist_ok=True)
     scratch = Path(tempfile.mkdtemp(prefix=WORKTREE_PREFIX, dir=scratch_root()))
     worktree = worktree_dir or scratch / "tree"
+    seed = ExitStack()
+    seed.enter_context(fuzz_seed_of(sha))  # until the run, and its culprit search, are over
     try:
         if worktree_dir:
             prepare_persistent_worktree(root, worktree, sha)
@@ -171,6 +174,7 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
         gate_flakes.record_run(health, record)  # last: the ledger never holds back the green marker
         return record
     finally:
+        seed.close()
         if not worktree_dir and not keep:
             git(root, "worktree", "remove", "--force", str(worktree), check=False)
         if not keep:

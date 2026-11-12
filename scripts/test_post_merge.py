@@ -1,10 +1,13 @@
 import fcntl
 import json
 import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import gate_fuzz_seed
 import gate_worktree
 import post_merge
 import post_merge_culprit
@@ -153,6 +156,73 @@ class SyntheticRepositoryTests(SyntheticRepositoryCase):
         record = json.loads((self.health / f"{head}.json").read_text())
         self.assertNotIn("culprit", record)
         self.assertEqual([c["subject"] for c in record["candidates"]], ["old gate", "breaks", "three"])
+
+
+class FuzzSeedTests(SyntheticRepositoryCase):
+    """The long fuzz run of a post-merge gate uses one seed for the commit being checked, so the
+    rerun and the culprit search replay a crash instead of drawing a fresh random seed."""
+
+    def setUp(self):
+        super().setUp()
+        self.seeds = self.root.parent / "seeds.txt"
+        environment = mock.patch.dict(os.environ, {"FAKE_SEEDS": str(self.seeds)})
+        environment.start()
+        self.addCleanup(environment.stop)
+
+    def runs(self):
+        return [line.split() for line in self.seeds.read_text().splitlines()]
+
+    def test_the_run_the_rerun_the_control_and_every_probe_get_the_seed_of_the_head(self):
+        self.assertEqual(self.run_main(self.shas[0]), 0)
+        self.add("two", {"b": "2"})
+        self.add("three", {"c": "3"})
+        culprit = self.add("breaks the unit step", {"broken": "x"})
+        self.add("five", {"d": "4"})
+        head = self.add("six", {"e": "5"})
+        self.seeds.unlink()
+        self.assertEqual(self.run_main(head), 1)
+        self.assertEqual(self.record(head)["culprit"]["sha"], culprit)
+        runs = self.runs()
+        # The run and its rerun are on the head; the control and the probes are on older commits.
+        self.assertEqual([sha for sha, _ in runs[:2]], [head, head])
+        self.assertGreater(len({sha for sha, _ in runs}), 3)
+        self.assertEqual({seed for _, seed in runs}, {str(gate_fuzz_seed.seed_for(head))})
+        self.assertNotIn("SOYEHT_FUZZ_SEED", os.environ)  # nothing leaks out of the run
+
+    def test_a_seed_in_the_environment_is_kept(self):
+        with mock.patch.dict(os.environ, {"SOYEHT_FUZZ_SEED": "12345"}):
+            self.assertEqual(self.run_main(self.shas[0]), 0)
+        self.assertEqual({seed for _, seed in self.runs()}, {"12345"})
+
+    def test_the_seed_is_the_same_for_the_same_commit_and_differs_between_commits(self):
+        first, second = "0123456789abcdef" * 2 + "01234567", "fedcba9876543210" * 2 + "01234567"
+        self.assertEqual(gate_fuzz_seed.seed_for(first), gate_fuzz_seed.seed_for(first))
+        self.assertNotEqual(gate_fuzz_seed.seed_for(first), gate_fuzz_seed.seed_for(second))
+        # The leading 15 hexadecimal digits, which the harness reads as a decimal u64.
+        self.assertEqual(gate_fuzz_seed.seed_for(first), 0x0123456789ABCDE)
+        self.assertLess(gate_fuzz_seed.seed_for(second), 2**60)
+        for bad in ("", "main", first[:-1], first.upper(), first + "0", "g" * 40):
+            with self.assertRaises(ValueError, msg=bad):
+                gate_fuzz_seed.seed_for(bad)
+
+    def test_the_program_prints_the_seed_of_a_commit_or_of_head(self):
+        script = Path(gate_fuzz_seed.__file__)
+        head = git(self.root, "rev-parse", "HEAD")
+        for arguments in ([head], []):
+            shown = subprocess.run([sys.executable, str(script), *arguments], capture_output=True, text=True,
+                                   cwd=self.root)
+            self.assertEqual((shown.returncode, shown.stdout.strip()),
+                             (0, str(gate_fuzz_seed.seed_for(head))), arguments)
+        refused = subprocess.run([sys.executable, str(script), "main"], capture_output=True, text=True)
+        self.assertEqual(refused.returncode, 64)
+
+    def test_check_all_gives_the_long_fuzz_run_a_seed_and_prints_it(self):
+        text = (Path(gate_fuzz_seed.__file__).with_name("check_all.sh")).read_text()
+        body = text[text.index("security_fuzz_long() {"):text.index("step engine both security:fuzz in_dir")]
+        self.assertIn('SOYEHT_FUZZ_SEED:-', body)  # one from the environment wins
+        self.assertIn("scripts/gate_fuzz_seed.py", body)  # else one per commit
+        self.assertIn('echo "security:fuzz-long: SOYEHT_FUZZ_SEED=$seed', body)  # and it is printed
+        self.assertEqual(body.count('SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS'), 2)  # both halves
 
 
 class ForcedRerunTests(SyntheticRepositoryCase):

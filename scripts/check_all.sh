@@ -344,11 +344,20 @@ security_attacks() {
     cargo test --locked -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_ &&
         cargo test --locked -p soyeht-vcs --test hostile_repository
 }
+# The seed is one number per commit (scripts/gate_fuzz_seed.py), or the SOYEHT_FUZZ_SEED the post-merge
+# gate passes: the seed of the main commit it checks, so the rerun and the culprit search over older
+# commits replay the run that failed. It is printed, to replay a crash by hand.
 security_fuzz_long() {
-    local seconds="${SOYEHT_FUZZ_LONG_SECONDS:-30}"
-    SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked --release \
+    local seconds="${SOYEHT_FUZZ_LONG_SECONDS:-30}" seed="${SOYEHT_FUZZ_SEED:-}"
+    if [[ -z "$seed" ]]; then
+        seed="$(cd "$repo_root" && uv run python scripts/gate_fuzz_seed.py)" || return
+    fi
+    echo "security:fuzz-long: SOYEHT_FUZZ_SEED=$seed SOYEHT_FUZZ_SECONDS=$seconds"
+    # The crates of the first run are built in release, where the fuzz is fastest. The engine's own
+    # library tests would build the whole engine again in release, so they run in the debug build.
+    SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked --release \
         -p soyeht-protocol -p soyeht-platform -p soyeht-web -p soyeht-ptyd --test fuzz -- --test-threads 4 &&
-        SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked -p soyeht-engine \
+        SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS="$seconds" cargo test --locked -p soyeht-engine \
             --features soyeht-engine/contract-checks --lib containment_fuzz -- --test-threads 2
 }
 step engine both security:fuzz in_dir engine security_fuzz

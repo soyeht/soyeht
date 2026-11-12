@@ -244,6 +244,23 @@ exec {self.fake_ssh} "$@"
         result = self.script_run("--sha", self.shas[0], "--steps", "unit", "--slot", "../x")
         self.assertEqual(result.returncode, 64)
 
+    def test_the_seed_of_the_long_fuzz_run_goes_to_the_host_in_the_request(self):
+        # The host does not inherit this process's environment, so the request carries the seed and
+        # the host script puts it in the gate's environment.
+        remote = post_merge_hosts.Remote("linux-host", str(self.host_checkout))
+        arguments = post_merge_gate.remote_gate_arguments
+        with mock.patch.dict(os.environ, {"SOYEHT_FUZZ_SEED": "4242"}):
+            self.assertIn(" --fuzz-seed 4242", arguments(remote, self.shas[0], ["eng"], None, None, ""))
+        with mock.patch.dict(os.environ):
+            os.environ.pop("SOYEHT_FUZZ_SEED", None)
+            self.assertNotIn("--fuzz-seed", arguments(remote, self.shas[0], ["eng"], None, None, ""))
+            seeds = self.root.parent / "seeds.txt"
+            environment = {**os.environ, "FAKE_SEEDS": str(seeds)}
+            subprocess.run(["bash", str(self.host_checkout / "scripts/remote_gate.sh"), "--sha", self.shas[0],
+                            "--steps", "eng", "--fuzz-seed", "777"], capture_output=True, cwd=self.host_checkout,
+                           env=environment, check=True)
+            self.assertEqual(seeds.read_text().split()[1], "777")
+
 
 # A stand-in with the steps the pre-merge split tells apart, which lists them as the tier would
 # (`--only` names steps of any tier) and records each step it runs, in the timings file, with a
@@ -571,6 +588,8 @@ class PullRequestGateTests(RemoteHostCase):
         self.assertEqual(ask("--has", "main"), 64)
         self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--engine-test-args", "-p a; rm -rf /"), 64)
         self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--bundle", "gate-0123456789ab.bundle"), 2)
+        for bad in ("abc", "-1", "1; rm -rf /", "12345678901234567890"):
+            self.assertEqual(ask("--sha", self.head, "--steps", "eng", "--fuzz-seed", bad), 64, bad)
 
 
 class BrokenSink:

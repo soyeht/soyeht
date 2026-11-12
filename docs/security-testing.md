@@ -41,7 +41,9 @@ seed per target, so a run is the same every time and takes seconds. This is the 
 ### The long run
 
 `SOYEHT_FUZZ_SECONDS=N` makes each target run for N seconds from a fresh random seed (the seed
-is printed; `SOYEHT_FUZZ_SEED=<number>` replays one). Use release builds and a low priority:
+is printed; `SOYEHT_FUZZ_SEED=<number>` replays one). Use release builds (the second command below
+is a debug build of the engine's library tests, which a release build would compile again) and a
+low priority:
 
 ```sh
 cd engine
@@ -52,9 +54,21 @@ SOYEHT_FUZZ_SECONDS=300 nice -n 15 cargo test -j 4 -p soyeht-engine --lib contai
   -- --test-threads 2 --nocapture
 ```
 
-The full tier runs the same targets with a short budget (`security:fuzz-long`, release builds,
-`SOYEHT_FUZZ_LONG_SECONDS` per target, default 30). Run them for minutes or hours before a
-release, or after a change to a parser, and keep any crash as a test (below).
+The full tier runs the same targets with a short budget (`security:fuzz-long`,
+`SOYEHT_FUZZ_LONG_SECONDS` per target, default 30). The protocol, platform, web and supervisor
+targets run in release builds; the engine's `containment_fuzz` runs in the debug build, because a
+release build of its library tests would build the whole engine again. Run them for minutes or
+hours before a release, or after a change to a parser, and keep any crash as a test (below).
+
+The step prints its seed (`security:fuzz-long: SOYEHT_FUZZ_SEED=...`). It is not random: it is a
+number taken from the commit id (`scripts/gate_fuzz_seed.py`), or the `SOYEHT_FUZZ_SEED` of the
+environment when there is one. The post-merge gate hands every run of the step the seed of the
+main commit it checks (`post_merge.py`, and to the host of `--remote` as `--fuzz-seed`): the
+rerun, the control on the last green main and each probe of the culprit search then replay the
+cases that found the crash, so the search blames the commit that introduced it, or reports it as
+reproduced on none of them, and not a different commit. To replay a crash by hand, run the
+command above with the printed `SOYEHT_FUZZ_SEED` and a `SOYEHT_FUZZ_SECONDS` at least as long as the
+failed run's. A target that fails prints the case that found it (below), which is replayed as a test.
 
 ### When a target fails
 
@@ -110,7 +124,7 @@ request would have made. A method with a role or path rule is covered by the mat
 | --- | --- | --- |
 | `security:fuzz` | `engine`, fast and full | the short fuzz run: the `fuzz` tests of the protocol, platform, web and supervisor crates, and the engine's `containment_fuzz` |
 | `security:attacks` | `engine`, fast and full | the `attack_` tests against a running engine, and the hostile-repository test |
-| `security:fuzz-long` | `engine`, full only | the same fuzz targets for `SOYEHT_FUZZ_LONG_SECONDS` each (default 30), in release builds |
+| `security:fuzz-long` | `engine`, full only | the same fuzz targets for `SOYEHT_FUZZ_LONG_SECONDS` each (default 30) from one seed per commit: release builds for the protocol, platform, web and supervisor targets, a debug build for the engine's |
 
 `security:attacks` needs the programs the rig starts, which `engine:build` builds earlier in the
 same run. Both fast steps run whenever the plan selects the engine, so a change to any engine

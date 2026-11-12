@@ -19,6 +19,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from gate_fuzz_seed import seed_for
 from gate_worktree import git, scratch_root
 from post_merge_hosts import (REMOTE_AREAS, REMOTE_BUSY_EXIT, SSH_FAILED_EXIT, Remote, ShipError, drop_bundle,
                               ship_commit)
@@ -45,6 +46,8 @@ PREREQUISITES: dict[str, tuple[str, ...]] = {
     "security:attacks": ("engine:build",),
 }
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
+# The seed of the long fuzz run (`security:fuzz-long`), which every run of this process shares.
+FUZZ_SEED_ENV = "SOYEHT_FUZZ_SEED"
 
 
 TO_STDOUT = Path("-")  # as a log: the gate's output stays on this process's standard output
@@ -246,10 +249,29 @@ def remote_steps_timings(remote: Remote) -> list[dict]:
         return []
 
 
+@contextmanager
+def fuzz_seed_of(main_head: str):
+    """Every gate run made while this is open (the first, the rerun, the control on the last green
+    main and each probe of the culprit search) gets the seed of `main_head`, the commit being
+    checked, in `SOYEHT_FUZZ_SEED`. The long fuzz run then replays the same cases on every commit
+    the search tries, so a crash it found is reproduced there (a fresh seed per run would call it
+    flaky, or blame a commit that did not cause it). A seed already in the environment wins."""
+    if os.environ.get(FUZZ_SEED_ENV):
+        yield
+        return
+    os.environ[FUZZ_SEED_ENV] = str(seed_for(main_head))
+    try:
+        yield
+    finally:
+        del os.environ[FUZZ_SEED_ENV]
+
+
 def remote_gate_arguments(remote: Remote, sha: str, ids: list[str], base: str | None,
                           bundle: str | None, engine_test_args: str) -> str:
     arguments = f"bash scripts/remote_gate.sh --sha {sha} --steps {shlex.quote(','.join(ids))}{remote.slot_arguments()}"
-    for flag, value in (("--base", base), ("--bundle", bundle), ("--engine-test-args", engine_test_args)):
+    # The host does not inherit the environment of this process: the seed goes in the request.
+    for flag, value in (("--base", base), ("--bundle", bundle), ("--engine-test-args", engine_test_args),
+                        ("--fuzz-seed", os.environ.get(FUZZ_SEED_ENV))):
         if value:
             arguments += f" {flag} {shlex.quote(value)}"
     return arguments
