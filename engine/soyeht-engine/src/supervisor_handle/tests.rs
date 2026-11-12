@@ -264,6 +264,29 @@ fn an_input_is_confirmed_once_its_receipt_is_durable() {
 }
 
 #[test]
+fn the_confirmation_of_an_outcome_recorded_at_shutdown_reaches_the_supervisor() {
+    let (mut core, root, _) = open_core();
+    let (stub, _, asked) = Stub::new(Duration::ZERO);
+    core.link_supervisor(Box::new(stub));
+    core.input_receipts
+        .push(crate::input_receipts::Waiting::for_test("a", "op-a", 0));
+
+    // What the engine does as it stops: record what waits, then give the follow-ups to the
+    // supervisor, a round at a time, until none is running.
+    core.flush_all_input_receipts().unwrap();
+    for _ in 0..3 {
+        let Some(done) = core.send_follow_ups_before_exit() else {
+            break;
+        };
+        assert!(done.wait(Duration::from_secs(30)));
+    }
+
+    assert_eq!(*asked.lock().unwrap(), ["confirm"]);
+    assert!(core.send_follow_ups_before_exit().is_none());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn follow_ups_go_in_order_and_a_size_not_yet_sent_is_replaced() {
     let (mut core, root, _) = open_core();
     let (release, gate) = mpsc::channel();

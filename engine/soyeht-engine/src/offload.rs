@@ -340,7 +340,6 @@ impl Background {
     }
 
     /// The signal of the job running alone for `key`, if one is.
-    #[cfg(test)]
     pub(crate) fn done_of(&self, key: &str) -> Option<Arc<Done>> {
         self.done.get(key).cloned()
     }

@@ -24,12 +24,14 @@ use support::*;
 const MEASURE: (&str, &str) = ("SOYEHT_TEST_MEASURE_COST", "1");
 /// Time for the shell's prompt and what the engine does about it to be over.
 const SETTLE: Duration = Duration::from_secs(3);
-/// Time for the outcome of the last key to be recorded alone (the linger is a quarter second).
+/// Time for the carried work of the last key to be over; its outcome waits for the linger and is
+/// not in the window.
 const FLUSH: Duration = Duration::from_millis(1_200);
 /// The pause after a key's echo of a person who types fast: the keys of a burst.
 const BURST_GAP: Duration = Duration::from_millis(20);
-/// The pause after a key's echo that is longer than the linger of an outcome: each key is alone.
-const ALONE_GAP: Duration = Duration::from_millis(400);
+/// The pause after a key's echo that is longer than the quarter second an outcome used to linger
+/// for and shorter than the linger now: each key is alone for the old engine and not for this one.
+const APART_GAP: Duration = Duration::from_millis(400);
 /// The longest the median echo of a key may take; a loaded host does not reach it.
 const ECHO_LIMIT: Duration = Duration::from_millis(400);
 
@@ -254,11 +256,12 @@ fn a_burst_of_keys_costs_one_commit_and_two_requests_each() {
     assert_cost("burst", 200, BURST_GAP, 1);
 }
 
-/// Keys that are each alone: the outcome waits out its linger and is recorded by itself, so a
-/// key costs two commits (measured on main), and the confirmation is sent on its own.
+/// Keys typed after a pause longer than a quarter second, which once left each outcome to be
+/// recorded by itself after its linger (two commits a key). The linger is now long enough that
+/// the next key finds the outcome waiting, so a key costs one commit.
 #[test]
-fn keys_typed_apart_cost_two_commits_and_two_requests_each() {
-    assert_cost("alone", 100, ALONE_GAP, 2);
+fn keys_typed_apart_cost_one_commit_and_two_requests_each() {
+    assert_cost("apart", 100, APART_GAP, 1);
 }
 
 /// The echo of a key with the probe off, as a person feels it.

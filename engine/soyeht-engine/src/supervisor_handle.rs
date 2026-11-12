@@ -423,6 +423,16 @@ impl Core {
         self.flush_later();
     }
 
+    /// For the engine that is stopping, with no tick left to do it: settles the follow-up job that
+    /// has ended, starts the one that sends what is queued, and gives the signal of the job that
+    /// is running, if there is one. The caller waits for it off the lock and asks again until
+    /// there is none, so the confirmations of the outcomes just recorded reach the supervisor.
+    pub(crate) fn send_follow_ups_before_exit(&mut self) -> Option<Arc<Done>> {
+        self.apply_background();
+        self.flush_later();
+        self.background.done_of(LATER_JOB)
+    }
+
     /// Starts the job that sends the queued follow-ups, if none is running. The tick calls it
     /// too, for what arrived while one ran.
     pub(crate) fn flush_later(&mut self) {
