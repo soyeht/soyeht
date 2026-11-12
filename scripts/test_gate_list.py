@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
+import posixpath
 import re
 import subprocess
 import tempfile
@@ -63,7 +65,8 @@ E2E_SET = (
 # The unit tests of the gate scripts that only a change to the scripts can break.
 GATE_SCRIPT_UNITS = (
     "post-merge:unit", "post-merge-editor:unit", "post-merge-flakes:unit", "post-merge-remote:unit",
-    "post-merge-load:unit", "post-merge-waiver:unit", "main-watch:unit", "quality:unit",
+    "post-merge-load:unit", "post-merge-waiver:unit", "post-merge-prerequisites:unit",
+    "post-merge-control:unit", "e2e-real-harnesses:unit", "main-watch:unit", "quality:unit",
     "gate-list:unit", "gate-timings:unit", "e2e-swift-client:unit",
 )
 # One sample change per kind: files that `gate_plan.py` maps to areas.
@@ -106,6 +109,42 @@ def engine_cargo_tests() -> list[str]:
 def gate_steps() -> list[tuple[str, str, str]]:
     """(area, tiers, id) of every `step` line of check_all.sh."""
     return STEP.findall((ROOT / "scripts/check_all.sh").read_text())
+
+
+STEP_COMMAND = re.compile(r"^\s*step\s+\w+\s+\w+\s+\S+\s+(.*)$", re.MULTILINE)
+# What a discover step runs: `-s <directory> -p '<pattern>'`.
+DISCOVER_PATTERN = re.compile(r"discover\b[^&|;]*-s\s+(\S+)\s+-p\s+'([^']+)'")
+# A test module with no case of its own, which the tests of the gate import: the fixtures of the
+# post_merge tests. `unittest discover` finds nothing in it; the modules that import it run it.
+HELPER_TEST_MODULES = ("scripts/test_post_merge_fixtures.py",)
+
+
+def test_modules() -> list[str]:
+    """Every `test_*.py` file of `scripts/` and `contracts/`, as a path from the root."""
+    return sorted(
+        path.relative_to(ROOT).as_posix()
+        for directory in ("scripts", "contracts")
+        for path in (ROOT / directory).glob("test_*.py")
+    )
+
+
+def modules_a_step_runs() -> set[str]:
+    """The test modules a step of check_all.sh runs, by a discover pattern or by name."""
+    commands = STEP_COMMAND.findall((ROOT / "scripts/check_all.sh").read_text())
+    runs = set()
+    for path in test_modules():
+        directory = posixpath.dirname(path)
+        name = posixpath.basename(path)
+        named = re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w.-])")
+        for command in commands:
+            discovered = any(
+                posixpath.normpath(seen) == directory and fnmatch.fnmatchcase(name, pattern)
+                for seen, pattern in DISCOVER_PATTERN.findall(command)
+            )
+            if discovered or named.search(command):
+                runs.add(path)
+                break
+    return runs
 
 
 class StepListTests(unittest.TestCase):
@@ -203,6 +242,21 @@ class StepListTests(unittest.TestCase):
                 self.assertEqual(steps[step_id], ("gate_scripts", "both"))
         # The plan's own tests read the engine and desktop sources (CROSS_READS): every change runs them.
         self.assertEqual(steps["gate-plan:unit"], ("always", "both"))
+
+    def test_every_test_module_of_the_scripts_and_contracts_runs_in_a_step(self):
+        # A test module no step runs keeps passing until someone changes it, and nothing notices.
+        runs = modules_a_step_runs()
+        unrun = [path for path in test_modules()
+                 if path not in runs and path not in HELPER_TEST_MODULES]
+        self.assertEqual(unrun, [], "no step of scripts/check_all.sh runs these test modules")
+        # The fixtures are imported by the tests above, so they are no test of their own.
+        for path in HELPER_TEST_MODULES:
+            with self.subTest(helper=path):
+                self.assertTrue((ROOT / path).is_file())
+                usage = re.compile(rf"\b(?:from|import)\s+{re.escape(Path(path).stem)}\b")
+                imported = [other for other in test_modules()
+                            if other != path and usage.search((ROOT / other).read_text())]
+                self.assertNotEqual(imported, [], f"{path}: no test module imports it")
 
     def test_post_merge_prerequisites_are_earlier_steps_that_run_on_the_same_host(self):
         order = [step_id for _, _, step_id in gate_steps()]
