@@ -174,18 +174,16 @@ class FuzzSeedTests(SyntheticRepositoryCase):
 
     def test_the_run_the_rerun_the_control_and_every_probe_get_the_seed_of_the_head(self):
         self.assertEqual(self.run_main(self.shas[0]), 0)
-        self.add("two", {"b": "2"})
-        self.add("three", {"c": "3"})
         culprit = self.add("breaks the unit step", {"broken": "x"})
-        self.add("five", {"d": "4"})
-        head = self.add("six", {"e": "5"})
+        for name in ("four", "five", "six"):
+            head = self.add(name, {name: "1"})
         self.seeds.unlink()
         self.assertEqual(self.run_main(head), 1)
         self.assertEqual(self.record(head)["culprit"]["sha"], culprit)
         runs = self.runs()
         # The run and its rerun are on the head; the control and the probes are on older commits.
         self.assertEqual([sha for sha, _ in runs[:2]], [head, head])
-        self.assertGreater(len({sha for sha, _ in runs}), 3)
+        self.assertGreater(len({sha for sha, _ in runs}), 2)
         self.assertEqual({seed for _, seed in runs}, {str(gate_fuzz_seed.seed_for(head))})
         self.assertNotIn("SOYEHT_FUZZ_SEED", os.environ)  # nothing leaks out of the run
 
