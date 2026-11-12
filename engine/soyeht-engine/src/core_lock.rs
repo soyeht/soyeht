@@ -114,6 +114,10 @@ fn poisoned_core(hooks: &Arc<dyn Hooks>) -> Error {
 }
 
 /// Runs `operation` under the lock on a blocking thread, for async callers.
+///
+/// A hold raises the tick when it ends, unless `purpose` is in `tick::OWN_HOLDS`: a hold the tick
+/// takes itself must be listed there by name, or its end would run the tick again, for ever.
+/// (`tick`'s tests check that every purpose the tick uses is.)
 pub async fn with<T, F>(shared: &Shared, purpose: &'static str, operation: F) -> Result<T>
 where
     T: Send + 'static,

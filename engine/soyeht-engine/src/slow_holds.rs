@@ -173,18 +173,20 @@ pub(crate) fn costs_of(purpose: &str) -> Option<soyeht_platform::hold_cost::Cost
 /// How long until a window of the slow holds or of the usage is over, for the tick to sleep until.
 pub(crate) fn next_emit_in() -> Option<std::time::Duration> {
     let now = now_ms();
-    let ends = HOLDS
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .as_ref()
-        .and_then(|state| {
-            let usage = state.usage.window_ends_ms(SUMMARY_EVERY_MS);
-            [state.slow.next_window_ends_ms(), usage]
-                .into_iter()
-                .flatten()
-                .min()
-        })?;
-    Some(std::time::Duration::from_millis(ends.saturating_sub(now)))
+    let guard = HOLDS.lock().unwrap_or_else(PoisonError::into_inner);
+    window_ends_in(guard.as_ref()?, now)
+}
+
+/// How long from `now_ms` until the earliest window of `state` is over.
+fn window_ends_in(state: &State, now_ms: u64) -> Option<std::time::Duration> {
+    let usage = state.usage.window_ends_ms(SUMMARY_EVERY_MS);
+    let ends = [state.slow.next_window_ends_ms(), usage]
+        .into_iter()
+        .flatten()
+        .min()?;
+    Some(std::time::Duration::from_millis(
+        ends.saturating_sub(now_ms),
+    ))
 }
 
 /// Writes the summaries and the usage of the windows that are over. The tick calls it, outside the
@@ -221,6 +223,30 @@ mod tests {
 
     fn waiting(purpose: &'static str, held_ms: u64, waited_ms: u64) -> Observation {
         Observation::for_test(purpose, held_ms, waited_ms)
+    }
+
+    #[test]
+    fn the_tick_sleeps_until_the_earliest_window_that_is_over() {
+        let mut state = State::default();
+        assert_eq!(window_ends_in(&state, 5_000), None, "no hold, no window");
+        // A fast hold opens the usage window only.
+        state.usage.add(&held("tick", 1), 10_000);
+        assert_eq!(
+            window_ends_in(&state, 40_000),
+            Some(Duration::from_millis(30_000))
+        );
+        // A slow hold opens a window of its own, which ends sooner.
+        state.slow.record(&held("tick", 150), 20_000);
+        assert_eq!(
+            window_ends_in(&state, 40_000),
+            Some(Duration::from_millis(30_000))
+        );
+        state.slow.record(&held("dispatch", 150), 5_000);
+        assert_eq!(
+            window_ends_in(&state, 40_000),
+            Some(Duration::from_millis(25_000))
+        );
+        assert_eq!(window_ends_in(&state, 90_000), Some(Duration::ZERO));
     }
 
     #[test]

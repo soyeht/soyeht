@@ -29,6 +29,11 @@ use tokio::time::Instant;
 
 /// The purposes of the holds that are the tick's own: they do not raise it.
 pub(crate) const OWN_HOLDS: [&str; 3] = ["tick", "background", "tick_wake"];
+/// The least time between the end of a full run and the start of the next. The floor counts from
+/// a run's start, so a run that itself took the floor would start the next at once and take the
+/// Core lock back to back; a millisecond is far below any deadline and long enough for the
+/// request waiting on the lock to take it.
+const GAP: Duration = Duration::from_millis(1);
 /// Between store prunes.
 const PRUNE_EVERY: Duration = Duration::from_secs(60);
 
@@ -75,9 +80,12 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
     })
     .await?;
     // The first run is at once.
-    let mut last_start = Instant::now();
-    let mut next = last_start;
-    let mut next_prune = last_start;
+    let start = Instant::now();
+    // The soonest the next full run may start: the floor from the last start, the gap from the
+    // last end.
+    let mut earliest = start;
+    let mut next = start;
+    let mut next_prune = start;
     loop {
         let full = tokio::select! {
             () = tokio::time::sleep_until(next) => true,
@@ -87,13 +95,12 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
             () = woken.notified() => false,
             // Something may have changed: run in full, no sooner than the floor.
             () = kick.notified() => {
-                next = next.min(last_start + FLOOR);
+                next = next.min(earliest);
                 continue;
             }
         };
         let result = if full {
             let started = Instant::now();
-            last_start = started;
             let due_prune = started >= next_prune;
             if due_prune {
                 next_prune = started + PRUNE_EVERY;
@@ -108,7 +115,8 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
             let wait = wait
                 .min(crate::slow_holds::next_emit_in().unwrap_or(Duration::MAX))
                 .min(next_prune.saturating_duration_since(now));
-            next = (started + FLOOR).max(now + wait);
+            earliest = (started + FLOOR).max(now + GAP);
+            next = earliest.max(now + wait);
             result
         } else {
             let applied = core_lock::with(&core, "background", |core| {
@@ -119,7 +127,7 @@ pub(crate) async fn run(core: Shared) -> crate::errors::Result<()> {
             })
             .await;
             // What the result brought goes on from a full run.
-            next = next.min(last_start + FLOOR);
+            next = next.min(earliest);
             applied
         };
         crate::slow_holds::emit_due();
@@ -141,6 +149,24 @@ mod tests {
     use super::*;
     use crate::{ports::StorePort, tick_due::CEILING};
     use serde_json::json;
+
+    #[test]
+    fn every_hold_the_tick_takes_is_listed_as_its_own() {
+        let source = include_str!("tick.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let used: Vec<&str> = production
+            .split("core_lock::with(&core, \"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .collect();
+        assert!(used.len() >= OWN_HOLDS.len(), "found {used:?}");
+        for purpose in used {
+            assert!(
+                OWN_HOLDS.contains(&purpose),
+                "the hold `{purpose}` of the tick is not in OWN_HOLDS, so its end would run the tick"
+            );
+        }
+    }
 
     #[test]
     fn a_run_that_wrote_to_the_store_runs_again_and_a_quiet_one_sleeps() {

@@ -378,6 +378,22 @@ mod tests {
     }
 
     #[test]
+    fn a_followed_folder_is_due_at_its_probe_and_nothing_is_due_without_one() {
+        let root = temp_folder();
+        let mut watches = Watches::default();
+        assert_eq!(watches.next_due_ms(), None, "no folder, nothing to probe");
+        watches.show("connection", WORKSPACE, &root, &[]);
+        assert_eq!(settle(&mut watches, 0).len(), 1, "the catch-up read");
+        assert_eq!(watches.next_due_ms(), Some(PROBE_INTERVAL_MS));
+        // An event burst that ends sooner than the probe comes first.
+        watches.touch(workspace_key().as_deref(), 100);
+        assert_eq!(watches.next_due_ms(), Some(100 + QUIET_MS));
+        // Nobody shows the folder any more: nothing is probed.
+        watches.settled(PROBE_INTERVAL_MS, |_| false);
+        assert_eq!(watches.next_due_ms(), None);
+    }
+
+    #[test]
     fn a_missing_folder_is_probed_and_listings_are_announced_only_when_changed() {
         let root = temp_folder();
         let mut watches = followed(&root, true);

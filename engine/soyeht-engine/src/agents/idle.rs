@@ -617,13 +617,10 @@ pub(super) mod tests {
         crate::test_paths::remove_after(core, root);
     }
 
-    #[test]
-    fn cleanup_visits_only_agents_that_retired_a_process() {
-        let (mut core, _, root) = idle_core(2);
-        assert!(core.panes_with_retired_processes().is_empty());
-        core.agents
-            .get_mut("agent-1")
-            .unwrap()
+    /// Makes `agent-1` owe the close of a process it retired.
+    fn retire_a_process(core: &mut Core) -> &mut Running {
+        let agent = core.agents.get_mut("agent-1").unwrap();
+        agent
             .state
             .retired_processes
             .push(super::super::state::RetiredAgentProcess {
@@ -631,7 +628,35 @@ pub(super) mod tests {
                 instance_id: "old-instance".into(),
                 supervisor_id: "idle-supervisor".into(),
             });
+        agent
+    }
+
+    #[test]
+    fn cleanup_visits_only_agents_that_retired_a_process() {
+        let (mut core, _, root) = idle_core(2);
+        assert!(core.panes_with_retired_processes().is_empty());
+        retire_a_process(&mut core);
         assert_eq!(core.panes_with_retired_processes(), ["agent-1"]);
+        crate::test_paths::remove_after(core, root);
+    }
+
+    #[test]
+    fn a_refused_close_of_a_retired_process_is_a_deadline_of_the_tick() {
+        let (mut core, _, root) = idle_core(2);
+        let now = core.now_ms();
+        let mut next = Next::default();
+        core.retired_processes_due(&mut next, now);
+        assert_eq!(next.soonest(), None, "nothing is retired");
+
+        retire_a_process(&mut core)
+            .idle
+            .retired_close_refused(now, "refused");
+        core.retired_processes_due(&mut next, now);
+        assert_eq!(
+            next.soonest(),
+            Some(std::time::Duration::from_millis(500)),
+            "the delay a refusal left"
+        );
         crate::test_paths::remove_after(core, root);
     }
 

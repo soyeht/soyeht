@@ -14,6 +14,7 @@ use crate::{
     errors,
     hooks::Hooks,
     model::RunningPane,
+    ports::{PortScanError, PortScanObservation, PortScanPort},
     usage::FixtureHost,
 };
 use soyeht_ink::Recognizer;
@@ -56,6 +57,26 @@ const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
 /// Milliseconds the tick may sleep with no deadline and no event, in place of its second.
 const TICK_CEILING_VARIABLE: &str = "SOYEHT_TEST_TICK_CEILING_MS";
 
+/// Takes the scan of the local servers out of the engine: it cannot list, so it is never run.
+const NO_PORT_SCAN_VARIABLE: &str = "SOYEHT_TEST_NO_PORT_SCAN";
+
+/// Leaves the user's skill folder unfollowed (see [`Hooks::follows_user_skills`]).
+const NO_USER_SKILLS_VARIABLE: &str = "SOYEHT_TEST_NO_USER_SKILLS";
+
+struct NoPortScan;
+
+impl PortScanPort for NoPortScan {
+    fn unavailable(&self) -> Option<&'static str> {
+        Some("the scan is out of this test engine")
+    }
+
+    fn scan(&mut self) -> Result<PortScanObservation, PortScanError> {
+        Err(PortScanError::Unsupported(
+            "the scan is out of this test engine",
+        ))
+    }
+}
+
 pub struct FileHooks {
     directory: PathBuf,
     slow_disk: bool,
@@ -63,6 +84,8 @@ pub struct FileHooks {
     poll_skills: bool,
     ink_pause: Option<std::time::Duration>,
     tick_ceiling: Option<std::time::Duration>,
+    no_port_scan: bool,
+    no_user_skills: bool,
 }
 
 impl FileHooks {
@@ -96,6 +119,8 @@ impl FileHooks {
             directory: directory.into(),
             slow_disk,
             tick_ceiling,
+            no_port_scan: std::env::var_os(NO_PORT_SCAN_VARIABLE).is_some(),
+            no_user_skills: std::env::var_os(NO_USER_SKILLS_VARIABLE).is_some(),
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
             ink_pause,
@@ -155,6 +180,15 @@ impl Hooks for FileHooks {
 
     fn tick_ceiling(&self) -> Option<std::time::Duration> {
         self.tick_ceiling
+    }
+
+    fn follows_user_skills(&self) -> bool {
+        !self.no_user_skills
+    }
+
+    fn port_scan(&self) -> Option<Box<dyn PortScanPort>> {
+        self.no_port_scan
+            .then(|| Box::new(NoPortScan) as Box<dyn PortScanPort>)
     }
 
     fn poll_skills_only(&self) -> bool {

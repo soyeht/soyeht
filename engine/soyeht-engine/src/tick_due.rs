@@ -265,9 +265,59 @@ pub(crate) mod tests {
         crate::test_paths::remove_after(core, directory);
     }
 
+    /// The wait of a quiet engine whose ceiling is a minute, which is the probe of the skill
+    /// folders: any deadline the tests add is sooner.
+    const PROBE_WAIT: Duration = Duration::from_millis(1_700);
+
+    #[test]
+    fn a_subscriber_left_behind_by_the_pump_is_work_for_the_next_run() {
+        let (mut core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
+        core.note_streams_behind(true);
+        assert_eq!(wait(&core), Duration::ZERO);
+        core.note_streams_behind(false);
+        assert_eq!(wait(&core), PROBE_WAIT);
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn the_revision_of_a_task_is_a_deadline() {
+        let (mut core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
+        let due = core.now_ms() + 300;
+        core.task_revision_due.insert(("w".into(), "t".into()), due);
+        core.task_revision_due
+            .insert(("w".into(), "later".into()), due + 5_000);
+        assert_eq!(wait(&core), Duration::from_millis(300));
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn the_wait_for_a_capture_to_be_restored_is_a_deadline() {
+        let (mut core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
+        core.capture_restore_deadline = Some(Instant::now() + Duration::from_millis(300));
+        let waited = wait(&core);
+        assert!(waited <= Duration::from_millis(300), "{waited:?}");
+        core.capture_restore_deadline = None;
+        assert_eq!(wait(&core), PROBE_WAIT);
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
+    fn a_task_poll_that_is_not_at_rest_is_work_and_one_that_rests_is_a_deadline() {
+        let (core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
+        let now = core.now_ms();
+        // A poll that began and has not rested yet, as one that found a row to wait on.
+        let seen = core.store.begin_poll("waiting_row", now).unwrap();
+        assert_eq!(wait(&core), Duration::ZERO);
+        core.store.rest("waiting_row", seen, now + 300);
+        assert_eq!(wait(&core), Duration::from_millis(300));
+        core.store.rest("waiting_row", seen, i64::MAX);
+        assert_eq!(wait(&core), PROBE_WAIT, "only a write wakes it");
+        crate::test_paths::remove_after(core, directory);
+    }
+
     #[test]
     fn a_shell_is_polled_until_the_watch_is_heard_and_then_read_on_a_notice_or_the_sweep() {
-        let (mut core, directory) = quiet_core();
+        let (mut core, directory) = quiet_core_with(Some(Duration::from_secs(60)));
         let id = insert_terminal_pane(&mut core, &directory, "shell", false);
         assert_eq!(wait(&core), Duration::ZERO, "polling, as it always was");
 

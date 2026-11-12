@@ -221,7 +221,11 @@ impl Core {
             worktrees: SharedPort::new(Box::new(CommandWorktree::default())),
             background: Default::default(),
             usage: crate::usage::service_over(usage_readings, directory, hooks.usage_host()),
-            web: crate::web::Service::new(Box::new(crate::web::SystemPortScan::default())),
+            web: crate::web::Service::new(
+                hooks
+                    .port_scan()
+                    .unwrap_or_else(|| Box::new(crate::web::SystemPortScan::default())),
+            ),
             ink: crate::ink::Service::new(
                 hooks.ink_recognizer().map_or_else(soyeht_ink::system, Ok),
             ),

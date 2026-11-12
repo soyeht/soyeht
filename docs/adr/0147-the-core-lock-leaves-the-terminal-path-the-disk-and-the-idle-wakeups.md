@@ -447,8 +447,19 @@ a second.
   another one work (a task reaches a state that a review waits for), and most of the task steps
   poll the store, so the chain of such steps moves at the floor and stops on the first run that
   writes nothing. The polls that rest (`Store::begin_poll`) report their own wake: `next_poll_wait`
-  is zero for a poll that is not at rest and the end of the rest for one that is, so the loops, the
-  retries of blocked tasks and the expiry of web permissions have their deadlines from the rows.
+  is zero for a poll that is not at rest (one that has begun and not rested yet counts, so a poll
+  that waits on a row is not left for the ceiling) and its due time for one that is, so the loops,
+  the retries of blocked tasks and the expiry of web permissions have their deadlines from the
+  rows. The end of a rest with no due time (5 s) is not a wake of its own: the tick's ceiling is
+  shorter, and is what sees a write by another process. A poll that keeps finding a row it cannot
+  advance (a review that waits for its agent) is not at rest and keeps the floor, as it did.
+- **A failed background apply cools down for a second.** A job whose apply failed is not started
+  again for `BACKGROUND_RETRY_AFTER`; a job with no deadline of its own is tried again at the next
+  kick or at the ceiling, whichever is first.
+- **Two runs of the tick are a millisecond apart at least.** The floor counts from the start of a
+  run, so a run that took the floor itself would be followed at once by the next and would take
+  the Core lock back to back; a gap of 1 ms from the end of a run lets the request that waits on
+  the lock take it.
 - **Agents at rest are read on a notice or the sweep, not on a pace.** With the watch heard, a
   settled agent (`Idle`) is not read every `IDLE_PACE_MS`: a mark of the watch ends the rest, as
   1a said, and so does a read that ended and waits to be taken. The pace stays for the engine
@@ -479,10 +490,14 @@ a second.
   `tests/idle_wakeups.rs` counts the context switches of the engine with no pane and with five
   idle shells and fails above 150 a second (main made 440 to 500 in either case), and fails if the
   median echo of a key in an idle shell takes 400 ms (the tick's ceiling would put it at a second);
-  `tests/tick_deadlines.rs` runs an engine whose ceiling is a minute and checks, without sending
+  `tests/tick_deadlines.rs` runs engines whose ceiling is a minute and checks, without sending
   a request (a request raises the tick and would hide a missing deadline), that a shell's output,
   the editor's autosave and disk watch, the project panel, the skills and the reconnection to a
-  restarted supervisor still happen within seconds.
+  restarted supervisor still happen within seconds. Each step has an engine of its own with no
+  other deadline to run the tick for it: the test hooks take out the scan of the local servers
+  (`Hooks::port_scan`) and the user's skill folder (`Hooks::follows_user_skills`), whose probe
+  every engine has from its start. Deleting the deadline of a family from `tick_due::wait` makes
+  its step fail.
 
 ### Step 3. Persistent segment handle; write-behind only if the data asks for it
 

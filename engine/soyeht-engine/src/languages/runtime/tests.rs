@@ -119,6 +119,13 @@ fn a_server_with_nothing_to_do_waits_for_a_notice_when_the_watch_is_heard() {
         .clear();
     assert_eq!(wait(&core), None, "nothing is announced, nothing is read");
     assert!(super::super::watching::instances(&core).contains(&"language-process".to_owned()));
+    // The sweep is due while only a language server lives (no pane has a process).
+    for pane in core.panes.values_mut() {
+        pane.stored.closed = true;
+    }
+    let mut next = crate::tick_due::Next::default();
+    core.output_due(&mut next, core.now_ms());
+    assert!(next.soonest().is_some(), "the sweep reaches the server");
 
     // A notice of the supervisor is work, and so is a read that ended.
     core.watch.pretend_notice("language-process", 5);
