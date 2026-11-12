@@ -209,10 +209,10 @@ fn report(name: &str, keys: usize, typed: &Typed) {
     );
 }
 
-/// A pane of a quiet engine makes no commit and no request of its own in a window of the length
-/// the keys take, so what the typing tests count is the keys'.
+/// A quiet shell makes no commit and asks the supervisor only for its output (the read every
+/// second), so what the typing tests count is the keys'.
 #[test]
-fn an_idle_shell_makes_no_commit_and_no_request() {
+fn an_idle_shell_makes_no_commit_and_only_reads_its_output() {
     let rig = Rig::with_environment(&[MEASURE]);
     let (mut client, mut watcher, _, pane, pane_ref) = watched_shell(&rig);
     wait_for_shell(&mut client, &mut watcher, &pane, pane_ref);
@@ -227,18 +227,25 @@ fn an_idle_shell_makes_no_commit_and_no_request() {
         window.requests.keys().collect::<Vec<_>>()
     );
     assert_eq!(window.commits, 0, "an idle shell made commits");
+    assert!(
+        window.requests.keys().all(|kind| kind == "drain"),
+        "an idle shell asked the supervisor for {:?}",
+        window.requests.keys().collect::<Vec<_>>()
+    );
 }
 
-/// Types `keys` letters `gap` apart and holds what they cost to `commits_per_key` commits a key,
-/// a tenth more for a loaded host that stalls a key past the linger, and two supervisor requests
-/// a key for the input itself: its bytes and the confirmation of the operation before.
+/// Types `keys` letters `gap` apart and holds what they cost to `commits_per_key` commits a key
+/// and two supervisor requests a key for the input itself (its bytes and the confirmation of the
+/// operation before). Measured on main: exactly one commit and 1.99 requests a key, so the
+/// allowance is two over the keys, for a key a loaded host stalls past the linger and the one
+/// outcome that is recorded alone at the end.
 fn assert_cost(name: &str, keys: usize, gap: Duration, commits_per_key: usize) {
     let rig = Rig::with_environment(&[MEASURE]);
     let typed = type_keys(&rig, keys, gap);
     report(name, keys, &typed);
     let window = &typed.window;
     assert!(
-        window.commits <= (commits_per_key * keys + keys / 10) as u64,
+        window.commits <= (commits_per_key * keys + 2) as u64,
         "{} commits for {keys} keys",
         window.commits
     );

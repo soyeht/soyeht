@@ -165,31 +165,9 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
         Ok(())
     })
     .await?;
-    send_last_follow_ups(&core).await;
+    crate::last_follow_ups::send(&core).await;
     fs::remove_file(socket)?;
     ended
-}
-
-/// The rounds of waiting for the sends to the supervisor that the engine queued as it stopped
-/// (the confirmations of the outcomes it recorded): one runs, then the one for what arrived
-/// meanwhile.
-const LAST_FOLLOW_UP_ROUNDS: usize = 3;
-/// The longest a round waits for the supervisor; a supervisor that does not answer must not hold
-/// the engine's exit, and the next engine confirms what was not (`reconcile_registry`).
-const LAST_FOLLOW_UP_WAIT: Duration = Duration::from_secs(2);
-
-/// Gives the supervisor the confirmations of the outcomes recorded at shutdown, which no tick is
-/// left to send.
-async fn send_last_follow_ups(core: &Shared) {
-    for _ in 0..LAST_FOLLOW_UP_ROUNDS {
-        let running = core_lock::with(core, "shutdown_follow_ups", |state| {
-            Ok(state.send_follow_ups_before_exit())
-        })
-        .await;
-        let Ok(Some(done)) = running else { return };
-        // ignored: a wait that fails to join only ends the waiting; the next engine confirms.
-        let _ = tokio::task::spawn_blocking(move || done.wait(LAST_FOLLOW_UP_WAIT)).await;
-    }
 }
 
 pub(crate) async fn connection(

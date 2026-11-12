@@ -328,10 +328,10 @@ operation before). `LINGER_MS` is now 3000, and the same typing measures 1.00 co
   idle one holds what the last key left for 3 s. The orphan sweep (60 s from the intent) skips an
   operation whose outcome waits.
 - **When the engine stops.** It records the waiting outcomes and then gives the supervisor the
-  confirmations that records queued, a round at a time with a bound on each wait, so a graceful stop
-  does not leave them to the next engine. A supervisor that does not answer within the bound does not
-  hold the exit; the next engine confirms a receipt whose outcome is recorded when it links
-  (`reconcile_registry`).
+  confirmations that records queued, in up to three rounds that share one bound of two seconds, so
+  a graceful stop does not leave them to the next engine. A supervisor that does not answer within
+  the bound ends the rounds and does not hold the exit longer; the next engine confirms a receipt
+  whose outcome is recorded when it links (`reconcile_registry`).
 - **The crash window.** If the engine ends without stopping (a kill, a crash, power) within the
   linger of a key, the outcome is not recorded and the operation is not confirmed. The intent is in
   the database and the supervisor holds the operation, so the next engine finds both: a retry of the
@@ -683,7 +683,7 @@ The rule test grows with the work, so a regression is a red test.
   first that moves something and adds a ratchet), to point here and to say what is left under the lock.
 - After step 2, terminal **output and acknowledgements** no longer depend on the cost of any request.
   Keystroke echo still takes the Core lock (the input is recorded and its receipt is made durable under
-  it: two commits per key before step R, one after), so it improves with step R and step 4, not with step 2. After step 1 a
+  it: two commits per key before step R, and one after the second measurement of step R), so it improves with step R and step 4, not with step 2. After step 1 a
   machine with open panes and nothing happening is idle. After steps 4 and 5 a stalled disk or a stalled
   mount delays the request that asked, and nothing else.
 - Each change can be reverted alone.
