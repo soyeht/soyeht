@@ -1,6 +1,12 @@
 //! A repository can come from anyone, and its configuration names programs. Reading it for the
 //! editor's gutter (hunks and blame) must start none of them, and a file whose name looks like
 //! an option must stay a file name.
+//!
+//! This file pins what the crate's own commands do: they read the root, the baseline and the
+//! blame, and none of those starts a configured program. It does not guard the switches that
+//! `soyeht-process`'s git runner sets (`core.fsmonitor=false`, `core.hooksPath`, the blanked
+//! filter drivers): the crate's commands never reach what those switches stop, so removing one
+//! would leave these tests green. The `soyeht-process` tests cover the switches.
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -16,13 +22,18 @@ use std::{
 
 struct Repository {
     root: PathBuf,
+    /// An empty file that `GIT_CONFIG_GLOBAL` points at, outside the repository.
+    empty_config: PathBuf,
 }
 
 impl Repository {
     fn new(label: &str) -> Self {
         let root = scratch_dir(label);
+        let empty_config = scratch_dir(&format!("{label}-config")).join("gitconfig");
+        fs::write(&empty_config, "").unwrap();
         let repository = Self {
             root: soyeht_platform::fs::canonicalize(&root).unwrap(),
+            empty_config,
         };
         repository.git(&["init", "-q"]);
         repository
@@ -41,6 +52,10 @@ impl Repository {
             .env("GIT_COMMITTER_EMAIL", "attack@example.com")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("TERM", "xterm")
+            // The host's own configuration (a global hook path, a credential helper) must not
+            // change what the control proves: an empty file stands for it, on every system.
+            .env("GIT_CONFIG_GLOBAL", &self.empty_config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
             .args(arguments)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -88,6 +103,9 @@ impl Repository {
 impl Drop for Repository {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
+        if let Some(folder) = self.empty_config.parent() {
+            let _ = fs::remove_dir_all(folder);
+        }
     }
 }
 

@@ -150,7 +150,15 @@ fn a_frame_the_protocol_forbids_closes_the_connection_before_its_payload_is_read
         (255, 1),
     ];
     for (kind, length) in cases {
+        // After the handshake the engine has no read deadline, so a header it accepted would leave
+        // it waiting for a payload for ever; before it, its 5-second handshake deadline would close
+        // the connection anyway and a loosened limit would go unseen.
         let mut raw = Raw::connect(&rig);
+        let hello = raw.hello(
+            100,
+            json!({"client":"attack","clientVersion":"1","protocolVersion":1}),
+        );
+        assert!(hello.get("result").is_some(), "{hello}");
         // Only the five header bytes are sent: the engine must decide from them alone.
         raw.write_raw(kind, length, &[]);
         raw.assert_closed(format!("kind {kind} length {length}"));
