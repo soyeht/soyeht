@@ -118,6 +118,7 @@ struct PreferencesHarnesses: View {
     case .probe_timed_out: return "Reading the login-shell environment timed out."
     case .output_too_large: return "The login shell produced too much startup output."
     case .invalid_output: return "The login shell returned an invalid environment."
+    case .unknown: return "The login-shell environment has a problem this version does not know."
     }
   }
 
@@ -275,7 +276,7 @@ private struct HarnessPreferenceRow: View {
   private var statusColor: Color {  // `shownState`: what is found; `statusReason`: the real state
     switch HarnessPickerModel.shownState(for: harness) {
     case .ready: MacTheme.success
-    case .sign_in, .check_setup: MacTheme.warning
+    case .sign_in, .check_setup, .unknown: MacTheme.warning
     case .not_checked, .not_installed: MacTheme.muted
     }
   }

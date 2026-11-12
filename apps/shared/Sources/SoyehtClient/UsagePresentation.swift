@@ -131,6 +131,7 @@ public struct UsagePresentation: Sendable {
     case .no_access: "Access to the \(provider.displayName) login was declined."
     case .source_failed: "\(provider.displayName) could not provide usage."
     case .plan_expired: "\(provider.displayName)'s plan has expired or is not active."
+    case .unknown: "Usage is unavailable."
     case nil: nil
     }
   }

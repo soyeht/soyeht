@@ -104,7 +104,8 @@ fn item(message: &TranscriptMessage, revision: u64) -> ConversationItem {
         streaming: !message.complete,
         tool_state: message.tool.as_ref().map(|tool| match tool.status {
             ToolStatus::Pending => ToolState::Pending,
-            ToolStatus::InProgress => ToolState::Running,
+            // A status this build does not know is shown as under way.
+            ToolStatus::InProgress | ToolStatus::Unknown => ToolState::Running,
             ToolStatus::Completed => ToolState::Done,
             ToolStatus::Failed => ToolState::Failed,
         }),
@@ -136,9 +137,10 @@ pub(crate) fn conversation(state: &State, pane_id: &str) -> Option<Conversation>
                     kind: match option.kind {
                         PermissionOptionKind::AllowOnce => OptionKind::Allow,
                         PermissionOptionKind::AllowAlways => OptionKind::AllowAlways,
-                        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
-                            OptionKind::Reject
-                        }
+                        // An option of a kind this build does not know is the cautious one.
+                        PermissionOptionKind::RejectOnce
+                        | PermissionOptionKind::RejectAlways
+                        | PermissionOptionKind::Unknown => OptionKind::Reject,
                     },
                 })
                 .collect(),

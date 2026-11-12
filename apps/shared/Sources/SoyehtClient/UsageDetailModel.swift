@@ -82,7 +82,7 @@ public struct UsageDetailModel: Sendable {
         switch reading.state {
         case .ok: "No reading yet."
         case .stale: "Last reading is stale."
-        case .login_needed, .no_access, .unavailable: presentation.unavailableMessage
+        case .login_needed, .no_access, .unavailable, .unknown: presentation.unavailableMessage
         }
       content = .notice(Notice(message: message, symbol: "exclamationmark.circle"))
     }

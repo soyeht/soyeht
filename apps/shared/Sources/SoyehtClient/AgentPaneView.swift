@@ -133,7 +133,7 @@ extension ToolStatus {
   fileprivate var progress: Int {
     switch self {
     case .pending: 0
-    case .in_progress: 1
+    case .in_progress, .unknown: 1
     case .completed, .failed: 2
     }
   }

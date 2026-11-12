@@ -109,14 +109,23 @@ changelog entry of the release is the place the owner reads it before publishing
 
 ## Defaults taken, each easy to change
 
-1. Engine-to-client enums that can grow are made open. A count showed the cost is large: of the 95
-   enums of the contract, 77 are reachable from a result or an event (19 of them from params as
-   well), 15 only from params, and 3 from neither. Converting 77 means an `unknown(String)` case in
-   each generated Swift enum and a catch-all in Rust, and every exhaustive `switch` of the Mac and
-   iOS views changes. That is above the threshold the owner set, so nothing is converted yet. Until
-   the owner decides, the check treats every engine-to-client enum as closed: a new value is a
-   break (and a new `ErrorKind` is one too). Converting one is a data change: name it in the
-   top-level `x-openEnums` list of `protocol.json`, which the check already reads.
+1. Engine-to-client enums that can realistically gain values after launch are open, and the rest
+   stay closed. Of the 95 enums of the contract, 77 are reachable from a result or an event; 19 of
+   those are open (the `x-openEnums` list of `protocol.json`): `ErrorKind`, the tool, prompt,
+   transcript and turn-stop vocabularies (`ToolStatus`, `PromptStatus`, `TranscriptKind`,
+   `TurnStopReason`), `PermissionOptionKind` and `PermissionRequestKind`, the harness setup states
+   and reasons (`HarnessSetupState`, `HarnessSetupReason`, `HarnessEnvironmentIssue`,
+   `AgentLoginPhase`), the usage states, sources and reasons (`UsageState`, `UsageSource`,
+   `UsageUnavailableReason`), and `LspState`, `ReadinessSystem`, `SubagentStatus`,
+   `TaskReviewState` and `EngineReachabilityReason`. A client keeps a value it does not know
+   (Swift `unknown(String)`, which keeps the text and sends it back; Rust `Unknown`, which the
+   engine never builds) and shows it as a generic state. The generator refuses an open enum the
+   engine also reads from a client, since the engine would then accept a value it cannot handle;
+   that is why `PaneMode`, `TaskState`, `UsageProvider` and `EditorLanguage` stay closed for now
+   (opening them first needs the engine to refuse `Unknown` in a request). `PaneState` and
+   `TaskCheckState` already have a value called `unknown`, which the catch-all would clash with.
+   An open enum cannot be closed again (the check refuses it). The rest are closed: a new value of
+   one of them is a break, which a deliberate `min` bump makes.
 2. A client below `min` is refused by the engine; a client that is welcomed at a version outside
    its range shows the update message at connect time (`protocol_version_unsupported`). The updater
    is not blocked.
@@ -125,4 +134,5 @@ changelog entry of the release is the place the owner reads it before publishing
 
 ## Not decided here
 
-- Which engine-to-client enums become open (item 1 above).
+- Whether `PaneMode`, `TaskState`, `UsageProvider` and `EditorLanguage` become open, which needs the
+  engine to refuse `Unknown` in a request first.

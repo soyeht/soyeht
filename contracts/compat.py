@@ -180,6 +180,9 @@ def problems(old, new):
     for name, value in old["x-framing"].items():
         if new["x-framing"].get(name) != value:
             found.append(f"framing {name}: changed")
+    for name in old["x-openEnums"]:
+        if name not in new["x-openEnums"]:
+            found.append(f"{name}: the enum was open and is closed again")
     up, down = directions(new)
     for name, node in old["$defs"].items():
         if name not in new["$defs"]:

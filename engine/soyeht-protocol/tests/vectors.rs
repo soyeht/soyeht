@@ -113,12 +113,12 @@ fn agent_updates_require_known_kinds_and_their_payloads() {
         value["kind"] = serde_json::json!(kind);
         assert!(serde_json::from_value::<PaneUpdateEvent>(value).is_err());
     }
-    assert!(
-        serde_json::from_value::<PermissionOption>(
-            serde_json::json!({"optionId":"a","kind":"allow_everything","name":"Allow"})
-        )
-        .is_err()
-    );
+    // A kind a later engine adds is kept as `Unknown` (ADR 0161), not refused.
+    let option: PermissionOption = serde_json::from_value(
+        serde_json::json!({"optionId":"a","kind":"allow_everything","name":"Allow"}),
+    )
+    .unwrap();
+    assert_eq!(option.kind, PermissionOptionKind::Unknown);
     assert!(serde_json::from_value::<ConfigValue>(serde_json::json!([])).is_err());
     assert!(serde_json::from_value::<ConfigValue>(serde_json::json!(true)).is_ok());
 }

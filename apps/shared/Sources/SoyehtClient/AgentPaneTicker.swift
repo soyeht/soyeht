@@ -123,6 +123,7 @@ public struct AgentACPTickerSource: AgentTickerSource {
     case .in_progress: "Running \(tool.title)"
     case .completed: "Done: \(tool.title)"
     case .failed: "Failed: \(tool.title)"
+    case .unknown: tool.title
     }
   }
 }

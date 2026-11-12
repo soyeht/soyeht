@@ -222,7 +222,8 @@ pub(super) fn transcript_row(
             .as_ref()
             .map(|output| terminal_block(&owner_of(pane_id, &message.local_id), output, palette)),
         // A subagent's row is drawn from its group, with the activity it owns under it.
-        TranscriptKind::Usage | TranscriptKind::Subagent => None,
+        // A kind a later engine adds has no row here; the rest of the conversation still reads.
+        TranscriptKind::Usage | TranscriptKind::Subagent | TranscriptKind::Unknown => None,
         TranscriptKind::Message | TranscriptKind::System => {
             Some(text_row(line, palette, markdown, cx))
         }
@@ -246,7 +247,7 @@ pub(super) fn row_weight(line: MessageRow, markdown: &mut Replies) -> usize {
             .as_ref()
             .map_or(1, |output| text_weight(output.bytes.len() / 4 * 3)),
         TranscriptKind::Plan => message.plan.as_ref().map_or(1, |plan| 1 + plan.len()),
-        TranscriptKind::Usage | TranscriptKind::Subagent => 0,
+        TranscriptKind::Usage | TranscriptKind::Subagent | TranscriptKind::Unknown => 0,
         TranscriptKind::Tool | TranscriptKind::Thought | TranscriptKind::Handover => 1,
     }
 }
@@ -390,6 +391,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
         ToolStatus::InProgress => ("\u{25cf} running", palette.accent),
         ToolStatus::Completed => ("\u{2713} done", palette.success()),
         ToolStatus::Failed => ("\u{2715} failed", palette.danger()),
+        ToolStatus::Unknown => ("", palette.secondary),
     };
     let locations = tool.locations.iter().map(|location| {
         let text = match location.line {

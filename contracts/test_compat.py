@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import compat
-from generate import ROOT, validate_protocol_versions
+from generate import ROOT, validate_open_enums, validate_protocol_versions
 
 LIVE = json.loads((ROOT / "contracts/protocol.json").read_text())
 
@@ -118,6 +118,12 @@ class AdditiveTests(unittest.TestCase):
         grown["$defs"]["Mode"]["enum"].append("later")
         self.assertTrue(compat.problems(both, grown))
 
+    def test_an_open_enum_cannot_be_closed_again(self):
+        opened = contract()
+        opened["x-openEnums"] = ["Kind"]
+        self.assertEqual(compat.problems(contract(), opened), [])
+        self.assertTrue(compat.problems(opened, contract()))
+
     def test_the_live_contract_is_additive_against_itself(self):
         self.assertEqual(compat.problems(LIVE, LIVE), [])
 
@@ -167,6 +173,32 @@ class ReleasedTests(unittest.TestCase):
         self.assertIn("delete it", "\n".join(compat.released_problems(self.root, broken)))
         compat.snapshot_path(self.root, 1).unlink()
         self.assertEqual(compat.released_problems(self.root, broken), [])
+
+
+class OpenEnumTests(unittest.TestCase):
+    def listed(self, *names):
+        return contract() | {"x-openEnums": list(names)}
+
+    def test_an_enum_the_engine_sends_can_be_open(self):
+        validate_open_enums(self.listed("Kind"))
+
+    def test_only_an_enum_can_be_open(self):
+        for names in (("Answer",), ("Missing",), ("Kind", "Kind")):
+            with self.subTest(names), self.assertRaises(ValueError):
+                validate_open_enums(self.listed(*names))
+
+    def test_an_enum_the_engine_reads_from_a_client_stays_closed(self):
+        with self.assertRaises(ValueError):
+            validate_open_enums(self.listed("Mode"))
+
+    def test_a_value_called_unknown_would_clash_with_the_catch_all(self):
+        opened = self.listed("Kind")
+        opened["$defs"]["Kind"]["enum"].append("unknown")
+        with self.assertRaises(ValueError):
+            validate_open_enums(opened)
+
+    def test_the_live_contract_lists_only_valid_open_enums(self):
+        validate_open_enums(LIVE)
 
 
 class RangeTests(unittest.TestCase):

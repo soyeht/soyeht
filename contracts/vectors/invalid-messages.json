@@ -54,14 +54,6 @@
     }
   },
   {
-    "type": "PermissionOption",
-    "value": {
-      "optionId": "option",
-      "kind": "allow_everything",
-      "name": "Allow"
-    }
-  },
-  {
     "type": "PanePermissionAnswerParams",
     "value": {
       "paneId": "pane",
@@ -132,14 +124,6 @@
   {
     "type": "UsageProvider",
     "value": "future_provider"
-  },
-  {
-    "type": "UsageState",
-    "value": "unknown"
-  },
-  {
-    "type": "UsageSource",
-    "value": "screen_scrape"
   },
   {
     "type": "UsageWindow",

@@ -12985,6 +12985,27 @@
     "min": 1,
     "current": 1
   },
+  "x-openEnums": [
+    "AgentLoginPhase",
+    "EngineReachabilityReason",
+    "ErrorKind",
+    "HarnessEnvironmentIssue",
+    "HarnessSetupReason",
+    "HarnessSetupState",
+    "LspState",
+    "PermissionOptionKind",
+    "PermissionRequestKind",
+    "PromptStatus",
+    "ReadinessSystem",
+    "SubagentStatus",
+    "TaskReviewState",
+    "ToolStatus",
+    "TranscriptKind",
+    "TurnStopReason",
+    "UsageSource",
+    "UsageState",
+    "UsageUnavailableReason"
+  ],
   "x-paneNonRouteIds": [
     "agent",
     "authMethodId",

@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from client_policy import render_client_policy
-from compat import released_problems
+from compat import directions, released_problems, surface
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text, rustfmt
 from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
@@ -59,9 +59,12 @@ def type_name(schema, lang):
     return primitives[lang][kind]
 
 
-def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]"):
+def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]", opened=()):
     if "enum" in schema:
         fields = [f'    #[serde(rename = {json.dumps(v, ensure_ascii=False)})]\n    {variant(v)},' for v in schema["enum"]]
+        if name in opened:
+            # A value a later engine adds reads as `Unknown`; the engine itself never builds one.
+            fields.append("    /// A value this build does not know (ADR 0161).\n    #[serde(other)]\n    Unknown,")
         return derive + f"\npub enum {name} {{\n" + "\n".join(fields) + "\n}"
     if "oneOf" in schema:
         fields = [f"    V{i}({type_name(t, 'rust')})," for i, t in enumerate(schema["oneOf"])]
@@ -84,8 +87,46 @@ def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, Partia
     return f"pub type {name} = " + ("serde_json::Value" if not schema else type_name(schema, "rust")) + ";"
 
 
-def swift_definition(name, schema):
+def swift_open_enum(name, values):
+    """A string enum that keeps a value it does not know as `unknown(String)` (ADR 0161)."""
+    cases = [snake(variant(v)) for v in values]
+    declared = "\n".join(f"    case `{case}`" for case in cases)
+    known = "\n".join(f"        case {json.dumps(v, ensure_ascii=False)}: self = .`{case}`" for v, case in zip(values, cases))
+    raws = "\n".join(f"        case .`{case}`: {json.dumps(v, ensure_ascii=False)}" for v, case in zip(values, cases))
+    every = ", ".join(f".`{case}`" for case in cases)
+    return f"""public enum {name}: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {{
+{declared}
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [{name}] = [{every}]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {{
+        switch rawValue {{
+{known}
+        default: self = .unknown(rawValue)
+        }}
+    }}
+    public var rawValue: String {{
+        switch self {{
+{raws}
+        case .unknown(let value): value
+        }}
+    }}
+    public init(from decoder: any Decoder) throws {{
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = {name}(rawValue: text) ?? .unknown(text)
+    }}
+    public func encode(to encoder: any Encoder) throws {{
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }}
+}}"""
+
+
+def swift_definition(name, schema, opened=()):
     name = "TaskRecord" if name == "Task" else name
+    if "enum" in schema and name in opened:
+        return swift_open_enum(name, schema["enum"])
     if "enum" in schema:
         fields = [f'    case `{snake(variant(v))}` = {json.dumps(v, ensure_ascii=False)}' for v in schema["enum"]]
         return f"public enum {name}: String, Codable, Sendable, CaseIterable {{\n" + "\n".join(fields) + "\n}"
@@ -124,9 +165,11 @@ def swift_definition(name, schema):
     return f"public typealias {name} = {type_name(schema, 'swift')}"
 
 
-def ts_definition(name, schema):
+def ts_definition(name, schema, opened=()):
     if "enum" in schema:
-        return f"export type {name} = " + " | ".join(json.dumps(v, ensure_ascii=False) for v in schema["enum"]) + ";"
+        values = [json.dumps(v, ensure_ascii=False) for v in schema["enum"]]
+        # `string & {}` keeps the known values in completions and admits one a later engine adds.
+        return f"export type {name} = " + " | ".join(values + (["(string & {})"] if name in opened else [])) + ";"
     if "oneOf" in schema:
         return f"export type {name} = " + " | ".join(type_name(t, "ts") for t in schema["oneOf"]) + ";"
     if schema.get("type") == "object":
@@ -355,8 +398,24 @@ def validate_protocol_versions(versions):
         raise ValueError("x-protocolVersion.minReason must say why min is above 1")
 
 
+def validate_open_enums(schema):
+    """The engine-to-client enums that may gain values (ADR 0161): a client keeps what it cannot name."""
+    up, _ = directions(surface(schema))
+    for name in schema.get("x-openEnums", []):
+        enum = schema["$defs"].get(name, {}).get("enum")
+        if not enum:
+            raise ValueError(f"x-openEnums names {name}, which is not an enum")
+        if name in up:
+            raise ValueError(f"x-openEnums names {name}, which the engine reads from a client: it would accept a value it does not know")
+        if "unknown" in enum or "Unknown" in [variant(value) for value in enum]:
+            raise ValueError(f"x-openEnums names {name}, which already has a value that the catch-all case would clash with")
+    if len(set(schema.get("x-openEnums", []))) != len(schema.get("x-openEnums", [])):
+        raise ValueError("x-openEnums names an enum twice")
+
+
 def validate_schema(schema):
     validate_protocol_versions(schema["x-protocolVersion"])
+    validate_open_enums(schema)
     allowed = {"$ref", "type", "properties", "required", "additionalProperties",
                "enum", "oneOf", "items", "minimum", "maximum", "minLength",
                "maxLength", "pattern", "contentEncoding", "description"}
@@ -465,17 +524,21 @@ def render(schema):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// {header_text(SCHEMA_SOURCE)}\n"
-    rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
+    opened = set(schema.get("x-openEnums", []))
+    rust = header + "\n".join(rust_definition(n, s, opened=opened) for n, s in schema["$defs"].items())
     rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + event_params_rust(schema) + "\n" + rust_names(schema) + "\n"
-    rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
+    rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items())
+    if "ErrorKind" in opened:
+        rust += f"\n        ErrorKind::Unknown => {schema['x-errorCodes']['internal_error']},"
+    rust += "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = rustfmt(rust)
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust
     swift = header + "import Foundation\n\n"
-    swift += "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items())
+    swift += "\n\n".join(swift_definition(n, s, opened) for n, s in schema["$defs"].items())
     swift += "\n\n" + method_registry_swift(schema) + "\n\n" + event_registry_swift(schema) + "\n"
     outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"] = swift
-    ts = header + "\n\n".join(ts_definition(n, s) for n, s in schema["$defs"].items())
+    ts = header + "\n\n".join(ts_definition(n, s, opened) for n, s in schema["$defs"].items())
     ts += "\n\nexport interface Methods {\n" + "\n".join(f'  "{n}": {{ params: {type_name(m["params"], "ts")}; result: {type_name(m["result"], "ts")} }};' for n, m in schema["x-methods"].items()) + "\n}\n"
     ts += "\n" + event_registry_ts(schema) + "\n"
     outputs["contracts/typescript/src/generated.ts"] = ts

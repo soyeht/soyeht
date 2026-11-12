@@ -122,7 +122,7 @@ public struct AgentSubagentPresentation: Sendable {
     case .cancelled:
       status = .stopped
       trailing = "cancelled"
-    case nil:
+    case .unknown, nil:
       status = .stopped
       trailing = ""
     }

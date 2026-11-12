@@ -133,7 +133,7 @@ struct PhoneAgentChoiceView: View {
   private func statusColor(_ state: HarnessSetupState) -> Color {
     switch state {
     case .ready: PhonePalette.success
-    case .sign_in, .check_setup: PhonePalette.warning
+    case .sign_in, .check_setup, .unknown: PhonePalette.warning
     case .not_checked, .not_installed: PhonePalette.muted
     }
   }

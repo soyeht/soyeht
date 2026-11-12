@@ -63,7 +63,8 @@ impl SignInState {
             Some(login) => match login.phase {
                 AgentLoginPhase::SigningOut => Self::SigningOut,
                 AgentLoginPhase::Verifying => Self::Verifying,
-                AgentLoginPhase::Waiting => Self::Waiting {
+                // A phase a later engine adds is shown as the wait it most resembles.
+                AgentLoginPhase::Waiting | AgentLoginPhase::Unknown => Self::Waiting {
                     terminal_pane_id: login.terminal_pane_id.clone(),
                 },
             },

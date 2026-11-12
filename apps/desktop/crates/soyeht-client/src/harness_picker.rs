@@ -77,7 +77,8 @@ pub fn group_of(harness: &HarnessInfo) -> Group {
         HarnessSetupState::Ready => Group::Ready,
         HarnessSetupState::NotChecked => Group::NotChecked,
         HarnessSetupState::SignIn => Group::SignIn,
-        HarnessSetupState::CheckSetup => Group::CheckSetup,
+        // A state a later engine adds is a harness to look at.
+        HarnessSetupState::CheckSetup | HarnessSetupState::Unknown => Group::CheckSetup,
         HarnessSetupState::NotInstalled => Group::NotInstalled,
     }
 }
@@ -149,7 +150,9 @@ fn fixed_reason(harness: &HarnessInfo) -> &'static str {
         HarnessSetupState::Ready => None,
         HarnessSetupState::NotChecked => Some(HarnessSetupReason::NeverStarted),
         HarnessSetupState::SignIn => Some(HarnessSetupReason::AuthenticationRequired),
-        HarnessSetupState::CheckSetup => Some(HarnessSetupReason::LaunchFailed),
+        HarnessSetupState::CheckSetup | HarnessSetupState::Unknown => {
+            Some(HarnessSetupReason::LaunchFailed)
+        }
         HarnessSetupState::NotInstalled => Some(HarnessSetupReason::ExecutableMissing),
     });
     match reason {
@@ -173,6 +176,9 @@ fn fixed_reason(harness: &HarnessInfo) -> &'static str {
         }
         Some(HarnessSetupReason::EnvironmentUnavailable) => {
             "The engine could not read the launch environment."
+        }
+        Some(HarnessSetupReason::Unknown) => {
+            "The engine reports a problem this version of Soyeht does not know. Update Soyeht."
         }
         None => "An agent session opened successfully.",
     }
