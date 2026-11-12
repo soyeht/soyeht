@@ -251,17 +251,14 @@ exec {self.fake_ssh} "$@"
         arguments = post_merge_gate.remote_gate_arguments
         with mock.patch.dict(os.environ, {"SOYEHT_GATE_FUZZ_SEED": "4242"}):
             self.assertIn(" --fuzz-seed 4242", arguments(remote, self.shas[0], ["eng"], None, None, ""))
-        with mock.patch.dict(os.environ):
-            os.environ.pop("SOYEHT_GATE_FUZZ_SEED", None)
-            os.environ.pop("SOYEHT_FUZZ_SEED", None)
-            self.assertNotIn("--fuzz-seed", arguments(remote, self.shas[0], ["eng"], None, None, ""))
-            seeds = self.root.parent / "seeds.txt"
-            environment = {**os.environ, "FAKE_SEEDS": str(seeds)}
-            subprocess.run(["bash", str(self.host_checkout / "scripts/remote_gate.sh"), "--sha", self.shas[0],
-                            "--steps", "eng", "--fuzz-seed", "777"], capture_output=True, cwd=self.host_checkout,
-                           env=environment, check=True)
-            _, gate_seed, explicit_seed = seeds.read_text().split()
-            self.assertEqual((gate_seed, explicit_seed), ("777", "unset"))  # the gate's variable only
+        self.assertNotIn("--fuzz-seed", arguments(remote, self.shas[0], ["eng"], None, None, ""))
+        seeds = self.root.parent / "seeds.txt"
+        environment = {**os.environ, "FAKE_SEEDS": str(seeds)}
+        subprocess.run(["bash", str(self.host_checkout / "scripts/remote_gate.sh"), "--sha", self.shas[0],
+                        "--steps", "eng", "--fuzz-seed", "777"], capture_output=True, cwd=self.host_checkout,
+                       env=environment, check=True)
+        _, gate_seed, explicit_seed = seeds.read_text().split()
+        self.assertEqual((gate_seed, explicit_seed), ("777", "unset"))  # the gate's variable only
 
 
 # A stand-in with the steps the pre-merge split tells apart, which lists them as the tier would

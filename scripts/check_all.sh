@@ -248,7 +248,10 @@ step gate_scripts both post-merge-flakes:unit uv run python -m unittest discover
 step gate_scripts both post-merge-remote:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_remote.py'
 step gate_scripts both post-merge-load:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_load.py'
 step gate_scripts both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
+step gate_scripts both post-merge-prerequisites:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_prerequisites.py'
+step gate_scripts both post-merge-control:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_control.py'
 step gate_scripts both e2e-swift-client:unit uv run python -m unittest discover -s scripts -p 'test_e2e_swift_client.py'
+step gate_scripts both e2e-real-harnesses:unit uv run python -m unittest discover -s scripts -p 'test_e2e_real_harnesses.py'
 step gate_scripts both main-watch:unit uv run python -m unittest discover -s scripts -p 'test_main_watch.py'
 step always both require-one-rust-test:unit uv run python -m unittest discover -s scripts -p 'test_require_one_rust_test.py'
 # Without --base, the ratchets compare with the merge-base of origin/main and

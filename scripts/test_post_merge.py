@@ -168,10 +168,6 @@ class FuzzSeedTests(SyntheticRepositoryCase):
         environment = mock.patch.dict(os.environ, {"FAKE_SEEDS": str(self.seeds)})
         environment.start()
         self.addCleanup(environment.stop)
-        # The post-merge gate runs these tests with the seed of the main commit it checks in its
-        # own environment; a seed from outside would win over the one the test expects.
-        for name in ("SOYEHT_GATE_FUZZ_SEED", "SOYEHT_FUZZ_SEED"):
-            os.environ.pop(name, None)
 
     def runs(self):
         return [line.split() for line in self.seeds.read_text().splitlines()]
