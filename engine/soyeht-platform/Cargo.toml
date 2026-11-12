@@ -44,6 +44,9 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+# Turns on the test helpers for this package's own integration tests.
+soyeht-platform = { path = ".", features = ["test-support"] }
+serde_json.workspace = true
 tokio.workspace = true
 
 [lints]
