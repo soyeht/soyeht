@@ -371,6 +371,27 @@ mod tests {
     }
 
     #[test]
+    fn the_confirmation_of_an_outcome_recorded_at_shutdown_reaches_the_supervisor() {
+        // Jobs run on their own threads, as in the engine, and no tick is left to start the one
+        // that sends the confirmation.
+        let (mut core, directory, confirmed, _) = core_confirming();
+        core.background = crate::offload::Background::default();
+        core.input_receipts.push(Waiting::for_test("a", "op-a", 0));
+
+        core.flush_all_input_receipts().unwrap();
+        for _ in 0..3 {
+            let Some(done) = core.send_follow_ups_before_exit() else {
+                break;
+            };
+            assert!(done.wait(Duration::from_secs(30)));
+        }
+
+        assert_eq!(*confirmed.lock().unwrap(), ["op-a"]);
+        assert!(core.send_follow_ups_before_exit().is_none());
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    #[test]
     fn an_outcome_is_due_when_the_clock_went_back() {
         let directory =
             std::env::temp_dir().join(format!("soyeht-receipts-{}", uuid::Uuid::new_v4()));
