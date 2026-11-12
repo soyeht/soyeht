@@ -14,7 +14,7 @@ use crate::{
     errors,
     hooks::Hooks,
     model::RunningPane,
-    ports::{PortScanError, PortScanObservation, PortScanPort},
+    ports::{PortScanError, PortScanObservation, PortScanPort, SupervisorPort},
     usage::FixtureHost,
 };
 use soyeht_ink::Recognizer;
@@ -54,6 +54,10 @@ const INK_RECOGNIZER_VARIABLE: &str = "SOYEHT_TEST_INK_RECOGNIZER_MS";
 /// Milliseconds starting a file-event stream takes, as on a busy machine.
 const SLOW_WATCH_VARIABLE: &str = "SOYEHT_TEST_SLOW_WATCH_MS";
 
+/// Writes one log line for every hold of the Core lock and every request to the supervisor, with
+/// the commits the stores have made so far (see [`crate::measuring`]).
+const MEASURE_COST_VARIABLE: &str = "SOYEHT_TEST_MEASURE_COST";
+
 /// Milliseconds the tick may sleep with no deadline and no event, in place of its second.
 const TICK_CEILING_VARIABLE: &str = "SOYEHT_TEST_TICK_CEILING_MS";
 
@@ -86,6 +90,7 @@ pub struct FileHooks {
     tick_ceiling: Option<std::time::Duration>,
     no_port_scan: bool,
     no_user_skills: bool,
+    measures_cost: bool,
 }
 
 impl FileHooks {
@@ -121,6 +126,7 @@ impl FileHooks {
             tick_ceiling,
             no_port_scan: std::env::var_os(NO_PORT_SCAN_VARIABLE).is_some(),
             no_user_skills: std::env::var_os(NO_USER_SKILLS_VARIABLE).is_some(),
+            measures_cost: std::env::var_os(MEASURE_COST_VARIABLE).is_some(),
             usage_fixtures: std::env::var_os(USAGE_FIXTURES_VARIABLE).map(PathBuf::from),
             poll_skills: std::env::var_os(POLL_SKILLS_VARIABLE).is_some(),
             ink_pause,
@@ -207,6 +213,28 @@ impl Hooks for FileHooks {
     fn usage_host(&self) -> Option<Arc<dyn Host>> {
         let directory = self.usage_fixtures.clone()?;
         Some(Arc::new(FixtureHost::new(directory)))
+    }
+
+    fn watches_holds(&self) -> bool {
+        self.measures_cost
+    }
+
+    fn lock_held(
+        &self,
+        purpose: &str,
+        method: &str,
+        held: std::time::Duration,
+        waited: std::time::Duration,
+    ) {
+        crate::measuring::lock_held(purpose, method, held, waited);
+    }
+
+    fn supervisor_port(&self, port: Box<dyn SupervisorPort>) -> Box<dyn SupervisorPort> {
+        if self.measures_cost {
+            Box::new(crate::measuring::Counting(port))
+        } else {
+            port
+        }
     }
 }
 

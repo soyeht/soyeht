@@ -13,6 +13,16 @@ pub(crate) fn watch(connection: &Connection) {
         TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_PROFILE,
         Some(trace),
     );
+    #[cfg(feature = "test-support")]
+    if connection
+        .commit_hook(Some(|| {
+            crate::test_support::commit_made();
+            false
+        }))
+        .is_err()
+    {
+        soyeht_platform::log::event("store.commit_hook_failed", &[]);
+    }
 }
 
 fn trace(event: TraceEvent<'_>) {

@@ -58,6 +58,8 @@ struct Hold {
     /// Raised when the hold ends, so the tick looks at what it may have changed. The tick's own
     /// holds do not raise it.
     kick: Option<Arc<tokio::sync::Notify>>,
+    /// The hooks, when they measure holds (a test engine).
+    watcher: Option<Arc<dyn Hooks>>,
 }
 
 thread_local! {
@@ -90,6 +92,7 @@ fn lock_requested<'a>(
     hold_cost::start();
     METHOD.with(|name| name.set(""));
     let kick = (!crate::tick::OWN_HOLDS.contains(&purpose)).then(|| core.background.kicker());
+    let watcher = core.hooks.watches_holds().then(|| Arc::clone(&core.hooks));
     Ok(CoreGuard {
         core,
         _forbidden: soyeht_process::forbid(HOLDER),
@@ -98,6 +101,7 @@ fn lock_requested<'a>(
             acquired,
             waited: acquired.saturating_duration_since(requested),
             kick,
+            watcher,
         },
     })
 }
@@ -149,13 +153,22 @@ impl DerefMut for CoreGuard<'_> {
 
 impl Drop for Hold {
     fn drop(&mut self) {
-        crate::slow_holds::note(&Observation {
+        let observation = Observation {
             purpose: self.purpose,
             method: METHOD.with(|name| name.replace("")),
             held: self.acquired.elapsed(),
             waited: self.waited,
             costs: hold_cost::finish(),
-        });
+        };
+        if let Some(watcher) = &self.watcher {
+            watcher.lock_held(
+                observation.purpose,
+                observation.method,
+                observation.held,
+                observation.waited,
+            );
+        }
+        crate::slow_holds::note(&observation);
         if let Some(kick) = &self.kick {
             kick.notify_one();
         }
