@@ -104,7 +104,7 @@ in `engine/soyeht-vcs/tests/`.
 | `attack_web` | `file`, `javascript`, `data`, `blob`, `about` and other schemes, credentials in an address, through every method that takes an address; the web pane limit of a workspace |
 | `attack_process` | hostile task text and a hostile folder name reach `wt` only as whole arguments |
 | `attack_floods` | more local and remote connections than the engine admits; a web page reaching for the remote listener; a message past the frame limit; a prompt past the size limit; a request exactly at the frame limit |
-| `soyeht-vcs` `hostile_repository` | a repository whose configuration names programs (monitor, filters, text conversion, pager, hooks) starts none of them when the editor reads it; a file named like an option stays a file name |
+| `soyeht-vcs` `hostile_repository` | a repository whose configuration names programs (monitor, filters, text conversion, external diff, editor, ssh command, proxy, credential and signing helpers, hooks) starts none of them when the editor reads it; a file named like an option stays a file name |
 
 Run them with
 `cargo test -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_`
