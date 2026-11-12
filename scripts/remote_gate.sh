@@ -26,7 +26,7 @@
 # is removed afterwards, whatever the outcome. A bundle that needs commits the host lacks fails
 # with exit 2. `--engine-test-args ARGS` is the package selection of `engine:test-changed`
 # (`-p soyeht-engine -p ...`, as the fast plan computes it); without it the step tests the whole
-# workspace. `--fuzz-seed NUMBER` is the `SOYEHT_FUZZ_SEED` of `security:fuzz-long` (a number per main
+# workspace. `--fuzz-seed NUMBER` is the `SOYEHT_GATE_FUZZ_SEED` of `security:fuzz-long` (a number per main
 # commit, so the culprit search replays the run that failed; scripts/gate_fuzz_seed.py).
 #
 # `--slot NAME` uses the worktree `.cache/remote-gate/tree-NAME` and its own timings file, so
@@ -259,8 +259,9 @@ run_gate() {
     [[ -n "${FORBIDDEN_TERMS:-}" ]] || export SOYEHT_SKIP_FORBIDDEN_TERMS=1
     export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-${SOYEHT_GATE_JOBS:-32}}"
     export RUST_TEST_THREADS="${RUST_TEST_THREADS:-${SOYEHT_GATE_TEST_THREADS:-16}}"
-    # The seed of the long fuzz run, which the post-merge gate chooses per main commit.
-    [[ -z "$fuzz_seed" ]] || export SOYEHT_FUZZ_SEED="$fuzz_seed"
+    # The seed of the long fuzz run, which the post-merge gate chooses per main commit. It is the
+    # gate's variable: only `security:fuzz-long` turns it into `SOYEHT_FUZZ_SEED`.
+    [[ -z "$fuzz_seed" ]] || export SOYEHT_GATE_FUZZ_SEED="$fuzz_seed"
     local gate='exec nice -n "${SOYEHT_GATE_NICE:-15}" bash scripts/check_all.sh --tier full --only "$SOYEHT_GATE_STEPS" ${SOYEHT_GATE_BASE:+--base "$SOYEHT_GATE_BASE"}'
     local -a launcher=(bash -c "$gate")
     if [[ -n "${SOYEHT_REMOTE_GATE_SHELL:-}" ]]; then

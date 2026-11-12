@@ -46,8 +46,10 @@ PREREQUISITES: dict[str, tuple[str, ...]] = {
     "security:attacks": ("engine:build",),
 }
 REMOTE_UNSUPPORTED_EXIT = UNSUPPORTED_STEP_EXIT
-# The seed of the long fuzz run (`security:fuzz-long`), which every run of this process shares.
-FUZZ_SEED_ENV = "SOYEHT_FUZZ_SEED"
+# The seed of the long fuzz run (`security:fuzz-long`), which every run of this process shares. A
+# gate-only variable: `check_all.sh` maps it to `SOYEHT_FUZZ_SEED` for that one step, so the short
+# `security:fuzz` keeps its fixed cases after the merge as before it.
+FUZZ_SEED_ENV = "SOYEHT_GATE_FUZZ_SEED"
 
 
 TO_STDOUT = Path("-")  # as a log: the gate's output stays on this process's standard output
@@ -253,7 +255,7 @@ def remote_steps_timings(remote: Remote) -> list[dict]:
 def fuzz_seed_of(main_head: str):
     """Every gate run made while this is open (the first, the rerun, the control on the last green
     main and each probe of the culprit search) gets the seed of `main_head`, the commit being
-    checked, in `SOYEHT_FUZZ_SEED`. The long fuzz run then replays the same cases on every commit
+    checked, in `SOYEHT_GATE_FUZZ_SEED`. The long fuzz run then replays the same cases on every commit
     the search tries, so a crash it found is reproduced there (a fresh seed per run would call it
     flaky, or blame a commit that did not cause it). A seed already in the environment wins."""
     if os.environ.get(FUZZ_SEED_ENV):

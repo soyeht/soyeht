@@ -62,8 +62,11 @@ hours before a release, or after a change to a parser, and keep any crash as a t
 
 The step prints its seed (`security:fuzz-long: SOYEHT_FUZZ_SEED=...`). It is not random: it is a
 number taken from the commit id (`scripts/gate_fuzz_seed.py`), or the `SOYEHT_FUZZ_SEED` of the
-environment when there is one. The post-merge gate hands every run of the step the seed of the
-main commit it checks (`post_merge.py`, and to the host of `--remote` as `--fuzz-seed`): the
+environment when there is one. The seed applies to the long run only: the short `security:fuzz`
+step keeps its fixed cases on every run, before and after the merge. The post-merge gate hands
+every run of the long step the seed of the main commit it checks, in the gate-only variable
+`SOYEHT_GATE_FUZZ_SEED` that only `security:fuzz-long` reads (`post_merge.py`, and to the host of
+`--remote` as `--fuzz-seed`): the
 rerun, the control on the last green main and each probe of the culprit search then replay the
 cases that found the crash, so the search blames the commit that introduced it, or reports it as
 reproduced on none of them, and not a different commit. To replay a crash by hand, run the

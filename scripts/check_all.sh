@@ -344,11 +344,12 @@ security_attacks() {
     cargo test --locked -p soyeht-engine --features soyeht-engine/contract-checks --test runtime attack_ &&
         cargo test --locked -p soyeht-vcs --test hostile_repository
 }
-# The seed is one number per commit (scripts/gate_fuzz_seed.py), or the SOYEHT_FUZZ_SEED the post-merge
-# gate passes: the seed of the main commit it checks, so the rerun and the culprit search over older
-# commits replay the run that failed. It is printed, to replay a crash by hand.
+# The seed is one number per commit (scripts/gate_fuzz_seed.py), or the SOYEHT_GATE_FUZZ_SEED the
+# post-merge gate passes: the seed of the main commit it checks, so the rerun and the culprit search
+# over older commits replay the run that failed. An explicit SOYEHT_FUZZ_SEED wins, to replay a crash
+# by hand. Only this step reads the gate's variable: `security_fuzz` keeps its fixed cases.
 security_fuzz_long() {
-    local seconds="${SOYEHT_FUZZ_LONG_SECONDS:-30}" seed="${SOYEHT_FUZZ_SEED:-}"
+    local seconds="${SOYEHT_FUZZ_LONG_SECONDS:-30}" seed="${SOYEHT_FUZZ_SEED:-${SOYEHT_GATE_FUZZ_SEED:-}}"
     if [[ -z "$seed" ]]; then
         seed="$(cd "$repo_root" && uv run python scripts/gate_fuzz_seed.py)" || return
     fi

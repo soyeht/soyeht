@@ -182,15 +182,19 @@ class FuzzSeedTests(SyntheticRepositoryCase):
         self.assertEqual(self.record(head)["culprit"]["sha"], culprit)
         runs = self.runs()
         # The run and its rerun are on the head; the control and the probes are on older commits.
-        self.assertEqual([sha for sha, _ in runs[:2]], [head, head])
-        self.assertGreater(len({sha for sha, _ in runs}), 2)
-        self.assertEqual({seed for _, seed in runs}, {str(gate_fuzz_seed.seed_for(head))})
-        self.assertNotIn("SOYEHT_FUZZ_SEED", os.environ)  # nothing leaks out of the run
+        self.assertEqual([sha for sha, _, _ in runs[:2]], [head, head])
+        self.assertGreater(len({sha for sha, _, _ in runs}), 2)
+        self.assertEqual({seed for _, seed, _ in runs}, {str(gate_fuzz_seed.seed_for(head))})
+        # The seed is the gate's own variable: no step but the long fuzz run reads it, so the
+        # short fuzz step keeps its fixed cases, and nothing leaks out of the run.
+        self.assertEqual({explicit for _, _, explicit in runs}, {"unset"})
+        self.assertNotIn("SOYEHT_GATE_FUZZ_SEED", os.environ)
+        self.assertNotIn("SOYEHT_FUZZ_SEED", os.environ)
 
     def test_a_seed_in_the_environment_is_kept(self):
-        with mock.patch.dict(os.environ, {"SOYEHT_FUZZ_SEED": "12345"}):
+        with mock.patch.dict(os.environ, {"SOYEHT_GATE_FUZZ_SEED": "12345"}):
             self.assertEqual(self.run_main(self.shas[0]), 0)
-        self.assertEqual({seed for _, seed in self.runs()}, {"12345"})
+        self.assertEqual({seed for _, seed, _ in self.runs()}, {"12345"})
 
     def test_the_seed_is_the_same_for_the_same_commit_and_differs_between_commits(self):
         first, second = "0123456789abcdef" * 2 + "01234567", "fedcba9876543210" * 2 + "01234567"
@@ -214,13 +218,39 @@ class FuzzSeedTests(SyntheticRepositoryCase):
         refused = subprocess.run([sys.executable, str(script), "main"], capture_output=True, text=True)
         self.assertEqual(refused.returncode, 64)
 
-    def test_check_all_gives_the_long_fuzz_run_a_seed_and_prints_it(self):
-        text = (Path(gate_fuzz_seed.__file__).with_name("check_all.sh")).read_text()
-        body = text[text.index("security_fuzz_long() {"):text.index("step engine both security:fuzz in_dir")]
-        self.assertIn('SOYEHT_FUZZ_SEED:-', body)  # one from the environment wins
-        self.assertIn("scripts/gate_fuzz_seed.py", body)  # else one per commit
-        self.assertIn('echo "security:fuzz-long: SOYEHT_FUZZ_SEED=$seed', body)  # and it is printed
-        self.assertEqual(body.count('SOYEHT_FUZZ_SEED="$seed" SOYEHT_FUZZ_SECONDS'), 2)  # both halves
+    def check_all_steps(self, seed_environment: dict[str, str]) -> dict[str, list[str]]:
+        """Runs the fuzz step functions of check_all.sh with `cargo` and `uv` replaced by functions
+        that print the seed they were given, and returns the lines each step printed."""
+        text = Path(gate_fuzz_seed.__file__).with_name("check_all.sh").read_text()
+        functions = text[text.index("security_fuzz() {"):text.index("step engine both security:fuzz in_dir")]
+        program = (
+            'cargo() { echo "cargo $1 seed=${SOYEHT_FUZZ_SEED:-unset}"; }\n'
+            'uv() { echo 777; }\nrepo_root=.\n' + functions +
+            'echo "== short"; security_fuzz; echo "== long"; security_fuzz_long\n')
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("SOYEHT_")}
+        shown = subprocess.run(["bash", "-c", program], capture_output=True, text=True, cwd=self.root,
+                               env={**environment, **seed_environment}, check=True).stdout
+        short, _, long = shown.partition("== long\n")
+        return {"short": short.splitlines()[1:], "long": long.splitlines()}
+
+    def test_only_the_long_fuzz_run_reads_the_seed_the_gate_passes(self):
+        steps = self.check_all_steps({"SOYEHT_GATE_FUZZ_SEED": "4242"})
+        self.assertTrue(steps["short"])
+        self.assertTrue(all(line.endswith("seed=unset") for line in steps["short"]), steps["short"])
+        self.assertIn("security:fuzz-long: SOYEHT_FUZZ_SEED=4242 SOYEHT_FUZZ_SECONDS=30", steps["long"])
+        runs = [line for line in steps["long"] if line.startswith("cargo")]
+        self.assertEqual(len(runs), 2)  # both halves
+        self.assertTrue(all(line.endswith("seed=4242") for line in runs), runs)
+
+    def test_the_long_fuzz_run_takes_an_explicit_seed_before_the_gate_seed_before_the_commit_seed(self):
+        explicit = self.check_all_steps({"SOYEHT_FUZZ_SEED": "5", "SOYEHT_GATE_FUZZ_SEED": "4242"})
+        self.assertIn("security:fuzz-long: SOYEHT_FUZZ_SEED=5 SOYEHT_FUZZ_SECONDS=30", explicit["long"])
+        # An explicit seed is the person's choice for a replay, and reaches the short run as well.
+        self.assertTrue(all(line.endswith("seed=5") for line in explicit["short"]), explicit["short"])
+        # With neither, the seed is the one of the commit (here the stand-in for gate_fuzz_seed.py).
+        derived = self.check_all_steps({})
+        self.assertIn("security:fuzz-long: SOYEHT_FUZZ_SEED=777 SOYEHT_FUZZ_SECONDS=30", derived["long"])
+        self.assertTrue(all(line.endswith("seed=unset") for line in derived["short"]), derived["short"])
 
 
 class ForcedRerunTests(SyntheticRepositoryCase):
