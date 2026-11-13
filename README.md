@@ -20,7 +20,7 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 ## Status
 
-Soyeht 0.1.0 is the first public release. It is early software: expect rough edges, and tell us about them (see "Privacy and support" below). The version history is in [CHANGELOG.md](CHANGELOG.md).
+Soyeht 0.1.0 is the first public release. Releases will be published on the [releases page](https://github.com/soyeht/soyeht/releases); until the first one is there, build from source (below). It is early software: expect rough edges, and tell us about them (see "Privacy and support" below). The version history is in [CHANGELOG.md](CHANGELOG.md).
 
 | System | What works today | What does not |
 | --- | --- | --- |
@@ -36,12 +36,12 @@ Four harnesses are supported today: Claude Code, Codex, Cursor and OpenCode. You
 
 ### Install
 
-Download the package for your system from the [releases page](https://github.com/soyeht/soyeht/releases) (the newest release is at `https://github.com/soyeht/soyeht/releases/latest`). The files are named `soyeht-<version>-<system>-<architecture>.<extension>`, and each release lists a `SHA256SUMS` file.
+Once a release is published, download the package for your system from the [releases page](https://github.com/soyeht/soyeht/releases) (the newest release is at `https://github.com/soyeht/soyeht/releases/latest`). The files are named `soyeht-<version>-<system>-<architecture>.<extension>`, and each release lists a `SHA256SUMS` file.
 
 - **macOS:** open `soyeht-<version>-macos-aarch64.dmg` and drag the app to Applications. The app is signed and notarized.
 - **Windows:** run `soyeht-<version>-windows-x86_64.exe` (or `-windows-aarch64.exe` on an Arm PC). It installs for your user and needs no administrator.
 - **Linux:** `sudo apt install ./soyeht-<version>-linux-<arch>.deb`, or make `soyeht-<version>-linux-<arch>.AppImage` executable and run it. [docs/platforms.md](docs/platforms.md) lists the libraries the machine needs.
-- **iPhone and iPad:** from the App Store.
+- **iPhone and iPad:** the App Store, at launch.
 
 [docs/getting-started.md](docs/getting-started.md) goes from the first launch to a terminal, an agent and a paired phone. [PRIVACY.md](PRIVACY.md) says what leaves your devices, [SECURITY.md](SECURITY.md) how to report a vulnerability and [CONTRIBUTING.md](CONTRIBUTING.md) how to build and change Soyeht.
 

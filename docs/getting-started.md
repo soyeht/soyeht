@@ -16,8 +16,10 @@ read "Status" in the [README](../README.md).
 
 ## Install
 
-Download the file for your system from the
-[releases page](https://github.com/soyeht/soyeht/releases). Each release lists a `SHA256SUMS`
+Releases are published on the
+[releases page](https://github.com/soyeht/soyeht/releases); until the first one is there, build from
+source ([CONTRIBUTING.md](../CONTRIBUTING.md)). Download the file for your system from a release.
+Each release lists a `SHA256SUMS`
 file you can check the download against.
 
 | System | File | Install |
@@ -27,7 +29,7 @@ file you can check the download against.
 | Linux | `soyeht-<version>-linux-<arch>.deb` and `.AppImage` | `sudo apt install ./soyeht-<version>-linux-<arch>.deb`, or make the AppImage executable and run it. |
 
 On Linux the machine must provide a few libraries, and web panes need GTK 3 and WebKitGTK 4.1;
-[docs/platforms.md](platforms.md) lists them. The iPhone and iPad app comes from the App Store.
+[docs/platforms.md](platforms.md) lists them. The iPhone and iPad app is on the App Store at launch.
 
 ## First launch
 

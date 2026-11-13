@@ -74,7 +74,7 @@ configuration. See [the real ACP procedure](archive/manual-acceptance-slice-2.md
 authenticated adapter and physical-device checks.
 
 Open a terminal by choosing a directory. The list and screen follow the engine.
-Use “Add iPhone” to display the QR; compare the comparison code on the phone before
+Use “Pair iPhone or iPad” to display the QR; compare the comparison code on the phone before
 allowing access. The code expires in ten minutes. Pairing requires the engine
 to have a tailnet address; loopback is only for local tests. Without one, the
 pairing sheet says “Not reachable from your devices” and why, and it refreshes
