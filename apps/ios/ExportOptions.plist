@@ -9,6 +9,9 @@
 	<string>app-store-connect</string>
 	<key>destination</key>
 	<string>export</string>
+	<!-- The build number is the one of contracts/release.json; Xcode must not raise it. -->
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
 	<key>signingStyle</key>
 	<string>manual</string>
 	<key>signingCertificate</key>

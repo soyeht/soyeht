@@ -114,8 +114,10 @@ class EntitlementTests(unittest.TestCase):
         self.assertEqual(set(package_ios.signing_entitlements(source, TEAM)) - set(source), set(package_ios.IDENTITY_KEYS))
 
     def test_the_exported_entitlements_pass_and_each_mistake_is_named(self):
-        self.assertEqual(package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM), [])
-        self.assertEqual(package_ios.check_entitlements({key: GOOD_ENTITLEMENTS[key] for key in package_ios.IDENTITY_KEYS}, TEAM), [])
+        declared = {"aps-environment"}
+        self.assertEqual(package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, declared), [])
+        identity_only = {key: GOOD_ENTITLEMENTS[key] for key in package_ios.IDENTITY_KEYS}
+        self.assertEqual(package_ios.check_entitlements(identity_only, TEAM, set()), [])
         cases = {
             "get-task-allow": ({**GOOD_ENTITLEMENTS, "get-task-allow": True}, "get-task-allow"),
             "development push": ({**GOOD_ENTITLEMENTS, "aps-environment": "development"}, "aps-environment"),
@@ -123,10 +125,18 @@ class EntitlementTests(unittest.TestCase):
             "other app": ({**GOOD_ENTITLEMENTS, "application-identifier": f"{TEAM}.com.example"}, "application-identifier"),
             "extra": ({**GOOD_ENTITLEMENTS, "com.apple.developer.healthkit": True}, "unexpected entitlement"),
             "none": ({}, "application-identifier"),
+            "push declared but missing": (identity_only, "aps-environment is missing"),
         }
         for name, (entitled, expected) in cases.items():
             with self.subTest(name):
-                self.assertIn(expected, "\n".join(package_ios.check_entitlements(entitled, TEAM)))
+                self.assertIn(expected, "\n".join(package_ios.check_entitlements(entitled, TEAM, declared)))
+
+    def test_push_the_file_does_not_declare_is_unexpected_in_the_app(self):
+        problems = package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, set())
+        self.assertEqual(problems, ["unexpected entitlement aps-environment"])
+
+    def test_the_declared_keys_are_those_of_the_repository_file(self):
+        self.assertEqual(package_ios.declared_entitlements(), set(plistlib.loads(package_ios.ENTITLEMENTS.read_bytes())))
 
 
 class ExportTests(unittest.TestCase):
@@ -137,6 +147,7 @@ class ExportTests(unittest.TestCase):
         self.assertNotIn("teamID", options)
         self.assertIn(package_ios.APP_ID, options["provisioningProfiles"])
         self.assertEqual(options["signingCertificate"], "Apple Distribution")
+        self.assertIs(options["manageAppVersionAndBuildNumber"], False)
 
     def test_the_team_and_identity_come_from_the_environment_into_a_copy(self):
         template = package_ios.EXPORT_OPTIONS.read_bytes()
@@ -160,9 +171,12 @@ class ExportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             scratch = Path(temporary)
             calls = []
+            written = {}
 
             def export(command, **_):
                 calls.append([str(part) for part in command])
+                options = Path(command[command.index("-exportOptionsPlist") + 1])
+                written.update(plistlib.loads(options.read_bytes()), options_file=options)
                 folder = Path(command[command.index("-exportPath") + 1])
                 folder.mkdir(parents=True, exist_ok=True)
                 (folder / "Soyeht Next.ipa").write_bytes(b"zip")
@@ -171,8 +185,10 @@ class ExportTests(unittest.TestCase):
                 ipa = package_ios.export_archive(signing, scratch)
             self.assertEqual(ipa.name, "Soyeht Next.ipa")
             self.assertEqual(calls[0][:2], ["xcodebuild", "-exportArchive"])
-            written = plistlib.loads((scratch / "ExportOptions.plist").read_bytes())
             self.assertEqual(written["teamID"], TEAM)
+            self.assertFalse(written["options_file"].exists(), "the options hold the team and the identity")
+            self.assertFalse((scratch / "ExportOptions.plist").exists())
+
             def two(*_a, **_k):
                 (scratch / "export").mkdir(exist_ok=True)
                 (scratch / "export/Another.ipa").write_bytes(b"zip")
@@ -182,22 +198,100 @@ class ExportTests(unittest.TestCase):
                 with self.assertRaisesRegex(PackagingError, "not one"):
                     package_ios.export_archive(signing, scratch)
 
+    def sign(self, app, signing):
+        calls = []
+        seen = {}
+
+        def record(command, **options):
+            calls.append([str(part) for part in command])
+            if "--entitlements" in command:
+                file = Path(command[command.index("--entitlements") + 1])
+                seen.update(plistlib.loads(file.read_bytes()), entitlements_file=file)
+
+        with patch.object(package_ios, "run", side_effect=record):
+            package_ios.sign_app(app, signing)
+        return calls, seen
+
     def test_signing_runs_the_nested_code_first_and_then_the_app_with_its_entitlements(self):
         signing = package_ios.resolve_signing(FULL)
         with tempfile.TemporaryDirectory() as temporary:
             app = Path(temporary) / "Soyeht Next.app"
             (app / "Frameworks/Inner.framework").mkdir(parents=True)
             (app / "PlugIns/Ext.appex").mkdir(parents=True)
-            calls = []
-            with patch.object(package_ios, "run", side_effect=lambda command, **_: calls.append([str(part) for part in command])):
-                package_ios.sign_app(app, signing, Path(temporary))
+            calls, seen = self.sign(app, signing)
             self.assertEqual(len(calls), 3)
             self.assertTrue(all(call[:3] == ["codesign", "--force", "--sign"] for call in calls))
             self.assertNotIn("--entitlements", calls[0] + calls[1])
             self.assertIn("--entitlements", calls[2])
             self.assertEqual(calls[2][-1], str(app))
-            written = plistlib.loads((Path(temporary) / "signing.entitlements").read_bytes())
-            self.assertEqual(written["com.apple.developer.team-identifier"], TEAM)
+            self.assertEqual(seen["com.apple.developer.team-identifier"], TEAM)
+            self.assertFalse(seen["entitlements_file"].exists(), "the entitlements hold the team")
+
+    def test_nested_code_is_signed_deepest_first(self):
+        signing = package_ios.resolve_signing(FULL)
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "Soyeht Next.app"
+            library = app / "PlugIns/Foo.appex/Frameworks/Bar.framework"
+            library.mkdir(parents=True)
+            (library / "Baz.dylib").write_bytes(b"x")
+            calls, _ = self.sign(app, signing)
+        order = [Path(call[-1]).name for call in calls]
+        self.assertEqual(order, ["Baz.dylib", "Bar.framework", "Foo.appex", "Soyeht Next.app"])
+
+
+class RedactionTests(unittest.TestCase):
+    KEY = ("/keys/AuthKey_EXAMPLEKEY1.p8", "EXAMPLEKEY1", "11111111-2222-3333-4444-555555555555")
+
+    def printed(self, call):
+        output = io.StringIO()
+        with (
+            patch.object(package_common.subprocess, "run", return_value=result()),
+            contextlib.redirect_stdout(output),
+        ):
+            call()
+        return output.getvalue()
+
+    def test_validation_prints_the_command_without_the_key_file_id_or_issuer(self):
+        text = self.printed(lambda: package_ios.validate(Path("a.ipa"), self.KEY))
+        self.assertTrue(text.startswith("+ xcrun altool --validate-app"), text)
+        for secret in self.KEY:
+            self.assertNotIn(secret, text)
+        self.assertIn(package_common.REDACTED, text)
+
+    def test_signing_prints_the_command_without_the_certificate_name(self):
+        signing = package_ios.resolve_signing(FULL)
+        with tempfile.TemporaryDirectory() as temporary:
+            app = Path(temporary) / "Soyeht Next.app"
+            app.mkdir()
+            text = self.printed(lambda: package_ios.sign_app(app, signing))
+        self.assertIn("+ codesign --force --sign " + package_common.REDACTED, text)
+        self.assertNotIn(FULL[package_ios.IDENTITY_VARIABLE], text)
+        self.assertNotIn("Example", text)
+
+    def test_the_longer_secret_is_masked_whole_when_one_holds_another(self):
+        line = package_common.printable(["x", "Apple Distribution: Example (ABCDE12345)", TEAM], mask=(TEAM, "Apple Distribution: Example (ABCDE12345)"))
+        self.assertEqual(line, f"+ x {package_common.REDACTED} {package_common.REDACTED}")
+
+    def test_a_command_with_nothing_to_mask_is_printed_as_it_is(self):
+        self.assertEqual(package_common.printable(["a", Path("b")]), "+ a b")
+
+    def test_the_mac_notary_credentials_and_identity_are_masked_too(self):
+        import package_mac
+
+        signing = package_mac.Signing(
+            "Developer ID Application: Example (ABCDE12345)", TEAM, ("--key", *self.KEY[:1], "--key-id", self.KEY[1], "--issuer", self.KEY[2])
+        )
+        calls = []
+        with (
+            patch.object(package_common.subprocess, "run", return_value=result('{"status": "Accepted"}')),
+            contextlib.redirect_stdout(io.StringIO()) as output,
+        ):
+            package_mac.notarize(Path("x.zip"), signing)
+            calls.append(output.getvalue())
+        text = calls[0]
+        self.assertTrue(text.startswith("+ xcrun notarytool submit x.zip"), text)
+        for secret in self.KEY:
+            self.assertNotIn(secret, text)
 
 
 class VerifyTests(unittest.TestCase):
@@ -327,8 +421,9 @@ class ValidateTests(unittest.TestCase):
     def test_validation_asks_for_the_file_to_be_checked_and_never_uploads(self):
         environment = self.api_key()
         command = [str(part) for part in package_ios.validate_command(Path("a.ipa"), package_common.api_key(environment))]
-        self.assertEqual(command[:4], ["xcrun", "altool", "--validate-app", "--type"])
-        self.assertIn("ios", command)
+        self.assertEqual(command[:4], ["xcrun", "altool", "--validate-app", "a.ipa"])
+        self.assertNotIn("--type", command)
+        self.assertNotIn("--file", command)
         self.assertNotIn("--upload-app", command)
         self.assertEqual(command[command.index("--api-key") + 1], "EXAMPLEKEY1")
         self.assertEqual(command[command.index("--p8-file-path") + 1], environment[package_common.NOTARY_KEY_FILE_VARIABLE])

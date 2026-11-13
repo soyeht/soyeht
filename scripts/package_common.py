@@ -161,9 +161,22 @@ def _words(command):
     return [str(part) for part in command]
 
 
-def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=None):
-    """Run a command, print it first, and return the finished process (output captured)."""
-    print("+ " + " ".join(_words(command)), flush=True)
+REDACTED = "<redacted>"
+
+
+def printable(command, mask=()):
+    """The line a command is announced with: `mask` holds what must not reach a terminal or a log
+    (a certificate's name, the API key's file, identifier and issuer), each replaced by `<redacted>`."""
+    line = " ".join(_words(command))
+    for value in sorted({str(secret) for secret in mask if secret}, key=len, reverse=True):
+        line = line.replace(value, REDACTED)
+    return "+ " + line
+
+
+def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=None, mask=()):
+    """Run a command, print it first (without what `mask` names), and return the finished process
+    (output captured)."""
+    print(printable(command, mask), flush=True)
     result = subprocess.run(
         _words(command), capture_output=True, text=True, timeout=timeout, env=environment, cwd=cwd,
     )
@@ -173,9 +186,9 @@ def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=N
     return result
 
 
-def stream(command, *, environment=None, cwd=None):
+def stream(command, *, environment=None, cwd=None, mask=()):
     """Run a long build with its output on the terminal."""
-    print("+ " + " ".join(_words(command)), flush=True)
+    print(printable(command, mask), flush=True)
     status = subprocess.run(_words(command), env=environment, cwd=cwd).returncode
     if status:
         raise PackagingError(f"{command[0]} failed with status {status}")

@@ -97,6 +97,11 @@ class Signing:
     team: str
     profile: str | None = None  # None: the one `ExportOptions.plist` names
 
+    @property
+    def secrets(self):
+        """What a printed command must not show: the certificate's name holds a person's name."""
+        return (self.identity,)
+
 
 def resolve_signing(environment):
     """The signing the environment asks for; an iPhone build has no ad-hoc form, so a missing
@@ -178,13 +183,15 @@ def codesign_command(path, signing, entitlements=None):
     return [*command, path]
 
 
-def sign_app(app, signing, scratch):
-    """Sign what the app holds, then the app with its entitlements."""
-    entitlements = scratch / "signing.entitlements"
-    entitlements.write_bytes(plistlib.dumps(signing_entitlements(plistlib.loads(ENTITLEMENTS.read_bytes()), signing.team)))
-    for path in nested_code(app):
-        run(codesign_command(path, signing))
-    run(codesign_command(app, signing, entitlements))
+def sign_app(app, signing):
+    """Sign what the app holds, then the app with its entitlements. The entitlements file holds the
+    team, so it lives in a folder that is removed when the signing ends."""
+    with tempfile.TemporaryDirectory(prefix="soyeht-ios-entitlements-") as private:
+        entitlements = Path(private) / "signing.entitlements"
+        entitlements.write_bytes(plistlib.dumps(signing_entitlements(plistlib.loads(ENTITLEMENTS.read_bytes()), signing.team)))
+        for path in nested_code(app):
+            run(codesign_command(path, signing), mask=signing.secrets)
+        run(codesign_command(app, signing, entitlements), mask=signing.secrets)
 
 
 # --- exporting ------------------------------------------------------------------------------------
@@ -206,12 +213,16 @@ def export_options(template, signing):
 
 def export_archive(signing, scratch):
     """`xcodebuild -exportArchive` of the signed archive; returns the `.ipa` it wrote."""
-    options = scratch / "ExportOptions.plist"
-    options.write_bytes(plistlib.dumps(export_options(EXPORT_OPTIONS.read_bytes(), signing)))
     folder = scratch / "export"
     if folder.exists():
         shutil.rmtree(folder)
-    stream(["xcodebuild", "-exportArchive", "-archivePath", archive_path(), "-exportPath", folder, "-exportOptionsPlist", options])
+    with tempfile.TemporaryDirectory(prefix="soyeht-ios-export-") as private:  # the options hold the team and the identity
+        options = Path(private) / "ExportOptions.plist"
+        options.write_bytes(plistlib.dumps(export_options(EXPORT_OPTIONS.read_bytes(), signing)))
+        stream(
+            ["xcodebuild", "-exportArchive", "-archivePath", archive_path(), "-exportPath", folder, "-exportOptionsPlist", options],
+            mask=signing.secrets,
+        )
     found = sorted(folder.glob("*.ipa"))
     if len(found) != 1:
         raise PackagingError(f"the export wrote {len(found)} .ipa files in {folder}, not one")
@@ -233,8 +244,15 @@ def save_symbols(archive, destination):
 # --- checking the result ---------------------------------------------------------------------------
 
 
-def check_entitlements(entitled, team):
-    """The entitlements of the exported app against what an App Store build of this app holds."""
+def declared_entitlements():
+    """The entitlement keys the repository's file declares: the ones the exported app must carry."""
+    return set(plistlib.loads(ENTITLEMENTS.read_bytes()))
+
+
+def check_entitlements(entitled, team, declared):
+    """The entitlements of the exported app against what an App Store build of this app holds: the
+    identity keys, every key the repository's file `declared` (push must be `production`) and, beyond
+    those, only what the profile adds."""
     problems = []
     wanted = {
         "application-identifier": f"{team}.{APP_ID}",
@@ -242,9 +260,10 @@ def check_entitlements(entitled, team):
         "get-task-allow": False,
     }
     problems += [f"{key} is {entitled.get(key)!r}, not {value!r}" for key, value in wanted.items() if entitled.get(key) != value]
-    if PUSH_KEY in entitled and entitled[PUSH_KEY] != PUSH_PRODUCTION:
+    problems += [f"{key} is missing: the app declares it" for key in sorted(declared - set(IDENTITY_KEYS) - set(entitled))]
+    if PUSH_KEY in declared and PUSH_KEY in entitled and entitled[PUSH_KEY] != PUSH_PRODUCTION:
         problems.append(f"{PUSH_KEY} is {entitled[PUSH_KEY]!r}: an App Store build uses {PUSH_PRODUCTION!r}")
-    allowed = {*IDENTITY_KEYS, *PROFILE_KEYS, PUSH_KEY}
+    allowed = {*IDENTITY_KEYS, *PROFILE_KEYS, *declared}
     problems += [f"unexpected entitlement {key}" for key in sorted(set(entitled) - allowed)]
     return problems
 
@@ -286,7 +305,7 @@ def verify_app(app, team, made):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     problems = info_problems(info, APP_ID, made)
     problems += check_signature(signature_details(app), team)
-    problems += check_entitlements(entitlement_values(app), team)
+    problems += check_entitlements(entitlement_values(app), team, declared_entitlements())
     problems += check_profile(embedded_profile(app), team)
     return problems
 
@@ -308,12 +327,13 @@ def verify_ipa(ipa, team, made):
 def validate_command(ipa, key):
     """`altool --validate-app`: App Store Connect checks the file and keeps nothing; never an upload."""
     key_file, key_id, issuer = key
-    return ["xcrun", "altool", "--validate-app", "--type", "ios", "--file", ipa,
+    return ["xcrun", "altool", "--validate-app", ipa,
             "--api-key", key_id, "--api-issuer", issuer, "--p8-file-path", key_file]
 
 
 def validate(ipa, key):
-    run(validate_command(ipa, key), timeout=1800)
+    """The key's file, identifier and issuer are not printed with the command."""
+    run(validate_command(ipa, key), timeout=1800, mask=key)
 
 
 # --- the whole run ------------------------------------------------------------------------------
@@ -345,7 +365,7 @@ def package(options, environment):
     if options.validate and not key:
         raise PackagingError("--validate needs the App Store Connect API key variables in the environment (see --help)")
     app = archive_app(made, environment)
-    sign_app(app, signing, WORK)
+    sign_app(app, signing)
     exported = export_archive(signing, WORK)
     folder = options.dist
     ipa = artifact_path(folder, made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "ipa")
@@ -356,7 +376,7 @@ def package(options, environment):
     checksum = write_checksum(ipa)
     print(f"\nIPA       {ipa}\nChecksum  {checksum}")
     print(f"Symbols   {symbols or 'the archive has none'}  (keep it with the release; it is not part of the package)")
-    print(f"Signing   Apple Distribution, team {signing.team}")
+    print("Signing   Apple Distribution")
     for problem in problems:
         print(f"PROBLEM: {problem}", file=sys.stderr)
     check_sizes([ipa])

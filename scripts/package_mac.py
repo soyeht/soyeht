@@ -123,6 +123,11 @@ class Signing:
         return self.identity is None
 
     @property
+    def secrets(self):
+        """What a printed command must not show: the certificate's name and the notary credentials."""
+        return (self.identity, *[part for part in self.notary or () if not part.startswith("--")])
+
+    @property
     def notarizes(self):
         return self.notary is not None
 
@@ -334,14 +339,14 @@ def sign_bundle(app, signing):
         identifier = by_name.get(path.name) if path.parent == app / HELPERS_FOLDER else None
         if identifier:
             require_next("signing identifier", identifier)
-        run(codesign_command(path, signing, identifier=identifier))
-    run(codesign_command(app, signing, entitlements=ENTITLEMENTS))
+        run(codesign_command(path, signing, identifier=identifier), mask=signing.secrets)
+    run(codesign_command(app, signing, entitlements=ENTITLEMENTS), mask=signing.secrets)
 
 
 def sign_file(path, signing):
     """A disk image: a secure timestamp and no entitlements (ad-hoc images stay unsigned)."""
     if not signing.ad_hoc:
-        run(["codesign", "--force", "--sign", signing.identity, "--timestamp", path])
+        run(["codesign", "--force", "--sign", signing.identity, "--timestamp", path], mask=signing.secrets)
 
 
 # --- notarizing ---------------------------------------------------------------------------------
@@ -352,12 +357,12 @@ def notarize(path, signing):
     submitted = run(
         ["xcrun", "notarytool", "submit", path, *signing.notary,
          "--wait", "--timeout", NOTARY_TIMEOUT, "--output-format", "json"],
-        check=False, timeout=3700,
+        check=False, timeout=3700, mask=signing.secrets,
     )
     verdict = parse_verdict(submitted.stdout)
     if verdict.get("status") != "Accepted":
         if verdict.get("id"):
-            log = run(["xcrun", "notarytool", "log", verdict["id"], *signing.notary], check=False)
+            log = run(["xcrun", "notarytool", "log", verdict["id"], *signing.notary], check=False, mask=signing.secrets)
             print(log.stdout or log.stderr)
         raise PackagingError(f"Notarization of {path.name} was not accepted: {verdict.get('status', 'no answer')}")
 
