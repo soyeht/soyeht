@@ -20,7 +20,7 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 ## Status
 
-Soyeht 0.1.0 is the first public release. Releases will be published on the [releases page](https://github.com/soyeht/soyeht/releases); until the first one is there, build from source (below). It is early software: expect rough edges, and tell us about them (see "Privacy and support" below). The version history is in [CHANGELOG.md](CHANGELOG.md).
+Soyeht 0.1.0 will be the first public release. Releases are published on the [releases page](https://github.com/soyeht/soyeht/releases); until the first one is there, build from source (below). It is early software: expect rough edges, and tell us about them (see "Privacy and support" below). The version history is in [CHANGELOG.md](CHANGELOG.md).
 
 | System | What works today | What does not |
 | --- | --- | --- |
