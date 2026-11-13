@@ -514,7 +514,7 @@ fn assert_pairing_proved_by(
 }
 
 #[test]
-fn a_local_shell_cannot_decide_a_pairing_where_the_app_can_be_told_apart() {
+fn a_local_shell_cannot_decide_a_pairing_on_any_system() {
     let rig = Rig::new();
     let mut shell = rig.client();
     let decide = |client: &mut Client| {
@@ -531,15 +531,7 @@ fn a_local_shell_cannot_decide_a_pairing_where_the_app_can_be_told_apart() {
             .get("error")
             .is_none()
     );
-    let attested = soyeht_engine::ui_attestation::available();
-    assert_eq!(
-        decide(&mut shell),
-        if attested {
-            "forbidden_role"
-        } else {
-            "unauthorized"
-        }
-    );
+    assert_eq!(decide(&mut shell), "forbidden_role");
     // The app (here, the same client once the test program is trusted) reaches the lookup.
     std::fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
     let mut app = rig.client();

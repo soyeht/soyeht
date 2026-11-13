@@ -112,15 +112,17 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
-Only the local human opens the window. On macOS only the signed Soyeht app decides a request
-or revokes a device (a shell or script on the local socket, including a terminal a paired device
-opened, gets `forbidden_role`); on Windows and Linux there is no attestation yet, so any process of
-the same user on the local socket counts as the computer, until those apps can prove they are the
-official app. A paired device may revoke only itself (ADR 0128). Attestation does not stop a program
-of the same operating-system user that writes the database or adds a LaunchAgent, such as a phone's
+Only the local human opens the window. Only the signed Soyeht app decides a request or revokes
+a device, on every system: a shell, the command line, a script or a terminal a paired device
+opened on the local endpoint gets `forbidden_role`, and neither the command line nor the MCP program
+has a command for either. Where the engine cannot tell the app from another program, which today is
+Windows and Linux, no connection counts as the app, so a pairing is approved and a device revoked
+nowhere on that system until its app can prove itself (ADR 0162, which holds the open question). A
+paired device may revoke only itself (ADR 0128). Attestation does not stop a program of the same
+operating-system user that writes the database or adds a LaunchAgent, such as a phone's
 terminal. An engine that does not carry the Soyeht signature refuses even the app on macOS
 (`forbidden_role`, see `docs/dev-local.md`). `device.pair.start` stays open to a shell, but the
-person still has to see the request on the Mac and reject it or leave it undecided.
+person still has to see the request in the app and reject it or leave it undecided.
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any

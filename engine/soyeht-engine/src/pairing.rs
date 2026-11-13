@@ -49,9 +49,15 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
 /// The refusal of a decision or a revocation. When a local human is refused because this engine
 /// does not carry our signature, it cannot tell the signed app from any other program, so even the
 /// app is refused: say so, and log it once with its kind only (docs/dev-local.md says how to sign
-/// the engine).
+/// the engine). On a system that attests nothing the app cannot be told from a shell either, and
+/// the refusal says that the app cannot yet prove itself there (ADR 0162).
 fn refusal(local_human: bool) -> errors::Error {
     static LOGGED: Once = Once::new();
+    if local_human && !ui_attestation::available() {
+        return errors::forbidden_role(
+            "Pairing is approved, and other devices are revoked, only in the signed Soyeht app, and on this system the app cannot yet prove itself to the engine, so no pairing is approved and no device is revoked here",
+        );
+    }
     if local_human && ui_attestation::engine_cannot_attest() {
         LOGGED.call_once(|| {
             log::event(
@@ -64,7 +70,7 @@ fn refusal(local_human: bool) -> errors::Error {
         );
     }
     errors::forbidden_role(
-        "Pairing is approved, and other devices are revoked, in the Soyeht app on this Mac",
+        "Pairing is approved, and other devices are revoked, in the Soyeht app on this computer",
     )
 }
 
@@ -286,10 +292,10 @@ impl Core {
         Ok(())
     }
 
-    /// Who may change which devices can control this Mac (ADR 0128). Any local human may open a
-    /// pairing window; deciding a request and revoking a device are the signed Mac app's alone
-    /// where the system can tell it from a shell or script (`ui_attestation::available`), and a
-    /// local human's elsewhere. A paired device may only revoke itself.
+    /// Who may change which devices can control this computer (ADR 0128, 0162). Any local human may
+    /// open a pairing window; deciding a request and revoking a device are the signed app's alone,
+    /// on every system. Where the engine cannot attest the app (`ui_attestation::available`), no
+    /// connection is the app and both are refused. A paired device may only revoke itself.
     fn authorize_device_management(
         &self,
         connection: &str,
@@ -302,7 +308,7 @@ impl Core {
             let target: DeviceRevokeParams = model::typed_params(params)?;
             actor.is_some_and(|actor| actor.device_id.as_deref() == Some(target.device_id.as_str()))
         };
-        let app = client.is_some_and(|client| client.signed_ui) || !ui_attestation::available();
+        let app = client.is_some_and(|client| client.signed_ui);
         let allowed = match actor.map(|actor| &actor.role) {
             Some(Role::HumanLocal) => method == method::DEVICE_PAIR_START || app,
             Some(Role::HumanDevice) => own_revocation,
@@ -581,15 +587,9 @@ mod tests {
             ]
         };
         assert_eq!(kinds(&app), app_kinds());
-        // A shell may start a request. Where the system can tell the app from it, it cannot
-        // decide one or revoke a device; elsewhere every local program counts as the app.
-        let shell_kinds = if ui_attestation::available() {
-            let refused = || Some(ErrorKind::ForbiddenRole);
-            [None, refused(), refused(), refused()]
-        } else {
-            app_kinds()
-        };
-        assert_eq!(kinds(&local), shell_kinds);
+        // A shell may start a request. It cannot decide one or revoke a device, on any system.
+        let refused = || Some(ErrorKind::ForbiddenRole);
+        assert_eq!(kinds(&local), [None, refused(), refused(), refused()]);
         drop(core);
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -615,6 +615,17 @@ mod tests {
                 .to_string()
                 .contains("does not carry the Soyeht signature")
         );
+    }
+
+    /// Where nothing is attested, the refusal says the app cannot yet prove itself, not that the
+    /// person should use an app that has no way to be believed.
+    #[cfg(not(target_os = "macos"))]
+    #[test]
+    fn a_system_without_attestation_says_the_app_cannot_yet_prove_itself() {
+        assert!(!ui_attestation::available());
+        let message = refusal(true).to_string();
+        assert!(message.contains("cannot yet prove itself"), "{message}");
+        assert!(message.contains("Soyeht app"), "{message}");
     }
 
     #[tokio::test]
