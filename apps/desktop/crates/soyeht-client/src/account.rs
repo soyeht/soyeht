@@ -3,7 +3,7 @@
 //! reports, so every client says the same thing (the Mac's `AgentAccountActions`, which passes the
 //! same vectors).
 
-use crate::cards::SignInMethod;
+use crate::{Command, cards::SignInMethod};
 use soyeht_protocol::{AgentSession, PaneState};
 
 /// One thing a person can do about the account of a signed-in agent pane.
@@ -11,6 +11,21 @@ use soyeht_protocol::{AgentSession, PaneState};
 pub enum AccountAction {
     SwitchTo(String),
     SignOut,
+}
+
+impl AccountAction {
+    /// The request that runs the action on the agent pane `pane_id`: the engine runs the sign-in
+    /// in a terminal pane next to the agent and restarts the session afterwards.
+    pub fn command(&self, pane_id: &str) -> Command {
+        let pane_id = pane_id.to_owned();
+        match self {
+            Self::SwitchTo(method) => Command::StartSignIn {
+                pane_id,
+                method_id: Some(method.clone()),
+            },
+            Self::SignOut => Command::SignOut { pane_id },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

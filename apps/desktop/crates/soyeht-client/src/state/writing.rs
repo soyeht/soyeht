@@ -2,7 +2,7 @@
 //! a file of the editor's replica, the lists of the sections, and what the person does in a text.
 //! The rules are in `crate::writing`; this is where they meet the panes and the editor's files.
 
-use super::{Effect, State};
+use super::{Effect, State, problem};
 use crate::{
     editor::EditorEvent,
     pane_close::Closing,
@@ -14,7 +14,7 @@ use crate::{
 use serde_json::Value;
 use soyeht_protocol::{
     FileDocument, FileOpenResult, PaneMode, ScreenplayElementKind, WritingChangedEvent,
-    WritingDocument, WritingFormatKind, WritingSection,
+    WritingDocument, WritingFormatKind, WritingKind, WritingSection, WritingSlide,
 };
 
 /// What the button that opens an agent beside a document does now.
@@ -31,17 +31,40 @@ pub enum Companion {
 }
 
 impl State {
+    /// The kind of the document a writing pane shows.
+    pub fn writing_kind(&self, pane_id: &str) -> Option<WritingKind> {
+        self.pane(pane_id)
+            .filter(|pane| pane.mode == PaneMode::Writing)
+            .and_then(|pane| pane.writing_kind.clone())
+    }
+
+    /// The slides of a presentation pane, as the engine last split them.
+    pub fn writing_slides(&self, pane_id: &str) -> Vec<WritingSlide> {
+        self.writings
+            .of_pane(pane_id)
+            .and_then(|document| document.slides())
+            .map(<[_]>::to_vec)
+            .unwrap_or_default()
+    }
+
     /// What opening an agent beside the document `pane_id` does: one agent is a document's
-    /// companion, and one request is enough while it is on its way.
-    pub fn companion_step(&self, pane_id: &str) -> Companion {
+    /// companion, and one request is enough while it is on its way. When no agent can start,
+    /// the person is told so.
+    pub fn companion_step(&mut self, pane_id: &str) -> Companion {
         if let Some(agent) = self.companion_of(pane_id) {
             return Companion::Focus(agent);
         }
         if self.companion_pending(pane_id) {
             return Companion::Wait;
         }
-        self.default_harness()
-            .map_or(Companion::NoAgent, |harness| Companion::Open { harness })
+        let Some(harness) = self.default_harness() else {
+            self.report(
+                problem::kind::COMPANION_UNAVAILABLE,
+                "No agent is ready to open beside this document. Check Preferences.",
+            );
+            return Companion::NoAgent;
+        };
+        Companion::Open { harness }
     }
 
     /// What the close button of a text or a screenplay does: the pane closes at once, or asks
@@ -188,13 +211,39 @@ impl State {
         cursor: usize,
         tab: bool,
     ) -> Option<(Advance, ScreenplayElementKind)> {
-        let line = text.get(..cursor)?.matches('\n').count();
+        let line = document::line_at(text, cursor)?;
         let kind = self
             .writings
             .kind_at(pane_id, line)
             .unwrap_or(ScreenplayElementKind::Action);
         let edit = screenplay::advance_edit(text, cursor, &kind, tab)?;
         Some((edit, screenplay::next_kind(&kind, tab)))
+    }
+
+    /// The line of a screenplay pane that the caret (byte `cursor` of `text`) is on has just
+    /// been made the element `kind`, which the engine is asked about again once the edit has
+    /// reached it.
+    pub fn screenplay_assume(
+        &mut self,
+        pane_id: &str,
+        text: &str,
+        cursor: usize,
+        kind: ScreenplayElementKind,
+    ) {
+        let line = document::line_at(text, cursor).unwrap_or(0);
+        self.writings.assume(pane_id, line, kind);
+    }
+
+    /// What the field of a writing pane must load to show the page: the text of the page when the
+    /// field holds another (`held`), because the engine changed it (an agent, a format, another
+    /// client) or an edit was refused. The lines of a screenplay move with it.
+    pub fn writing_page_to_load(&mut self, pane_id: &str, held: &str) -> Option<String> {
+        let text = self.editors.file_of_pane(pane_id)?.whole_text()?;
+        if held == text {
+            return None;
+        }
+        self.writings.follow(pane_id, &text);
+        Some(text)
     }
 
     /// Formats the selected text of a writing pane, which the field holds as `text`.

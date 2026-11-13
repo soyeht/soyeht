@@ -7,6 +7,23 @@ use serde_json::json;
 use crate::testing::{agent_session as agent, vector};
 
 #[test]
+fn an_account_action_is_the_request_the_engine_runs_on_the_pane() {
+    assert_eq!(
+        AccountAction::SwitchTo("login".into()).command("p"),
+        Command::StartSignIn {
+            pane_id: "p".into(),
+            method_id: Some("login".into())
+        }
+    );
+    assert_eq!(
+        AccountAction::SignOut.command("p"),
+        Command::SignOut {
+            pane_id: "p".into()
+        }
+    );
+}
+
+#[test]
 fn the_account_section_follows_the_shared_vectors() {
     let vectors = vector("agent-account");
     assert_eq!(SECTION_TITLE, vectors["copy"]["sectionTitle"]);

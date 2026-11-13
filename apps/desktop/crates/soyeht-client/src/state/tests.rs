@@ -656,6 +656,12 @@ fn document_state() -> State {
 fn opening_an_agent_beside_a_document_follows_what_is_ready_and_what_is_on_its_way() {
     let mut state = document_state();
     assert_eq!(state.companion_step("d"), Companion::NoAgent);
+    // The person is told, and the failure is not made when an agent can start.
+    assert_eq!(
+        state.problem(),
+        Some("No agent is ready to open beside this document. Check Preferences.")
+    );
+    state.dismiss_problem();
     state.harnesses = vec![crate::testing::harness("claude", true)];
     assert_eq!(
         state.companion_step("d"),
@@ -665,6 +671,7 @@ fn opening_an_agent_beside_a_document_follows_what_is_ready_and_what_is_on_its_w
     );
     state.expect_split(1, "d", WorkspacePaneLayoutAxis::Horizontal);
     assert_eq!(state.companion_step("d"), Companion::Wait);
+    assert_eq!(state.problem(), None);
 }
 
 #[test]
