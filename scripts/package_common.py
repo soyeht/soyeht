@@ -126,31 +126,36 @@ def size_ceiling(path, ceilings):
     return kind, ceilings[kind]
 
 
-def size_problem(path, ceilings=None):
+def size_problem(path, ceilings=None, reserve=0):
     """`(problem, warning)` for a finished package, each a message or None. The problem is a size
     over the ceiling recorded for it: a package grows past its ceiling only on purpose, so raise
     the number in `package_sizes.json` in the same change and say why. The warning is a size
     more than 10% under it, which asks for the ceiling to come down but never stops a release.
-    A kind whose ceiling is `null` (a system this host cannot build) is not checked."""
+    A kind whose ceiling is `null` (a system this host cannot build) is not checked. `reserve` is
+    what the file will still gain (a signature, a notarization ticket), so a package can be checked
+    before that work is paid for."""
     ceilings = json.loads(SIZE_CEILINGS.read_text())["ceilings"] if ceilings is None else ceilings
     _, ceiling = size_ceiling(path, ceilings)
-    size = Path(path).stat().st_size
+    size = Path(path).stat().st_size + reserve
     name = Path(path).name
     if ceiling is None:
         return None, None
     if size > ceiling:
-        return f"{name} is {size} bytes, over its ceiling of {ceiling} (scripts/package_sizes.json)", None
+        will = f" ({reserve} of them reserved for what is still to be added)" if reserve else ""
+        return f"{name} is {size} bytes{will}, over its ceiling of {ceiling} (scripts/package_sizes.json)", None
     if size < ceiling * 0.9:
         return None, f"{name} is {size} bytes, 10% under its ceiling of {ceiling}: lower it in scripts/package_sizes.json"
     return None, None
 
 
-def check_sizes(paths):
+def check_sizes(paths, reserve=0, warn=True):
     """Stops the script when a finished package is over its ceiling or has no kind in the file,
-    and prints the warning of one far under it. Every packaging script ends with this."""
-    results = [size_problem(path) for path in paths]
+    and prints the warning of one far under it. Every packaging script ends with this; a script
+    whose last steps cost something (notarization) also runs it before them, with a `reserve` and
+    `warn=False` (the last check prints the warning once)."""
+    results = [size_problem(path, reserve=reserve) for path in paths]
     for _, warning in results:
-        if warning:
+        if warning and warn:
             print(f"size: {warning}", file=sys.stderr)
     if problems := [problem for problem, _ in results if problem]:
         raise PackagingError("; ".join(problems))

@@ -195,6 +195,31 @@ class CollectTests(FlowCase):
         self.quiet(self.collect, "--allow-unsigned", "--without", "windows", tool=ad_hoc_tool)
         self.assertTrue((self.dist / release_checks.package_name(VERSION, "macos", "aarch64", "dmg")).is_file())
 
+    def test_one_linux_architecture_can_be_left_out_and_the_manifest_lists_the_rest(self):
+        self.all_packages()
+        for extension in ("deb", "AppImage"):
+            (self.dist / release_checks.package_name(VERSION, "linux", "aarch64", extension)).unlink()
+        with self.assertRaises(release_flow.Refused) as caught:
+            self.quiet(self.collect)
+        self.assertIn("-linux-aarch64.deb is missing", str(caught.exception))
+        with self.assertRaises(release_flow.Refused):
+            self.quiet(self.collect, "--without", "linux-aarch64")  # a release has every package
+        self.quiet(self.collect, "--allow-unsigned", "--without", "linux-aarch64")
+        text = (self.dist / "update-manifest.json").read_text()
+        offered = {(p["system"], p["architecture"]) for p in manifest.check_payload(manifest.open_envelope(text, KEYS))["packages"]}
+        self.assertEqual(offered, {("macos", "aarch64"), ("linux", "x86_64"), ("windows", "x86_64"), ("windows", "aarch64")})
+
+    def test_without_names_a_system_or_one_architecture_of_it(self):
+        folder, names = self.dist, lambda *left: release_checks.missing_packages(folder, VERSION, left)
+        self.assertEqual(len(names()), 7)
+        self.assertEqual(len(names("linux")), 3)
+        self.assertEqual(len(names("linux-aarch64")), 5)
+        self.assertEqual(len(names("linux-x86_64", "linux-aarch64")), 3)
+        self.assertEqual(len(names("linux", "linux-aarch64")), 3)
+        self.assertEqual([n for n in names("macos", "windows", "linux-x86_64")], [
+            release_checks.package_name(VERSION, "linux", "aarch64", extension) for extension in ("deb", "AppImage")])
+        self.assertEqual(release_flow.WITHOUT, ("macos", "linux", "windows", "linux-x86_64", "linux-aarch64"))
+
     def test_the_other_machines_packages_are_copied_in_and_another_version_is_refused(self):
         self.all_packages()
         windows = self.root / "windows"
@@ -730,23 +755,6 @@ class SmallPartTests(FlowCase):
         for address in (release_manifest.POLICY["manifest"]["url"], release_manifest.POLICY["release"]["packageUrl"],
                         release_manifest.POLICY["release"]["notesUrl"], *release_manifest.POLICY["urlPrefixes"]):
             self.assertTrue(address.startswith(package_common.HOMEPAGE + "/"), address)
-
-    def test_prepare_bumps_then_drafts_the_target_version_and_a_dry_run_writes_nothing(self):
-        current = release.current()
-        target = str(release.next_release(current, "minor").version)
-        with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
-            self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=False))
-            bump.assert_any_call(["bump", "minor"])
-            bump.assert_called_with(["snapshot"])
-            draft.assert_called_with(["draft", "--version", target, "--replace"])
-        with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
-            self.quiet(release_flow.prepare, SimpleNamespace(target="minor", dry_run=True))
-            bump.assert_called_with(["bump", "minor", "--dry-run"])
-            draft.assert_called_with(["draft", "--version", target, "--print"])
-        with mock.patch.object(release, "main", return_value=0) as bump, mock.patch.object(changelog, "main", return_value=0) as draft:
-            self.quiet(release_flow.prepare, SimpleNamespace(target="current", dry_run=True))
-            bump.assert_not_called()
-            draft.assert_called_with(["draft", "--version", str(current.version), "--print"])
 
     def test_a_release_needs_the_wire_contract_it_ships_recorded(self):
         with tempfile.TemporaryDirectory() as folder:

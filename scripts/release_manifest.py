@@ -28,8 +28,9 @@ one past its expiry. Nothing is rebuilt to renew it:
 
 `renew` reads the manifest the clients read now (the published address, or `--input`), keeps its
 version, notes and packages exactly as they are, and signs them again with a new sequence and
-expiry. `check-expiry` fails when that manifest expires within `--warn-days` days or has expired.
-`docs/release.md` says when to run them.
+expiry. `check-expiry` fails when that manifest expires within `--warn-days` days or has expired;
+`--allow-unpublished` makes it succeed while nothing is published yet, which the scheduled workflow
+`.github/workflows/update-manifest-expiry.yml` uses. `docs/release.md` says when to run them.
 
 The manifest is published as an asset of the GitHub release of the same version, under the name
 `update-manifest.json`. This script does not upload, tag or build anything.
@@ -75,6 +76,10 @@ POLICY = manifest.POLICY
 
 class Refused(Exception):
     """A problem the person running the script can fix; its message says how."""
+
+
+class NotPublished(Refused):
+    """No manifest is published yet (the address answers 404): before the first release."""
 
 
 def has_signing_key(environment):
@@ -260,7 +265,7 @@ def read_published(options, fetch=None):
     """The manifest to renew or check: `--input`, else the one published."""
     text = Path(options.input).read_text() if options.input else published(fetch)
     if text is None:
-        raise Refused("no manifest is published yet; there is nothing to renew or check")
+        raise NotPublished("no manifest is published yet; there is nothing to renew or check")
     return text
 
 
@@ -346,7 +351,14 @@ def run(args, environment):
         print(f"wrote {output}; upload it over the published asset (docs/release.md)")
         return
     if args.command == "check-expiry":
-        problem = expiry_problem(read_published(args), trusted_keys([]), args.warn_days)
+        try:
+            text = read_published(args)
+        except NotPublished:
+            if not args.allow_unpublished:
+                raise
+            print("no manifest is published yet: nothing can expire")
+            return
+        problem = expiry_problem(text, trusted_keys([]), args.warn_days)
         if problem:
             raise Refused(problem)
         print("the published manifest is not near its expiry")
@@ -380,6 +392,9 @@ def main(argv=None, environment=None):
     expiring = commands.add_parser("check-expiry", help="fail when the published manifest expires soon")
     expiring.add_argument("--input", metavar="FILE", help="the manifest to check (default: the published one)")
     expiring.add_argument("--warn-days", type=int, default=21, help="days before the expiry to fail (default 21)")
+    expiring.add_argument("--allow-unpublished", action="store_true",
+                          help="succeed when no manifest is published yet (before the first release); a manifest that "
+                          "cannot be read, or is near its expiry, still fails")
     checked = commands.add_parser("verify", help="read a manifest as a client would")
     checked.add_argument("manifest")
     checked.add_argument("--trust-key", action="append", default=[], metavar="ID=BASE64")

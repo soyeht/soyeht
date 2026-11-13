@@ -229,15 +229,25 @@ def released_problems(root, schema):
     return found
 
 
-def write_snapshot(root, schema, product_version):
-    """Records the contract of the release being made; a version already recorded is never replaced."""
+def snapshot_to_write(root, schema):
+    """The file `write_snapshot` would create (its path), or None when the contract of this protocol
+    version is already recorded. A record that differs is an error, as it is for the write."""
     number = schema["x-protocolVersion"]["current"]
     path = snapshot_path(root, number)
-    wire = surface(schema)
-    if path.exists():
-        if json.loads(path.read_text()) != wire:
-            raise ValueError(f"{path.name} exists and differs: raise x-protocolVersion.current instead of replacing it")
+    if not path.exists():
+        return path
+    if json.loads(path.read_text()) != surface(schema):
+        raise ValueError(f"{path.name} exists and differs: raise x-protocolVersion.current instead of replacing it")
+    return None
+
+
+def write_snapshot(root, schema, product_version):
+    """Records the contract of the release being made; a version already recorded is never replaced."""
+    path = snapshot_to_write(root, schema)
+    if path is None:
         return None
+    number = schema["x-protocolVersion"]["current"]
+    wire = surface(schema)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(wire, indent=1, ensure_ascii=False) + "\n")
     index = Path(root) / RELEASED / "index.json"

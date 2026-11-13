@@ -101,6 +101,9 @@ CERTIFICATE_KIND = "Developer ID Application:"
 HASH_PATTERN = re.compile(r"^[0-9A-Fa-f]{40}$")
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
 NOTARY_TIMEOUT = "1h"
+# What signing and stapling the image add to it: a signature with its timestamp (a few KB of
+# certificates) and the notarization ticket. The size check before notarizing counts this much.
+SIGNATURE_RESERVE = 65_536
 
 
 @dataclass(frozen=True)
@@ -629,13 +632,16 @@ def package(options, environment):
     problems = verify_bundle(app, signing, made)
     image = artifact_path(folder, made.version, OPERATING_SYSTEM, ARTIFACT_ARCHITECTURE, "dmg")
     make_image(app, image, WORK)
+    # Before the image is signed and sent to be notarized, which is the slow and paid part: a stapled
+    # ticket and a signature only add to the size, so an image over its ceiling now is over it then.
+    check_sizes([image], reserve=0 if signing.ad_hoc else SIGNATURE_RESERVE, warn=False)
     sign_file(image, signing)
     if signing.notarizes:
         notarize_and_staple_image(image, signing)
     problems += verify_image(image, signing, made)
     checksum = write_checksum(image)
     report(image, checksum, app, signing, problems, symbols)
-    check_sizes([image])
+    check_sizes([image])  # the signed and stapled image is the one that is published
     return 1 if problems else 0
 
 

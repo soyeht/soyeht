@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import plistlib
 import shutil
@@ -111,6 +113,76 @@ class SizeCeilingTests(unittest.TestCase):
         recorded = json.loads(package_common.SIZE_CEILINGS.read_text())["ceilings"]
         for kind in ("macos-aarch64.dmg", "linux-x86_64.deb", "linux-aarch64.AppImage", "windows-aarch64.exe"):
             self.assertIn(kind, recorded)
+
+
+class SizeBeforeSigningTests(unittest.TestCase):
+    """The image is measured before it is signed and notarized (the slow and paid part), and the
+    finished image once more."""
+
+    def run_package(self, size, ad_hoc, ceiling=1000):
+        steps = []
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            sizes = folder / "sizes.json"
+            sizes.write_text(json.dumps({"ceilings": {"macos-aarch64.dmg": ceiling}}))
+
+            def make_image(app, destination, scratch):
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(b"x" * size)
+                steps.append("make_image")
+
+            def step(name, result=None):
+                return patch.object(package_mac, name, side_effect=lambda *a, **k: steps.append(name) or result)
+
+            signing = package_mac.Signing() if ad_hoc else package_mac.Signing("Developer ID Application: Example (ABCDE12345)", "ABCDE12345", ("--keychain-profile", "p"))
+            options = package_mac.parser().parse_args(["--dist", str(folder / "dist")] + (["--ad-hoc"] if ad_hoc else []))
+            with patch.object(package_common, "SIZE_CEILINGS", sizes), \
+                    patch.object(package_mac, "resolve_signing", return_value=signing), \
+                    patch.object(package_mac, "build_engine", return_value={}), \
+                    patch.object(package_mac, "build_app", return_value=folder / "built.app"), \
+                    patch.object(package_mac, "assemble", return_value=folder / "Soyeht Next.app"), \
+                    patch.object(package_mac, "make_image", side_effect=make_image), \
+                    patch.object(package_mac, "write_checksum", return_value="sum"), \
+                    patch.object(package_mac, "report"), \
+                    patch.object(package_mac, "verify_bundle", return_value=[]), \
+                    patch.object(package_mac, "verify_image", return_value=[]), \
+                    step("thin_libraries"), step("save_symbols"), step("strip_app"), step("sign_bundle"), \
+                    step("notarize_and_staple_app"), step("sign_file"), step("notarize_and_staple_image"):
+                try:
+                    with contextlib.redirect_stderr(io.StringIO()):
+                        package_mac.package(options, {})
+                except PackagingError as failure:
+                    return steps, str(failure)
+        return steps, None
+
+    def test_an_image_over_its_ceiling_stops_before_it_is_signed_or_notarized(self):
+        steps, failure = self.run_package(1001, ad_hoc=False)
+        self.assertIn("over its ceiling", failure)
+        self.assertEqual(steps[-1], "make_image")
+        self.assertNotIn("sign_file", steps)
+        self.assertNotIn("notarize_and_staple_image", steps)
+
+    def test_the_signature_and_the_ticket_are_counted_before_they_are_added(self):
+        ceiling = package_mac.SIGNATURE_RESERVE + 1000
+        steps, failure = self.run_package(1001, ad_hoc=False, ceiling=ceiling)
+        self.assertIn("reserved", failure)
+        self.assertNotIn("sign_file", steps)
+        steps, failure = self.run_package(1001, ad_hoc=True, ceiling=ceiling)  # an ad-hoc image gains nothing
+        self.assertIsNone(failure)
+        self.assertEqual(steps[-2:], ["make_image", "sign_file"])
+
+    def test_an_image_within_its_ceiling_goes_on_and_is_measured_again_at_the_end(self):
+        ceiling = package_mac.SIGNATURE_RESERVE + 1000
+        steps, failure = self.run_package(1000, ad_hoc=False, ceiling=ceiling)
+        self.assertIsNone(failure)
+        self.assertEqual(steps[-3:], ["make_image", "sign_file", "notarize_and_staple_image"])
+        # The finished image is the one that is published: it is checked once more, with no reserve.
+        self.assertEqual(self.checks(1000, ceiling), 2)
+
+    def checks(self, size, ceiling):
+        with patch.object(package_mac, "check_sizes", wraps=package_mac.check_sizes) as counted:
+            self.run_package(size, ad_hoc=False, ceiling=ceiling)
+        return counted.call_count
 
 
 class SigningChoiceTests(unittest.TestCase):

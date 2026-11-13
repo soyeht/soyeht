@@ -30,10 +30,30 @@ OWN_STEPS = re.compile(
 )
 
 
+# A scheduled monitor is no part of the merge gate: it watches something outside the tree and runs
+# no step of it. Each is named with the one script call it may make; anything else in it is still a
+# gate step and fails, and it must run only on a schedule or by hand.
+MONITORS = {
+    "update-manifest-expiry.yml":
+        "uv run python scripts/release_manifest.py check-expiry --allow-unpublished",
+}
+MERGE_TRIGGERS = re.compile(r"^\s*(?:pull_request(?:_target)?|push)\s*:", re.MULTILINE)
+
+
 def gate_list_problems(name: str, text: str) -> list[str]:
     commands = "\n".join(
         line for line in text.splitlines() if not line.lstrip().startswith("#")
     )
+    if name in MONITORS:
+        problems = [
+            f"{name}: runs its own gate step `{found.group()}`; add it to scripts/check_all.sh"
+            for found in OWN_STEPS.finditer(commands.replace(MONITORS[name], ""))
+        ]
+        if MONITORS[name] not in commands:
+            problems.append(f"{name}: does not run `{MONITORS[name]}`")
+        if MERGE_TRIGGERS.search(commands):
+            problems.append(f"{name}: a monitor runs on a schedule or by hand, never on a push or a pull request")
+        return problems
     problems = [
         f"{name}: runs its own gate step `{found.group()}`; add it to scripts/check_all.sh"
         for found in OWN_STEPS.finditer(commands)
@@ -519,6 +539,18 @@ class GateListTests(unittest.TestCase):
         problems = gate_list_problems("drifted.yml", drifted)
         self.assertEqual(len(problems), 3)
         self.assertIn("does not run bash scripts/check_all.sh", problems[-1])
+
+    def test_a_monitor_runs_only_its_one_script_and_only_off_the_merge_path(self):
+        name = "update-manifest-expiry.yml"
+        call = MONITORS[name]
+        monitor = f"on:\n  schedule:\n    - cron: '1 2 * * 1'\njobs:\n  j:\n    steps:\n      - run: {call}\n"
+        self.assertEqual(gate_list_problems(name, monitor), [])
+        self.assertEqual(len(gate_list_problems(name, monitor + "      - run: cargo test\n")), 1)
+        self.assertEqual(len(gate_list_problems(name, monitor + "      - run: uv run python scripts/e2e.py\n")), 1)
+        self.assertIn("never on a push", "\n".join(gate_list_problems(name, monitor + "  push:\n")))
+        self.assertIn("does not run", "\n".join(gate_list_problems(name, "on:\n  schedule:\n")))
+        # The same call in a workflow that is not a named monitor is a gate step.
+        self.assertEqual(len(gate_list_problems("other.yml", monitor)), 2)
 
     def test_tool_setup_is_not_a_gate_step(self):
         setup = (
