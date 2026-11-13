@@ -386,6 +386,18 @@ fn an_agent_that_the_form_does_not_allow_does_not_start() {
 }
 
 #[test]
+fn submitting_a_form_that_is_not_allowed_tells_the_person_why() {
+    let mut state = state_with(&[("a", "/a")]);
+    with_agent(&mut state);
+    assert!(state.submit_start(1, &form("", "hi")).is_none());
+    assert_eq!(state.problem(), Some("Choose a folder."));
+    state.dismiss_problem();
+    let started = state.submit_start(2, &form("/a", "hi")).unwrap();
+    assert_eq!(started.select.as_deref(), Some("a"));
+    assert_eq!(state.problem(), None);
+}
+
+#[test]
 fn a_workspace_that_could_not_be_made_forgets_the_agent_waiting_for_it() {
     let mut state = state_with(&[]);
     with_agent(&mut state);
@@ -393,8 +405,15 @@ fn a_workspace_that_could_not_be_made_forgets_the_agent_waiting_for_it() {
     state.apply(Event::OpenFailed { ticket: 9 });
     assert!(state.starts.is_empty());
     // What the person typed comes back, once.
+    assert_eq!(state.problem(), None);
     assert_eq!(state.take_failed_start(), Some(form("/new", "hi")));
+    assert_eq!(
+        state.problem(),
+        Some("The agent could not start. Your message is back in the form.")
+    );
+    state.dismiss_problem();
     assert_eq!(state.take_failed_start(), None);
+    assert_eq!(state.problem(), None);
 }
 
 #[test]

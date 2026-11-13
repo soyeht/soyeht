@@ -8,9 +8,6 @@ use soyeht_client::state::problem::kind;
 use soyeht_client::{Command, Connection, state::FolderOpening};
 use std::path::{Path, PathBuf};
 
-/// What the person is told when a folder's path is not text the engine can be given.
-pub(crate) const FOLDER_NAME_NOT_TEXT: &str = "That folder's name is not text Soyeht can use.";
-
 actions!(soyeht, [OpenFolder]);
 
 /// What the picker answered: the folders chosen, none when it was cancelled, or why it could not
@@ -99,8 +96,7 @@ impl Workbench {
     /// a new workspace, which gets a terminal once the engine has made it.
     pub(crate) fn open_folder_path(&mut self, folder: &Path, cx: &mut Context<Self>) {
         let Some(path) = folder.to_str() else {
-            self.state
-                .report(kind::FOLDER_NAME_NOT_TEXT, FOLDER_NAME_NOT_TEXT);
+            self.state.report_folder_name_not_text();
             cx.notify();
             return;
         };

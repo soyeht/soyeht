@@ -6,9 +6,8 @@
 //! and `State::start_agent`; this holds the form's state and carries the person's choices there.
 
 use crate::composer_field::{ComposerEvent, ComposerField, new_field};
-use crate::{destination::Destination, folder::FOLDER_NAME_NOT_TEXT, workbench::Workbench};
+use crate::{destination::Destination, workbench::Workbench};
 use gpui::{Context, Entity};
-use soyeht_client::state::problem::kind;
 use soyeht_client::{Command, new_agent::NewAgent};
 
 /// The form while it is open.
@@ -77,10 +76,6 @@ impl Workbench {
         if self.start.is_none() {
             self.show_start(form, cx);
         }
-        self.state.report(
-            kind::AGENT_NOT_STARTED,
-            "The agent could not start. Your message is back in the form.",
-        );
         cx.notify();
     }
 
@@ -106,8 +101,7 @@ impl Workbench {
             |this, folder, cx| match folder.to_str() {
                 Some(path) => this.set_start_folder(path, cx),
                 None => {
-                    this.state
-                        .report(kind::FOLDER_NAME_NOT_TEXT, FOLDER_NAME_NOT_TEXT);
+                    this.state.report_folder_name_not_text();
                     cx.notify();
                 }
             },
@@ -149,17 +143,14 @@ impl Workbench {
             return;
         }
         let ticket = self.next_ticket();
-        match self.state.start_agent(ticket, &form) {
-            Ok(started) => {
-                self.start = None;
-                if let Some(workspace_id) = started.select {
-                    self.select_workspace(&workspace_id, cx);
-                }
-                self.select_destination(Destination::Agents, cx);
-                self.run_effects(started.effects);
-                self.restore_failed_start(cx);
+        if let Some(started) = self.state.submit_start(ticket, &form) {
+            self.start = None;
+            if let Some(workspace_id) = started.select {
+                self.select_workspace(&workspace_id, cx);
             }
-            Err(reason) => self.state.report(kind::NEW_AGENT_REFUSED, reason),
+            self.select_destination(Destination::Agents, cx);
+            self.run_effects(started.effects);
+            self.restore_failed_start(cx);
         }
         cx.notify();
     }

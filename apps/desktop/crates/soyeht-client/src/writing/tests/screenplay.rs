@@ -46,6 +46,27 @@ fn the_engine_tells_a_screenplay_its_scenes_and_the_element_of_each_line() {
 }
 
 #[test]
+fn the_line_the_caret_is_on_takes_the_element_the_page_made_it() {
+    let mut state = screenplay();
+    // The caret is at the start of the fourth line, which is "Hello.".
+    let caret = SCRIPT[..3].iter().map(|line| line.len() + 1).sum();
+    state.screenplay_assume(
+        "p1",
+        &SCRIPT.join("\n"),
+        caret,
+        ScreenplayElementKind::Parenthetical,
+    );
+    assert_eq!(
+        state.writings.kind_at("p1", 3),
+        Some(ScreenplayElementKind::Parenthetical)
+    );
+    assert_eq!(
+        state.writings.kind_at("p1", 2),
+        Some(ScreenplayElementKind::Character)
+    );
+}
+
+#[test]
 fn the_lines_keep_their_element_while_the_person_types_and_the_engine_is_not_asked() {
     let mut state = screenplay();
     // A line is added above the dialogue: the dialogue is still the dialogue.

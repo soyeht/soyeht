@@ -19,17 +19,12 @@ use soyeht_client::writing::{
     presentation::{self, Show, ShowInput},
     rules::DocumentDraft,
 };
-use soyeht_protocol::{
-    PaneMode, WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection,
-};
+use soyeht_protocol::{WorkspacePaneLayoutAxis, WritingFormatKind, WritingKind, WritingSection};
 
 impl Workbench {
     /// The kind of the document a writing pane shows.
     pub(crate) fn writing_kind(&self, pane_id: &str) -> Option<WritingKind> {
-        self.state
-            .pane(pane_id)
-            .filter(|pane| pane.mode == PaneMode::Writing)
-            .and_then(|pane| pane.writing_kind.clone())
+        self.state.writing_kind(pane_id)
     }
 
     /// Whether the pane is a text, a presentation or a screenplay: the documents the desktop
@@ -127,12 +122,7 @@ impl Workbench {
 
     /// The slides of a presentation pane, as the engine last split them.
     pub(crate) fn slides_of(&self, pane_id: &str) -> Vec<soyeht_protocol::WritingSlide> {
-        self.state
-            .writings
-            .of_pane(pane_id)
-            .and_then(|document| document.slides())
-            .map(<[_]>::to_vec)
-            .unwrap_or_default()
+        self.state.writing_slides(pane_id)
     }
 
     /// A slide of the rail was chosen: the caret goes to its first line.
@@ -194,19 +184,10 @@ impl Workbench {
     /// Makes the field hold the text of the page, when it holds another: the engine changed it
     /// (an agent, a format, another client), or an edit was refused.
     pub(crate) fn sync_writing_field(&mut self, pane_id: &str, cx: &mut Context<Self>) {
-        let Some(text) = self
-            .state
-            .editors
-            .file_of_pane(pane_id)
-            .and_then(|file| file.whole_text())
-        else {
-            return;
-        };
         let field = self.writing_field(cx, pane_id);
-        if field.read(cx).draft().text() != text {
+        let held = field.read(cx).draft().text().to_owned();
+        if let Some(text) = self.state.writing_page_to_load(pane_id, &held) {
             field.update(cx, |field, cx| field.load(&text, cx));
-            // The lines of a screenplay move with what the engine changed.
-            self.state.writings.follow(pane_id, &text);
         }
     }
 
@@ -227,10 +208,7 @@ impl Workbench {
         // once the edit has reached it.
         self.writing_edited(pane_id, cx);
         if let Some((text, (_, caret))) = self.field_text(pane_id, cx) {
-            let line = text
-                .get(..caret)
-                .map_or(0, |before| before.matches('\n').count());
-            self.state.writings.assume(pane_id, line, next);
+            self.state.screenplay_assume(pane_id, &text, caret, next);
         }
         cx.notify();
     }
@@ -283,10 +261,6 @@ impl Workbench {
             }
             Companion::Wait => return,
             Companion::NoAgent => {
-                self.state.report(
-                    kind::COMPANION_UNAVAILABLE,
-                    "No agent is ready to open beside this document. Check Preferences.",
-                );
                 cx.notify();
                 return;
             }
