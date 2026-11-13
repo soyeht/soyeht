@@ -10,7 +10,7 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-soyeht-protocol = { path = "../../engine/soyeht-protocol" }
+soyeht-protocol = { path = "../../engine/soyeht-protocol", features = ["open-enums"] }
 soyeht-platform = { path = "../../engine/soyeht-platform" }
 soyeht-client = { path = "../desktop/crates/soyeht-client" }
 serde_json = "1.0"

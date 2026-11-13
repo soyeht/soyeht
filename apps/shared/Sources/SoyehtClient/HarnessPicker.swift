@@ -179,7 +179,7 @@ public enum HarnessPickerModel {
     case .ready: "checkmark.circle.fill"
     case .not_checked: "circle.dotted"
     case .sign_in: "person.crop.circle.badge.exclamationmark"
-    case .check_setup: "wrench.and.screwdriver"
+    case .check_setup, .unknown: "wrench.and.screwdriver"
     case .not_installed: "minus.circle"
     }
   }
@@ -189,7 +189,7 @@ public enum HarnessPickerModel {
     case .ready: return .ready
     case .not_checked: return .notChecked
     case .sign_in: return .signIn
-    case .check_setup: return .checkSetup
+    case .check_setup, .unknown: return .checkSetup
     case .not_installed: return .unavailable
     }
   }
@@ -208,7 +208,7 @@ public enum HarnessPickerModel {
     case .ready: "Ready"
     case .not_checked: "Not checked"
     case .sign_in: "Sign in"
-    case .check_setup: "Check setup"
+    case .check_setup, .unknown: "Check setup"
     case .not_installed: "Not installed"
     }
   }
@@ -239,6 +239,8 @@ public enum HarnessPickerModel {
     case .session_failed: "The agent started, but its session failed. Try starting it again."
     case .launch_failed: "The agent could not start. Check its installation and try again."
     case .environment_unavailable: "The engine could not read the launch environment."
+    case .unknown:
+      "The engine reports a problem this version of Soyeht does not know. Update Soyeht."
     case nil: "An agent session opened successfully."
     }
   }
@@ -263,7 +265,7 @@ public enum HarnessPickerModel {
     case .ready: nil
     case .not_checked: .never_started
     case .sign_in: .authentication_required
-    case .check_setup: .launch_failed
+    case .check_setup, .unknown: .launch_failed
     case .not_installed: .executable_missing
     }
   }

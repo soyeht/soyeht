@@ -213,9 +213,12 @@ fn the_greeting_and_hello_answers_decode_or_fail_without_a_panic_and_grant_only_
         if let Ok(welcome) = serde_json::from_value::<Welcome>(value.clone()) {
             for bound in [false, true] {
                 if handshake::expect_welcome(&welcome, bound).is_ok() {
-                    // A welcome is accepted only for the right version and a role that matches
+                    // A welcome is accepted only for a version in the range and a role that matches
                     // whether the client asked for a binding.
-                    assert_eq!(welcome.protocol_version, limits::PROTOCOL_VERSION);
+                    assert!(
+                        (limits::MIN_PROTOCOL_VERSION..=limits::PROTOCOL_VERSION)
+                            .contains(&welcome.protocol_version)
+                    );
                     assert_eq!(
                         bound,
                         matches!(

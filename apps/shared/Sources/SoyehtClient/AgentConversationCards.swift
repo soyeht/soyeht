@@ -146,6 +146,7 @@ private struct AgentToolRow: View {
     case .in_progress: "● running"
     case .completed: "✓ done"
     case .failed: "✕ failed"
+    case .unknown: ""
     }
   }
 
@@ -155,6 +156,7 @@ private struct AgentToolRow: View {
     case .in_progress: style.accent
     case .completed: style.success
     case .failed: style.danger
+    case .unknown: style.secondary
     }
   }
 }
@@ -191,7 +193,7 @@ struct AgentPermissionCard: View {
   static func role(_ kind: PermissionOptionKind) -> PanePillButtonStyle.Role {
     switch kind {
     case .allow_once: .primary
-    case .allow_always: .secondary
+    case .allow_always, .unknown: .secondary
     case .reject_once, .reject_always: .destructive
     }
   }

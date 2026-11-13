@@ -36,7 +36,8 @@ public enum AgentSignInState: Equatable, Sendable {
     switch agent?.login?.phase {
     case .signing_out: self = .signingOut
     case .verifying: self = .verifying
-    case .waiting: self = .waiting(terminalPaneId: agent?.login?.terminalPaneId)
+    // A phase a later engine adds is shown as the wait it most resembles.
+    case .waiting, .unknown: self = .waiting(terminalPaneId: agent?.login?.terminalPaneId)
     case nil:
       if !authMethods.isEmpty {
         self = .choose(methods: authMethods.map(AgentSignInMethod.init), failure: failure)

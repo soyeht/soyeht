@@ -37,6 +37,8 @@ pub enum Error {
     InvalidParameters,
     EngineChallengeExpected,
     UnexpectedHandshake,
+    /// The engine welcomed this client at a protocol version it does not speak (ADR 0161).
+    UnsupportedProtocolVersion,
     IncompleteSnapshot,
     InconsistentSnapshotPages,
     SnapshotSectionNotArray,
@@ -84,6 +86,9 @@ impl fmt::Display for Error {
                 formatter.write_str("engine did not send an authentication challenge")
             }
             Self::UnexpectedHandshake => formatter.write_str("unexpected engine handshake"),
+            Self::UnsupportedProtocolVersion => {
+                formatter.write_str(crate::client_policy::UPDATE_SOYEHT)
+            }
             Self::IncompleteSnapshot => formatter.write_str("incomplete snapshot"),
             Self::InconsistentSnapshotPages => {
                 formatter.write_str("snapshot pages are inconsistent")

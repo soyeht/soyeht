@@ -24,11 +24,17 @@ and Windows), CLI and agents' MCP server.
    `state.snapshot`, ≤ 16 MiB); type 2 body = 16-byte subheader + up to 64 KiB
    terminal bytes; type 3 body ≤ 256 KiB + subheader.
 5. **Types**: IDs are strings; 64-bit integers (offsets, sizes) travel as decimal
-   strings; enums are closed strings; readers ignore unknown fields
-   (allowing version N+1 to speak with N).
-6. **Protocol version is an integer.** The engine accepts current and previous
-   versions; clients specify theirs in `hello`; the engine responds with the
-   version it will use or closes with `protocol_version_unsupported`.
+   strings; enums are closed strings, except the ones listed in `x-openEnums` (ADR 0161), whose
+   values the engine may add: a client keeps a value it does not know and shows it as a generic
+   state. Readers ignore unknown fields (allowing version N+1 to speak with N).
+6. **Protocol version is an integer, and the engine serves a range** (ADR 0161). The contract
+   names `min` and `current` (`x-protocolVersion`). The client sends in `hello` the highest
+   version it speaks; the engine welcomes it at the lower of that and its own `current`
+   (`welcome.protocolVersion`), or closes with
+   `protocol_version_unsupported` when the client is below `min`. A client accepts a welcome
+   inside its own range. From the first release the contract only grows: new methods, events,
+   optional fields and error codes; nothing is removed, renamed, retyped or made required, and
+   a break raises `min` with a written `minReason`.
 7. **One schema per method and event** (`contracts/protocol.json` in the
    repository, single source; generated Rust, Swift and TypeScript types;
    CI fails if code diverges). This contract describes; the schema defines.

@@ -12976,7 +12976,31 @@
       ]
     }
   },
-  "x-protocolVersion": 1,
+  "x-protocolVersion": {
+    "min": 1,
+    "current": 1
+  },
+  "x-openEnums": [
+    "AgentLoginPhase",
+    "EngineReachabilityReason",
+    "ErrorKind",
+    "HarnessEnvironmentIssue",
+    "HarnessSetupReason",
+    "HarnessSetupState",
+    "LspState",
+    "PermissionOptionKind",
+    "PermissionRequestKind",
+    "PromptStatus",
+    "ReadinessSystem",
+    "SubagentStatus",
+    "TaskReviewState",
+    "ToolStatus",
+    "TranscriptKind",
+    "TurnStopReason",
+    "UsageSource",
+    "UsageState",
+    "UsageUnavailableReason"
+  ],
   "x-paneNonRouteIds": [
     "agent",
     "authMethodId",
@@ -15216,7 +15240,8 @@
       "projectTrustTrust": "Trust folder",
       "projectTrustRestrict": "Keep restricted",
       "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
-      "projectTrustFailed": "Soyeht could not save this choice."
+      "projectTrustFailed": "Soyeht could not save this choice.",
+    "updateSoyeht": "This app and the Mac speak different versions of Soyeht. Update Soyeht on the older one."
     },
     "inlineImageTypes": ["image/png", "image/jpeg", "image/gif", "image/webp"],
     "paneStates": {

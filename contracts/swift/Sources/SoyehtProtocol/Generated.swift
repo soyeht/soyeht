@@ -64,55 +64,173 @@ public enum SnapshotSection: String, Codable, Sendable, CaseIterable {
     case `trust` = "trust"
 }
 
-public enum ErrorKind: String, Codable, Sendable, CaseIterable {
-    case `not_found` = "not_found"
-    case `invalid_params` = "invalid_params"
-    case `unauthorized` = "unauthorized"
-    case `forbidden_role` = "forbidden_role"
-    case `pane_busy` = "pane_busy"
-    case `task_has_owner` = "task_has_owner"
-    case `transition_refused` = "transition_refused"
-    case `stale_version` = "stale_version"
-    case `idempotency_conflict` = "idempotency_conflict"
-    case `harness_unavailable` = "harness_unavailable"
-    case `needs_login` = "needs_login"
-    case `cursor_too_old` = "cursor_too_old"
-    case `resync_required` = "resync_required"
-    case `slow_consumer` = "slow_consumer"
-    case `protocol_version_unsupported` = "protocol_version_unsupported"
-    case `disk_full` = "disk_full"
-    case `ptyd_unavailable` = "ptyd_unavailable"
-    case `stale_engine_generation` = "stale_engine_generation"
-    case `internal_error` = "internal_error"
-    case `snapshot_too_large` = "snapshot_too_large"
-    case `engine_identity_changed` = "engine_identity_changed"
-    case `stale_attempt` = "stale_attempt"
-    case `dependency_cycle` = "dependency_cycle"
-    case `dependency_open` = "dependency_open"
-    case `rate_limited` = "rate_limited"
-    case `stale_reference` = "stale_reference"
-    case `human_took_over` = "human_took_over"
-    case `web_host_unavailable` = "web_host_unavailable"
-    case `navigation_refused` = "navigation_refused"
-    case `writing_kind_refused` = "writing_kind_refused"
-    case `writing_limit_exceeded` = "writing_limit_exceeded"
-    case `writing_sidecar_conflict` = "writing_sidecar_conflict"
-    case `writing_line_not_found` = "writing_line_not_found"
-    case `writing_scene_not_found` = "writing_scene_not_found"
-    case `writing_section_refused` = "writing_section_refused"
-    case `harness_switch_failed` = "harness_switch_failed"
-    case `attachment_limit_exceeded` = "attachment_limit_exceeded"
-    case `platform_unsupported` = "platform_unsupported"
-    case `git_unavailable` = "git_unavailable"
-    case `file_not_text` = "file_not_text"
-    case `file_too_large` = "file_too_large"
-    case `adapter_not_acknowledged` = "adapter_not_acknowledged"
-    case `workspace_folder_missing` = "workspace_folder_missing"
-    case `push_unavailable` = "push_unavailable"
-    case `ink_unsupported` = "ink_unsupported"
-    case `ink_language_unavailable` = "ink_language_unavailable"
-    case `ink_limit_exceeded` = "ink_limit_exceeded"
-    case `ink_recognition_failed` = "ink_recognition_failed"
+public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `not_found`
+    case `invalid_params`
+    case `unauthorized`
+    case `forbidden_role`
+    case `pane_busy`
+    case `task_has_owner`
+    case `transition_refused`
+    case `stale_version`
+    case `idempotency_conflict`
+    case `harness_unavailable`
+    case `needs_login`
+    case `cursor_too_old`
+    case `resync_required`
+    case `slow_consumer`
+    case `protocol_version_unsupported`
+    case `disk_full`
+    case `ptyd_unavailable`
+    case `stale_engine_generation`
+    case `internal_error`
+    case `snapshot_too_large`
+    case `engine_identity_changed`
+    case `stale_attempt`
+    case `dependency_cycle`
+    case `dependency_open`
+    case `rate_limited`
+    case `stale_reference`
+    case `human_took_over`
+    case `web_host_unavailable`
+    case `navigation_refused`
+    case `writing_kind_refused`
+    case `writing_limit_exceeded`
+    case `writing_sidecar_conflict`
+    case `writing_line_not_found`
+    case `writing_scene_not_found`
+    case `writing_section_refused`
+    case `harness_switch_failed`
+    case `attachment_limit_exceeded`
+    case `platform_unsupported`
+    case `git_unavailable`
+    case `file_not_text`
+    case `file_too_large`
+    case `adapter_not_acknowledged`
+    case `workspace_folder_missing`
+    case `push_unavailable`
+    case `ink_unsupported`
+    case `ink_language_unavailable`
+    case `ink_limit_exceeded`
+    case `ink_recognition_failed`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [ErrorKind] = [.`not_found`, .`invalid_params`, .`unauthorized`, .`forbidden_role`, .`pane_busy`, .`task_has_owner`, .`transition_refused`, .`stale_version`, .`idempotency_conflict`, .`harness_unavailable`, .`needs_login`, .`cursor_too_old`, .`resync_required`, .`slow_consumer`, .`protocol_version_unsupported`, .`disk_full`, .`ptyd_unavailable`, .`stale_engine_generation`, .`internal_error`, .`snapshot_too_large`, .`engine_identity_changed`, .`stale_attempt`, .`dependency_cycle`, .`dependency_open`, .`rate_limited`, .`stale_reference`, .`human_took_over`, .`web_host_unavailable`, .`navigation_refused`, .`writing_kind_refused`, .`writing_limit_exceeded`, .`writing_sidecar_conflict`, .`writing_line_not_found`, .`writing_scene_not_found`, .`writing_section_refused`, .`harness_switch_failed`, .`attachment_limit_exceeded`, .`platform_unsupported`, .`git_unavailable`, .`file_not_text`, .`file_too_large`, .`adapter_not_acknowledged`, .`workspace_folder_missing`, .`push_unavailable`, .`ink_unsupported`, .`ink_language_unavailable`, .`ink_limit_exceeded`, .`ink_recognition_failed`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "not_found": self = .`not_found`
+        case "invalid_params": self = .`invalid_params`
+        case "unauthorized": self = .`unauthorized`
+        case "forbidden_role": self = .`forbidden_role`
+        case "pane_busy": self = .`pane_busy`
+        case "task_has_owner": self = .`task_has_owner`
+        case "transition_refused": self = .`transition_refused`
+        case "stale_version": self = .`stale_version`
+        case "idempotency_conflict": self = .`idempotency_conflict`
+        case "harness_unavailable": self = .`harness_unavailable`
+        case "needs_login": self = .`needs_login`
+        case "cursor_too_old": self = .`cursor_too_old`
+        case "resync_required": self = .`resync_required`
+        case "slow_consumer": self = .`slow_consumer`
+        case "protocol_version_unsupported": self = .`protocol_version_unsupported`
+        case "disk_full": self = .`disk_full`
+        case "ptyd_unavailable": self = .`ptyd_unavailable`
+        case "stale_engine_generation": self = .`stale_engine_generation`
+        case "internal_error": self = .`internal_error`
+        case "snapshot_too_large": self = .`snapshot_too_large`
+        case "engine_identity_changed": self = .`engine_identity_changed`
+        case "stale_attempt": self = .`stale_attempt`
+        case "dependency_cycle": self = .`dependency_cycle`
+        case "dependency_open": self = .`dependency_open`
+        case "rate_limited": self = .`rate_limited`
+        case "stale_reference": self = .`stale_reference`
+        case "human_took_over": self = .`human_took_over`
+        case "web_host_unavailable": self = .`web_host_unavailable`
+        case "navigation_refused": self = .`navigation_refused`
+        case "writing_kind_refused": self = .`writing_kind_refused`
+        case "writing_limit_exceeded": self = .`writing_limit_exceeded`
+        case "writing_sidecar_conflict": self = .`writing_sidecar_conflict`
+        case "writing_line_not_found": self = .`writing_line_not_found`
+        case "writing_scene_not_found": self = .`writing_scene_not_found`
+        case "writing_section_refused": self = .`writing_section_refused`
+        case "harness_switch_failed": self = .`harness_switch_failed`
+        case "attachment_limit_exceeded": self = .`attachment_limit_exceeded`
+        case "platform_unsupported": self = .`platform_unsupported`
+        case "git_unavailable": self = .`git_unavailable`
+        case "file_not_text": self = .`file_not_text`
+        case "file_too_large": self = .`file_too_large`
+        case "adapter_not_acknowledged": self = .`adapter_not_acknowledged`
+        case "workspace_folder_missing": self = .`workspace_folder_missing`
+        case "push_unavailable": self = .`push_unavailable`
+        case "ink_unsupported": self = .`ink_unsupported`
+        case "ink_language_unavailable": self = .`ink_language_unavailable`
+        case "ink_limit_exceeded": self = .`ink_limit_exceeded`
+        case "ink_recognition_failed": self = .`ink_recognition_failed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`not_found`: "not_found"
+        case .`invalid_params`: "invalid_params"
+        case .`unauthorized`: "unauthorized"
+        case .`forbidden_role`: "forbidden_role"
+        case .`pane_busy`: "pane_busy"
+        case .`task_has_owner`: "task_has_owner"
+        case .`transition_refused`: "transition_refused"
+        case .`stale_version`: "stale_version"
+        case .`idempotency_conflict`: "idempotency_conflict"
+        case .`harness_unavailable`: "harness_unavailable"
+        case .`needs_login`: "needs_login"
+        case .`cursor_too_old`: "cursor_too_old"
+        case .`resync_required`: "resync_required"
+        case .`slow_consumer`: "slow_consumer"
+        case .`protocol_version_unsupported`: "protocol_version_unsupported"
+        case .`disk_full`: "disk_full"
+        case .`ptyd_unavailable`: "ptyd_unavailable"
+        case .`stale_engine_generation`: "stale_engine_generation"
+        case .`internal_error`: "internal_error"
+        case .`snapshot_too_large`: "snapshot_too_large"
+        case .`engine_identity_changed`: "engine_identity_changed"
+        case .`stale_attempt`: "stale_attempt"
+        case .`dependency_cycle`: "dependency_cycle"
+        case .`dependency_open`: "dependency_open"
+        case .`rate_limited`: "rate_limited"
+        case .`stale_reference`: "stale_reference"
+        case .`human_took_over`: "human_took_over"
+        case .`web_host_unavailable`: "web_host_unavailable"
+        case .`navigation_refused`: "navigation_refused"
+        case .`writing_kind_refused`: "writing_kind_refused"
+        case .`writing_limit_exceeded`: "writing_limit_exceeded"
+        case .`writing_sidecar_conflict`: "writing_sidecar_conflict"
+        case .`writing_line_not_found`: "writing_line_not_found"
+        case .`writing_scene_not_found`: "writing_scene_not_found"
+        case .`writing_section_refused`: "writing_section_refused"
+        case .`harness_switch_failed`: "harness_switch_failed"
+        case .`attachment_limit_exceeded`: "attachment_limit_exceeded"
+        case .`platform_unsupported`: "platform_unsupported"
+        case .`git_unavailable`: "git_unavailable"
+        case .`file_not_text`: "file_not_text"
+        case .`file_too_large`: "file_too_large"
+        case .`adapter_not_acknowledged`: "adapter_not_acknowledged"
+        case .`workspace_folder_missing`: "workspace_folder_missing"
+        case .`push_unavailable`: "push_unavailable"
+        case .`ink_unsupported`: "ink_unsupported"
+        case .`ink_language_unavailable`: "ink_language_unavailable"
+        case .`ink_limit_exceeded`: "ink_limit_exceeded"
+        case .`ink_recognition_failed`: "ink_recognition_failed"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = ErrorKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct RpcError: Codable, Sendable {
@@ -991,12 +1109,44 @@ public struct PairProveResult: Codable, Sendable {
     }
 }
 
-public enum EngineReachabilityReason: String, Codable, Sendable, CaseIterable {
-    case `tailnet_address_not_found` = "tailnet_address_not_found"
-    case `tailnet_lookup_failed` = "tailnet_lookup_failed"
-    case `tailnet_listen_failed` = "tailnet_listen_failed"
-    case `tailnet_port_in_use` = "tailnet_port_in_use"
-    case `loopback_only` = "loopback_only"
+public enum EngineReachabilityReason: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `tailnet_address_not_found`
+    case `tailnet_lookup_failed`
+    case `tailnet_listen_failed`
+    case `tailnet_port_in_use`
+    case `loopback_only`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [EngineReachabilityReason] = [.`tailnet_address_not_found`, .`tailnet_lookup_failed`, .`tailnet_listen_failed`, .`tailnet_port_in_use`, .`loopback_only`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "tailnet_address_not_found": self = .`tailnet_address_not_found`
+        case "tailnet_lookup_failed": self = .`tailnet_lookup_failed`
+        case "tailnet_listen_failed": self = .`tailnet_listen_failed`
+        case "tailnet_port_in_use": self = .`tailnet_port_in_use`
+        case "loopback_only": self = .`loopback_only`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`tailnet_address_not_found`: "tailnet_address_not_found"
+        case .`tailnet_lookup_failed`: "tailnet_lookup_failed"
+        case .`tailnet_listen_failed`: "tailnet_listen_failed"
+        case .`tailnet_port_in_use`: "tailnet_port_in_use"
+        case .`loopback_only`: "loopback_only"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = EngineReachabilityReason(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct EngineReachability: Codable, Sendable {
@@ -1030,12 +1180,44 @@ public struct EngineStatusResult: Codable, Sendable {
     }
 }
 
-public enum ReadinessSystem: String, Codable, Sendable, CaseIterable {
-    case `macos` = "macos"
-    case `debian` = "debian"
-    case `fedora` = "fedora"
-    case `windows` = "windows"
-    case `other` = "other"
+public enum ReadinessSystem: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `macos`
+    case `debian`
+    case `fedora`
+    case `windows`
+    case `other`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [ReadinessSystem] = [.`macos`, .`debian`, .`fedora`, .`windows`, .`other`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "macos": self = .`macos`
+        case "debian": self = .`debian`
+        case "fedora": self = .`fedora`
+        case "windows": self = .`windows`
+        case "other": self = .`other`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`macos`: "macos"
+        case .`debian`: "debian"
+        case .`fedora`: "fedora"
+        case .`windows`: "windows"
+        case .`other`: "other"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = ReadinessSystem(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum ReadinessKind: String, Codable, Sendable, CaseIterable {
@@ -1539,11 +1721,41 @@ public enum PromptOrigin: String, Codable, Sendable, CaseIterable {
     case `automatic` = "automatic"
 }
 
-public enum PromptStatus: String, Codable, Sendable, CaseIterable {
-    case `queued` = "queued"
-    case `active` = "active"
-    case `completed` = "completed"
-    case `cancelled` = "cancelled"
+public enum PromptStatus: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `queued`
+    case `active`
+    case `completed`
+    case `cancelled`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [PromptStatus] = [.`queued`, .`active`, .`completed`, .`cancelled`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "queued": self = .`queued`
+        case "active": self = .`active`
+        case "completed": self = .`completed`
+        case "cancelled": self = .`cancelled`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`queued`: "queued"
+        case .`active`: "active"
+        case .`completed`: "completed"
+        case .`cancelled`: "cancelled"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = PromptStatus(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum TranscriptRole: String, Codable, Sendable, CaseIterable {
@@ -1552,23 +1764,93 @@ public enum TranscriptRole: String, Codable, Sendable, CaseIterable {
     case `system` = "system"
 }
 
-public enum TranscriptKind: String, Codable, Sendable, CaseIterable {
-    case `message` = "message"
-    case `thought` = "thought"
-    case `tool` = "tool"
-    case `terminal` = "terminal"
-    case `plan` = "plan"
-    case `usage` = "usage"
-    case `system` = "system"
-    case `handover` = "handover"
-    case `subagent` = "subagent"
+public enum TranscriptKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `message`
+    case `thought`
+    case `tool`
+    case `terminal`
+    case `plan`
+    case `usage`
+    case `system`
+    case `handover`
+    case `subagent`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [TranscriptKind] = [.`message`, .`thought`, .`tool`, .`terminal`, .`plan`, .`usage`, .`system`, .`handover`, .`subagent`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "message": self = .`message`
+        case "thought": self = .`thought`
+        case "tool": self = .`tool`
+        case "terminal": self = .`terminal`
+        case "plan": self = .`plan`
+        case "usage": self = .`usage`
+        case "system": self = .`system`
+        case "handover": self = .`handover`
+        case "subagent": self = .`subagent`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`message`: "message"
+        case .`thought`: "thought"
+        case .`tool`: "tool"
+        case .`terminal`: "terminal"
+        case .`plan`: "plan"
+        case .`usage`: "usage"
+        case .`system`: "system"
+        case .`handover`: "handover"
+        case .`subagent`: "subagent"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = TranscriptKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
-public enum PermissionOptionKind: String, Codable, Sendable, CaseIterable {
-    case `allow_once` = "allow_once"
-    case `allow_always` = "allow_always"
-    case `reject_once` = "reject_once"
-    case `reject_always` = "reject_always"
+public enum PermissionOptionKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `allow_once`
+    case `allow_always`
+    case `reject_once`
+    case `reject_always`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [PermissionOptionKind] = [.`allow_once`, .`allow_always`, .`reject_once`, .`reject_always`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "allow_once": self = .`allow_once`
+        case "allow_always": self = .`allow_always`
+        case "reject_once": self = .`reject_once`
+        case "reject_always": self = .`reject_always`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`allow_once`: "allow_once"
+        case .`allow_always`: "allow_always"
+        case .`reject_once`: "reject_once"
+        case .`reject_always`: "reject_always"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = PermissionOptionKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum PermissionResult: String, Codable, Sendable, CaseIterable {
@@ -1602,11 +1884,41 @@ public enum ConfigType: String, Codable, Sendable, CaseIterable {
     case `boolean` = "boolean"
 }
 
-public enum ToolStatus: String, Codable, Sendable, CaseIterable {
-    case `pending` = "pending"
-    case `in_progress` = "in_progress"
-    case `completed` = "completed"
-    case `failed` = "failed"
+public enum ToolStatus: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `pending`
+    case `in_progress`
+    case `completed`
+    case `failed`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [ToolStatus] = [.`pending`, .`in_progress`, .`completed`, .`failed`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "pending": self = .`pending`
+        case "in_progress": self = .`in_progress`
+        case "completed": self = .`completed`
+        case "failed": self = .`failed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`pending`: "pending"
+        case .`in_progress`: "in_progress"
+        case .`completed`: "completed"
+        case .`failed`: "failed"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = ToolStatus(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum PlanStatus: String, Codable, Sendable, CaseIterable {
@@ -1850,10 +2162,38 @@ public struct ElicitationRequest: Codable, Sendable {
     }
 }
 
-public enum AgentLoginPhase: String, Codable, Sendable, CaseIterable {
-    case `waiting` = "waiting"
-    case `verifying` = "verifying"
-    case `signing_out` = "signing_out"
+public enum AgentLoginPhase: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `waiting`
+    case `verifying`
+    case `signing_out`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [AgentLoginPhase] = [.`waiting`, .`verifying`, .`signing_out`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "waiting": self = .`waiting`
+        case "verifying": self = .`verifying`
+        case "signing_out": self = .`signing_out`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`waiting`: "waiting"
+        case .`verifying`: "verifying"
+        case .`signing_out`: "signing_out"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = AgentLoginPhase(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct AgentLoginProgress: Codable, Sendable {
@@ -2257,12 +2597,44 @@ public struct TerminalOutput: Codable, Sendable {
     }
 }
 
-public enum SubagentStatus: String, Codable, Sendable, CaseIterable {
-    case `running` = "running"
-    case `completed` = "completed"
-    case `failed` = "failed"
-    case `cancelled` = "cancelled"
-    case `disconnected` = "disconnected"
+public enum SubagentStatus: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `running`
+    case `completed`
+    case `failed`
+    case `cancelled`
+    case `disconnected`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [SubagentStatus] = [.`running`, .`completed`, .`failed`, .`cancelled`, .`disconnected`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "running": self = .`running`
+        case "completed": self = .`completed`
+        case "failed": self = .`failed`
+        case "cancelled": self = .`cancelled`
+        case "disconnected": self = .`disconnected`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`running`: "running"
+        case .`completed`: "completed"
+        case .`failed`: "failed"
+        case .`cancelled`: "cancelled"
+        case .`disconnected`: "disconnected"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = SubagentStatus(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct SubagentRun: Codable, Sendable {
@@ -3402,13 +3774,47 @@ public struct AttentionChangedEvent: Codable, Sendable {
     }
 }
 
-public enum TurnStopReason: String, Codable, Sendable, CaseIterable {
-    case `end_turn` = "end_turn"
-    case `max_tokens` = "max_tokens"
-    case `max_turn_requests` = "max_turn_requests"
-    case `refusal` = "refusal"
-    case `cancelled` = "cancelled"
-    case `error` = "error"
+public enum TurnStopReason: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `end_turn`
+    case `max_tokens`
+    case `max_turn_requests`
+    case `refusal`
+    case `cancelled`
+    case `error`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [TurnStopReason] = [.`end_turn`, .`max_tokens`, .`max_turn_requests`, .`refusal`, .`cancelled`, .`error`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "end_turn": self = .`end_turn`
+        case "max_tokens": self = .`max_tokens`
+        case "max_turn_requests": self = .`max_turn_requests`
+        case "refusal": self = .`refusal`
+        case "cancelled": self = .`cancelled`
+        case "error": self = .`error`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`end_turn`: "end_turn"
+        case .`max_tokens`: "max_tokens"
+        case .`max_turn_requests`: "max_turn_requests"
+        case .`refusal`: "refusal"
+        case .`cancelled`: "cancelled"
+        case .`error`: "error"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = TurnStopReason(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct QueuedPromptSummary: Codable, Sendable {
@@ -3502,11 +3908,41 @@ public enum TaskCheckState: String, Codable, Sendable, CaseIterable {
     case `conflict` = "conflict"
 }
 
-public enum TaskReviewState: String, Codable, Sendable, CaseIterable {
-    case `none` = "none"
-    case `awaiting_person` = "awaiting_person"
-    case `changes_requested` = "changes_requested"
-    case `approved` = "approved"
+public enum TaskReviewState: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `none`
+    case `awaiting_person`
+    case `changes_requested`
+    case `approved`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [TaskReviewState] = [.`none`, .`awaiting_person`, .`changes_requested`, .`approved`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "none": self = .`none`
+        case "awaiting_person": self = .`awaiting_person`
+        case "changes_requested": self = .`changes_requested`
+        case "approved": self = .`approved`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`none`: "none"
+        case .`awaiting_person`: "awaiting_person"
+        case .`changes_requested`: "changes_requested"
+        case .`approved`: "approved"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = TaskReviewState(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum TaskReviewBadge: String, Codable, Sendable, CaseIterable {
@@ -4526,42 +4962,166 @@ public enum UsageProvider: String, Codable, Sendable, CaseIterable {
     case `opencode` = "opencode"
 }
 
-public enum UsageState: String, Codable, Sendable, CaseIterable {
-    case `ok` = "ok"
-    case `stale` = "stale"
-    case `login_needed` = "login_needed"
-    case `no_access` = "no_access"
-    case `unavailable` = "unavailable"
+public enum UsageState: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `ok`
+    case `stale`
+    case `login_needed`
+    case `no_access`
+    case `unavailable`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [UsageState] = [.`ok`, .`stale`, .`login_needed`, .`no_access`, .`unavailable`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "ok": self = .`ok`
+        case "stale": self = .`stale`
+        case "login_needed": self = .`login_needed`
+        case "no_access": self = .`no_access`
+        case "unavailable": self = .`unavailable`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`ok`: "ok"
+        case .`stale`: "stale"
+        case .`login_needed`: "login_needed"
+        case .`no_access`: "no_access"
+        case .`unavailable`: "unavailable"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = UsageState(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
-public enum UsageUnavailableReason: String, Codable, Sendable, CaseIterable {
-    case `not_checked` = "not_checked"
-    case `no_data` = "no_data"
-    case `tool_not_found` = "tool_not_found"
-    case `app_server_failed` = "app_server_failed"
-    case `invalid_response` = "invalid_response"
-    case `rate_limited` = "rate_limited"
-    case `network_error` = "network_error"
-    case `login_needed` = "login_needed"
-    case `no_access` = "no_access"
-    case `source_failed` = "source_failed"
-    case `plan_expired` = "plan_expired"
+public enum UsageUnavailableReason: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `not_checked`
+    case `no_data`
+    case `tool_not_found`
+    case `app_server_failed`
+    case `invalid_response`
+    case `rate_limited`
+    case `network_error`
+    case `login_needed`
+    case `no_access`
+    case `source_failed`
+    case `plan_expired`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [UsageUnavailableReason] = [.`not_checked`, .`no_data`, .`tool_not_found`, .`app_server_failed`, .`invalid_response`, .`rate_limited`, .`network_error`, .`login_needed`, .`no_access`, .`source_failed`, .`plan_expired`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "not_checked": self = .`not_checked`
+        case "no_data": self = .`no_data`
+        case "tool_not_found": self = .`tool_not_found`
+        case "app_server_failed": self = .`app_server_failed`
+        case "invalid_response": self = .`invalid_response`
+        case "rate_limited": self = .`rate_limited`
+        case "network_error": self = .`network_error`
+        case "login_needed": self = .`login_needed`
+        case "no_access": self = .`no_access`
+        case "source_failed": self = .`source_failed`
+        case "plan_expired": self = .`plan_expired`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`not_checked`: "not_checked"
+        case .`no_data`: "no_data"
+        case .`tool_not_found`: "tool_not_found"
+        case .`app_server_failed`: "app_server_failed"
+        case .`invalid_response`: "invalid_response"
+        case .`rate_limited`: "rate_limited"
+        case .`network_error`: "network_error"
+        case .`login_needed`: "login_needed"
+        case .`no_access`: "no_access"
+        case .`source_failed`: "source_failed"
+        case .`plan_expired`: "plan_expired"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = UsageUnavailableReason(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
-public enum UsageSource: String, Codable, Sendable, CaseIterable {
-    case `claude_cli_usage` = "claude_cli_usage"
-    case `claude_oauth_endpoint` = "claude_oauth_endpoint"
-    case `claude_desktop_cache` = "claude_desktop_cache"
-    case `claude_web` = "claude_web"
-    case `codex_app_server` = "codex_app_server"
-    case `codex_account_endpoint` = "codex_account_endpoint"
-    case `codex_access_token` = "codex_access_token"
-    case `cursor_current_period` = "cursor_current_period"
-    case `cursor_app_login` = "cursor_app_login"
-    case `cursor_browser_cookies` = "cursor_browser_cookies"
-    case `opencode_go_allowance` = "opencode_go_allowance"
-    case `opencode_zai_plan` = "opencode_zai_plan"
-    case `opencode_local_history` = "opencode_local_history"
+public enum UsageSource: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `claude_cli_usage`
+    case `claude_oauth_endpoint`
+    case `claude_desktop_cache`
+    case `claude_web`
+    case `codex_app_server`
+    case `codex_account_endpoint`
+    case `codex_access_token`
+    case `cursor_current_period`
+    case `cursor_app_login`
+    case `cursor_browser_cookies`
+    case `opencode_go_allowance`
+    case `opencode_zai_plan`
+    case `opencode_local_history`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [UsageSource] = [.`claude_cli_usage`, .`claude_oauth_endpoint`, .`claude_desktop_cache`, .`claude_web`, .`codex_app_server`, .`codex_account_endpoint`, .`codex_access_token`, .`cursor_current_period`, .`cursor_app_login`, .`cursor_browser_cookies`, .`opencode_go_allowance`, .`opencode_zai_plan`, .`opencode_local_history`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "claude_cli_usage": self = .`claude_cli_usage`
+        case "claude_oauth_endpoint": self = .`claude_oauth_endpoint`
+        case "claude_desktop_cache": self = .`claude_desktop_cache`
+        case "claude_web": self = .`claude_web`
+        case "codex_app_server": self = .`codex_app_server`
+        case "codex_account_endpoint": self = .`codex_account_endpoint`
+        case "codex_access_token": self = .`codex_access_token`
+        case "cursor_current_period": self = .`cursor_current_period`
+        case "cursor_app_login": self = .`cursor_app_login`
+        case "cursor_browser_cookies": self = .`cursor_browser_cookies`
+        case "opencode_go_allowance": self = .`opencode_go_allowance`
+        case "opencode_zai_plan": self = .`opencode_zai_plan`
+        case "opencode_local_history": self = .`opencode_local_history`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`claude_cli_usage`: "claude_cli_usage"
+        case .`claude_oauth_endpoint`: "claude_oauth_endpoint"
+        case .`claude_desktop_cache`: "claude_desktop_cache"
+        case .`claude_web`: "claude_web"
+        case .`codex_app_server`: "codex_app_server"
+        case .`codex_account_endpoint`: "codex_account_endpoint"
+        case .`codex_access_token`: "codex_access_token"
+        case .`cursor_current_period`: "cursor_current_period"
+        case .`cursor_app_login`: "cursor_app_login"
+        case .`cursor_browser_cookies`: "cursor_browser_cookies"
+        case .`opencode_go_allowance`: "opencode_go_allowance"
+        case .`opencode_zai_plan`: "opencode_zai_plan"
+        case .`opencode_local_history`: "opencode_local_history"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = UsageSource(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct UsageWindow: Codable, Sendable {
@@ -4730,12 +5290,44 @@ public enum DiffLineKind: String, Codable, Sendable, CaseIterable {
     case `removed` = "removed"
 }
 
-public enum LspState: String, Codable, Sendable, CaseIterable {
-    case `starting` = "starting"
-    case `ready` = "ready"
-    case `restarting` = "restarting"
-    case `unavailable` = "unavailable"
-    case `restricted` = "restricted"
+public enum LspState: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `starting`
+    case `ready`
+    case `restarting`
+    case `unavailable`
+    case `restricted`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [LspState] = [.`starting`, .`ready`, .`restarting`, .`unavailable`, .`restricted`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "starting": self = .`starting`
+        case "ready": self = .`ready`
+        case "restarting": self = .`restarting`
+        case "unavailable": self = .`unavailable`
+        case "restricted": self = .`restricted`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`starting`: "starting"
+        case .`ready`: "ready"
+        case .`restarting`: "restarting"
+        case .`unavailable`: "unavailable"
+        case .`restricted`: "restricted"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = LspState(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct TextPosition: Codable, Sendable {
@@ -6478,10 +7070,38 @@ public struct ServersLocalChangedEvent: Codable, Sendable {
     }
 }
 
-public enum PermissionRequestKind: String, Codable, Sendable, CaseIterable {
-    case `agent` = "agent"
-    case `web_session` = "web_session"
-    case `web_evaluate` = "web_evaluate"
+public enum PermissionRequestKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `agent`
+    case `web_session`
+    case `web_evaluate`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [PermissionRequestKind] = [.`agent`, .`web_session`, .`web_evaluate`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "agent": self = .`agent`
+        case "web_session": self = .`web_session`
+        case "web_evaluate": self = .`web_evaluate`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`agent`: "agent"
+        case .`web_session`: "web_session"
+        case .`web_evaluate`: "web_evaluate"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = PermissionRequestKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum WritingKind: String, Codable, Sendable, CaseIterable {
@@ -7005,32 +7625,136 @@ public enum HarnessSource: String, Codable, Sendable, CaseIterable {
     case `custom` = "custom"
 }
 
-public enum HarnessSetupState: String, Codable, Sendable, CaseIterable {
-    case `ready` = "ready"
-    case `not_checked` = "not_checked"
-    case `not_installed` = "not_installed"
-    case `sign_in` = "sign_in"
-    case `check_setup` = "check_setup"
+public enum HarnessSetupState: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `ready`
+    case `not_checked`
+    case `not_installed`
+    case `sign_in`
+    case `check_setup`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [HarnessSetupState] = [.`ready`, .`not_checked`, .`not_installed`, .`sign_in`, .`check_setup`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "ready": self = .`ready`
+        case "not_checked": self = .`not_checked`
+        case "not_installed": self = .`not_installed`
+        case "sign_in": self = .`sign_in`
+        case "check_setup": self = .`check_setup`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`ready`: "ready"
+        case .`not_checked`: "not_checked"
+        case .`not_installed`: "not_installed"
+        case .`sign_in`: "sign_in"
+        case .`check_setup`: "check_setup"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = HarnessSetupState(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
-public enum HarnessSetupReason: String, Codable, Sendable, CaseIterable {
-    case `never_started` = "never_started"
-    case `executable_missing` = "executable_missing"
-    case `registry_package_unverified` = "registry_package_unverified"
-    case `authentication_required` = "authentication_required"
-    case `session_failed` = "session_failed"
-    case `launch_failed` = "launch_failed"
-    case `environment_unavailable` = "environment_unavailable"
+public enum HarnessSetupReason: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `never_started`
+    case `executable_missing`
+    case `registry_package_unverified`
+    case `authentication_required`
+    case `session_failed`
+    case `launch_failed`
+    case `environment_unavailable`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [HarnessSetupReason] = [.`never_started`, .`executable_missing`, .`registry_package_unverified`, .`authentication_required`, .`session_failed`, .`launch_failed`, .`environment_unavailable`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "never_started": self = .`never_started`
+        case "executable_missing": self = .`executable_missing`
+        case "registry_package_unverified": self = .`registry_package_unverified`
+        case "authentication_required": self = .`authentication_required`
+        case "session_failed": self = .`session_failed`
+        case "launch_failed": self = .`launch_failed`
+        case "environment_unavailable": self = .`environment_unavailable`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`never_started`: "never_started"
+        case .`executable_missing`: "executable_missing"
+        case .`registry_package_unverified`: "registry_package_unverified"
+        case .`authentication_required`: "authentication_required"
+        case .`session_failed`: "session_failed"
+        case .`launch_failed`: "launch_failed"
+        case .`environment_unavailable`: "environment_unavailable"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = HarnessSetupReason(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
-public enum HarnessEnvironmentIssue: String, Codable, Sendable, CaseIterable {
-    case `missing_shell` = "missing_shell"
-    case `unsupported_shell` = "unsupported_shell"
-    case `unavailable_shell` = "unavailable_shell"
-    case `probe_failed` = "probe_failed"
-    case `probe_timed_out` = "probe_timed_out"
-    case `output_too_large` = "output_too_large"
-    case `invalid_output` = "invalid_output"
+public enum HarnessEnvironmentIssue: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `missing_shell`
+    case `unsupported_shell`
+    case `unavailable_shell`
+    case `probe_failed`
+    case `probe_timed_out`
+    case `output_too_large`
+    case `invalid_output`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [HarnessEnvironmentIssue] = [.`missing_shell`, .`unsupported_shell`, .`unavailable_shell`, .`probe_failed`, .`probe_timed_out`, .`output_too_large`, .`invalid_output`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "missing_shell": self = .`missing_shell`
+        case "unsupported_shell": self = .`unsupported_shell`
+        case "unavailable_shell": self = .`unavailable_shell`
+        case "probe_failed": self = .`probe_failed`
+        case "probe_timed_out": self = .`probe_timed_out`
+        case "output_too_large": self = .`output_too_large`
+        case "invalid_output": self = .`invalid_output`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`missing_shell`: "missing_shell"
+        case .`unsupported_shell`: "unsupported_shell"
+        case .`unavailable_shell`: "unavailable_shell"
+        case .`probe_failed`: "probe_failed"
+        case .`probe_timed_out`: "probe_timed_out"
+        case .`output_too_large`: "output_too_large"
+        case .`invalid_output`: "invalid_output"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = HarnessEnvironmentIssue(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public struct HarnessEnvironmentVariable: Codable, Sendable {

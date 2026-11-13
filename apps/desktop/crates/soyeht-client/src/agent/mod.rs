@@ -253,7 +253,8 @@ fn sequence(message: &TranscriptMessage) -> Result<u64> {
 fn progress(status: &ToolStatus) -> u8 {
     match status {
         ToolStatus::Pending => 0,
-        ToolStatus::InProgress => 1,
+        // A status this build does not know is shown as under way.
+        ToolStatus::InProgress | ToolStatus::Unknown => 1,
         ToolStatus::Completed | ToolStatus::Failed => 2,
     }
 }
@@ -286,6 +287,7 @@ fn describe(tool: &ToolCall) -> String {
         ToolStatus::InProgress => format!("Running {}", tool.title),
         ToolStatus::Completed => format!("Done: {}", tool.title),
         ToolStatus::Failed => format!("Failed: {}", tool.title),
+        ToolStatus::Unknown => tool.title.clone(),
     }
 }
 

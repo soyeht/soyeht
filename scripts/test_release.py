@@ -232,7 +232,7 @@ class CommandTests(unittest.TestCase):
         generator.assert_not_called()
 
     def test_there_is_no_command_that_pretends_to_package_or_notarize(self):
-        self.assertEqual(set(release.COMMANDS), {"show", "bump", "sync", "check"})
+        self.assertEqual(set(release.COMMANDS), {"show", "bump", "sync", "check", "snapshot"})
 
 
 if __name__ == "__main__":

@@ -37,7 +37,9 @@ pub(super) fn card(
             );
             let (fill, ink) = match option.kind {
                 PermissionOptionKind::AllowOnce => (palette.ink, palette.face),
-                PermissionOptionKind::AllowAlways => (palette.well, palette.ink),
+                PermissionOptionKind::AllowAlways | PermissionOptionKind::Unknown => {
+                    (palette.well, palette.ink)
+                }
                 PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
                     (palette.well, palette.danger())
                 }

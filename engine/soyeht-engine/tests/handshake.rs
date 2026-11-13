@@ -63,3 +63,23 @@ fn an_unknown_agent_binding_is_unauthorized() {
     assert_eq!(answer["error"]["data"]["kind"], "unauthorized");
     assert_eq!(answer["error"]["message"], "Unknown agent binding");
 }
+
+/// ADR 0161: the engine serves every version from its floor to its own. A client built for a later
+/// version (a phone updated before the computer) is welcomed at the engine's version, and the
+/// client decides whether it can speak that version. Today the engine compares for equality and
+/// answers `protocol_version_unsupported`, so the client cannot even learn which version to speak.
+#[test]
+fn a_client_newer_than_the_engine_is_welcomed_at_the_engines_version() {
+    let rig = Rig::new();
+    let answer = hello_with(
+        &rig,
+        json!({"client":"newer-app","clientVersion":"9",
+            "protocolVersion":soyeht_protocol::limits::PROTOCOL_VERSION + 1}),
+    );
+    assert_eq!(
+        answer["result"]["protocolVersion"],
+        soyeht_protocol::limits::PROTOCOL_VERSION,
+        "a newer client is welcomed at the engine's version: {answer}"
+    );
+    assert_eq!(answer["result"]["role"], "human_local", "{answer}");
+}

@@ -472,7 +472,7 @@ class SchemaTests(unittest.TestCase):
             self.assertIn("domain", properties)
 
     def test_harness_switch_surface_is_additive_durable_and_bounded(self):
-        self.assertEqual(self.schema["x-protocolVersion"], 1)
+        self.assertEqual(self.schema["x-protocolVersion"]["current"], 1)
         method = self.schema["x-methods"]["pane.harness.switch"]
         self.assertTrue(method["mutation"])
         params_name = method["params"]["$ref"].split("/")[-1]

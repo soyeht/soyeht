@@ -19,7 +19,7 @@ export type StateSource = "protocol" | "hook" | "osc" | "screen" | "none";
 
 export type SnapshotSection = "workspaces" | "panes" | "tasks" | "requests" | "attention" | "loops" | "devices" | "capabilities" | "streams" | "files" | "writing" | "trust";
 
-export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded" | "platform_unsupported" | "git_unavailable" | "file_not_text" | "file_too_large" | "adapter_not_acknowledged" | "workspace_folder_missing" | "push_unavailable" | "ink_unsupported" | "ink_language_unavailable" | "ink_limit_exceeded" | "ink_recognition_failed";
+export type ErrorKind = "not_found" | "invalid_params" | "unauthorized" | "forbidden_role" | "pane_busy" | "task_has_owner" | "transition_refused" | "stale_version" | "idempotency_conflict" | "harness_unavailable" | "needs_login" | "cursor_too_old" | "resync_required" | "slow_consumer" | "protocol_version_unsupported" | "disk_full" | "ptyd_unavailable" | "stale_engine_generation" | "internal_error" | "snapshot_too_large" | "engine_identity_changed" | "stale_attempt" | "dependency_cycle" | "dependency_open" | "rate_limited" | "stale_reference" | "human_took_over" | "web_host_unavailable" | "navigation_refused" | "writing_kind_refused" | "writing_limit_exceeded" | "writing_sidecar_conflict" | "writing_line_not_found" | "writing_scene_not_found" | "writing_section_refused" | "harness_switch_failed" | "attachment_limit_exceeded" | "platform_unsupported" | "git_unavailable" | "file_not_text" | "file_too_large" | "adapter_not_acknowledged" | "workspace_folder_missing" | "push_unavailable" | "ink_unsupported" | "ink_language_unavailable" | "ink_limit_exceeded" | "ink_recognition_failed" | (string & {});
 
 export interface RpcError {
   "code": number;
@@ -477,7 +477,7 @@ export interface PairProveResult {
   "status": string;
 }
 
-export type EngineReachabilityReason = "tailnet_address_not_found" | "tailnet_lookup_failed" | "tailnet_listen_failed" | "tailnet_port_in_use" | "loopback_only";
+export type EngineReachabilityReason = "tailnet_address_not_found" | "tailnet_lookup_failed" | "tailnet_listen_failed" | "tailnet_port_in_use" | "loopback_only" | (string & {});
 
 export interface EngineReachability {
   "remote": boolean;
@@ -496,7 +496,7 @@ export interface EngineStatusResult {
   "reachability"?: EngineReachability;
 }
 
-export type ReadinessSystem = "macos" | "debian" | "fedora" | "windows" | "other";
+export type ReadinessSystem = "macos" | "debian" | "fedora" | "windows" | "other" | (string & {});
 
 export type ReadinessKind = "tool" | "harness";
 
@@ -760,13 +760,13 @@ export interface ClientFocus {
 
 export type PromptOrigin = "human" | "automatic";
 
-export type PromptStatus = "queued" | "active" | "completed" | "cancelled";
+export type PromptStatus = "queued" | "active" | "completed" | "cancelled" | (string & {});
 
 export type TranscriptRole = "user" | "assistant" | "system";
 
-export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover" | "subagent";
+export type TranscriptKind = "message" | "thought" | "tool" | "terminal" | "plan" | "usage" | "system" | "handover" | "subagent" | (string & {});
 
-export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always";
+export type PermissionOptionKind = "allow_once" | "allow_always" | "reject_once" | "reject_always" | (string & {});
 
 export type PermissionResult = "selected" | "cancelled" | "expired";
 
@@ -778,7 +778,7 @@ export type ProbeResult = "worked" | "unsupported" | "unauthenticated" | "inconc
 
 export type ConfigType = "select" | "boolean";
 
-export type ToolStatus = "pending" | "in_progress" | "completed" | "failed";
+export type ToolStatus = "pending" | "in_progress" | "completed" | "failed" | (string & {});
 
 export type PlanStatus = "pending" | "in_progress" | "completed";
 
@@ -898,7 +898,7 @@ export interface ElicitationRequest {
   "expiresAt": string;
 }
 
-export type AgentLoginPhase = "waiting" | "verifying" | "signing_out";
+export type AgentLoginPhase = "waiting" | "verifying" | "signing_out" | (string & {});
 
 export interface AgentLoginProgress {
   "phase": AgentLoginPhase;
@@ -1116,7 +1116,7 @@ export interface TerminalOutput {
   "exitCode"?: number;
 }
 
-export type SubagentStatus = "running" | "completed" | "failed" | "cancelled" | "disconnected";
+export type SubagentStatus = "running" | "completed" | "failed" | "cancelled" | "disconnected" | (string & {});
 
 export interface SubagentRun {
   "subagentId": Id;
@@ -1701,7 +1701,7 @@ export interface AttentionChangedEvent {
   "items": Array<AttentionItem>;
 }
 
-export type TurnStopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled" | "error";
+export type TurnStopReason = "end_turn" | "max_tokens" | "max_turn_requests" | "refusal" | "cancelled" | "error" | (string & {});
 
 export interface QueuedPromptSummary {
   "promptId": Id;
@@ -1742,7 +1742,7 @@ export type BlockingKind = "dependency" | "missing_information" | "external_erro
 
 export type TaskCheckState = "unknown" | "pending" | "green" | "red" | "conflict";
 
-export type TaskReviewState = "none" | "awaiting_person" | "changes_requested" | "approved";
+export type TaskReviewState = "none" | "awaiting_person" | "changes_requested" | "approved" | (string & {});
 
 export type TaskReviewBadge = "system_turn" | "your_turn";
 
@@ -2277,11 +2277,11 @@ export interface ProjectTrustChangedEvent {
 
 export type UsageProvider = "claude" | "codex" | "cursor" | "opencode";
 
-export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable";
+export type UsageState = "ok" | "stale" | "login_needed" | "no_access" | "unavailable" | (string & {});
 
-export type UsageUnavailableReason = "not_checked" | "no_data" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed" | "plan_expired";
+export type UsageUnavailableReason = "not_checked" | "no_data" | "tool_not_found" | "app_server_failed" | "invalid_response" | "rate_limited" | "network_error" | "login_needed" | "no_access" | "source_failed" | "plan_expired" | (string & {});
 
-export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "claude_web" | "codex_app_server" | "codex_account_endpoint" | "codex_access_token" | "cursor_current_period" | "cursor_app_login" | "cursor_browser_cookies" | "opencode_go_allowance" | "opencode_zai_plan" | "opencode_local_history";
+export type UsageSource = "claude_cli_usage" | "claude_oauth_endpoint" | "claude_desktop_cache" | "claude_web" | "codex_app_server" | "codex_account_endpoint" | "codex_access_token" | "cursor_current_period" | "cursor_app_login" | "cursor_browser_cookies" | "opencode_go_allowance" | "opencode_zai_plan" | "opencode_local_history" | (string & {});
 
 export interface UsageWindow {
   "used": number;
@@ -2353,7 +2353,7 @@ export type FileSymbolKind = "function" | "type" | "method" | "property" | "vari
 
 export type DiffLineKind = "context" | "added" | "removed";
 
-export type LspState = "starting" | "ready" | "restarting" | "unavailable" | "restricted";
+export type LspState = "starting" | "ready" | "restarting" | "unavailable" | "restricted" | (string & {});
 
 export interface TextPosition {
   "line": number;
@@ -3272,7 +3272,7 @@ export interface ServersLocalChangedEvent {
   "servers": Array<LocalServer>;
 }
 
-export type PermissionRequestKind = "agent" | "web_session" | "web_evaluate";
+export type PermissionRequestKind = "agent" | "web_session" | "web_evaluate" | (string & {});
 
 export type WritingKind = "text" | "presentation" | "screenplay";
 
@@ -3539,11 +3539,11 @@ export interface WritingChangedEvent {
 
 export type HarnessSource = "built_in" | "custom";
 
-export type HarnessSetupState = "ready" | "not_checked" | "not_installed" | "sign_in" | "check_setup";
+export type HarnessSetupState = "ready" | "not_checked" | "not_installed" | "sign_in" | "check_setup" | (string & {});
 
-export type HarnessSetupReason = "never_started" | "executable_missing" | "registry_package_unverified" | "authentication_required" | "session_failed" | "launch_failed" | "environment_unavailable";
+export type HarnessSetupReason = "never_started" | "executable_missing" | "registry_package_unverified" | "authentication_required" | "session_failed" | "launch_failed" | "environment_unavailable" | (string & {});
 
-export type HarnessEnvironmentIssue = "missing_shell" | "unsupported_shell" | "unavailable_shell" | "probe_failed" | "probe_timed_out" | "output_too_large" | "invalid_output";
+export type HarnessEnvironmentIssue = "missing_shell" | "unsupported_shell" | "unavailable_shell" | "probe_failed" | "probe_timed_out" | "output_too_large" | "invalid_output" | (string & {});
 
 export interface HarnessEnvironmentVariable {
   "key": string;

@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from client_policy import render_client_policy
+from compat import released_problems
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text, rustfmt
 from legacy import LEGACY_SOURCE, render_legacy, validate_legacy
@@ -58,9 +59,14 @@ def type_name(schema, lang):
     return primitives[lang][kind]
 
 
-def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]"):
+def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]", opened=()):
     if "enum" in schema:
         fields = [f'    #[serde(rename = {json.dumps(v, ensure_ascii=False)})]\n    {variant(v)},' for v in schema["enum"]]
+        if name in opened:
+            # A client built with `open-enums` reads a value a later engine adds as `Unknown`. The
+            # engine is built without the feature, so the variant does not exist there: it cannot
+            # read one from anywhere or publish one. `Unknown` is never written out either.
+            fields.append('    /// A value this build does not know (ADR 0161).\n    #[cfg(feature = "open-enums")]\n    #[serde(other, skip_serializing)]\n    Unknown,')
         return derive + f"\npub enum {name} {{\n" + "\n".join(fields) + "\n}"
     if "oneOf" in schema:
         fields = [f"    V{i}({type_name(t, 'rust')})," for i, t in enumerate(schema["oneOf"])]
@@ -83,8 +89,46 @@ def rust_definition(name, schema, skip=(), derive="#[derive(Debug, Clone, Partia
     return f"pub type {name} = " + ("serde_json::Value" if not schema else type_name(schema, "rust")) + ";"
 
 
-def swift_definition(name, schema):
+def swift_open_enum(name, values):
+    """A string enum that keeps a value it does not know as `unknown(String)` (ADR 0161)."""
+    cases = [snake(variant(v)) for v in values]
+    declared = "\n".join(f"    case `{case}`" for case in cases)
+    known = "\n".join(f"        case {json.dumps(v, ensure_ascii=False)}: self = .`{case}`" for v, case in zip(values, cases))
+    raws = "\n".join(f"        case .`{case}`: {json.dumps(v, ensure_ascii=False)}" for v, case in zip(values, cases))
+    every = ", ".join(f".`{case}`" for case in cases)
+    return f"""public enum {name}: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {{
+{declared}
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [{name}] = [{every}]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {{
+        switch rawValue {{
+{known}
+        default: self = .unknown(rawValue)
+        }}
+    }}
+    public var rawValue: String {{
+        switch self {{
+{raws}
+        case .unknown(let value): value
+        }}
+    }}
+    public init(from decoder: any Decoder) throws {{
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = {name}(rawValue: text) ?? .unknown(text)
+    }}
+    public func encode(to encoder: any Encoder) throws {{
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }}
+}}"""
+
+
+def swift_definition(name, schema, opened=()):
     name = "TaskRecord" if name == "Task" else name
+    if "enum" in schema and name in opened:
+        return swift_open_enum(name, schema["enum"])
     if "enum" in schema:
         fields = [f'    case `{snake(variant(v))}` = {json.dumps(v, ensure_ascii=False)}' for v in schema["enum"]]
         return f"public enum {name}: String, Codable, Sendable, CaseIterable {{\n" + "\n".join(fields) + "\n}"
@@ -123,9 +167,11 @@ def swift_definition(name, schema):
     return f"public typealias {name} = {type_name(schema, 'swift')}"
 
 
-def ts_definition(name, schema):
+def ts_definition(name, schema, opened=()):
     if "enum" in schema:
-        return f"export type {name} = " + " | ".join(json.dumps(v, ensure_ascii=False) for v in schema["enum"]) + ";"
+        values = [json.dumps(v, ensure_ascii=False) for v in schema["enum"]]
+        # `string & {}` keeps the known values in completions and admits one a later engine adds.
+        return f"export type {name} = " + " | ".join(values + (["(string & {})"] if name in opened else [])) + ";"
     if "oneOf" in schema:
         return f"export type {name} = " + " | ".join(type_name(t, "ts") for t in schema["oneOf"]) + ";"
     if schema.get("type") == "object":
@@ -341,7 +387,35 @@ def frame_kinds(schema):
     return schema["x-framing"]["types"]
 
 
+def validate_protocol_versions(versions):
+    """The range of protocol versions the engine serves (ADR 0161)."""
+    if set(versions) - {"min", "current", "minReason"}:
+        raise ValueError("x-protocolVersion has only min, current and minReason")
+    low, high = versions.get("min"), versions.get("current")
+    if not all(isinstance(number, int) and not isinstance(number, bool) for number in (low, high)):
+        raise ValueError("x-protocolVersion min and current must be integers")
+    if not 1 <= low <= high:
+        raise ValueError(f"x-protocolVersion range {low}..={high} is empty")
+    if low > 1 and not str(versions.get("minReason", "")).strip():
+        raise ValueError("x-protocolVersion.minReason must say why min is above 1")
+
+
+def validate_open_enums(schema):
+    """The enums that may gain values (ADR 0161): a client keeps what it cannot name. The engine is
+    built without the variant that holds it, so it still refuses such a value wherever it reads one."""
+    for name in schema.get("x-openEnums", []):
+        enum = schema["$defs"].get(name, {}).get("enum")
+        if not enum:
+            raise ValueError(f"x-openEnums names {name}, which is not an enum")
+        if "unknown" in enum or "Unknown" in [variant(value) for value in enum]:
+            raise ValueError(f"x-openEnums names {name}, which already has a value that the catch-all case would clash with")
+    if len(set(schema.get("x-openEnums", []))) != len(schema.get("x-openEnums", [])):
+        raise ValueError("x-openEnums names an enum twice")
+
+
 def validate_schema(schema):
+    validate_protocol_versions(schema["x-protocolVersion"])
+    validate_open_enums(schema)
     allowed = {"$ref", "type", "properties", "required", "additionalProperties",
                "enum", "oneOf", "items", "minimum", "maximum", "minLength",
                "maxLength", "pattern", "contentEncoding", "description"}
@@ -450,27 +524,32 @@ def render(schema):
     outputs = {}
     outputs["contracts/typescript/src/schema.json"] = json.dumps(schema, ensure_ascii=False, indent=2) + "\n"
     header = f"// {header_text(SCHEMA_SOURCE)}\n"
-    rust = header + "\n".join(rust_definition(n, s) for n, s in schema["$defs"].items())
+    opened = set(schema.get("x-openEnums", []))
+    rust = header + "\n".join(rust_definition(n, s, opened=opened) for n, s in schema["$defs"].items())
     rust += "\n" + registry_rust(schema) + "\n" + event_registry_rust(schema) + "\n" + event_params_rust(schema) + "\n" + rust_names(schema) + "\n"
-    rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items()) + "\n    }\n}\n"
+    rust += "\npub fn error_code(kind: &ErrorKind) -> i64 {\n    match kind {\n" + "\n".join(f"        ErrorKind::{variant(name)} => {code}," for name,code in schema["x-errorCodes"].items())
+    if "ErrorKind" in opened:
+        rust += f"\n        #[cfg(feature = \"open-enums\")]\n        ErrorKind::Unknown => {schema['x-errorCodes']['internal_error']},"
+    rust += "\n    }\n}\n"
     # Formatting in memory keeps --check read-only and identical across invocations.
     rust = rustfmt(rust)
     outputs["engine/soyeht-protocol/src/generated.rs"] = rust
     swift = header + "import Foundation\n\n"
-    swift += "\n\n".join(swift_definition(n, s) for n, s in schema["$defs"].items())
+    swift += "\n\n".join(swift_definition(n, s, opened) for n, s in schema["$defs"].items())
     swift += "\n\n" + method_registry_swift(schema) + "\n\n" + event_registry_swift(schema) + "\n"
     outputs["contracts/swift/Sources/SoyehtProtocol/Generated.swift"] = swift
-    ts = header + "\n\n".join(ts_definition(n, s) for n, s in schema["$defs"].items())
+    ts = header + "\n\n".join(ts_definition(n, s, opened) for n, s in schema["$defs"].items())
     ts += "\n\nexport interface Methods {\n" + "\n".join(f'  "{n}": {{ params: {type_name(m["params"], "ts")}; result: {type_name(m["result"], "ts")} }};' for n, m in schema["x-methods"].items()) + "\n}\n"
     ts += "\n" + event_registry_ts(schema) + "\n"
     outputs["contracts/typescript/src/generated.ts"] = ts
-    constants = header + f'pub const PROTOCOL_VERSION: u32 = {schema["x-protocolVersion"]};\n'
+    versions = schema["x-protocolVersion"]
+    constants = header + f'pub const MIN_PROTOCOL_VERSION: u32 = {versions["min"]};\npub const PROTOCOL_VERSION: u32 = {versions["current"]};\n'
     notes = schema.get("x-limitNotes", {})
     constants += "\n".join(f"{doc_line(notes, k, '')}pub const {snake(k).upper()}: usize = {v};" for k, v in schema["x-limits"].items()) + "\n"
     constants += "\n".join(f"pub const FRAME_KIND_{k.upper()}: u8 = {v};" for k, v in frame_kinds(schema).items()) + "\n"
     outputs["engine/soyeht-protocol/src/limits.rs"] = constants
     outputs["contracts/typescript/src/limits.ts"] = header + "export const limits = " + json.dumps(schema["x-limits"], indent=2) + " as const;\n"
-    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum ProtocolVersion {\n    public static let current: UInt32 = " + str(schema["x-protocolVersion"]) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
+    outputs["contracts/swift/Sources/SoyehtProtocol/Limits.swift"] = header + "public enum ProtocolLimits {\n" + "\n".join(f"{doc_line(notes, k, '    ')}    public static let {k} = {v}" for k, v in schema["x-limits"].items()) + "\n}\n\npublic enum ProtocolVersion {\n    public static let min: UInt32 = " + str(versions["min"]) + "\n    public static let current: UInt32 = " + str(versions["current"]) + "\n}\n\npublic enum FrameKind {\n" + "\n".join(f"    public static let {k}: UInt8 = {v}" for k, v in frame_kinds(schema).items()) + "\n}\n"
     outputs.update(render_client_policy(schema, header))
     outputs.update(render_readiness(schema, header))
     outputs.update(render_settings(schema, header))
@@ -511,6 +590,10 @@ def main():
     outputs.update(render_version(load_version((ROOT / RELEASE_SOURCE).read_text())))
     token_data = (ROOT / TOKENS_PATH).read_bytes()
     outputs.update(render_tokens(json.loads(token_data)))
+    if args.check:
+        broken = released_problems(ROOT, schema)
+        if broken:
+            raise SystemExit("The wire contract only grows (ADR 0161):\n" + "\n".join(broken))
     mismatches = []
     for relative, content in outputs.items():
         path = ROOT / relative

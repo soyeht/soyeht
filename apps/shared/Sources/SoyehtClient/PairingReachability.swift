@@ -13,6 +13,7 @@ extension EngineReachability {
       case .tailnet_port_in_use:
         "another program on this Mac is using the port Soyeht listens on; Soyeht connects by itself once the port is free"
       case .loopback_only: "this Mac listens on loopback only"
+      case .unknown: "the reason is not known to this version of Soyeht"
       }
     return "Not reachable from your devices: \(detail)"
   }

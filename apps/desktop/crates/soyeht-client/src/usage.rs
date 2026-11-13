@@ -169,6 +169,7 @@ impl Presentation<'_> {
                 format!("Access to the {provider} login was declined.")
             }
             UsageUnavailableReason::SourceFailed => format!("{provider} could not provide usage."),
+            UsageUnavailableReason::Unknown => "Usage is unavailable.".to_owned(),
             UsageUnavailableReason::PlanExpired => {
                 format!("{provider}'s plan has expired or is not active.")
             }
@@ -199,6 +200,7 @@ pub fn source_name(source: &UsageSource) -> &'static str {
         UsageSource::OpencodeGoAllowance => "OpenCode Go allowance",
         UsageSource::OpencodeZaiPlan => "GLM Coding Plan quota",
         UsageSource::OpencodeLocalHistory => "OpenCode history on this device",
+        UsageSource::Unknown => "A source this version does not know",
     }
 }
 

@@ -116,6 +116,8 @@ pub const PROJECT_TRUST_RESTRICT: &str = "Keep restricted";
 pub const PROJECT_TRUST_RESTRICTED_NOTE: &str =
     "This folder is restricted: language servers run with code execution off, or do not start.";
 pub const PROJECT_TRUST_FAILED: &str = "Soyeht could not save this choice.";
+pub const UPDATE_SOYEHT: &str =
+    "This app and the Mac speak different versions of Soyeht. Update Soyeht on the older one.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";

@@ -1,4 +1,5 @@
 // Generated from contracts/protocol.json. Do not edit.
+pub const MIN_PROTOCOL_VERSION: u32 = 1;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const JSON_BYTES: usize = 1048576;
 pub const TERMINAL_PAYLOAD_BYTES: usize = 65536;

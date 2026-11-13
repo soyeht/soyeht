@@ -575,6 +575,13 @@ fn session_lost(
     open(store, runtime, state, saved, changes)
 }
 
+/// How a turn ended, as the agent said; a reason this engine does not know is refused.
+fn decode_stop_reason(value: &Value) -> Result<TurnStopReason> {
+    let reason = session::stop_reason(value).map_err(native_error)?;
+    serde_json::from_value(Value::String(reason.to_owned()))
+        .map_err(|_| errors::internal("Unknown stop reason"))
+}
+
 pub(crate) fn prompt_response(
     store: &impl StorePort,
     state: &mut State,
@@ -599,12 +606,7 @@ pub(crate) fn prompt_response(
     );
     let reason = match result {
         Ok(value) => {
-            let reason: TurnStopReason = serde_json::from_value(Value::String(
-                session::stop_reason(&value)
-                    .map_err(native_error)?
-                    .to_owned(),
-            ))
-            .map_err(|_| errors::internal("Unknown stop reason"))?;
+            let reason = decode_stop_reason(&value)?;
             match prompt_errors::rejected_model_reply(store, &saved.pane.pane_id, state)? {
                 Some(reply) if reason == TurnStopReason::EndTurn => {
                     let failure = prompt_errors::Failure::RejectedModelReply;

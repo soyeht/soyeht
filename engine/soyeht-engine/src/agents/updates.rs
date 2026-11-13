@@ -14,7 +14,7 @@ use soyeht_acp::{
     subagents::Lifecycle,
 };
 use soyeht_protocol::{
-    ConfigValue, TokenUsage, TranscriptKind, TranscriptMessage, TranscriptRole, event,
+    ConfigValue, TokenUsage, ToolCall, TranscriptKind, TranscriptMessage, TranscriptRole, event,
 };
 
 fn append_replayed_user(
@@ -181,6 +181,11 @@ struct ToolUpdate<'a> {
     subagent: Option<&'a str>,
 }
 
+/// The tool call an agent described: a status this engine does not know is refused, not stored.
+fn decode_tool(tool: Value) -> Result<ToolCall> {
+    serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))
+}
+
 fn update_tool(
     store: &impl StorePort,
     pane: &str,
@@ -240,8 +245,7 @@ fn update_tool(
         }
     }
     item.complete = matches!(tool["status"].as_str(), Some("completed" | "failed"));
-    item.tool =
-        Some(serde_json::from_value(tool).map_err(|_| errors::invalid("Invalid tool update"))?);
+    item.tool = Some(decode_tool(tool)?);
     transcript::fit_tool(&mut item)?;
     state.open_messages.insert(
         transcript::open_key("tool", subagent, Some(id)),
@@ -671,4 +675,20 @@ fn update_in_parent(
         }
     };
     Ok(observed_turn_output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tool_status_the_engine_does_not_know_is_refused_not_stored() {
+        let tool = |status| json!({"toolCallId":"t","title":"Read","status":status,"locations":[]});
+        assert!(decode_tool(tool("completed")).is_ok());
+        let refused = decode_tool(tool("paused")).unwrap_err();
+        assert!(
+            matches!(&refused, errors::Error::InvalidParams(text) if text == "Invalid tool update"),
+            "{refused:?}"
+        );
+    }
 }

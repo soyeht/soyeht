@@ -170,7 +170,7 @@ impl SubagentPresentation {
             Some(SubagentStatus::Failed) => (Status::Failed, "failed".to_owned()),
             Some(SubagentStatus::Disconnected) => (Status::Failed, "disconnected".to_owned()),
             Some(SubagentStatus::Cancelled) => (Status::Stopped, "cancelled".to_owned()),
-            None => (Status::Stopped, String::new()),
+            Some(SubagentStatus::Unknown) | None => (Status::Stopped, String::new()),
         };
         Self {
             name: run.map_or(UNNAMED, |run| run.name.as_str()).to_owned(),

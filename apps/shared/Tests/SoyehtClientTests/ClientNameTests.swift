@@ -1,3 +1,4 @@
+import Foundation
 import SoyehtProtocol
 import Testing
 
@@ -17,4 +18,21 @@ import Testing
 
 @Test func theProtocolVersionTheClientSpeaksIsTheContractsOne() {
   #expect(ProtocolVersion.current == 1)
+  #expect(ProtocolVersion.min == 1)
+}
+
+@Test func theVersionRuleGivesTheAnswersOfTheVector() throws {
+  let vector = try ContractVector.load("protocol-version")
+  for item in ContractVector.cases(vector, "welcome") {
+    let welcomed = UInt32(item["welcomed"].int ?? -1)
+    let accepted = ProtocolVersion.accepts(
+      welcomed, min: UInt32(item["min"].int ?? 0), current: UInt32(item["current"].int ?? 0))
+    #expect(accepted == (item["accepted"] == .bool(true)), "\(item["name"].string ?? "")")
+  }
+}
+
+@Test func aWelcomeOutsideTheRangeAsksForAnUpdate() {
+  #expect(throws: ClientFailure.self) { try ProtocolVersion.require(ProtocolVersion.current + 1) }
+  #expect(ClientFailure.unsupportedProtocolVersion.errorDescription == ClientPolicy.updateSoyeht)
+  #expect((try? ProtocolVersion.require(ProtocolVersion.current)) != nil)
 }

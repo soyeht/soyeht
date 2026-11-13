@@ -1,0 +1,19 @@
+{
+  "description": "How a client and the engine settle on a protocol version (ADR 0161). The engine serving min..=current welcomes a client that speaks up to `client` at the lower of the two, and refuses one below min (`result` null). A client serving min..=current accepts a welcome at `welcomed` only inside its own range. soyeht_protocol::handshake and the Swift ProtocolVersion pass the same cases.",
+  "negotiate": [
+    {"name": "the same version", "client": 1, "min": 1, "current": 1, "result": 1},
+    {"name": "a client newer than the engine is welcomed at the engine's version", "client": 2, "min": 1, "current": 1, "result": 1},
+    {"name": "a client far ahead", "client": 4294967295, "min": 1, "current": 3, "result": 3},
+    {"name": "an older client inside the range", "client": 2, "min": 2, "current": 4, "result": 2},
+    {"name": "an older client at the top of the range", "client": 4, "min": 2, "current": 4, "result": 4},
+    {"name": "a client below the floor is refused", "client": 1, "min": 2, "current": 4, "result": null},
+    {"name": "version 0 is refused", "client": 0, "min": 1, "current": 1, "result": null}
+  ],
+  "welcome": [
+    {"name": "the same version", "welcomed": 1, "min": 1, "current": 1, "accepted": true},
+    {"name": "an engine older than the client but inside its range", "welcomed": 2, "min": 2, "current": 4, "accepted": true},
+    {"name": "an engine below the client's floor", "welcomed": 1, "min": 2, "current": 4, "accepted": false},
+    {"name": "an engine above the client", "welcomed": 5, "min": 2, "current": 4, "accepted": false},
+    {"name": "version 0", "welcomed": 0, "min": 1, "current": 1, "accepted": false}
+  ]
+}

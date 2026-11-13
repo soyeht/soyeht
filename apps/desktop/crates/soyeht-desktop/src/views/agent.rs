@@ -223,7 +223,8 @@ pub(super) fn transcript_row(
             .map(|output| terminal_block(&owner_of(pane_id, &message.local_id), output, palette)),
         // A subagent's row is drawn from its group, with the activity it owns under it.
         TranscriptKind::Usage | TranscriptKind::Subagent => None,
-        TranscriptKind::Message | TranscriptKind::System => {
+        // A kind a later engine adds is read as the text it carries, as the Mac and iPhone do.
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown => {
             Some(text_row(line, palette, markdown, cx))
         }
     }
@@ -235,12 +236,14 @@ pub(super) fn row_weight(line: MessageRow, markdown: &mut Replies) -> usize {
     let message = line.message;
     match message.kind {
         TranscriptKind::Thought if line.open => shown_reply(line, markdown).weight(),
-        TranscriptKind::Message | TranscriptKind::System
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown
             if message.role == TranscriptRole::Assistant && message.agent_message.is_none() =>
         {
             shown_reply(line, markdown).weight()
         }
-        TranscriptKind::Message | TranscriptKind::System => text_weight(message.text.len()),
+        TranscriptKind::Message | TranscriptKind::System | TranscriptKind::Unknown => {
+            text_weight(message.text.len())
+        }
         TranscriptKind::Terminal => message
             .terminal
             .as_ref()
@@ -390,6 +393,7 @@ fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
         ToolStatus::InProgress => ("\u{25cf} running", palette.accent),
         ToolStatus::Completed => ("\u{2713} done", palette.success()),
         ToolStatus::Failed => ("\u{2715} failed", palette.danger()),
+        ToolStatus::Unknown => ("", palette.secondary),
     };
     let locations = tool.locations.iter().map(|location| {
         let text = match location.line {

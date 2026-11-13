@@ -142,6 +142,7 @@ extension UsageSource {
     case .opencode_go_allowance: "OpenCode Go allowance"
     case .opencode_zai_plan: "GLM Coding Plan quota"
     case .opencode_local_history: "OpenCode history on this device"
+    case .unknown: "A source this version does not know"
     }
   }
 }

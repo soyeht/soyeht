@@ -323,16 +323,33 @@ fn a_second_hello_is_refused_and_ends_the_connection() {
 }
 
 #[test]
-fn a_hello_for_another_protocol_version_is_refused_and_gives_no_role() {
+fn a_hello_below_the_supported_protocol_versions_is_refused_and_gives_no_role() {
     let rig = Rig::new();
-    for version in [0, 2, 99, u32::MAX] {
+    // A version above the engine's is welcomed at the engine's (ADR 0161), so only a version
+    // below the floor is refused.
+    let mut raw = Raw::connect(&rig);
+    let answer = raw.hello(
+        1,
+        json!({"client":"attack","clientVersion":"1","protocolVersion":0}),
+    );
+    assert_eq!(kind(&answer), "protocol_version_unsupported", "{answer}");
+    raw.assert_closed("an unsupported protocol version");
+}
+
+#[test]
+fn a_hello_for_a_later_protocol_version_is_welcomed_at_the_engines_version() {
+    let rig = Rig::new();
+    for version in [2, 99, u32::MAX] {
         let mut raw = Raw::connect(&rig);
         let answer = raw.hello(
             1,
             json!({"client":"attack","clientVersion":"1","protocolVersion":version}),
         );
-        assert_eq!(kind(&answer), "protocol_version_unsupported", "{answer}");
-        raw.assert_closed("an unsupported protocol version");
+        assert_eq!(
+            answer["result"]["protocolVersion"],
+            limits::PROTOCOL_VERSION,
+            "{answer}"
+        );
     }
 }
 

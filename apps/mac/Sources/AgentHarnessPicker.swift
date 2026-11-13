@@ -294,7 +294,7 @@ struct AgentHarnessPicker: View {
     switch status {
     case .ready: MacTheme.success
     case .not_checked: MacTheme.muted
-    case .sign_in, .check_setup: MacTheme.warning
+    case .sign_in, .check_setup, .unknown: MacTheme.warning
     case .not_installed: MacTheme.muted
     }
   }
