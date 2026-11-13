@@ -323,14 +323,3 @@ fn execute_command_over_display_limit_fails_closed() {
         "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}]});
     assert!(permission(&params, None, &PaneNames::new()).is_err());
 }
-
-#[test]
-fn a_permission_option_of_a_kind_the_engine_does_not_know_is_refused() {
-    let option = |kind| json!({"optionId":"a","name":"Allow","kind":kind});
-    assert!(native_options(&json!({"options":[option("allow_once")]})).is_ok());
-    let refused = native_options(&json!({"options":[option("allow_everything")]})).unwrap_err();
-    assert!(
-        matches!(&refused, crate::errors::Error::InvalidParams(text) if text == "Invalid native permission options"),
-        "{refused:?}"
-    );
-}

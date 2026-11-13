@@ -718,3 +718,21 @@ impl Core {
 
 #[cfg(test)]
 mod presentation_tests;
+
+#[cfg(test)]
+mod option_tests {
+    use super::*;
+
+    #[test]
+    fn a_permission_option_of_a_kind_the_engine_does_not_know_is_refused() {
+        let offered = |kind: &str| {
+            native_options(&json!({"options": [{"optionId": "a", "name": "Allow", "kind": kind}]}))
+        };
+        assert_eq!(offered("allow_once").unwrap().len(), 1);
+        let refused = offered("allow_everything").unwrap_err();
+        let crate::errors::Error::InvalidParams(text) = refused else {
+            panic!("expected invalid params, got {refused:?}");
+        };
+        assert_eq!(text, "Invalid native permission options");
+    }
+}
