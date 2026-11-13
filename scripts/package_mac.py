@@ -634,7 +634,11 @@ def package(options, environment):
     make_image(app, image, WORK)
     # Before the image is signed and sent to be notarized, which is the slow and paid part: a stapled
     # ticket and a signature only add to the size, so an image over its ceiling now is over it then.
-    check_sizes([image], reserve=0 if signing.ad_hoc else SIGNATURE_RESERVE, warn=False)
+    try:
+        check_sizes([image], reserve=0 if signing.ad_hoc else SIGNATURE_RESERVE, warn=False)
+    except PackagingError:
+        image.unlink(missing_ok=True)  # the unsigned image must not be left where a release is collected from
+        raise
     sign_file(image, signing)
     if signing.notarizes:
         notarize_and_staple_image(image, signing)

@@ -37,13 +37,13 @@ class PrepareTests(FlowCase):
         target = str(release.next_release(release.current(), "minor").version)
         self.prepare("minor")
         self.assertEqual([call.args[0] for call in self.main.call_args_list], [["bump", "minor"], ["snapshot"]])
-        self.draft.assert_called_once_with(["draft", "--version", target, "--replace"])
+        self.draft.assert_called_with(["draft", "--version", target, "--replace"])
 
     def test_a_dry_run_runs_nothing_that_writes(self):
         target = str(release.next_release(release.current(), "minor").version)
         _, out = self.prepare("minor", dry_run=True)
         self.main.assert_called_once_with(["bump", "minor", "--dry-run"])
-        self.draft.assert_called_once_with(["draft", "--version", target, "--print"])
+        self.draft.assert_called_once_with(["draft", "--version", target, "--print"])  # read once, shown from that
         self.assertIn("would be recorded in contracts/released/protocol-v1.json", out)
 
     def test_a_finished_section_is_kept_and_the_contract_is_still_recorded(self):
@@ -62,7 +62,7 @@ class PrepareTests(FlowCase):
     def test_a_draft_section_is_written_again_and_a_dry_run_shows_it(self):
         self.write_changelog(DRAFT)
         self.prepare()
-        self.draft.assert_called_once_with(["draft", "--version", VERSION, "--replace"])
+        self.draft.assert_called_with(["draft", "--version", VERSION, "--replace"])
         self.draft.reset_mock()
         self.prepare(dry_run=True)
         self.draft.assert_called_once_with(["draft", "--version", VERSION, "--print"])
@@ -92,12 +92,26 @@ class PrepareTests(FlowCase):
                 self.prepare("not-a-version", dry_run=dry_run)
         self.nothing_was_written()
 
+    def test_a_draft_that_cannot_be_made_stops_before_the_bump_and_the_contract(self):
+        self.draft.return_value = 1  # for example `git log` of a shallow clone
+        for dry_run in (True, False):
+            with self.assertRaisesRegex(release_flow.Refused, "nothing was written"):
+                self.prepare("minor", dry_run=dry_run)
+        self.main.assert_not_called()
+        self.assertEqual([call.args[0][-1] for call in self.draft.call_args_list], ["--print"] * 2)  # one a run
+
+    def test_the_draft_is_read_first_in_print_mode_and_not_shown(self):
+        self.draft.side_effect = lambda argv: print("DRAFT TEXT") or 0
+        _, out = self.prepare("minor")
+        self.assertEqual(out.count("DRAFT TEXT"), 1)  # the write call's own output, not the first read's
+        self.assertEqual([call.args[0][-1] for call in self.draft.call_args_list], ["--print", "--replace"])
+
     def test_a_failing_bump_stops_before_the_contract_and_the_changelog(self):
         self.main.return_value = 1
         with self.assertRaisesRegex(release_flow.Refused, "could not be raised"):
             self.prepare("minor")
         self.main.assert_called_once()
-        self.draft.assert_not_called()
+        self.assertEqual([call.args[0][-1] for call in self.draft.call_args_list], ["--print"])  # nothing written
 
     def test_the_notes_of_the_kept_section_are_the_ones_a_release_publishes(self):
         text = Path(changelog.CHANGELOG).read_text()

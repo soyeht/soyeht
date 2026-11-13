@@ -33,6 +33,8 @@ published.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -154,17 +156,23 @@ def prepare(options):
     kept = changelog.is_final(text, version)
     if kept:  # a finished section is the person's: it is kept, and it must be one a release can use
         changelog.notes_of(text, version)
+    draft = ["draft", "--version", version]
+    preview = io.StringIO()
+    if not kept:  # the draft is read before anything is written: a failure of git must not leave a bump behind
+        with contextlib.redirect_stdout(preview):
+            failed = changelog.main([*draft, "--print"])
+        if failed:
+            raise Refused("the changelog draft cannot be made (the reason is above): nothing was written")
     if options.target != "current" and release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])]):
         raise Refused("the version could not be raised")
-    draft = ["draft", "--version", version]
     if options.dry_run:
         print(f"release: dry run: the wire contract {'would be recorded' if recorded else 'is recorded already'}"
-              + (f" in {recorded.relative_to(release.ROOT).as_posix()}" if recorded else ""))
+              + (f" in {recorded.relative_to(release.ROOT).as_posix()} and index.json" if recorded else ""))
         if kept:
             print(f"release: dry run: CHANGELOG.md already has the finished section of {version}; it would be kept")
         else:
             print("release: dry run: the changelog section would be:\n")
-            changelog.main([*draft, "--print"])
+            print(preview.getvalue(), end="")
         return 0
     if release.main(["snapshot"]):
         raise Refused("the wire contract could not be recorded")
@@ -175,7 +183,7 @@ def prepare(options):
         raise Refused("the changelog draft could not be written")
     edit = "" if kept else "edit CHANGELOG.md (delete the draft line when the entries read well for a user), "
     bump = "the bump, " if options.target != "current" else ""
-    print(f"\nNext: {edit}commit {bump}the wire contract and the changelog in a pull request, merge it, and build from that commit of main.")
+    print(f"\nNext: {edit}commit {bump}the wire contract (contracts/released/protocol-v<N>.json and index.json) and the changelog in a pull request, merge it, and build from that commit of main.")
     return 0
 
 

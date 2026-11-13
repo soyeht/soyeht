@@ -37,7 +37,32 @@ MONITORS = {
     "update-manifest-expiry.yml":
         "uv run python scripts/release_manifest.py check-expiry --allow-unpublished",
 }
-MERGE_TRIGGERS = re.compile(r"^\s*(?:pull_request(?:_target)?|push)\s*:", re.MULTILINE)
+MONITOR_TRIGGERS = {"schedule", "workflow_dispatch"}
+ON_KEY = re.compile(r"""^(?:on|"on"|'on')\s*:(?P<inline>.*)$""")
+NAME = re.compile(r"[A-Za-z_][A-Za-z_-]*")
+
+
+def triggers(text: str) -> set[str]:
+    """The events a workflow runs on: `on: push`, `on: [push, pull_request]`, `on: {push: ...}` (every
+    word of an inline value counts, so none can hide) and the keys of a block `on:` (the keys at its
+    first indentation, or its `- name` items), whatever the form."""
+    lines = [line.split(" #")[0].rstrip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    found: set[str] = set()
+    for number, line in enumerate(lines):
+        match = ON_KEY.match(line)
+        if not match:
+            continue
+        found.update(NAME.findall(match["inline"]))
+        indent = None
+        for after in lines[number + 1 :]:
+            width = len(after) - len(after.lstrip())
+            if width == 0:
+                break
+            indent = width if indent is None else indent
+            if width == indent:
+                item = re.match(r"\s*(?:-\s+)?[\"']?(?P<name>[A-Za-z_][A-Za-z_-]*)", after)
+                found.add(item["name"]) if item else None
+    return found
 
 
 def gate_list_problems(name: str, text: str) -> list[str]:
@@ -51,8 +76,11 @@ def gate_list_problems(name: str, text: str) -> list[str]:
         ]
         if MONITORS[name] not in commands:
             problems.append(f"{name}: does not run `{MONITORS[name]}`")
-        if MERGE_TRIGGERS.search(commands):
-            problems.append(f"{name}: a monitor runs on a schedule or by hand, never on a push or a pull request")
+        found = triggers(commands)
+        if not found or found - MONITOR_TRIGGERS:
+            problems.append(
+                f"{name}: a monitor runs only on {sorted(MONITOR_TRIGGERS)}, not on {sorted(found - MONITOR_TRIGGERS) or 'no trigger'}"
+            )
         return problems
     problems = [
         f"{name}: runs its own gate step `{found.group()}`; add it to scripts/check_all.sh"
@@ -547,7 +575,14 @@ class GateListTests(unittest.TestCase):
         self.assertEqual(gate_list_problems(name, monitor), [])
         self.assertEqual(len(gate_list_problems(name, monitor + "      - run: cargo test\n")), 1)
         self.assertEqual(len(gate_list_problems(name, monitor + "      - run: uv run python scripts/e2e.py\n")), 1)
-        self.assertIn("never on a push", "\n".join(gate_list_problems(name, monitor + "  push:\n")))
+        body = monitor.split("jobs:", 1)[1]
+        for bypass in ("on: [push]", "on: pull_request", "on: [schedule, pull_request_target]", "on: {push: {branches: [main]}}",
+                       "on:\n  workflow_run:\n    workflows: [x]", "on:\n  - push", "on:\n  schedule:\n    - cron: '1 2 * * 1'\n  push:"):
+            self.assertTrue(
+                [p for p in gate_list_problems(name, bypass + "\njobs:" + body) if "a monitor runs only" in p], bypass
+            )
+        for allowed in ("on: workflow_dispatch", "on: [schedule, workflow_dispatch]", "on:\n  workflow_dispatch:\n  schedule:\n    - cron: '1 2 * * 1'"):
+            self.assertEqual(gate_list_problems(name, allowed + "\njobs:" + body), [], allowed)
         self.assertIn("does not run", "\n".join(gate_list_problems(name, "on:\n  schedule:\n")))
         # The same call in a workflow that is not a named monitor is a gate step.
         self.assertEqual(len(gate_list_problems("other.yml", monitor)), 2)

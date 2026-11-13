@@ -152,7 +152,9 @@ class SizeBeforeSigningTests(unittest.TestCase):
                     with contextlib.redirect_stderr(io.StringIO()):
                         package_mac.package(options, {})
                 except PackagingError as failure:
+                    self.left = sorted((folder / "dist").rglob("*.dmg"))
                     return steps, str(failure)
+                self.left = sorted((folder / "dist").rglob("*.dmg"))
         return steps, None
 
     def test_an_image_over_its_ceiling_stops_before_it_is_signed_or_notarized(self):
@@ -161,6 +163,7 @@ class SizeBeforeSigningTests(unittest.TestCase):
         self.assertEqual(steps[-1], "make_image")
         self.assertNotIn("sign_file", steps)
         self.assertNotIn("notarize_and_staple_image", steps)
+        self.assertEqual(self.left, [])  # no unsigned image is left where a release is collected from
 
     def test_the_signature_and_the_ticket_are_counted_before_they_are_added(self):
         ceiling = package_mac.SIGNATURE_RESERVE + 1000
@@ -176,6 +179,7 @@ class SizeBeforeSigningTests(unittest.TestCase):
         steps, failure = self.run_package(1000, ad_hoc=False, ceiling=ceiling)
         self.assertIsNone(failure)
         self.assertEqual(steps[-3:], ["make_image", "sign_file", "notarize_and_staple_image"])
+        self.assertEqual(len(self.left), 1)
         # The finished image is the one that is published: it is checked once more, with no reserve.
         self.assertEqual(self.checks(1000, ceiling), 2)
 

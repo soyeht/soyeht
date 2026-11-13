@@ -92,7 +92,8 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
 
    It checks everything that can refuse first (the version, the wire contract, the changelog), then
    runs `release.py bump` (not for `current`), records the wire contract of the release in
-   `contracts/released/` (`release.py snapshot`, ADR 0161; commit the new files with the bump) and
+   `contracts/released/` (`release.py snapshot`, ADR 0161: it writes `protocol-v<N>.json` and adds the
+   version to `index.json`; commit both with the bump) and
    drafts the section of `CHANGELOG.md` from the squash commits since the last tag
    (`scripts/changelog.py`). `--dry-run` reports exactly what the real run will do, and a refusal
    (a wire contract that differs from the recorded one, a version that cannot be raised, a finished
@@ -101,8 +102,8 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    is, which is what the first release of 0.1.0 does when the changelog was written by hand: the
    wire contract is still recorded, and `changelog.py draft --replace --force` writes over a
    finished section on purpose. Otherwise edit the entries so they read well for a person who uses
-   Soyeht, delete the line that starts with `<!-- draft:`, commit the bump, the wire contract and the
-   changelog, and merge them as a pull request.
+   Soyeht, delete the line that starts with `<!-- draft:`, commit the bump, the wire contract (`protocol-v<N>.json` and
+   `index.json`) and the changelog, and merge them as a pull request.
 
 2. **Build.** From a clean checkout of the merged commit of `main` (the script refuses any other):
 
