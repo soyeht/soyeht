@@ -78,20 +78,20 @@ import Testing
   let command = WebCommandParams(
     paneId: "web-1", command: .snapshot, args: .object([:]), timeoutMs: 1_000,
     operationKey: "operation-1")
-  let success = await EngineClient.webHostResponse(
+  let success = await WebHostResponder.response(
     id: "request-1", command: command,
     host: FakeWebHost(result: WebCommandResult(paneId: "web-1", cookiesPresent: false)))
   #expect(success.message["id"].string == "request-1")
   #expect(try success.message["result"].decoded(WebCommandResult.self).paneId == "web-1")
 
-  let stale = await EngineClient.webHostResponse(
+  let stale = await WebHostResponder.response(
     id: "request-2", command: command,
     host: FakeWebHost(error: .webHost(.stale_reference, "Take a new snapshot.")))
   let staleError = try stale.message["error"].decoded(RpcError.self)
   #expect(staleError.code == -32025)
   #expect(staleError.data.kind == .stale_reference)
 
-  let changed = await EngineClient.webHostResponse(
+  let changed = await WebHostResponder.response(
     id: "request-3", command: command,
     host: FakeWebHost(result: WebCommandResult(paneId: "another-pane")))
   let changedError = try changed.message["error"].decoded(RpcError.self)
