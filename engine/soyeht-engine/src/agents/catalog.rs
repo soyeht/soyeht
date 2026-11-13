@@ -314,6 +314,7 @@ fn harness_info(core: &Core, item: PreparedHarness, issue: bool) -> Result<Value
     } = item;
     let known = prepared.as_ref().and_then(|(launch, digest)| {
         core.agents
+            .running
             .values()
             .filter(|agent| agent.state.launch == *launch && agent.state.binary_digest == *digest)
             .max_by_key(|agent| agent.state.last_update_ms)
@@ -416,6 +417,7 @@ impl Core {
         let known = if let Some(pane) = params["paneId"].as_str() {
             let state = self
                 .agents
+                .running
                 .get(pane)
                 .filter(|a| {
                     a.state.launch.id == harness
@@ -426,6 +428,7 @@ impl Core {
         } else {
             prepared.and_then(|(launch, digest)| {
                 self.agents
+                    .running
                     .values()
                     .filter(|a| a.state.launch == launch && a.state.binary_digest == digest)
                     .max_by_key(|a| a.state.last_update_ms)

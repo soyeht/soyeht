@@ -123,6 +123,13 @@ def section_of(text, version):
     return None
 
 
+def is_final(text, version):
+    """Whether `version` has a section a person finished (no draft line): `draft --replace` refuses
+    to write over it, and a release takes its notes as they are."""
+    section = section_of(text, version)
+    return section is not None and DRAFT_MARK not in section
+
+
 def insert(text, section, version, replace, force=False):
     """`text` with the section of `version` just below `[Unreleased]`.
 

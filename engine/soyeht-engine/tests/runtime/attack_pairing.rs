@@ -375,3 +375,110 @@ fn a_paired_device_cannot_decide_pairings_or_revoke_another_device() {
     assert_eq!(devices(&mut paired.window.local), 1);
     assert!(paired.device.len() > 8);
 }
+
+/// Deciding a request and revoking a device are the signed app's alone on every system (ADR 0128):
+/// a shell, the command line or a script on the local endpoint is refused, and nothing changes.
+#[test]
+fn a_shell_that_is_not_the_signed_app_cannot_decide_a_pairing_or_revoke_a_device() {
+    let rig = Rig::new();
+    let mut paired = pair_device(&rig, 71);
+    // A second request waits for the person.
+    let window = paired
+        .window
+        .local
+        .call("device.pair.start", json!({"idempotencyKey":"second"}));
+    let code = window["code"].as_str().unwrap().to_owned();
+    let key = SigningKey::from_bytes(&[72; 32]);
+    let mut phone = Phone::connect(&paired.address);
+    let started = begin(&mut phone, &code, &key, "begin")["result"].clone();
+    let proved = phone.request(
+        "pair.prove",
+        json!({"requestId":started["requestId"],"proof":proof_for(&code, &key, &started),
+            "idempotencyKey":"prove"}),
+    );
+    assert_eq!(proved["result"]["status"], "pending", "{proved}");
+    // The test program stops standing for the app: a client that connects now is a shell.
+    fs::remove_file(rig.path.join("test-attest-local-ui")).unwrap();
+    let mut shell = rig.client();
+    let approve = shell.request(
+        "device.pair.decide",
+        json!({"requestId":started["requestId"],"approve":true,"idempotencyKey":"shell-approve"}),
+    );
+    assert_eq!(kind(&approve), "forbidden_role", "{approve}");
+    let revoke = shell.request(
+        "device.revoke",
+        json!({"deviceId":paired.device,"idempotencyKey":"shell-revoke"}),
+    );
+    assert_eq!(kind(&revoke), "forbidden_role", "{revoke}");
+    for refusal in [&approve, &revoke] {
+        let message = refusal["error"]["message"].as_str().unwrap();
+        assert!(message.contains("Soyeht"), "{message}");
+    }
+    // Nothing changed: the first device is not revoked and the request is still undecided.
+    let listed = paired.window.local.call("device.list", json!({}));
+    assert_eq!(listed["items"][0]["revoked"], false, "{listed}");
+    // The app still can do both.
+    let decided = paired.window.local.call(
+        "device.pair.decide",
+        json!({"requestId":started["requestId"],"approve":true,"idempotencyKey":"app-approve"}),
+    );
+    assert_eq!(decided["approved"], true, "{decided}");
+    let granted = phone.read();
+    assert_eq!(granted["params"]["approved"], true, "{granted}");
+    paired.window.local.call(
+        "device.revoke",
+        json!({"deviceId":paired.device,"idempotencyKey":"app-revoke"}),
+    );
+    // A revoked device leaves the list; the one the app just approved stays.
+    let listed = paired.window.local.call("device.list", json!({}));
+    let ids: Vec<_> = listed["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|device| device["deviceId"].clone())
+        .collect();
+    assert_eq!(ids, [granted["params"]["deviceId"].clone()], "{listed}");
+}
+
+/// A paired device may forget the computer by revoking itself (ADR 0128): the call succeeds, the
+/// device leaves the list, and its connection is closed.
+#[test]
+fn a_paired_device_can_revoke_itself_and_loses_its_connection() {
+    use tokio_tungstenite::tungstenite::Message;
+    let rig = Rig::new();
+    let mut paired = pair_device(&rig, 81);
+    let mut phone = connected_device(&paired);
+    assert_eq!(devices(&mut paired.window.local), 1);
+    phone
+        .socket
+        .send(Message::Text(
+            json!({"jsonrpc":"2.0","id":9000,"method":"device.revoke","params":{
+                "deviceId":paired.device,"idempotencyKey":"forget"}})
+            .to_string()
+            .into(),
+        ))
+        .unwrap();
+    // The engine closes the connection as it revokes, so the answer may or may not arrive first;
+    // if it does, it is a success. Read until the close.
+    let mut closed = false;
+    for _ in 0..20 {
+        match phone.socket.read() {
+            Ok(Message::Text(text)) => {
+                let message: Value = serde_json::from_str(&text).unwrap();
+                if message["id"] == 9000 {
+                    assert!(message.get("error").is_none(), "{message}");
+                }
+            }
+            Ok(Message::Close(_)) | Err(_) => {
+                closed = true;
+                break;
+            }
+            Ok(_) => {}
+        }
+    }
+    assert!(closed, "a revoked device keeps its connection");
+    assert_eq!(devices(&mut paired.window.local), 0);
+    let mut again = Phone::connect(&paired.address);
+    let welcome = again.hello(&paired.key, &paired.token);
+    assert_eq!(kind(&welcome), "unauthorized", "{welcome}");
+}

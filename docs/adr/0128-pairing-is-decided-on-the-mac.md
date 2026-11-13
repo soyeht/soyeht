@@ -1,6 +1,6 @@
 # ADR 0128: Pairing is decided in the Soyeht app on the Mac
 
-- Status: accepted
+- Status: accepted; the Windows and Linux paragraph is superseded by ADR 0162
 - Date: 2026-10-31, amended 2026-11-01
 
 ## Context
@@ -25,13 +25,11 @@ that terminal reaches the engine's local socket as the local human.
   methods). There, a shell, the command line or a script on the local socket, including a terminal
   that a paired device opened, is refused (`forbidden_role`); only the Mac app approves a pairing
   or revokes a device.
-- On Windows and Linux there is no such attestation yet. There, **any process of the same user on
-  the local socket counts as the computer, including a terminal that a paired device opens**, until
-  the apps for those systems can prove they are the official app. The rule for those systems is the
-  local human's, as before.
-- One function, `ui_attestation::available`, says whether the system has attestation. The rule is
-  written once, in `Core::authorize_device_management`, and reads that function; nothing else
-  differs by system.
+- On Windows and Linux there is no such attestation yet. This ADR left any process of the same user
+  on the local socket counting as the computer there. ADR 0162 closes that: the two methods are
+  refused on those systems too, until their apps can prove they are the official app.
+- The rule is written once, in `Core::authorize_device_management`, and reads the connection's
+  `signed_ui`; it does not differ by system (ADR 0162).
 
 Every other power of ADR 0013 is unchanged. A refused call answers `forbidden_role`. The Mac app
 approves through its own connection, so the person can still pair a phone; an unsigned build of the

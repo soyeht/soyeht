@@ -46,7 +46,7 @@ fn requires_signed_ui(method: &str, signed_ui: bool) -> Result<()> {
     ) && !signed_ui
     {
         return Err(errors::forbidden_role(
-            "Pane-state experiment data can be recorded, deleted, or exported only in the signed Soyeht app on this Mac",
+            "Pane-state experiment data can be recorded, deleted, or exported only in the signed Soyeht app on this computer",
         ));
     }
     Ok(())
@@ -114,10 +114,7 @@ impl Core {
     pub fn disconnect(&mut self, id: &str) -> Result<()> {
         let web_result = self.disconnect_web_host(id);
         self.clients.remove(id);
-        self.native_waiters.retain(|_, waiters| {
-            waiters.retain(|waiter| waiter.connection != id);
-            !waiters.is_empty()
-        });
+        self.agents.forget_connection(id);
         self.language_waiters.retain(|_, waiters| {
             waiters.retain(|waiter| waiter.connection != id);
             !waiters.is_empty()
@@ -288,7 +285,7 @@ impl Core {
 
     fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
         let mut found = None;
-        for (pane, running) in &self.agents {
+        for (pane, running) in &self.agents.running {
             let active = self
                 .panes
                 .get(pane)

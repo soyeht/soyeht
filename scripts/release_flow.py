@@ -4,7 +4,7 @@
     uv run python scripts/release_flow.py prepare TARGET [--dry-run]
     uv run python scripts/release_flow.py build [--mac] [--linux] [--windows] [--linux-arch ARCH ...]
                                                 [--allow-unsigned] [--dry-run]
-    uv run python scripts/release_flow.py collect [--from DIR ...] [--allow-unsigned] [--without SYSTEM ...]
+    uv run python scripts/release_flow.py collect [--from DIR ...] [--allow-unsigned] [--without PART ...]
     uv run python scripts/release_flow.py publish [--allow-unsigned] [--no-draft] [--dry-run]
 
 Each packager runs on its own system (ADRs 0120, 0121 and 0123); this script only orders them:
@@ -33,6 +33,8 @@ published.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -134,6 +136,8 @@ def source_problems(probe=probe):
 
 
 def prepare(options):
+    """Everything that can refuse is read first, so a refusal (and a dry run, which reports the same
+    answer) leaves nothing written: the version, the wire contract to record and the changelog."""
     old = release.current()
     if options.target == "current":
         new = old
@@ -143,28 +147,51 @@ def prepare(options):
             new = release.next_release(old, options.target)
         except ValueError as failure:
             raise Refused(str(failure)) from None
-        if release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])]):
-            raise Refused("the version could not be raised")
-    draft = ["draft", "--version", str(new.version)]
-    if not options.dry_run and release.main(["snapshot"]):
-        raise Refused("the wire contract could not be recorded")
+    version = str(new.version)
+    try:
+        recorded = release.snapshot_plan()
+    except ValueError as failure:
+        raise Refused(f"the wire contract could not be recorded: {failure}") from None
+    text = changelog.CHANGELOG.read_text()
+    kept = changelog.is_final(text, version)
+    if kept:  # a finished section is the person's: it is kept, and it must be one a release can use
+        changelog.notes_of(text, version)
+    draft = ["draft", "--version", version]
+    preview = io.StringIO()
+    if not kept:  # the draft is read before anything is written: a failure of git must not leave a bump behind
+        with contextlib.redirect_stdout(preview):
+            failed = changelog.main([*draft, "--print"])
+        if failed:
+            raise Refused("the changelog draft cannot be made (the reason is above): nothing was written")
+    if options.target != "current" and release.main(["bump", options.target, *(["--dry-run"] if options.dry_run else [])]):
+        raise Refused("the version could not be raised")
     if options.dry_run:
-        print("release: dry run: the changelog section would be:\n")
-        changelog.main([*draft, "--print"])
+        print(f"release: dry run: the wire contract {'would be recorded' if recorded else 'is recorded already'}"
+              + (f" in {recorded.relative_to(release.ROOT).as_posix()} and index.json" if recorded else ""))
+        if kept:
+            print(f"release: dry run: CHANGELOG.md already has the finished section of {version}; it would be kept")
+        else:
+            print("release: dry run: the changelog section would be:\n")
+            print(preview.getvalue(), end="")
         return 0
+    if release.main(["snapshot"]):
+        raise Refused("the wire contract could not be recorded")
+    if kept:
+        print(f"release: CHANGELOG.md already has the finished section of {version}: kept as it is")
     # `--replace` writes over a draft only: a section a person has edited is never discarded.
-    if changelog.main([*draft, "--replace"]):
+    elif changelog.main([*draft, "--replace"]):
         raise Refused("the changelog draft could not be written")
-    print(
-        "\nNext: edit CHANGELOG.md (delete the draft line when the entries read well for a user), commit "
-        "the bump and the changelog in a pull request, merge it, and build from that commit of main."
-    )
+    edit = "" if kept else "edit CHANGELOG.md (delete the draft line when the entries read well for a user), "
+    bump = "the bump, " if options.target != "current" else ""
+    print(f"\nNext: {edit}commit {bump}the wire contract (contracts/released/protocol-v<N>.json and index.json) and the changelog in a pull request, merge it, and build from that commit of main.")
     return 0
 
 
 # --- build --------------------------------------------------------------------------------------
 
 TARGETS = {"macos": "mac", "linux": "linux", "windows": "windows"}
+# What `--without` can leave out: a system, or one architecture of Linux (ship x86_64 with no arm64 host).
+WITHOUT = (*TARGETS, *(f"linux-{architecture}" for architecture in LINUX_BUILDERS))
 
 
 def linux_script(version, sha, architecture):
@@ -610,15 +637,15 @@ def parser():
     sequence(collected)
     collected.add_argument("--from", dest="sources", action="append", default=[], type=Path, metavar="DIR",
                            help="a folder of packages made elsewhere (the Windows installers)")
-    collected.add_argument("--without", action="append", default=[], choices=tuple(TARGETS),
-                           help="leave a system out (a pre-release only)")
+    collected.add_argument("--without", action="append", default=[], choices=WITHOUT,
+                           help="leave a system (or linux-x86_64, linux-aarch64) out (a pre-release only)")
     collected.add_argument("--sequence", type=int, help="the manifest's sequence (default: the clock; see docs/release.md)")
     collected.add_argument("--minimum", default="0.0.0", help="the oldest version still supported (default: all)")
     published = commands.add_parser("publish", help="create the GitHub release as a draft")
     common(published, True)
     sequence(published)
     published.add_argument("--no-draft", action="store_true", help="publish at once (the clients see it)")
-    published.add_argument("--without", action="append", default=[], choices=tuple(TARGETS), help="a system the release leaves out")
+    published.add_argument("--without", action="append", default=[], choices=WITHOUT, help="a system (or linux-x86_64, linux-aarch64) the release leaves out")
     return top
 
 

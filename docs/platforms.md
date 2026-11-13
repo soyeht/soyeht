@@ -23,8 +23,8 @@ does nothing silently.
 
 - A local client is accepted when it runs as the engine's own user. Only macOS can
   also prove that the peer is the signed Soyeht app, so on Linux and Windows no local
-  client counts as a signed UI and the consent-changing methods (`pane.experiment.*`)
-  stay refused.
+  client counts as a signed UI and the consent-changing methods stay refused: `pane.experiment.*`,
+  and deciding a pairing or revoking a device (ADR 0162).
 - Moving a project entry to the trash is unsupported (the caller asks before deleting
   permanently). Reading the macOS keychain and browser cookies for usage sources is
   unsupported; those sources report it as such.
@@ -203,7 +203,9 @@ measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging s
 package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
 decision written in that file with its reason. A package more than 10% under its ceiling only
 prints a warning to lower the number. A kind with `null` has not been built yet and is not
-checked.
+checked. The Mac script measures the image before it signs and notarizes it (counting what the
+signature and the ticket will add), so an image over its ceiling fails before the notarization is
+paid for, and measures the finished image once more.
 
 | Variable | Holds |
 | --- | --- |
