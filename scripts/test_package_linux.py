@@ -104,6 +104,28 @@ class NamesTests(unittest.TestCase):
         self.assertEqual(package.PROFILE_NAME, "prod")
 
 
+class RootlessBuildTests(unittest.TestCase):
+    """The job count of scripts/package_linux_rootless.sh, sourced so the build does not run."""
+
+    script = Path(__file__).resolve().parent / "package_linux_rootless.sh"
+
+    def default_jobs(self, cpus, memory_kb):
+        program = f'source "{self.script}"; default_jobs {cpus} {memory_kb}'
+        result = subprocess.run(["bash", "-c", program], capture_output=True, text=True, check=True)
+        return int(result.stdout)
+
+    def test_the_cpu_count_bounds_the_jobs(self):
+        self.assertEqual(self.default_jobs(2, 64 * 1024 * 1024), 2)
+
+    def test_half_the_memory_in_gb_bounds_the_jobs(self):
+        self.assertEqual(self.default_jobs(8, 8 * 1024 * 1024), 4)
+        self.assertEqual(self.default_jobs(16, 8 * 1024 * 1024), 4)
+
+    def test_a_small_host_still_builds_with_one_job(self):
+        self.assertEqual(self.default_jobs(4, 1024 * 1024), 1)
+        self.assertEqual(self.default_jobs(1, 0), 1)
+
+
 class ShippedFilesTests(unittest.TestCase):
     def test_the_launcher_entry_starts_a_program_on_the_path_and_names_the_window(self):
         text = (package.PACKAGING / f"{package.APPLICATION_ID}.desktop").read_text()
