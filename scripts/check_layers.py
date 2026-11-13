@@ -7,6 +7,10 @@ every `Cargo.toml` of `engine/`, `apps/desktop/` and `apps/android/` and compare
 `target.*`) with it. Crates outside the Soyeht workspace are not limited. A crate that is not
 in the table fails too: adding a crate means placing it in a layer here and in AGENTS.md.
 
+Only the protocol crate may name its `open-enums` feature (ADR 0161): a client reads a value a
+later engine adds as `Unknown`, which the engine must never do, so no other manifest of `engine/`
+may turn it on.
+
 The three cargo workspaces (`engine`, `apps/desktop`, `apps/android`) repeat a few settings that
 must not drift: the `vt100` fork under `[patch.crates-io]` (ADR 0144), the `rust-version` and the
 `[workspace.lints]` table. `workspace_problems` fails when a workspace differs from the engine's.
@@ -24,6 +28,8 @@ TABLES = ("dependencies", "dev-dependencies", "build-dependencies")
 # The first workspace is the reference; the others must match it on the settings below.
 WORKSPACE_ROOTS = MANIFEST_ROOTS
 PATCHED_CRATE = "vt100"
+OPEN_ENUMS = "open-enums"
+OPEN_ENUMS_OWNER = "engine/soyeht-protocol/Cargo.toml"
 
 FOUNDATION = {"soyeht-protocol", "soyeht-platform", "soyeht-process"}
 # Layer 3: engine building blocks. They depend only on the foundation, and never on each other.
@@ -96,6 +102,32 @@ def soyeht_dependencies(manifest: dict) -> set[str]:
     return found
 
 
+def names_open_enums(manifest: dict) -> bool:
+    """Whether a manifest turns on the protocol's `open-enums` feature, or declares one named so."""
+    features = manifest.get("features", {})
+    if OPEN_ENUMS in features:
+        return True
+    entries = [entry for enabled in features.values() for entry in enabled]
+    tables = dependency_tables(manifest) + [manifest.get("workspace", {}).get("dependencies", {})]
+    for table in tables:
+        for spec in table.values():
+            if isinstance(spec, dict):
+                entries += spec.get("features", [])
+    return any(OPEN_ENUMS in entry for entry in entries)
+
+
+def open_enum_problems(relative: str, manifest: dict) -> list[str]:
+    """Return what turns the open enum on outside the protocol crate: the engine never reads one."""
+    if not relative.startswith("engine/") or relative == OPEN_ENUMS_OWNER:
+        return []
+    if not names_open_enums(manifest):
+        return []
+    return [
+        f"{relative}: only {OPEN_ENUMS_OWNER} may name the {OPEN_ENUMS} feature; the engine "
+        "refuses a value it does not know (ADR 0161)"
+    ]
+
+
 def manifest_problems(relative: str, manifest: dict) -> list[str]:
     name = manifest.get("package", {}).get("name")
     if name is None:
@@ -120,6 +152,7 @@ def problems(root: Path) -> list[str]:
             if "target" in relative.parts:
                 continue
             manifest = tomllib.loads(path.read_text(encoding="utf-8"))
+            found += open_enum_problems(relative.as_posix(), manifest)
             if "name" in manifest.get("package", {}):
                 seen.add(manifest["package"]["name"])
             found += manifest_problems(relative.as_posix(), manifest)

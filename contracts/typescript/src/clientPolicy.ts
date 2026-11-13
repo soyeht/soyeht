@@ -149,7 +149,7 @@ export const clientPolicy = {
     "projectTrustRestrict": "Keep restricted",
     "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
     "projectTrustFailed": "Soyeht could not save this choice.",
-    "updateSoyeht": "This app and the Mac speak different versions of Soyeht. Update Soyeht on the older one."
+    "updateSoyeht": "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one."
   },
   "inlineImageTypes": [
     "image/png",

@@ -12,6 +12,8 @@ from check_layers import (
     ROOT,
     WORKSPACE_ROOTS,
     manifest_problems,
+    names_open_enums,
+    open_enum_problems,
     problems,
     soyeht_dependencies,
     workspace_problems,
@@ -83,6 +85,34 @@ class LayerTests(unittest.TestCase):
 
     def test_a_workspace_manifest_is_skipped(self):
         self.assertEqual(manifest_problems("Cargo.toml", {"workspace": {"members": []}}), [])
+
+    def test_only_the_protocol_crate_names_the_open_enum_feature(self):
+        self.assertEqual(open_enum_problems("engine/soyeht-protocol/Cargo.toml", {"features": {"open-enums": []}}), [])
+
+    def test_an_engine_crate_that_turns_on_the_open_enum_fails(self):
+        body = '[dependencies]\nsoyeht-protocol = { path = "../p", features = ["open-enums"] }\n'
+        found = open_enum_problems("engine/soyeht-engine/Cargo.toml", manifest("soyeht-engine", body))
+        self.assertEqual(len(found), 1)
+        self.assertIn("only engine/soyeht-protocol/Cargo.toml may name the open-enums feature", found[0])
+
+    def test_an_engine_crate_that_passes_it_on_through_a_feature_fails(self):
+        body = '[features]\nclient = ["soyeht-protocol/open-enums"]\n'
+        found = open_enum_problems("engine/soyeht-cli/Cargo.toml", manifest("soyeht-cli", body))
+        self.assertEqual(len(found), 1)
+
+    def test_the_engine_workspace_cannot_turn_the_open_enum_on_for_everyone(self):
+        body = '[workspace.dependencies]\nsoyeht-protocol = { path = "soyeht-protocol", features = ["open-enums"] }\n'
+        found = open_enum_problems("engine/Cargo.toml", {"workspace": tomllib.loads(body)["workspace"]})
+        self.assertEqual(len(found), 1)
+
+    def test_the_client_workspaces_may_turn_the_open_enum_on(self):
+        body = '[dependencies]\nsoyeht-protocol = { path = "../p", features = ["open-enums"] }\n'
+        self.assertEqual(open_enum_problems("apps/desktop/crates/soyeht-client/Cargo.toml", manifest("soyeht-client", body)), [])
+        self.assertEqual(open_enum_problems("apps/android/core/Cargo.toml", manifest("soyeht-android", body)), [])
+
+    def test_a_feature_of_another_name_is_not_the_open_enum(self):
+        body = '[dependencies]\nsoyeht-protocol = { path = "../p", features = ["contract-checks"] }\n'
+        self.assertFalse(names_open_enums(manifest("soyeht-engine", body)))
 
     def test_a_layer_entry_without_a_manifest_fails(self):
         with tempfile.TemporaryDirectory() as directory:

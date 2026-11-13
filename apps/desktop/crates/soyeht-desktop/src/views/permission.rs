@@ -20,6 +20,21 @@ use soyeht_protocol::{
     PermissionFileChange, PermissionOptionKind, PermissionPresentation, PermissionRequest,
 };
 
+/// The fill and ink of an option's pill: the allowing once option in ink, any other approval
+/// neutral, a refusal in danger text, and a kind this build does not know neutral too, so it is
+/// never read as a grant.
+fn tones(kind: &PermissionOptionKind, palette: &'static Palette) -> (u32, u32) {
+    match kind {
+        PermissionOptionKind::AllowOnce => (palette.ink, palette.face),
+        PermissionOptionKind::AllowAlways | PermissionOptionKind::Unknown => {
+            (palette.well, palette.ink)
+        }
+        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
+            (palette.well, palette.danger())
+        }
+    }
+}
+
 pub(super) fn card(
     pane_id: &str,
     request: &PermissionRequest,
@@ -35,15 +50,7 @@ pub(super) fn card(
                 request.request_id.clone(),
                 option.option_id.clone(),
             );
-            let (fill, ink) = match option.kind {
-                PermissionOptionKind::AllowOnce => (palette.ink, palette.face),
-                PermissionOptionKind::AllowAlways | PermissionOptionKind::Unknown => {
-                    (palette.well, palette.ink)
-                }
-                PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
-                    (palette.well, palette.danger())
-                }
-            };
+            let (fill, ink) = tones(&option.kind, palette);
             pill(id("permission", &option.option_id), fill, ink)
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, _| {
                     this.answer_permission(&pane_id, &request_id, &option_id)
@@ -230,4 +237,38 @@ fn well(
         .text_size(px(pane_interior::MONO_SMALL_POINT_SIZE))
         .child(content)
         .into_any_element()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_permission_option_this_build_does_not_know_is_drawn_neutrally() {
+        let palette = crate::theme::ThemeName::NeoMilk.palette();
+        let neutral = tones(&PermissionOptionKind::AllowAlways, palette);
+        assert_eq!(tones(&PermissionOptionKind::Unknown, palette), neutral);
+        assert_ne!(
+            tones(&PermissionOptionKind::Unknown, palette),
+            (palette.ink, palette.face)
+        );
+        assert_ne!(
+            tones(&PermissionOptionKind::Unknown, palette),
+            (palette.well, palette.danger())
+        );
+        for (kind, expected) in [
+            (PermissionOptionKind::AllowOnce, (palette.ink, palette.face)),
+            (PermissionOptionKind::AllowAlways, neutral),
+            (
+                PermissionOptionKind::RejectOnce,
+                (palette.well, palette.danger()),
+            ),
+            (
+                PermissionOptionKind::RejectAlways,
+                (palette.well, palette.danger()),
+            ),
+        ] {
+            assert_eq!(tones(&kind, palette), expected);
+        }
+    }
 }

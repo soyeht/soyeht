@@ -115,7 +115,7 @@ public enum ClientPolicy {
     public static let projectTrustRestrict = "Keep restricted"
     public static let projectTrustRestrictedNote = "This folder is restricted: language servers run with code execution off, or do not start."
     public static let projectTrustFailed = "Soyeht could not save this choice."
-    public static let updateSoyeht = "This app and the Mac speak different versions of Soyeht. Update Soyeht on the older one."
+    public static let updateSoyeht = "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one."
     public static let clientNameMac = "mac"
     public static let clientNameMacDev = "mac-dev"
     public static let clientNameIphone = "iphone"

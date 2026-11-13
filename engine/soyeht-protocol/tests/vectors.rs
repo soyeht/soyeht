@@ -113,6 +113,9 @@ fn agent_updates_require_known_kinds_and_their_payloads() {
         value["kind"] = serde_json::json!(kind);
         assert!(serde_json::from_value::<PaneUpdateEvent>(value).is_err());
     }
+    // With the client's `open-enums` feature the kind is kept as `Unknown` rather than refused
+    // (ADR 0161); the engine is built without it, where the option is an error.
+    #[cfg(not(feature = "open-enums"))]
     assert!(
         serde_json::from_value::<PermissionOption>(
             serde_json::json!({"optionId":"a","kind":"allow_everything","name":"Allow"})
