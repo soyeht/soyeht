@@ -439,3 +439,46 @@ fn a_shell_that_is_not_the_signed_app_cannot_decide_a_pairing_or_revoke_a_device
         .collect();
     assert_eq!(ids, [granted["params"]["deviceId"].clone()], "{listed}");
 }
+
+/// A paired device may forget the computer by revoking itself (ADR 0128): the call succeeds, the
+/// device leaves the list, and its connection is closed.
+#[test]
+fn a_paired_device_can_revoke_itself_and_loses_its_connection() {
+    use tokio_tungstenite::tungstenite::Message;
+    let rig = Rig::new();
+    let mut paired = pair_device(&rig, 81);
+    let mut phone = connected_device(&paired);
+    assert_eq!(devices(&mut paired.window.local), 1);
+    phone
+        .socket
+        .send(Message::Text(
+            json!({"jsonrpc":"2.0","id":9000,"method":"device.revoke","params":{
+                "deviceId":paired.device,"idempotencyKey":"forget"}})
+            .to_string()
+            .into(),
+        ))
+        .unwrap();
+    // The engine closes the connection as it revokes, so the answer may or may not arrive first;
+    // if it does, it is a success. Read until the close.
+    let mut closed = false;
+    for _ in 0..20 {
+        match phone.socket.read() {
+            Ok(Message::Text(text)) => {
+                let message: Value = serde_json::from_str(&text).unwrap();
+                if message["id"] == 9000 {
+                    assert!(message.get("error").is_none(), "{message}");
+                }
+            }
+            Ok(Message::Close(_)) | Err(_) => {
+                closed = true;
+                break;
+            }
+            Ok(_) => {}
+        }
+    }
+    assert!(closed, "a revoked device keeps its connection");
+    assert_eq!(devices(&mut paired.window.local), 0);
+    let mut again = Phone::connect(&paired.address);
+    let welcome = again.hello(&paired.key, &paired.token);
+    assert_eq!(kind(&welcome), "unauthorized", "{welcome}");
+}

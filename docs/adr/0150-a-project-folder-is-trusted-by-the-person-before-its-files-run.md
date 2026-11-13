@@ -22,9 +22,10 @@ folders ask first ("Do you trust the authors of the files in this folder?"), and
   `undecided`, which is treated as `restricted`. It is not derived from anything: not from the parent folder,
   not from a git remote, not from who created the workspace.
 - **A human-only method and an event.** `project.trust.set` and the durable `project.trust_changed`; a
-  snapshot section `trust` gives each open workspace's state. The method follows the pairing rule: on macOS only
-  the signed app may call it (a program a repository started in a terminal cannot), a paired device may, and
-  an agent or a chief never can; the dispatcher allow-list does not name it and the handler refuses again.
+  snapshot section `trust` gives each open workspace's state. On macOS only the signed app may call the method (a program a repository started in a terminal cannot), a paired device may, and
+  an agent or a chief never can. It no longer follows the pairing rule: ADR 0162 made pairing need the signed app on
+  every system, while on Windows and Linux this method keeps the old escape (any local process of the user counts as
+  the app). Closing it is an open follow-up; the dispatcher allow-list does not name it and the handler refuses again.
 - **The clients ask once per folder.** The Mac, the iPhone and iPad, and the Windows and Linux app show
   "Trust this folder?" the first time a workspace with an undecided folder is active, with the restricted
   choice as the default; a dismissal defers, it does not answer.

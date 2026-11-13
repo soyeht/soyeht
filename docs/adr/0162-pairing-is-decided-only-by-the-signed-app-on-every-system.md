@@ -15,8 +15,9 @@ could prove they are the official app.
 That hole is the whole defect on those systems. A pairing gives a device the powers of the person at
 the computer (ADR 0013). A program in a terminal, which a paired device can open, reached the local
 endpoint as the local human and could approve its own next device, or revoke the owner's, with no
-person involved. The `pane.experiment.*` methods never had this hole: outside macOS no local client
-counts as a signed UI, so the engine refuses them there (ADR 0085).
+person involved. The `pane.experiment.*` methods never had this hole: `requires_signed_ui` in `dispatch.rs` is the gate
+that keeps them closed, and outside macOS no local client counts as a signed UI, so the engine refuses
+them there (ADR 0085).
 
 ## Decision
 
@@ -33,7 +34,8 @@ counts as a signed UI, so the engine refuses them there (ADR 0085).
   `forbidden_role`; the command line and the MCP program offer no way to decide or revoke, and the
   engine refuses a raw call from either.
 - `ui_attestation::available` stays for the one other rule that still branches on it, the trust of a
-  project folder (ADR 0150), which is a separate decision.
+  project folder (ADR 0150), which is a separate decision. That method keeps the old escape on Windows
+  and Linux (any local process of the user counts as the app); closing it is an open follow-up.
 
 ## Consequences
 

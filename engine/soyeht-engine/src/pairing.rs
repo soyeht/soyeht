@@ -53,6 +53,7 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
 /// the refusal says that the app cannot yet prove itself there (ADR 0162).
 fn refusal(local_human: bool) -> errors::Error {
     static LOGGED: Once = Once::new();
+    // No signature to blame and nothing to log: this is the system's rule, not an engine fault.
     if local_human && !ui_attestation::available() {
         return errors::forbidden_role(
             "Pairing is approved, and other devices are revoked, only in the signed Soyeht app, and on this system the app cannot yet prove itself to the engine, so no pairing is approved and no device is revoked here",
