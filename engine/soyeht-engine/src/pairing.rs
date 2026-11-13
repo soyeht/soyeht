@@ -46,7 +46,7 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
         .ok_or_else(|| errors::unauthorized("Pairing request missing or expired"))
 }
 
-/// The refusal of a decision or a revocation. When a local human is refused because this engine
+/// The refusal of a window, a decision or a revocation. When a local human is refused because this engine
 /// does not carry our signature, it cannot tell the signed app from any other program, so even the
 /// app is refused: say so, and log it once with its kind only (docs/dev-local.md says how to sign
 /// the engine). On a system that attests nothing the app cannot be told from a shell either, and
@@ -56,7 +56,7 @@ fn refusal(local_human: bool) -> errors::Error {
     // No signature to blame and nothing to log: this is the system's rule, not an engine fault.
     if local_human && !ui_attestation::available() {
         return errors::forbidden_role(
-            "Pairing is approved, and other devices are revoked, only in the signed Soyeht app, and on this system the app cannot yet prove itself to the engine, so no pairing is approved and no device is revoked here",
+            "Pairing is started and approved, and other devices are revoked, only in the signed Soyeht app, and on this system the app cannot yet prove itself to the engine, so no pairing is started or approved and no device is revoked here",
         );
     }
     if local_human && ui_attestation::engine_cannot_attest() {
@@ -67,11 +67,11 @@ fn refusal(local_human: bool) -> errors::Error {
             );
         });
         return errors::forbidden_role(
-            "This engine does not carry the Soyeht signature, so it cannot tell the Soyeht app from other programs and approves no pairing and revokes no device; install the signed engine (docs/dev-local.md)",
+            "This engine does not carry the Soyeht signature, so it cannot tell the Soyeht app from other programs and starts no pairing, approves none and revokes no device; install the signed engine (docs/dev-local.md)",
         );
     }
     errors::forbidden_role(
-        "Pairing is approved, and other devices are revoked, in the Soyeht app on this computer",
+        "Pairing is started and approved, and other devices are revoked, in the Soyeht app on this computer",
     )
 }
 
@@ -293,10 +293,11 @@ impl Core {
         Ok(())
     }
 
-    /// Who may change which devices can control this computer (ADR 0128, 0162). Any local human may
-    /// open a pairing window; deciding a request and revoking a device are the signed app's alone,
-    /// on every system. Where the engine cannot attest the app (`ui_attestation::available`), no
-    /// connection is the app and both are refused. A paired device may only revoke itself.
+    /// Who may change which devices can control this computer (ADR 0128, 0162, 0163). Opening a
+    /// pairing window, deciding a request and revoking a device are the signed app's alone, on every
+    /// system: a window lets a device put its own name in front of the person. Where the engine
+    /// cannot attest the app (`ui_attestation::available`), no connection is the app and all three
+    /// are refused. A paired device may only revoke itself.
     fn authorize_device_management(
         &self,
         connection: &str,
@@ -311,7 +312,7 @@ impl Core {
         };
         let app = client.is_some_and(|client| client.signed_ui);
         let allowed = match actor.map(|actor| &actor.role) {
-            Some(Role::HumanLocal) => method == method::DEVICE_PAIR_START || app,
+            Some(Role::HumanLocal) => app,
             Some(Role::HumanDevice) => own_revocation,
             _ => false,
         };
@@ -588,9 +589,9 @@ mod tests {
             ]
         };
         assert_eq!(kinds(&app), app_kinds());
-        // A shell may start a request. It cannot decide one or revoke a device, on any system.
+        // A shell cannot open a window, decide a request or revoke a device, on any system.
         let refused = || Some(ErrorKind::ForbiddenRole);
-        assert_eq!(kinds(&local), [None, refused(), refused(), refused()]);
+        assert_eq!(kinds(&local), [refused(), refused(), refused(), refused()]);
         drop(core);
         std::fs::remove_dir_all(directory).unwrap();
     }
@@ -638,7 +639,7 @@ mod tests {
         std::fs::create_dir(&directory).unwrap();
         let mut core = Core::open(&directory).unwrap();
         let (outbox, mut receiver) = outbox::channel();
-        let connection = core.connect(true, false, outbox).unwrap();
+        let connection = core.connect(true, true, outbox).unwrap();
         let _challenge = receiver.next().await.unwrap().unwrap();
         let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
             "client":"reachability-test","clientVersion":"1","protocolVersion":1}});

@@ -198,7 +198,7 @@ impl Drop for Rig {
 }
 
 #[test]
-fn cli_creates_lists_and_closes_a_real_shell_and_starts_pairing() {
+fn cli_creates_lists_and_closes_a_real_shell() {
     let rig = Rig::start();
     assert_eq!(rig.command(&["status"])["ptyd"]["connected"], true);
     let first = rig.command(&[
@@ -222,20 +222,16 @@ fn cli_creates_lists_and_closes_a_real_shell_and_starts_pairing() {
     let items = list["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["cwd"], rig.path.to_str().unwrap());
-    let pairing = rig.command(&["device", "pair-start"]);
-    assert!(
-        pairing["uri"]
-            .as_str()
-            .unwrap()
-            .starts_with("soyeht-next://pair?")
-    );
-    assert!(!pairing["code"].as_str().unwrap().is_empty());
     assert!(
         rig.command(&["device", "list"])["items"]
             .as_array()
             .unwrap()
             .is_empty()
     );
+    // Opening a pairing window is the signed app's alone (ADR 0163): the command line has no way to.
+    let pairing = rig.run(&["device", "pair-start"], None);
+    assert!(!pairing.status.success());
+    assert!(!String::from_utf8_lossy(&pairing.stdout).contains("soyeht-next://pair?"));
     rig.command(&["pane", "close", first["paneId"].as_str().unwrap()]);
     assert!(
         rig.command(&["pane", "list"])["items"]

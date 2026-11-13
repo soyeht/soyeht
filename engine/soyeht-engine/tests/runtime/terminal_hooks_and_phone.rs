@@ -514,7 +514,7 @@ fn assert_pairing_proved_by(
 }
 
 #[test]
-fn a_local_shell_cannot_decide_a_pairing_on_any_system() {
+fn a_local_shell_cannot_start_or_decide_a_pairing_on_any_system() {
     let rig = Rig::new();
     let mut shell = rig.client();
     let decide = |client: &mut Client| {
@@ -524,13 +524,9 @@ fn a_local_shell_cannot_decide_a_pairing_on_any_system() {
         );
         answer["error"]["data"]["kind"].as_str().unwrap().to_owned()
     };
-    // Starting a request is open to a shell; deciding one is the signed app's alone.
-    assert!(
-        shell
-            .request("device.pair.start", json!({"idempotencyKey":"shell-start"}))
-            .get("error")
-            .is_none()
-    );
+    // Opening a window and deciding a request are the signed app's alone (ADR 0128, 0163).
+    let start = shell.request("device.pair.start", json!({"idempotencyKey":"shell-start"}));
+    assert_eq!(start["error"]["data"]["kind"], "forbidden_role", "{start}");
     assert_eq!(decide(&mut shell), "forbidden_role");
     // The app (here, the same client once the test program is trusted) reaches the lookup.
     std::fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();

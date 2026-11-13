@@ -112,17 +112,17 @@ while the Mac's “Add iPhone” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
-Only the local human opens the window. Only the signed Soyeht app decides a request or revokes
-a device, on every system: a shell, the command line, a script or a terminal a paired device
-opened on the local endpoint gets `forbidden_role`, and neither the command line nor the MCP program
-has a command for either. Where the engine cannot tell the app from another program, which today is
-Windows and Linux, no connection counts as the app, so a pairing is approved and a device revoked
-nowhere on that system until its app can prove itself (ADR 0162, which holds the open question). A
-paired device may revoke only itself (ADR 0128). Attestation does not stop a program of the same
-operating-system user that writes the database or adds a LaunchAgent, such as a phone's
+Only the signed Soyeht app opens the window, decides a request or revokes a device, on every
+system (ADR 0162, 0163): a shell, the command line, a script or a terminal a paired device opened on
+the local endpoint gets `forbidden_role` and no window opens, so it cannot put an approval prompt
+with a name of its own in front of the person. Neither the command line nor the MCP program has a
+command for any of the three. Where the engine cannot tell the app from another program, which today
+is Windows and Linux, no connection counts as the app, so a pairing is started or approved and a
+device revoked nowhere on that system until its app can prove itself (ADR 0162, which holds the open
+question). A paired device may revoke only itself (ADR 0128). Attestation does not stop a program of
+the same operating-system user that writes the database or adds a LaunchAgent, such as a phone's
 terminal. An engine that does not carry the Soyeht signature refuses even the app on macOS
-(`forbidden_role`, see `docs/dev-local.md`). `device.pair.start` stays open to a shell, but the
-person still has to see the request in the app and reject it or leave it undecided.
+(`forbidden_role`, see `docs/dev-local.md`).
 
 **2.3 Push.** A paired device calls `push.register {platform: "apns",
 token, environment: "sandbox" | "production"}` and `push.unregister {}`; any
@@ -176,7 +176,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.list` | yes | yes | no | no |
-| `device.pair.start` | yes | no | no | no |
+| `device.pair.start` (ADR 0163) | yes, only in the signed app, on every system | no | no | no |
 | `device.pair.decide`, `device.revoke` (ADR 0162) | yes, only in the signed app, on every system | own device only (`device.revoke`) | no | no |
 | `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `project.trust.set` (trust a folder, contract 18) | yes, in the signed app where the system can attest it (macOS) | yes | no | no |

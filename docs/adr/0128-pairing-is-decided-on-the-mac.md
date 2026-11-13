@@ -1,6 +1,6 @@
 # ADR 0128: Pairing is decided in the Soyeht app on the Mac
 
-- Status: accepted; the Windows and Linux paragraph is superseded by ADR 0162
+- Status: accepted; the Windows and Linux paragraph is superseded by ADR 0162, and the opening of a window by ADR 0163
 - Date: 2026-10-31, amended 2026-11-01
 
 ## Context
@@ -18,7 +18,7 @@ that terminal reaches the engine's local socket as the local human.
 
 - A paired device may only revoke itself (forgetting the Mac from the phone is its own choice). It
   cannot open a pairing window, decide a request or revoke another device.
-- `device.pair.start` needs the local human. The command line may start a request.
+- `device.pair.start` needs the local human. The command line may start a request. (ADR 0163: it needs the signed app too, and the command line has no such command.)
 - `device.pair.decide` and revoking another device need the **signed Soyeht app** on a system that
   can tell it from other programs. The engine already tells them apart on macOS (the code signature
   of the peer of the local socket, `ui_attestation`, the same rule as the pane-state experiment
@@ -43,7 +43,7 @@ write the engine's database directly, add a LaunchAgent that starts later, or ch
 signed app reads. Those are the powers of the user, which ADR 0013 gives the phone on purpose; this
 ADR decides who may approve a pairing through the engine, not what the user's own account can do.
 
-`device.pair.start` stays open to a shell on every system. That opens a request and shows a code, and
+(Superseded by ADR 0163.) `device.pair.start` stays open to a shell on every system. That opens a request and shows a code, and
 nothing more: the person still has to see the request on the Mac and reject it or leave it undecided.
 
 An engine that does not carry the Soyeht signature (one built with `cargo build` and run as it is,

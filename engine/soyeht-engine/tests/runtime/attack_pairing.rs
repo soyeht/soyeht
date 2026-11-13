@@ -26,8 +26,12 @@ fn proof_for(code: &str, key: &SigningKey, challenge: &Value) -> String {
 
 /// `host:port` of the rig's TCP listener, read from the link of a pairing window.
 pub(super) fn listener_address(rig: &Rig) -> String {
-    let mut local = rig.client();
-    let window = local.call("device.pair.start", json!({"idempotencyKey":"listener"}));
+    // Only the signed app opens a window: the test program stands for it for this one call.
+    let marker = rig.path.join("test-attest-local-ui");
+    fs::write(&marker, "").unwrap();
+    let mut app = rig.client();
+    let window = app.call("device.pair.start", json!({"idempotencyKey":"listener"}));
+    fs::remove_file(&marker).unwrap();
     address_of(&window)
 }
 
@@ -374,6 +378,38 @@ fn a_paired_device_cannot_decide_pairings_or_revoke_another_device() {
     }
     assert_eq!(devices(&mut paired.window.local), 1);
     assert!(paired.device.len() > 8);
+}
+
+/// Opening a pairing window is the signed app's alone, as deciding is (ADR 0163): a shell, the
+/// command line or a script on the local endpoint cannot make an approval prompt appear in the app
+/// with a device name of its own. The refusal opens no window, so the code it would have shown
+/// works for nobody.
+#[test]
+fn a_shell_that_is_not_the_signed_app_cannot_open_a_pairing_window() {
+    let rig = Rig::new();
+    let mut shell = rig.client();
+    let refused = shell.request(
+        "device.pair.start",
+        json!({"idempotencyKey":"shell-window"}),
+    );
+    assert_eq!(kind(&refused), "forbidden_role", "{refused}");
+    assert!(refused.get("result").is_none(), "{refused}");
+    let message = refused["error"]["message"].as_str().unwrap();
+    assert!(message.contains("Soyeht"), "{message}");
+    // A replay of the call is refused the same way: the refusal was not recorded as a result.
+    let again = shell.request(
+        "device.pair.start",
+        json!({"idempotencyKey":"shell-window"}),
+    );
+    assert_eq!(kind(&again), "forbidden_role", "{again}");
+    // The app opens one, as before.
+    fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
+    let mut app = rig.client();
+    let window = app.call("device.pair.start", json!({"idempotencyKey":"app-window"}));
+    assert!(
+        window["code"].as_str().is_some_and(|code| !code.is_empty()),
+        "{window}"
+    );
 }
 
 /// Deciding a request and revoking a device are the signed app's alone on every system (ADR 0128):

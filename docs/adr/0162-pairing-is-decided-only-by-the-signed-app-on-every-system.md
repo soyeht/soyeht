@@ -1,6 +1,6 @@
 # ADR 0162: Approving a pairing and revoking a device need the signed app on every system
 
-- Status: accepted for the rule; open for how the Windows and Linux apps prove themselves
+- Status: accepted for the rule, amended by ADR 0163; open for how the Windows and Linux apps prove themselves
 - Date: 2026-11-13
 
 ## Context
@@ -29,10 +29,11 @@ them there (ADR 0085).
   exactly as `pane.experiment.*` is. The answer is the existing `forbidden_role`. Its message says
   that the Soyeht app decides, and on a system with no attestation that the app cannot yet prove
   itself to the engine there, so no pairing is approved and no device is revoked until it can.
-- Unchanged: `device.pair.start` stays open to a local human, a shell included (it opens a window and
-  shows a code, nothing more); a paired device may revoke only itself; every refusal is
-  `forbidden_role`; the command line and the MCP program offer no way to decide or revoke, and the
-  engine refuses a raw call from either.
+- Amended by ADR 0163: this ADR left `device.pair.start` open to a local human, a shell included. It
+  needs the signed app too.
+- Unchanged: a paired device may revoke only itself; every refusal is `forbidden_role`; the command
+  line and the MCP program offer no way to decide or revoke, and the engine refuses a raw call from
+  either.
 - `ui_attestation::available` stays for the one other rule that still branches on it, the trust of a
   project folder (ADR 0150), which is a separate decision. That method keeps the old escape on Windows
   and Linux (any local process of the user counts as the app); closing it is an open follow-up.
