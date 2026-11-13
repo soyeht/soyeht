@@ -101,7 +101,7 @@ fn stage(core: &Core, task: &str) -> String {
 }
 
 fn first_text(core: &Core, pane: &str) -> String {
-    let queue = &core.agents[pane].state.queue;
+    let queue = &core.agents.running[pane].state.queue;
     assert_eq!(queue.len(), 1, "{pane} holds its first prompt");
     queue[0].text.clone()
 }

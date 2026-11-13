@@ -8,7 +8,7 @@ use super::{
     revision::RevisionSnapshot,
 };
 use crate::{
-    agents::{Running, mode_ceiling::ModeCeiling, state::State},
+    agents::{mode_ceiling::ModeCeiling, state::State},
     core::Core,
     errors::{self, Result},
     model::{self, PaneSetup as _, RunningPane, StoredPane},
@@ -196,7 +196,7 @@ impl Core {
                 screen: prepared.screen,
             },
         );
-        self.agents.insert(id.clone(), Running::new(prepared.state));
+        self.agents.track(id.clone(), prepared.state);
         let spawned = self.spawn(&id);
         self.spawn_begun(&id, spawned);
         Ok(())
@@ -204,7 +204,7 @@ impl Core {
 
     fn reviewer_finished(&self, review: &TaskReviewRecord<ReviewCheckpoint>) -> bool {
         let pane = self.panes.get(&review.reviewer_pane_id);
-        let state = self.agents.get(&review.reviewer_pane_id);
+        let state = self.agents.running.get(&review.reviewer_pane_id);
         match (pane, state) {
             (Some(pane), Some(state)) if !pane.stored.closed => {
                 (pane.stored.pane.state == PaneState::Idle && state.state.has_finished_turn)

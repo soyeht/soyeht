@@ -55,7 +55,6 @@ pub struct Core {
     pub store: Store,
     pub directory: PathBuf,
     pub generation: u64,
-    pub(crate) catalog_epoch: u64,
     pub ptyd: Option<Supervisor>,
     /// Requests to the supervisor nobody waits for, in the order they were made (see
     /// `Core::send_later`).
@@ -104,9 +103,7 @@ pub struct Core {
     pub(crate) capture_restore_deadline: Option<std::time::Instant>,
     pub(crate) terminal_harnesses:
         BTreeMap<String, crate::terminal_harness::TerminalHarnessSession>,
-    pub agents: BTreeMap<String, crate::agents::Running>,
-    pub(crate) harness_switches: BTreeMap<String, crate::agents::switching::HarnessSwitchRuntime>,
-    pub native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
+    pub agents: crate::agents::roster::Agents,
     pub language_waiters: BTreeMap<String, Vec<Waiter>>,
     /// The search path the language servers of folders that are not trusted are started from.
     pub language_search_path: Option<std::ffi::OsString>,
@@ -205,7 +202,6 @@ impl Core {
             store,
             directory: directory.into(),
             generation,
-            catalog_epoch: 0,
             ptyd: None,
             supervisor_later: Vec::new(),
             send_turns: BTreeMap::new(),
@@ -247,9 +243,7 @@ impl Core {
             capture_restore: BTreeSet::new(),
             capture_restore_deadline: None,
             terminal_harnesses: BTreeMap::new(),
-            agents: BTreeMap::new(),
-            harness_switches: BTreeMap::new(),
-            native_waiters: BTreeMap::new(),
+            agents: Default::default(),
             language_waiters: BTreeMap::new(),
             language_search_path: std::env::var_os("PATH"),
             web_waiters: BTreeMap::new(),
@@ -557,6 +551,7 @@ impl Core {
         if saved.closed {
             let child_keys: Vec<_> = self
                 .agents
+                .running
                 .get(id)
                 .map(|agent| {
                     agent
@@ -580,8 +575,8 @@ impl Core {
         if let Some(instance) = existing.filter(|instance| !instance.closed) {
             return self.adopt(id, instance);
         }
-        if self.agents.contains_key(id) {
-            if self.agents[id].state.phase == crate::agents::state::Phase::Faulted {
+        if self.agents.running.contains_key(id) {
+            if self.agents.running[id].state.phase == crate::agents::state::Phase::Faulted {
                 return self.close_agent_processes(id);
             }
             return self.recover_missing_agent(id);
@@ -632,7 +627,7 @@ impl Core {
     }
 
     pub(crate) fn adopt(&mut self, id: &str, instance: &Instance) -> Result<()> {
-        if self.agents.contains_key(id) {
+        if self.agents.running.contains_key(id) {
             return self.adopt_agent(id, instance);
         }
         let mut saved = self.panes[id].stored.clone();
@@ -735,10 +730,13 @@ impl Core {
                 continue;
             }
             // A tick woken by a read polls the agents and the panes a notice marked.
-            if self.polling_woken() && !self.agents.contains_key(&id) && !self.pane_marked(&id) {
+            if self.polling_woken()
+                && !self.agents.running.contains_key(&id)
+                && !self.pane_marked(&id)
+            {
                 continue;
             }
-            if self.agents.contains_key(&id) {
+            if self.agents.running.contains_key(&id) {
                 let polled = self.poll_agent(&id);
                 self.settle_agent_poll(&id, polled)?;
                 continue;

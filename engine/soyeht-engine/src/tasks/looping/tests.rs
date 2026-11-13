@@ -51,7 +51,7 @@ fn core_with_two_loops(first: LoopConfig, second: LoopConfig) -> (Core, std::pat
 }
 
 fn queued(core: &Core, pane: &str) -> Vec<String> {
-    core.agents[pane]
+    core.agents.running[pane]
         .state
         .queue
         .iter()
