@@ -166,6 +166,27 @@ class ReleaseManifestTests(unittest.TestCase):
         self.assertGreater(manifest.check_payload(manifest.open_envelope(output.read_text(), KEYS))["sequence"],
                            manifest.check_payload(manifest.open_envelope(old_text, KEYS))["sequence"])
 
+    def test_check_expiry_of_a_release_that_is_not_published_yet_fails_unless_it_is_allowed(self):
+        life = release_manifest.POLICY["manifest"]["maxLifetimeSeconds"]
+        with mock.patch.object(release_manifest, "published", return_value=None), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(SystemExit) as caught:
+                release_manifest.main(["check-expiry"], environment=ENVIRONMENT)
+            self.assertIn("no manifest is published yet", str(caught.exception))
+            release_manifest.main(["check-expiry", "--allow-unpublished"], environment=ENVIRONMENT)
+            self.assertIn("nothing can expire", out.getvalue())
+        # Only a missing manifest is let through: a published one near its expiry still fails the run.
+        near = self.published(int(time.time()) - life + 5 * 86400)
+        with mock.patch.dict(release_manifest.POLICY["signature"], {"publicKeys": KEYS}), \
+                mock.patch.object(release_manifest, "published", return_value=near):
+            with self.assertRaises(SystemExit) as caught:
+                release_manifest.main(["check-expiry", "--allow-unpublished"], environment=ENVIRONMENT)
+            self.assertIn("less than 21", str(caught.exception))
+        # So does one that cannot be read: the monitor must not stay green on a network failure.
+        with mock.patch.object(release_manifest, "published", side_effect=release_manifest.Refused("cannot read")):
+            with self.assertRaises(SystemExit):
+                release_manifest.main(["check-expiry", "--allow-unpublished"], environment=ENVIRONMENT)
+
     def test_a_sequence_more_than_a_day_ahead_is_refused_with_the_recovery(self):
         self.packages()
         now = 1_800_000_000

@@ -244,6 +244,12 @@ def snapshot_problems(root=ROOT):
     return [line] if line else []
 
 
+def snapshot_plan(root=ROOT):
+    """What `snapshot` would write: the path, or None when the contract is recorded already. A record
+    that differs raises the ValueError that `snapshot` refuses with, so a dry run can say it first."""
+    return compat.snapshot_to_write(root, protocol_schema(root))
+
+
 def snapshot_command(_arguments):
     """Records the wire contract of the release in `contracts/released/` (never replacing one)."""
     try:

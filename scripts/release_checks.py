@@ -77,12 +77,19 @@ def package_name(version, system, architecture, extension):
     return f"soyeht-{version}-{system}-{architecture}.{extension}"
 
 
+def left_out(system, architecture, without):
+    """Whether `without` names this package: its system (`linux`) or its system and architecture
+    (`linux-aarch64`), so one architecture of a system can be left out alone."""
+    return system in without or f"{system}-{architecture}" in without
+
+
 def missing_packages(folder, version, without=()):
-    """The required packages that are not in `folder`, leaving out the systems in `without`."""
+    """The required packages that are not in `folder`, leaving out what `without` names."""
     return [
         name
         for system, architecture, extension in REQUIRED
-        if system not in without and not (folder / (name := package_name(version, system, architecture, extension))).is_file()
+        if not left_out(system, architecture, without)
+        and not (folder / (name := package_name(version, system, architecture, extension))).is_file()
     ]
 
 

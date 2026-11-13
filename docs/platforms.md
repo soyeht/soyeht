@@ -203,7 +203,9 @@ measured; see `docs/reports/package-sizes-2026-11-02.md`). The three packaging s
 package is over its ceiling, or has a name that is not a kind of the file, so a growth is a
 decision written in that file with its reason. A package more than 10% under its ceiling only
 prints a warning to lower the number. A kind with `null` has not been built yet and is not
-checked.
+checked. The Mac script measures the image before it signs and notarizes it (counting what the
+signature and the ticket will add), so an image over its ceiling fails before the notarization is
+paid for, and measures the finished image once more.
 
 | Variable | Holds |
 | --- | --- |
