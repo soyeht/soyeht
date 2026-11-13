@@ -3,7 +3,7 @@
 //! `WorkspaceNaming`, `WorkspaceTabStripPolicy`), and `contracts/vectors/workspaces.json` holds
 //! the cases all of them pass.
 
-use super::{Effect, State};
+use super::{Effect, State, problem};
 use crate::{Command, new_agent::NewAgent};
 use soyeht_protocol::Workspace;
 
@@ -245,6 +245,18 @@ impl State {
         }
     }
 
+    /// [`State::start_agent`] for the form's Enter: when the form does not allow it, the person
+    /// is told why.
+    pub fn submit_start(&mut self, ticket: u64, form: &NewAgent) -> Option<Started> {
+        match self.start_agent(ticket, form) {
+            Ok(started) => Some(started),
+            Err(reason) => {
+                self.report(problem::kind::NEW_AGENT_REFUSED, reason);
+                None
+            }
+        }
+    }
+
     /// The package the person acknowledges by starting `harness` from the picker that showed its
     /// notice (see `harness_picker::acknowledged_package`).
     pub fn acknowledged_package(&self, harness: &str) -> Option<String> {
@@ -278,9 +290,15 @@ impl State {
         }
     }
 
-    /// The agent that could not start, with what the person typed, once.
+    /// The agent that could not start, with what the person typed, once. The person is told that
+    /// the message is back in the form.
     pub fn take_failed_start(&mut self) -> Option<NewAgent> {
-        self.failed_start.take()
+        let form = self.failed_start.take()?;
+        self.report(
+            problem::kind::AGENT_NOT_STARTED,
+            "The agent could not start. Your message is back in the form.",
+        );
+        Some(form)
     }
 
     /// The engine made the workspace that request `ticket` asked for: it is selected and a

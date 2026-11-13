@@ -35,6 +35,12 @@ pub fn position_of(text: &str, from_line: u32, at: usize) -> TextPosition {
     )
 }
 
+/// The line (from 0) that byte `at` of `text` is on, or `None` when `at` is past the text or
+/// inside a character.
+pub fn line_at(text: &str, at: usize) -> Option<usize> {
+    Some(text.get(..at)?.matches('\n').count())
+}
+
 /// The byte where line `line` of `text` starts, which is the end of the text for a line past it.
 pub fn line_start(text: &str, line: u32) -> usize {
     let mut start = 0;
@@ -125,6 +131,15 @@ mod tests {
             .find('\n')
             .map_or(text.len(), |found| start + found);
         start + byte_at(&text[start..end], at.column)
+    }
+
+    #[test]
+    fn a_byte_is_on_the_line_after_the_breaks_before_it() {
+        assert_eq!(line_at("one\ntwo\nthree", 0), Some(0));
+        assert_eq!(line_at("one\ntwo\nthree", 4), Some(1));
+        assert_eq!(line_at("one\ntwo\nthree", 13), Some(2));
+        assert_eq!(line_at("one", 4), None);
+        assert_eq!(line_at("é", 1), None);
     }
 
     #[test]

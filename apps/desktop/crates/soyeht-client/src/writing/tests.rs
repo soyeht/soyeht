@@ -14,7 +14,8 @@ use crate::{
 use serde_json::{Value, json};
 use soyeht_protocol::{
     EventName, FileReadResult, Pane, ScreenplayElementKind, TextEdit, WritingDocument,
-    WritingFormatKind, WritingSection, WritingStructureResult, limits::EDITOR_EDIT_BYTES,
+    WritingFormatKind, WritingKind, WritingSection, WritingStructureResult,
+    limits::EDITOR_EDIT_BYTES,
 };
 
 fn file(revision: u64, lines: u32, dirty: bool) -> Value {
@@ -143,6 +144,25 @@ fn a_connection_gives_the_pane_its_document_and_its_text() {
         whole_text(&state).as_deref(),
         Some("# Title\n\nSome words here")
     );
+}
+
+#[test]
+fn the_pane_names_its_kind_and_a_text_has_no_slides() {
+    let state = open(&["hello"]);
+    assert_eq!(state.writing_kind("p1"), Some(WritingKind::Text));
+    assert_eq!(state.writing_kind("missing"), None);
+    assert!(state.writing_slides("p1").is_empty());
+}
+
+#[test]
+fn the_field_loads_the_page_only_when_it_holds_another_text() {
+    let mut state = open(&["hello", "world"]);
+    assert_eq!(state.writing_page_to_load("p1", "hello\nworld"), None);
+    assert_eq!(
+        state.writing_page_to_load("p1", "hello"),
+        Some("hello\nworld".to_owned())
+    );
+    assert_eq!(state.writing_page_to_load("missing", "hello"), None);
 }
 
 #[test]

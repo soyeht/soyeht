@@ -137,14 +137,7 @@ impl Workbench {
         action: &AccountAction,
         cx: &mut Context<Self>,
     ) {
-        let pane_id = pane_id.to_owned();
-        self.send(match action {
-            AccountAction::SwitchTo(method) => Command::StartSignIn {
-                pane_id,
-                method_id: Some(method.clone()),
-            },
-            AccountAction::SignOut => Command::SignOut { pane_id },
-        });
+        self.send(action.command(pane_id));
         self.menus.close();
         cx.notify();
     }

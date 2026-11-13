@@ -63,6 +63,14 @@ impl State {
         self.report(kind::DISCONNECTED, crate::Error::Disconnected.to_string());
     }
 
+    /// A folder the platform picked has a name that is not text.
+    pub fn report_folder_name_not_text(&mut self) {
+        self.report(
+            kind::FOLDER_NAME_NOT_TEXT,
+            "That folder's name is not text Soyeht can use.",
+        );
+    }
+
     /// Like [`State::report`], for a failure that carries a cause: `cause` is its
     /// [`log::Failure::failure_kind`], logged after `kind`.
     pub fn report_failure(&mut self, kind: &str, cause: &str, text: impl Into<String>) {
@@ -102,6 +110,16 @@ mod tests {
     use soyeht_platform::log::Failure;
     use soyeht_protocol::profile::DESKTOP_LOG;
     use std::fs;
+
+    #[test]
+    fn a_folder_whose_name_is_not_text_is_told_to_the_person() {
+        let mut state = State::default();
+        state.report_folder_name_not_text();
+        assert_eq!(
+            state.problem(),
+            Some("That folder's name is not text Soyeht can use.")
+        );
+    }
 
     #[test]
     fn a_reported_failure_is_shown_and_logged_by_its_kind_alone() {
