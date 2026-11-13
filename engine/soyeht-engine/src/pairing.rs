@@ -293,13 +293,30 @@ impl Core {
         Ok(())
     }
 
+    /// The check `dispatch` makes before it looks for a stored result: the answer to the app's call
+    /// is kept under a replay scope that has no signed-app bit, so a shell that repeated the app's
+    /// client name, parameters and key would be handed it (ADR 0163).
+    pub(crate) fn authorize_before_replay(
+        &self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<()> {
+        match method {
+            method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
+                self.authorize_device_management(connection, method, params)
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Who may change which devices can control this computer (ADR 0128, 0162, 0163). Opening a
     /// pairing window, deciding a request and revoking a device are the signed app's alone, on every
     /// system: a window lets a device put its own name in front of the person. Where the engine
     /// cannot attest the app (`ui_attestation::available`), no connection is the app and all three
-    /// are refused. A paired device may only revoke itself. `dispatch` asks before it looks for a
-    /// stored result, and `device_request` asks again.
-    pub(crate) fn authorize_device_management(
+    /// are refused. A paired device may only revoke itself. `authorize_before_replay` asks before a
+    /// stored result is looked up, and `device_request` asks again.
+    fn authorize_device_management(
         &self,
         connection: &str,
         method: &str,

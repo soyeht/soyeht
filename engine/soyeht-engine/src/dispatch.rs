@@ -580,14 +580,8 @@ impl Core {
                 .map(Outcome::Reply);
         }
         let scope = self.authenticated_scope(connection, method)?;
-        // Before any stored result is looked up: a replay is matched by scope, and the local scope
-        // has no signed-app bit, so a shell would otherwise read the app's answer back (ADR 0163).
-        if matches!(
-            method,
-            method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE
-        ) {
-            self.authorize_device_management(connection, method, &params)?;
-        }
+        // Before any stored result is looked up: a replay is matched by a scope with no signed-app bit.
+        self.authorize_before_replay(connection, method, &params)?;
         let prompt_attachments = if method == method::PANE_PROMPT {
             self.prepare_prompt_attachments(connection, &mut params)?
         } else {
