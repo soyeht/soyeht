@@ -249,8 +249,7 @@ impl Core {
                 },
             );
             if let Some(agent) = agent {
-                self.agents
-                    .insert(id.clone(), crate::agents::Running::new(agent));
+                self.agents.track(id.clone(), agent);
             }
             if let Some((session, _)) = terminal_harness {
                 self.terminal_harnesses.insert(id.clone(), session);
@@ -288,7 +287,7 @@ impl Core {
             return self.delete_experiment_capture_data(connection, params);
         }
         let id = errors::param_str(params, "paneId")?;
-        if method == method::PANE_CLOSE && self.agents.contains_key(id) {
+        if method == method::PANE_CLOSE && self.agents.running.contains_key(id) {
             return self.close_agent(connection, params);
         }
         if method == method::PANE_CLOSE {

@@ -131,6 +131,7 @@ impl Core {
 
         let mut matched = self
             .agents
+            .running
             .iter()
             .filter(|(_, running)| running.state.hook_binding.matches(&params.capability))
             .map(|(pane_id, running)| {

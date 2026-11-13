@@ -354,7 +354,7 @@ impl crate::core::Core {
                 continue;
             }
             live = true;
-            if self.agents.contains_key(id) {
+            if self.agents.running.contains_key(id) {
                 self.agent_poll_due(id, next, now);
             } else if !self.watch.is_active() || self.pane_marked(id) {
                 next.now();

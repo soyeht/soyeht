@@ -6,7 +6,7 @@ use super::{
     worktree::{self, PreparedWorktree, WorktreePort},
 };
 use crate::{
-    agents::{Changes, Running, mode_ceiling::ModeCeiling, state::State},
+    agents::{Changes, mode_ceiling::ModeCeiling, state::State},
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
@@ -256,8 +256,7 @@ impl Core {
                     screen: prepared.2,
                 },
             );
-            self.agents
-                .insert(pane_id.clone(), Running::new(prepared.1));
+            self.agents.track(pane_id.clone(), prepared.1);
         }
         Ok(mutation.result)
     }
@@ -587,7 +586,7 @@ impl Core {
                 screen,
             },
         );
-        self.agents.insert(pane_id.into(), Running::new(state));
+        self.agents.track(pane_id.into(), state);
         self.spawn(pane_id)?;
         Ok(true)
     }
@@ -649,7 +648,7 @@ impl Core {
         };
         self.commit_agent(saved, state, changes, None, json!({}))?;
         errors::invariant(
-            self.agents.get_mut(pane_id),
+            self.agents.running.get_mut(pane_id),
             "Agent runtime disappeared during task restart",
         )?
         .decoder = soyeht_protocol::ndjson::Decoder::new(0);

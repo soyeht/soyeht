@@ -387,13 +387,7 @@ impl Core {
     pub(crate) fn is_full_access_mode(&self, mode: &str) -> bool {
         mode == ALLOW_ALL
             || soyeht_acp::config::is_known_full_access_id(mode)
-            || self.agents.values().any(|agent| {
-                agent.state.options.mode().is_some_and(|option| {
-                    option.options.iter().any(|choice| {
-                        choice.value == mode && choice.kind.as_deref() == Some(FULL_ACCESS_KIND)
-                    })
-                })
-            })
+            || self.agents.marks_full_access(mode, FULL_ACCESS_KIND)
     }
 
     /// Whether the pane's agent is in a mode that approves everything now: the mode it runs

@@ -157,7 +157,12 @@ impl Terminal {
 impl Core {
     pub fn poll_agent_terminals(&mut self, pane: &str) -> Result<()> {
         let releasing = releasing_terminals(&self.store, pane)?;
-        let ids: Vec<_> = self.agents[pane].state.terminals.keys().cloned().collect();
+        let ids: Vec<_> = self.agents.running[pane]
+            .state
+            .terminals
+            .keys()
+            .cloned()
+            .collect();
         for id in ids {
             if releasing.contains(&id) {
                 continue;

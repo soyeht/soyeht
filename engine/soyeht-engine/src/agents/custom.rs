@@ -34,7 +34,7 @@ impl Core {
                 Ok((result.clone(), Vec::new()))
             })?
             .result;
-        self.catalog_epoch = self.catalog_epoch.wrapping_add(1);
+        self.agents.catalog_changed();
         Ok(result)
     }
 

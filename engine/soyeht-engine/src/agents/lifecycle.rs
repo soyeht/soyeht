@@ -86,7 +86,7 @@ impl Core {
         state.replay_role = None;
         self.commit_agent(saved, state, Changes::default(), None, json!({}))?;
         errors::invariant(
-            self.agents.get_mut(id),
+            self.agents.running.get_mut(id),
             "Agent runtime disappeared during recovery",
         )?
         .decoder = Decoder::new(0);
@@ -96,7 +96,7 @@ impl Core {
     /// The process the agent of pane `id` runs under the identity the pane has saved.
     pub(crate) fn agent_spawn_config(&self, id: &str) -> Spawn {
         let saved = &self.panes[id].stored;
-        let state = &self.agents[id].state;
+        let state = &self.agents.running[id].state;
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
         Spawn {

@@ -30,7 +30,7 @@ impl Core {
         actor
             .pane_id
             .as_deref()
-            .and_then(|pane| self.agents.get(pane))
+            .and_then(|pane| self.agents.running.get(pane))
             .map_or_else(ModeCeiling::unknown, |agent| {
                 ModeCeiling::of(&agent.state, false)
             })
@@ -42,6 +42,7 @@ impl Core {
     fn require_mode_within(&self, ceiling: &ModeCeiling, harness: &str, mode: &str) -> Result<()> {
         let kinds: Vec<_> = self
             .agents
+            .running
             .values()
             .filter(|agent| agent.state.launch.id == harness)
             .filter_map(|agent| agent.state.options.mode())
@@ -107,7 +108,7 @@ impl Core {
             let agent = actor
                 .pane_id
                 .as_deref()
-                .and_then(|pane| self.agents.get(pane))
+                .and_then(|pane| self.agents.running.get(pane))
                 .map(|agent| &agent.state)
                 .filter(|state| preset.harness.as_deref() == Some(state.launch.id.as_str()));
             let Some(mode) = agent.and_then(|state| state.options.current_mode()) else {
