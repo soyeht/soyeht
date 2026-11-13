@@ -1,7 +1,6 @@
 //! Panes for unit tests: a bare one to build on, and a running terminal with no process behind it.
 
 use crate::{
-    agents::Running,
     core::Core,
     model::{RunningPane, StoredPane},
     pane_observations::SegmentStore,
@@ -106,7 +105,7 @@ pub(crate) fn insert_agent_pane(core: &mut Core, root: &Path, id: &str, workspac
             screen,
         },
     );
-    core.agents.insert(id.into(), Running::new(state));
+    core.agents.adopt(id.into(), state);
 }
 
 /// Every row the terminal capture of `pane_id` under `root` recorded, across its segments.
@@ -318,7 +317,7 @@ pub(crate) fn core_with_agent(failures: &[&'static str]) -> (Core, std::path::Pa
             screen,
         },
     );
-    core.agents.insert("agent".into(), Running::new(state));
+    core.agents.adopt("agent".into(), state);
     core.clock = Arc::new(FixedClock(1_000_000));
     // Reads and closes end in the caller, so a tick sees their result.
     core.background = crate::offload::Background::inline();

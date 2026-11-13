@@ -1,7 +1,7 @@
 use super::*;
 use crate::agents::{pending::UserOperation, state::HarnessSwitchCheckpoint};
 use crate::{
-    agents::{Running, state::State},
+    agents::state::State,
     model::{RunningPane, StoredPane},
     screen::Screen,
 };
@@ -10,7 +10,7 @@ use std::fs;
 
 /// Records a switch of the test agent to "other" that must be ready by `deadline`.
 fn arm_switch(core: &mut Core, deadline: Instant) {
-    let mut state = core.agents["agent"].state.clone();
+    let mut state = core.agents.running["agent"].state.clone();
     state.harness_switch = Some(HarnessSwitchCheckpoint {
         user: UserOperation {
             scope: "scope".into(),
@@ -22,8 +22,8 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
         candidate_instance_key: "candidate-key".into(),
         previous_queue_paused: false,
     });
-    core.agents.get_mut("agent").unwrap().state = state;
-    core.harness_switches.insert(
+    core.agents.running.get_mut("agent").unwrap().state = state;
+    core.agents.switches.insert(
         "agent".into(),
         HarnessSwitchRuntime {
             params: PaneHarnessSwitchParams {
@@ -125,7 +125,7 @@ fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
     // A step on its way is not started again.
     core.advance_harness_switches().unwrap();
     // Both ticks returned while the supervisor was still holding the spawn.
-    assert!(core.harness_switches["agent"].candidate.is_none());
+    assert!(core.agents.switches["agent"].candidate.is_none());
     assert!(core.background.is_active("switch:agent"));
 
     release.send(()).unwrap();
@@ -134,7 +134,7 @@ fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
         released.load(std::sync::atomic::Ordering::SeqCst),
         "the switch waited for the supervisor"
     );
-    let candidate = core.harness_switches["agent"].candidate.as_ref().unwrap();
+    let candidate = core.agents.switches["agent"].candidate.as_ref().unwrap();
     assert_eq!(candidate.instance.instance_id, "candidate");
     assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
 }
@@ -153,15 +153,15 @@ fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
     .unwrap();
     let candidate = candidate_with(
         core.panes["agent"].stored.clone(),
-        core.agents["agent"].state.clone(),
+        core.agents.running["agent"].state.clone(),
         CandidatePhase::Initializing,
     );
-    core.harness_switches.get_mut("agent").unwrap().candidate = Some(candidate);
+    core.agents.switches.get_mut("agent").unwrap().candidate = Some(candidate);
 
     core.advance_harness_switches().unwrap();
 
-    assert!(core.harness_switches.is_empty());
-    let state = &core.agents["agent"].state;
+    assert!(core.agents.switches.is_empty());
+    let state = &core.agents.running["agent"].state;
     assert!(state.harness_switch.is_none());
     let retired = &state.retired_processes;
     assert_eq!(retired.len(), 1);
@@ -233,7 +233,7 @@ fn closed_agent_does_not_abort_switch_recovery_or_retired_cleanup() {
             screen,
         },
     );
-    core.agents.insert(pane_id, Running::new(state));
+    core.agents.adopt(pane_id, state);
 
     core.recover_harness_switches(&[]).unwrap();
     core.cleanup_retired_agent_processes().unwrap();

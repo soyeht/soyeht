@@ -74,7 +74,12 @@ impl Idle {
         self.revision
     }
 
-    /// Whether the retired processes may be closed now: not within the delay a refusal left.
+    /// When the retired processes may be closed: not within the delay a refusal left.
+    pub(crate) fn retired_close_due_ms(&self) -> i64 {
+        self.retired_close.due_ms
+    }
+
+    /// Whether the retired processes may be closed now.
     pub(crate) fn retired_close_due(&self, now_ms: i64) -> bool {
         now_ms >= self.retired_close.due_ms
     }
@@ -145,7 +150,7 @@ impl Core {
     /// with the watch heard, for the notice that marks it.
     pub(crate) fn agent_may_rest(&self, pane: &str) -> bool {
         let owner = crate::read_ahead::agent(pane);
-        self.agents[pane].is_settled(self.now_ms())
+        self.agents.running[pane].is_settled(self.now_ms())
             && !self.pane_marked(pane)
             && !self.read_ready(&owner)
             && (self.reads_paused(&owner) || self.watch.is_active())
@@ -154,7 +159,7 @@ impl Core {
     /// When the tick must poll the agent of `pane`: now unless it may rest, and then when an open
     /// request of it can expire, or, while no watch is heard, when its pause ends.
     pub(crate) fn agent_poll_due(&self, pane: &str, next: &mut Next, now: i64) {
-        let Some(agent) = self.agents.get(pane) else {
+        let Some(agent) = self.agents.running.get(pane) else {
             return;
         };
         if agent.state.phase == Phase::Faulted || !self.agent_may_rest(pane) {
@@ -169,33 +174,13 @@ impl Core {
             next.at_ms(now, until);
         }
     }
-
-    /// When the tick must close the processes the agents retired: when the delay a refusal left
-    /// ends, for each agent that owes a close.
-    pub(crate) fn retired_processes_due(&self, next: &mut Next, now: i64) {
-        for agent in self.agents.values() {
-            if !agent.state.retired_processes.is_empty() {
-                next.at_ms(now, agent.idle.retired_close.due_ms);
-            }
-        }
-    }
 }
 
 impl Core {
-    /// The agents that retired a process and still owe its close. With none,
-    /// the tick copies no agent state and sends no request for cleanup.
-    pub(crate) fn panes_with_retired_processes(&self) -> Vec<String> {
-        self.agents
-            .iter()
-            .filter(|(_, agent)| !agent.state.retired_processes.is_empty())
-            .map(|(pane, _)| pane.clone())
-            .collect()
-    }
-
     /// Settles the agent after an advance pass that committed nothing.
     /// `revision` is the agent's revision before the pass.
     pub(crate) fn settle_agent(&mut self, pane: &str, revision: u64) -> Result<()> {
-        let Some(agent) = self.agents.get(pane) else {
+        let Some(agent) = self.agents.running.get(pane) else {
             return Ok(());
         };
         if agent.idle.revision != revision || !has_nothing_to_advance(&agent.state) {
@@ -221,7 +206,7 @@ impl Core {
         // An open question waits for a person; only its deadline needs a tick.
         let wake = open.iter().map(|r| r.expires_ms).min().unwrap_or(i64::MAX);
         errors::invariant(
-            self.agents.get_mut(pane),
+            self.agents.running.get_mut(pane),
             "Agent runtime disappeared while settling",
         )?
         .idle
@@ -330,7 +315,7 @@ pub(super) mod tests {
                     screen,
                 },
             );
-            core.agents.insert(id, Running::new(ready_state()));
+            core.agents.adopt(id, ready_state());
         }
         (core, counters, root)
     }
@@ -351,7 +336,12 @@ pub(super) mod tests {
         for _ in 0..4 {
             core.poll_output().unwrap();
         }
-        assert!(core.agents.values().all(|a| a.is_settled(core.now_ms())));
+        assert!(
+            core.agents
+                .running
+                .values()
+                .all(|a| a.is_settled(core.now_ms()))
+        );
         let statements = soyeht_store::test_support::statements_started();
         let clones = CLONES.with(Cell::get);
         let (drained, acknowledged, other) =
@@ -385,13 +375,18 @@ pub(super) mod tests {
             core.poll_output().unwrap();
         }
         assert_eq!(total(&drains) - drained, 3, "one read per agent per pace");
-        assert!(core.agents.values().all(|a| a.is_settled(core.now_ms())));
+        assert!(
+            core.agents
+                .running
+                .values()
+                .all(|a| a.is_settled(core.now_ms()))
+        );
 
         let mut changed = core.agent_state("agent-1").unwrap();
         changed.queue_paused = true;
         core.replace_agent_state("agent-1", changed).unwrap();
-        assert!(!core.agents["agent-1"].is_settled(core.now_ms()));
-        assert!(core.agents["agent-0"].is_settled(core.now_ms()));
+        assert!(!core.agents.running["agent-1"].is_settled(core.now_ms()));
+        assert!(core.agents.running["agent-0"].is_settled(core.now_ms()));
         // The agent that changed is read at once, not at the idle pace.
         let before = total(&drains);
         core.poll_output().unwrap();
@@ -417,7 +412,7 @@ pub(super) mod tests {
         for _ in 0..4 {
             core.poll_output().unwrap();
         }
-        assert!(core.agents["agent-0"].is_settled(core.now_ms()));
+        assert!(core.agents.running["agent-0"].is_settled(core.now_ms()));
 
         // Without the watch it is read once per pace.
         assert_eq!(
@@ -479,6 +474,7 @@ pub(super) mod tests {
         })));
         // The port is "answering", and so is the supervisor of the retired process.
         core.agents
+            .running
             .get_mut("agent")
             .unwrap()
             .state
@@ -499,7 +495,11 @@ pub(super) mod tests {
         assert!(closed.lock().unwrap().is_empty());
 
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        while !core.agents["agent"].state.retired_processes.is_empty() {
+        while !core.agents.running["agent"]
+            .state
+            .retired_processes
+            .is_empty()
+        {
             assert!(
                 std::time::Instant::now() < deadline,
                 "the close never settled"
@@ -518,7 +518,7 @@ pub(super) mod tests {
         use crate::test_panes::{Spawning, core_with_agent};
         let (mut core, directory) = core_with_agent(&[]);
         let ledger = |core: &Core| -> Vec<String> {
-            core.agents["agent"]
+            core.agents.running["agent"]
                 .state
                 .retired_processes
                 .iter()
@@ -526,6 +526,7 @@ pub(super) mod tests {
                 .collect()
         };
         core.agents
+            .running
             .get_mut("agent")
             .unwrap()
             .state
@@ -572,6 +573,7 @@ pub(super) mod tests {
             Ok(Response::Ok)
         })));
         core.agents
+            .running
             .get_mut("agent")
             .unwrap()
             .state
@@ -613,13 +615,13 @@ pub(super) mod tests {
         for _ in 0..3 {
             core.poll_output().unwrap();
         }
-        assert!(!core.agents["agent-0"].is_settled(core.now_ms()));
+        assert!(!core.agents.running["agent-0"].is_settled(core.now_ms()));
         crate::test_paths::remove_after(core, root);
     }
 
     /// Makes `agent-1` owe the close of a process it retired.
     fn retire_a_process(core: &mut Core) -> &mut Running {
-        let agent = core.agents.get_mut("agent-1").unwrap();
+        let agent = core.agents.running.get_mut("agent-1").unwrap();
         agent
             .state
             .retired_processes
@@ -634,9 +636,9 @@ pub(super) mod tests {
     #[test]
     fn cleanup_visits_only_agents_that_retired_a_process() {
         let (mut core, _, root) = idle_core(2);
-        assert!(core.panes_with_retired_processes().is_empty());
+        assert!(core.agents.panes_with_retired_processes().is_empty());
         retire_a_process(&mut core);
-        assert_eq!(core.panes_with_retired_processes(), ["agent-1"]);
+        assert_eq!(core.agents.panes_with_retired_processes(), ["agent-1"]);
         crate::test_paths::remove_after(core, root);
     }
 
@@ -645,13 +647,13 @@ pub(super) mod tests {
         let (mut core, _, root) = idle_core(2);
         let now = core.now_ms();
         let mut next = Next::default();
-        core.retired_processes_due(&mut next, now);
+        core.agents.retired_processes_due(&mut next, now);
         assert_eq!(next.soonest(), None, "nothing is retired");
 
         retire_a_process(&mut core)
             .idle
             .retired_close_refused(now, "refused");
-        core.retired_processes_due(&mut next, now);
+        core.agents.retired_processes_due(&mut next, now);
         assert_eq!(
             next.soonest(),
             Some(std::time::Duration::from_millis(500)),

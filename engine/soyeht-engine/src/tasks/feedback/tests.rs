@@ -1,6 +1,5 @@
 use super::*;
 use crate::{
-    agents::Running,
     model::{RunningPane, StoredPane},
     panes::persist_new_pane,
     ports::testing::FixedClock,
@@ -298,7 +297,7 @@ fn feedback_core(profile: &FeedbackProfile, revisions: Vec<RevisionSnapshot>) ->
             screen,
         },
     );
-    core.agents.insert("pane-1".into(), Running::new(state));
+    core.agents.adopt("pane-1".into(), state);
     core.clock = Arc::new(FixedClock(10_000));
     let mut revision = ScriptedRevisionPort::default();
     revision.script(repository.to_string_lossy().as_ref(), revisions);
@@ -325,7 +324,7 @@ fn engine_feedback_is_durable_prioritized_deduplicated_and_enters_attention() {
 
     core.advance_task_feedback().unwrap();
     assert_eq!(
-        core.agents["pane-1"]
+        core.agents.running["pane-1"]
             .state
             .queue
             .iter()
@@ -342,7 +341,7 @@ fn engine_feedback_is_durable_prioritized_deduplicated_and_enters_attention() {
         1
     );
     core.advance_task_feedback().unwrap();
-    assert_eq!(core.agents["pane-1"].state.queue.len(), 2);
+    assert_eq!(core.agents.running["pane-1"].state.queue.len(), 2);
 
     core.task_revision_due.clear();
     core.advance_task_feedback().unwrap();

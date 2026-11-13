@@ -112,7 +112,7 @@ fn supervisor_dues(core: &Core, next: &mut Next, now: i64) {
     core.retries_due(next, now);
     core.output_due(next, now);
     crate::languages::watching::due(core, next);
-    if !core.harness_switches.is_empty()
+    if !core.agents.switches.is_empty()
         || !core.terminal_captures.is_empty()
         || !core.agent_captures.is_empty()
     {
@@ -121,7 +121,7 @@ fn supervisor_dues(core: &Core, next: &mut Next, now: i64) {
     if let Some(deadline) = core.capture_restore_deadline {
         next.at(deadline);
     }
-    core.retired_processes_due(next, now);
+    core.agents.retired_processes_due(next, now);
 }
 
 /// The tasks. A task has work when the store says its poll is not at rest, or when a poll of its

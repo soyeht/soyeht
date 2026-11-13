@@ -26,10 +26,7 @@ impl Core {
         for stored in model::panes(&self.store)? {
             if stored.pane.mode == soyeht_protocol::PaneMode::Agent {
                 let state = self.restore_agent(&stored)?;
-                self.agents.insert(
-                    stored.pane.pane_id.clone(),
-                    crate::agents::Running::new(state),
-                );
+                self.agents.adopt(stored.pane.pane_id.clone(), state);
             }
             if stored.pane.mode == soyeht_protocol::PaneMode::Terminal
                 && let Some(value) = self

@@ -27,7 +27,7 @@ use soyeht_protocol::{
     profile::{ENGINE_SOCKET, Profile},
 };
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::VecDeque,
     fs::{self, File},
     net::SocketAddr,
     path::{Path, PathBuf},
@@ -512,12 +512,8 @@ async fn catalog_result(
     for _ in 0..3 {
         let (directory, session_harnesses, epoch) =
             core_lock::with(&core, "catalog_snapshot", |state| {
-                let ids: BTreeSet<_> = state
-                    .agents
-                    .values()
-                    .map(|agent| agent.state.launch.id.clone())
-                    .collect();
-                Ok((state.directory.clone(), ids, state.catalog_epoch))
+                let ids = state.agents.harness_ids();
+                Ok((state.directory.clone(), ids, state.agents.catalog_epoch))
             })
             .await?;
         let worker_method = method.to_owned();
@@ -529,7 +525,7 @@ async fn catalog_result(
         .map_err(Error::Join)?;
         let (method, params) = (method.to_owned(), params.clone());
         let finalized = core_lock::with(&core, "catalog_finalize", move |state| {
-            if state.catalog_epoch != epoch {
+            if state.agents.catalog_epoch != epoch {
                 return Ok(None);
             }
             let finalize_started = Instant::now();

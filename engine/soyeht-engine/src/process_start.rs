@@ -170,7 +170,7 @@ impl Core {
     /// What the supervisor is asked to start for pane `id`: its agent's process, or its shell (or
     /// the harness a terminal pane runs).
     pub(crate) fn pane_spawn_config(&self, id: &str) -> Result<Spawn> {
-        if self.agents.contains_key(id) {
+        if self.agents.running.contains_key(id) {
             return Ok(self.agent_spawn_config(id));
         }
         let pane = &self.panes[id].stored;

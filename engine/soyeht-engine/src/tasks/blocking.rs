@@ -230,7 +230,7 @@ impl Core {
         let owner_alive = owner.as_deref().is_some_and(|pane| {
             self.panes.get(pane).is_some_and(|running| {
                 !running.stored.closed && running.stored.pane.state != PaneState::Dead
-            }) && self.agents.contains_key(pane)
+            }) && self.agents.running.contains_key(pane)
         });
         match external_action(&task, owner_alive)? {
             BlockingAction::Retry(updated) => self.retry_external_block(task, updated),
@@ -323,7 +323,7 @@ impl Core {
         needs_attention: Option<()>,
     ) -> Result<()> {
         if let Some(pane) = pane
-            && self.agents.contains_key(pane)
+            && self.agents.running.contains_key(pane)
             && self
                 .panes
                 .get(pane)

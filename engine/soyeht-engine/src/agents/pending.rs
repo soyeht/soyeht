@@ -47,28 +47,22 @@ impl Core {
         }
         let scope = self.clients[connection].scope.clone();
         let key = errors::param_str(params, "idempotencyKey")?.to_owned();
-        let waiters = self.native_waiters.entry((scope, key)).or_default();
-        if !waiters
-            .iter()
-            .any(|waiter| waiter.connection == connection && waiter.request_id == id)
-        {
-            if waiters.len() >= 128 {
-                return Err(errors::pane_busy("Native operation waiter limit reached"));
-            }
-            waiters.push(Waiter {
+        self.agents.wait_for_native(
+            scope,
+            key,
+            Waiter {
                 connection: connection.into(),
                 request_id: id,
                 method: method.into(),
-            });
-        }
+            },
+        )?;
         Ok(Outcome::Queued)
     }
 
     pub fn publish_native_completion(&mut self, completion: &Completion) -> Result<()> {
         let waiters = self
-            .native_waiters
-            .remove(&(completion.user.scope.clone(), completion.user.key.clone()))
-            .unwrap_or_default();
+            .agents
+            .take_native_waiters(&completion.user.scope, &completion.user.key);
         for waiter in waiters {
             if let Some(client) = self
                 .clients
