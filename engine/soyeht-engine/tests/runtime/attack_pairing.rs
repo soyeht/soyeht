@@ -412,6 +412,31 @@ fn a_shell_that_is_not_the_signed_app_cannot_open_a_pairing_window() {
     );
 }
 
+/// The answer stored for the app's call must not be handed to a shell that says the same thing:
+/// replays are matched by the local scope (user and `hello.client`), which has no signed-app bit, so
+/// the three device methods are authorized before any stored result is looked up (ADR 0163).
+#[test]
+fn a_shell_cannot_replay_the_apps_pairing_window_or_decision_with_its_key() {
+    let rig = Rig::new();
+    let mut paired = pair_device(&rig, 81);
+    let marker = rig.path.join("test-attest-local-ui");
+    let open = json!({"idempotencyKey":"replayed-window"});
+    let window = paired.window.local.call("device.pair.start", open.clone());
+    let code = window["code"].as_str().unwrap().to_owned();
+    let revoke = json!({"deviceId":paired.device,"idempotencyKey":"replayed-revoke"});
+    paired.window.local.call("device.revoke", revoke.clone());
+    // The test program stops standing for the app: a client of the same name that connects now is a
+    // shell, in the same replay scope as the app's connection.
+    fs::remove_file(&marker).unwrap();
+    let mut shell = rig.client();
+    for (method, params) in [("device.pair.start", open), ("device.revoke", revoke)] {
+        let answer = shell.request(method, params);
+        assert_eq!(kind(&answer), "forbidden_role", "{method}: {answer}");
+        assert!(answer.get("result").is_none(), "{method}: {answer}");
+        assert!(!answer.to_string().contains(&code), "{method}: {answer}");
+    }
+}
+
 /// Deciding a request and revoking a device are the signed app's alone on every system (ADR 0128):
 /// a shell, the command line or a script on the local endpoint is refused, and nothing changes.
 #[test]

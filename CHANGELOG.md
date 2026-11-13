@@ -20,6 +20,16 @@ Security.
   The Android app contains proprietary runtime libraries from Google (ML Kit and Google Play services), under Google's
   terms and not open source, and are listed in `THIRD-PARTY-NOTICES.txt`.
 
+### Removed
+
+- `soyeht device pair-start` is gone. A pairing is started and approved only in the Soyeht app.
+
+### Security
+
+- On every system, only the signed Soyeht app can start a pairing, approve one or revoke a device. A
+  shell, a script or a terminal on your computer can no longer open a pairing window and make an approval
+  prompt appear in the app with a device name of its own.
+
 ## [0.1.0] - 2026-11-04
 
 The first public release.

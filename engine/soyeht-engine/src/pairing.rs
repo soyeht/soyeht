@@ -297,8 +297,9 @@ impl Core {
     /// pairing window, deciding a request and revoking a device are the signed app's alone, on every
     /// system: a window lets a device put its own name in front of the person. Where the engine
     /// cannot attest the app (`ui_attestation::available`), no connection is the app and all three
-    /// are refused. A paired device may only revoke itself.
-    fn authorize_device_management(
+    /// are refused. A paired device may only revoke itself. `dispatch` asks before it looks for a
+    /// stored result, and `device_request` asks again.
+    pub(crate) fn authorize_device_management(
         &self,
         connection: &str,
         method: &str,
