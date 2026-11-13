@@ -9,6 +9,8 @@ import hashlib
 import json
 import os
 import platform
+import plistlib
+import re
 import shlex
 import subprocess
 import sys
@@ -16,12 +18,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import release
-from generated_profile import BUILD_ENVIRONMENT
+from generated_profile import BUILD_ENVIRONMENT, PROFILES
+from legacy_guard import names_legacy, require_next
 
 ROOT = Path(__file__).resolve().parents[1]
 COMMAND_SECONDS = 600
 # The production profile, by its name in `contracts/profiles.json` (a package ships no other).
 PROFILE_NAME = "prod"
+# What the Mac app and the iPhone app are called: one name for both (`displayNames.macApp`).
+PRODUCT_NAME = PROFILES[PROFILE_NAME]["displayNames"]["macApp"]
 PACKAGE = "soyeht"
 HOMEPAGE = "https://github.com/soyeht/soyeht"
 # The programs of `engine/` that a package ships, by cargo package.
@@ -29,6 +34,18 @@ ENGINE_PACKAGES = ("soyeht-engine", "soyeht-ptyd", "soyeht-cli", "soyeht-mcp", "
 # The license documents every package ships: the product's license and notice, and the generated
 # notices of its third-party components (`scripts/third_party_notices.py`, ADR 0149).
 LICENSE_DOCUMENTS = ("LICENSE", "NOTICE", "THIRD-PARTY-NOTICES.txt")
+# The environment of the Apple signing steps (`package_mac.py`, `package_ios.py`): the team, and the
+# App Store Connect API key that notarizes the Mac app and validates the iPhone app. Nothing of it is
+# kept in the repository.
+TEAM_VARIABLE = "SOYEHT_DEVELOPMENT_TEAM"
+TEAM_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
+HASH_PATTERN = re.compile(r"^[0-9A-Fa-f]{40}$")  # a certificate by its SHA-1
+NOTARY_KEY_FILE_VARIABLE = "SOYEHT_NOTARY_KEY_FILE"
+NOTARY_KEY_ID_VARIABLE = "SOYEHT_NOTARY_KEY_ID"
+NOTARY_ISSUER_VARIABLE = "SOYEHT_NOTARY_ISSUER"
+NOTARY_KEY_VARIABLES = (NOTARY_KEY_FILE_VARIABLE, NOTARY_KEY_ID_VARIABLE, NOTARY_ISSUER_VARIABLE)
+# The Xcode packages the two apps resolve once (`SOYEHT_PACKAGES`), so one run does not clone them again.
+PACKAGES = ROOT / ".cache/apple-packages"
 # The biggest a package may be, by `<system>-<arch>.<extension>`, in bytes (`package_sizes.json`).
 SIZE_CEILINGS = Path(__file__).with_name("package_sizes.json")
 
@@ -49,6 +66,83 @@ def readable_by_others(path):
     """Whether group or others have any access to `path`: a private key (a notary `.p8`, the update
     signing seed) must not be. Raises `OSError` when the file cannot be inspected."""
     return bool(Path(path).stat().st_mode & 0o077)
+
+
+def api_key(environment):
+    """`(key file, key id, issuer)` of the App Store Connect API key the environment holds, or None
+    when none of the three variables is set; a half-set key, a missing file or a key file that
+    other users can read is an error."""
+    values = [environment.get(name) or None for name in NOTARY_KEY_VARIABLES]
+    if not any(values):
+        return None
+    missing = [name for name, value in zip(NOTARY_KEY_VARIABLES, values) if not value]
+    if missing:
+        raise PackagingError(f"an App Store Connect API key needs {', '.join(missing)} in the environment too")
+    key_file = values[0]
+    if not Path(key_file).is_file():
+        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} does not name a file")
+    if readable_by_others(key_file):
+        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} names a file that other users can read: chmod 600 it")
+    return tuple(values)
+
+
+def entitlement_values(path):
+    """The entitlements `path` is signed with, key and value; empty when it has none."""
+    result = run(["codesign", "-d", "--entitlements", ":-", path], check=False)
+    text = result.stdout.strip()
+    return plistlib.loads(text.encode()) if text.startswith("<?xml") else {}
+
+
+def entitlements_of(path):
+    """The entitlement keys `path` is signed with."""
+    return set(entitlement_values(path))
+
+
+def signature_details(path):
+    return run(["codesign", "-dvv", path], check=False).stderr
+
+
+def checked_release(app_id):
+    """The release of `contracts/release.json`, once the files that carry its version agree with it
+    and the identifier and name of the app are ones of the rewrite (never the legacy app's)."""
+    made = release.current()
+    wrong = release.problems()
+    if wrong:
+        raise PackagingError("The version disagrees with contracts/release.json:\n" + "\n".join(wrong))
+    require_next("bundle identifier", app_id)
+    require_next("product name", PRODUCT_NAME)
+    return made
+
+
+def info_problems(info, app_id, made):
+    """The identifier, version and build number of an `Info.plist` against the release's; the plist
+    must not name the legacy app."""
+    wanted = {
+        "CFBundleIdentifier": app_id,
+        "CFBundleShortVersionString": str(made.version),
+        "CFBundleVersion": str(made.build_number()),
+    }
+    problems = [f"{key} is {info.get(key)!r}, not {value!r}" for key, value in wanted.items() if info.get(key) != value]
+    if names_legacy(json.dumps(info, default=str)):
+        problems.append("Info.plist names the legacy app")
+    return problems
+
+
+def verify_team(environment):
+    """The team of a `--verify-only` run, from the environment; the identity that signed what is
+    checked is not needed."""
+    team = environment.get(TEAM_VARIABLE) or ""
+    if not TEAM_PATTERN.match(team):
+        raise PackagingError(f"--verify-only needs {TEAM_VARIABLE} (a ten-character team identifier) in the environment")
+    return team
+
+
+def verification_status(subject, problems, holds):
+    """Print what a `--verify-only` run found, and return the exit status."""
+    for problem in problems:
+        print(f"PROBLEM: {problem}", file=sys.stderr)
+    print(f"{subject}: {holds if not problems else str(len(problems)) + ' problem(s)'}")
+    return 1 if problems else 0
 
 
 def sha256_of(path):
@@ -85,6 +179,34 @@ def stream(command, *, environment=None, cwd=None):
     status = subprocess.run(_words(command), env=environment, cwd=cwd).returncode
     if status:
         raise PackagingError(f"{command[0]} failed with status {status}")
+
+
+def app_build_settings(made, app_id, product_name):
+    """The build settings that turn the project's Dev app (Mac or iPhone) into the production app.
+    The project itself stays Dev (the engine's tests read its identifier); the version is the
+    contract's. The names are `SOYEHT_*` settings of the app target: a global `PRODUCT_NAME` would
+    rename the resource bundle of every package as well and make two commands produce one file."""
+    return {
+        "SOYEHT_APP_BUNDLE_ID": app_id,
+        "SOYEHT_PRODUCT_NAME": product_name,
+        "MARKETING_VERSION": str(made.version),
+        "CURRENT_PROJECT_VERSION": str(made.build_number()),
+        "ONLY_ACTIVE_ARCH": "NO",
+        "CODE_SIGNING_ALLOWED": "NO",
+        "SOYEHT_PACKAGES": str(PACKAGES),
+    }
+
+
+def xcodebuild_command(project, scheme, destination, derived, settings, *actions):
+    """One `xcodebuild` call of an app build: the release configuration, the shared package folder,
+    packages from the resolved file only, and the settings of `app_build_settings`."""
+    return [
+        "xcodebuild", "-project", project, "-scheme", scheme,
+        "-configuration", "Release", "-destination", destination,
+        "-derivedDataPath", derived, "-clonedSourcePackagesDirPath", PACKAGES,
+        "-skipPackagePluginValidation", "-onlyUsePackageVersionsFromResolvedFile",
+        *[f"{key}={value}" for key, value in settings.items()], *actions,
+    ]
 
 
 @dataclass(frozen=True)

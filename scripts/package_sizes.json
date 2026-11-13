@@ -6,7 +6,8 @@
     "linux-x86_64.AppImage": 25400000,
     "linux-aarch64.AppImage": null,
     "windows-x86_64.exe": null,
-    "windows-aarch64.exe": null
+    "windows-aarch64.exe": null,
+    "ios-aarch64.ipa": null
   },
   "notes": "Bytes. Measured on 2026-11-02 (docs/reports/package-sizes-2026-11-02.md) and rounded up by about 3%. null: not measured yet, so not checked. A finished package over its ceiling fails the packaging script: change the number in the same change and say why. One more than 10% under it only prints a warning to lower the number. A name that is not one of these kinds is an error. 2026-11-04: the x86_64 .deb measured 17751068 bytes at the release dry run of 0.1.0, 600608 over the 17150460 of 2026-11-02 (commit c3c4c75e), and is now 18300000; the x86_64 AppImage measured 24611320 and is now checked at 25400000. The programs inside the .deb grew (uncompressed, against the report of 2026-11-02): the window by 1129656 bytes (#95, #96 and #102 changed it), the engine by 340560 (#54, #67, #69, #72 and #102), the supervisor by 103328 (#69) and the command line by 78248 (#96). That is read from the files each change touched and the sizes of the programs, not from a build of each commit, and the older measure was built with the host's Nix toolchain and this one in the Ubuntu 22.04 userland of package_linux_rootless.sh."
 }

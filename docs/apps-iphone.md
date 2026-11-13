@@ -39,19 +39,46 @@ production identifier, ADR 0112) and `SOYEHT_PRODUCT_NAME="Soyeht Next"`, the pr
 `uv run python scripts/release.py bump ...` from `contracts/release.json` (ADR 0115); never type
 them. Signing credentials come from the environment, never from the repository.
 
-Archive and export, with a distribution certificate in the keychain and an App Store profile for
-the identifier (both made in the developer account, never kept here):
+`scripts/package_ios.py` does the whole build (ADR 0120's pattern, as `package_mac.py` does for
+the Mac) and stops before the upload:
+
+```sh
+export SOYEHT_IOS_SIGNING_IDENTITY="Apple Distribution: <Name> (<TEAM_ID>)"   # or the SHA-1
+export SOYEHT_DEVELOPMENT_TEAM=<TEAM_ID>
+nice -n 15 uv run python scripts/package_ios.py                  # archive, sign, export, check
+uv run python scripts/package_ios.py --validate                  # and ask App Store Connect to validate
+uv run python scripts/package_ios.py --verify-only <file.ipa>    # check a file already exported
+```
+
+It needs a distribution certificate in the keychain and an App Store profile for the identifier,
+both made in the developer account and never kept here. The profile is named in
+`apps/ios/ExportOptions.plist` (`Soyeht Next iOS App Store`); `SOYEHT_IOS_PROFILE` names another.
+The team and the identity are added to a copy of that file from the environment; neither is written
+in the repository. The result is `dist/ios/soyeht-<version>-ios-aarch64.ipa` with its `.sha256`, and
+the app's debug symbols in `dist/ios/symbols/` (keep them with the release). The `.ipa` is not part of
+the GitHub release (`release_flow.py` collects `dist/`): the app goes through the App Store.
+
+The steps, which are the manual ones of the earlier releases:
 
 1. `xcodebuild archive -configuration Release -destination generic/platform=iOS` with
    `SOYEHT_APP_BUNDLE_ID`, `SOYEHT_PRODUCT_NAME` and `CODE_SIGNING_ALLOWED=NO`. Signing the whole
    archive by hand fails: a manual profile specifier reaches the Swift package targets, which
    take none (“does not support provisioning profiles”).
-2. Sign the archived app yourself with the distribution identity and an entitlements file that
-   holds `application-identifier`, `com.apple.developer.team-identifier`, `get-task-allow` false
-   and `aps-environment` `production`. An unsigned archive carries no entitlements, so without
-   this step the exported app has no push entitlement.
-3. `xcodebuild -exportArchive` with `method` `app-store-connect`, manual signing and the profile
-   name for the identifier, then `xcrun altool --validate-app` and `--upload-app`.
+2. Sign the archived app with the distribution identity and an entitlements file made from
+   `apps/ios/SoyehtPhone.entitlements` plus `application-identifier`,
+   `com.apple.developer.team-identifier` and `get-task-allow` false, with `aps-environment` set to
+   `production` when the file has it. An unsigned archive carries no entitlements, so without this
+   step the exported app has none of them.
+3. `xcodebuild -exportArchive` with `method` `app-store-connect` and manual signing.
+4. The check of the file: the identifier, version and build number of `contracts/release.json`, the
+   entitlements, a signature by an Apple Distribution certificate of the team, and an App Store
+   profile (no listed devices, no debugging).
+
+`--validate` runs `xcrun altool --validate-app`, which only asks App Store Connect whether it would
+accept the file. It needs the same App Store Connect API key the Mac notarization uses
+(`SOYEHT_NOTARY_KEY_FILE`, `SOYEHT_NOTARY_KEY_ID`, `SOYEHT_NOTARY_ISSUER`) and stops at once when
+they are not set. The script never uploads: upload the file by hand with `xcrun altool --upload-app`
+(or Transporter) after you have read the check.
 
 The app declares the answers the store asks for in the repository:
 
