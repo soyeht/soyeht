@@ -12,12 +12,49 @@
 # scratch; later runs reuse the toolchain and the build folder.
 #
 # Needs `bwrap` (bubblewrap), `curl`, `git`, `tar` and `sha256sum` on the host. Build on the
-# architecture you want a package for. Set `SOYEHT_PACKAGE_JOBS` to bound the build jobs.
+# architecture you want a package for. The build jobs are the smaller of the CPU count and half
+# the memory in GB, at least one; set `SOYEHT_PACKAGE_JOBS` to override that.
 set -euo pipefail
+
+# The build jobs: the smaller of the CPU count and half the memory in GB, at least one. The
+# arguments are for the tests, which pass the two numbers instead of reading the host.
+default_jobs() {
+    local cpus="${1:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)}"
+    local memory_kb="${2:-$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)}"
+    local memory_jobs=$((${memory_kb:-0} / 1024 / 1024 / 2))
+    local jobs=$cpus
+    if ((memory_jobs < jobs)); then
+        jobs=$memory_jobs
+    fi
+    if ((jobs < 1)); then
+        jobs=1
+    fi
+    printf '%s\n' "$jobs"
+}
+
+# A test sources this file for `default_jobs`; the build does not run then.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
+# Every download fails instead of hanging: a connect timeout, an abort when the transfer stays
+# below 1 KiB/s for a minute, and three retries with a short pause.
+curl_options=(
+    --connect-timeout 15
+    --speed-limit 1024
+    --speed-time 60
+    --retry 3
+    --retry-delay 2
+)
+if curl --retry-connrefused --version >/dev/null 2>&1; then
+    curl_options+=(--retry-connrefused)
+fi
+curl_options_text="${curl_options[*]}"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 base="${SOYEHT_PACKAGE_BASE:-$HOME/.cache/soyeht-package-base}"
-jobs="${SOYEHT_PACKAGE_JOBS:-8}"
+jobs="${SOYEHT_PACKAGE_JOBS:-$(default_jobs)}"
+echo "package_linux_rootless: building with $jobs jobs"
 case "$(uname -m)" in
 x86_64) arch=amd64 ;;
 aarch64 | arm64) arch=arm64 ;;
@@ -47,8 +84,8 @@ inside() {
 }
 
 if [[ ! -f "$rootfs/etc/os-release" ]]; then
-    curl -fsSL -o "$base/$arch/$tarball" "$release_url/$tarball"
-    curl -fsSL -o "$base/$arch/SHA256SUMS" "$release_url/SHA256SUMS"
+    curl -fsSL "${curl_options[@]}" -o "$base/$arch/$tarball" "$release_url/$tarball"
+    curl -fsSL "${curl_options[@]}" -o "$base/$arch/SHA256SUMS" "$release_url/SHA256SUMS"
     (cd "$base/$arch" && grep " \*\?$tarball\$" SHA256SUMS | sha256sum -c -)
     mkdir -p "$rootfs"
     tar -xzf "$base/$arch/$tarball" -C "$rootfs"
@@ -73,7 +110,7 @@ cat >"$rootfs/package-in-root.sh" <<'INSIDE'
 #!/bin/sh
 set -eu
 if [ ! -x /root/.cargo/bin/rustup ]; then
-    curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none >/dev/null
+    curl -sSf $CURL_OPTIONS https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none >/dev/null
 fi
 mkdir -p /build
 cd /src
@@ -83,7 +120,8 @@ exec python3 scripts/package_linux.py --engine-target /build/engine --desktop-ta
     --out /src/dist --cache /cache "$@"
 INSIDE
 inside --setenv SOURCE_DATE_EPOCH "$epoch" --setenv SOYEHT_BUILD_COMMIT "$commit" \
-    --setenv CARGO_BUILD_JOBS "$jobs" /bin/sh /package-in-root.sh "$@"
+    --setenv CURL_OPTIONS "$curl_options_text" --setenv CARGO_BUILD_JOBS "$jobs" \
+    /bin/sh /package-in-root.sh "$@"
 
 mkdir -p "$root/dist"
 cp -f "$sources"/dist/soyeht-* "$root/dist/"
