@@ -57,7 +57,7 @@ public final class EngineClient {
   public internal(set) var reachability: EngineReachability?
   public internal(set) var connectionActor: Actor?
   public internal(set) var engineCapabilities: Set<String> = []
-  @ObservationIgnored let terminalSinks = TerminalOutputSinks()
+  @ObservationIgnored private let terminalSinks = TerminalOutputSinks()
   #if os(macOS)
     @ObservationIgnored let terminalViewRegistry = MacTerminalViewRegistry()
   #endif
