@@ -251,6 +251,22 @@ hdiutil detach "$MOUNT"
 `collect` repeats the signing, staple and Gatekeeper checks, so an image that fails any of them is
 never put in the release.
 
+### The iPhone and iPad app
+
+The app is delivered through the App Store, not through the GitHub release, so `release_flow.py` does
+not build it and `collect` does not look for it. Build the file on the release Mac, with the Apple
+Distribution certificate and the App Store profile in the keychain, from the same commit as the rest:
+
+```sh
+export SOYEHT_IOS_SIGNING_IDENTITY="Apple Distribution: <Name> (<TEAM_ID>)"   # or its SHA-1
+export SOYEHT_DEVELOPMENT_TEAM=<TEAM_ID>
+nice -n 15 uv run python scripts/package_ios.py --validate     # the three notary key variables, for --validate
+```
+
+It writes `dist/ios/soyeht-<version>-ios-aarch64.ipa` and stops before the upload. The build number
+is the one of `contracts/release.json`, so a second upload of one version needs `prepare revision`.
+`docs/apps-iphone.md`, "Store build", has the steps and the checks.
+
 ## When something goes wrong
 
 **The expiry.** Every manifest expires 90 days (`manifest.maxLifetimeSeconds`) after it is signed, and a

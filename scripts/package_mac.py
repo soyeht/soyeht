@@ -35,7 +35,6 @@ import argparse
 import json
 import os
 import plistlib
-import re
 import shutil
 import sys
 import tempfile
@@ -45,26 +44,38 @@ from pathlib import Path
 import release
 import release_identity
 from generated_profile import PROFILES
-from legacy_guard import names_legacy, require_next
+from legacy_guard import require_next
 from package_common import (
     LICENSE_DOCUMENTS,
+    NOTARY_KEY_VARIABLES,
+    HASH_PATTERN,
+    PRODUCT_NAME,
     PROFILE_NAME,
     ROOT,
+    TEAM_PATTERN,
+    TEAM_VARIABLE,
     PackagingError,
+    api_key,
+    app_build_settings,
     artifact_path,
     check_sizes,
+    checked_release,
+    entitlements_of,
+    info_problems,
     license_document,
-    readable_by_others,
     release_environment,
     run,
+    signature_details,
     stream,
+    verification_status,
+    verify_team,
     write_checksum,
+    xcodebuild_command,
 )
 from profile_programs import binary_identifiers
 
 PROFILE = PROFILES[PROFILE_NAME]
 APP_ID = PROFILE["appIds"]["macos"]
-PRODUCT_NAME = PROFILE["displayNames"]["macApp"]
 VOLUME_NAME = PRODUCT_NAME
 OPERATING_SYSTEM = "macos"
 ARCHITECTURE = "arm64"  # what `lipo` and Xcode call it
@@ -73,19 +84,13 @@ RUST_TARGET = "aarch64-apple-darwin"
 ENTITLEMENTS = ROOT / "apps/mac/Soyeht.entitlements"
 XCODE_PROJECT = ROOT / "apps/mac/SoyehtMac.xcodeproj"
 WORK = ROOT / ".cache/package-mac"
-PACKAGES = ROOT / ".cache/apple-packages"
 DIST = ROOT / "dist"
 HELPERS_FOLDER = "Contents/MacOS"
 RESOURCES_FOLDER = "Contents/Resources"
 SYMBOLS_BUNDLE = "app.dSYM"  # the scratch name of the symbols before they are zipped
 
 IDENTITY_VARIABLE = "SOYEHT_MAC_SIGNING_IDENTITY"
-TEAM_VARIABLE = "SOYEHT_DEVELOPMENT_TEAM"
 NOTARY_VARIABLE = "SOYEHT_NOTARY_PROFILE"
-NOTARY_KEY_FILE_VARIABLE = "SOYEHT_NOTARY_KEY_FILE"
-NOTARY_KEY_ID_VARIABLE = "SOYEHT_NOTARY_KEY_ID"
-NOTARY_ISSUER_VARIABLE = "SOYEHT_NOTARY_ISSUER"
-NOTARY_KEY_VARIABLES = (NOTARY_KEY_FILE_VARIABLE, NOTARY_KEY_ID_VARIABLE, NOTARY_ISSUER_VARIABLE)
 
 # The programs inside the bundle: the cargo binary, the key of `binary_identifiers`.
 PROGRAMS = (
@@ -96,9 +101,7 @@ PROGRAMS = (
 )
 # What the app asks of hardened runtime, and why (ADR 0120). Nothing else is allowed.
 EXPECTED_APP_ENTITLEMENTS = {"com.apple.security.device.audio-input"}
-TEAM_PATTERN = re.compile(r"^[A-Z0-9]{10}$")
 CERTIFICATE_KIND = "Developer ID Application:"
-HASH_PATTERN = re.compile(r"^[0-9A-Fa-f]{40}$")
 MACHO_MAGICS = (b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe")
 NOTARY_TIMEOUT = "1h"
 # What signing and stapling the image add to it: a signature with its timestamp (a few KB of
@@ -120,6 +123,11 @@ class Signing:
         return self.identity is None
 
     @property
+    def secrets(self):
+        """What a printed command must not show: the certificate's name and the notary credentials."""
+        return (self.identity, *[part for part in self.notary or () if not part.startswith("--")])
+
+    @property
     def notarizes(self):
         return self.notary is not None
 
@@ -129,18 +137,8 @@ def notary_credentials(environment):
     profile = environment.get(NOTARY_VARIABLE) or None
     if profile:
         return ("--keychain-profile", profile)
-    values = [environment.get(name) or None for name in NOTARY_KEY_VARIABLES]
-    if not any(values):
-        return None
-    missing = [name for name, value in zip(NOTARY_KEY_VARIABLES, values) if not value]
-    if missing:
-        raise PackagingError(f"an App Store Connect API key needs {', '.join(missing)} in the environment too")
-    key_file, key_id, issuer = values
-    if not Path(key_file).is_file():
-        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} does not name a file")
-    if readable_by_others(key_file):
-        raise PackagingError(f"{NOTARY_KEY_FILE_VARIABLE} names a file that other users can read: chmod 600 it")
-    return ("--key", key_file, "--key-id", key_id, "--issuer", issuer)
+    key = api_key(environment)
+    return ("--key", key[0], "--key-id", key[1], "--issuer", key[2]) if key else None
 
 
 def resolve_signing(environment, ad_hoc=False, strict=False):
@@ -224,32 +222,14 @@ def build_engine(environment):
 
 
 def xcode_settings(made):
-    """The build settings that turn the project's Dev app into the production app. The project
-    itself stays Dev (the engine's tests read its identifier); the version is the contract's.
-    The names are `SOYEHT_*` settings of the app target: a global `PRODUCT_NAME` would rename
-    the resource bundle of every package as well and make two commands produce one file."""
-    return {
-        "SOYEHT_APP_BUNDLE_ID": APP_ID,
-        "SOYEHT_PRODUCT_NAME": PRODUCT_NAME,
-        "MARKETING_VERSION": str(made.version),
-        "CURRENT_PROJECT_VERSION": str(made.build_number()),
-        "ARCHS": ARCHITECTURE,
-        "ONLY_ACTIVE_ARCH": "NO",
-        "CODE_SIGNING_ALLOWED": "NO",
-        "SOYEHT_PACKAGES": str(PACKAGES),
-    }
+    """The Mac's build settings: the shared ones (`app_build_settings`) and the one architecture."""
+    return {**app_build_settings(made, APP_ID, PRODUCT_NAME), "ARCHS": ARCHITECTURE}
 
 
 def build_app(made, environment):
     derived = WORK / "derived"
-    settings = [f"{key}={value}" for key, value in xcode_settings(made).items()]
     stream(
-        [
-            "xcodebuild", "-project", XCODE_PROJECT, "-scheme", "SoyehtMac",
-            "-configuration", "Release", "-destination", "generic/platform=macOS",
-            "-derivedDataPath", derived, "-clonedSourcePackagesDirPath", PACKAGES,
-            "-skipPackagePluginValidation", "-onlyUsePackageVersionsFromResolvedFile", *settings, "build",
-        ],
+        xcodebuild_command(XCODE_PROJECT, "SoyehtMac", "generic/platform=macOS", derived, xcode_settings(made), "build"),
         environment=environment,
     )
     app = derived / "Build/Products/Release" / f"{PRODUCT_NAME}.app"
@@ -359,14 +339,14 @@ def sign_bundle(app, signing):
         identifier = by_name.get(path.name) if path.parent == app / HELPERS_FOLDER else None
         if identifier:
             require_next("signing identifier", identifier)
-        run(codesign_command(path, signing, identifier=identifier))
-    run(codesign_command(app, signing, entitlements=ENTITLEMENTS))
+        run(codesign_command(path, signing, identifier=identifier), mask=signing.secrets)
+    run(codesign_command(app, signing, entitlements=ENTITLEMENTS), mask=signing.secrets)
 
 
 def sign_file(path, signing):
     """A disk image: a secure timestamp and no entitlements (ad-hoc images stay unsigned)."""
     if not signing.ad_hoc:
-        run(["codesign", "--force", "--sign", signing.identity, "--timestamp", path])
+        run(["codesign", "--force", "--sign", signing.identity, "--timestamp", path], mask=signing.secrets)
 
 
 # --- notarizing ---------------------------------------------------------------------------------
@@ -377,12 +357,12 @@ def notarize(path, signing):
     submitted = run(
         ["xcrun", "notarytool", "submit", path, *signing.notary,
          "--wait", "--timeout", NOTARY_TIMEOUT, "--output-format", "json"],
-        check=False, timeout=3700,
+        check=False, timeout=3700, mask=signing.secrets,
     )
     verdict = parse_verdict(submitted.stdout)
     if verdict.get("status") != "Accepted":
         if verdict.get("id"):
-            log = run(["xcrun", "notarytool", "log", verdict["id"], *signing.notary], check=False)
+            log = run(["xcrun", "notarytool", "log", verdict["id"], *signing.notary], check=False, mask=signing.secrets)
             print(log.stdout or log.stderr)
         raise PackagingError(f"Notarization of {path.name} was not accepted: {verdict.get('status', 'no answer')}")
 
@@ -431,17 +411,6 @@ def make_image(app, destination, scratch):
 # --- checking the result ----------------------------------------------------------------------
 
 
-def entitlements_of(path):
-    """The entitlement keys `path` is signed with."""
-    result = run(["codesign", "-d", "--entitlements", ":-", path], check=False)
-    text = result.stdout.strip()
-    return set(plistlib.loads(text.encode()).keys()) if text.startswith("<?xml") else set()
-
-
-def signature_details(path):
-    return run(["codesign", "-dvv", path], check=False).stderr
-
-
 def requirement_text(path):
     """What `codesign -d -r-` prints for `path`: the designated requirement macOS stores in a grant."""
     result = run(["codesign", "-d", "-r-", path], check=False)
@@ -479,16 +448,7 @@ def check_architecture(path):
 
 
 def check_info(app, made):
-    info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
-    wanted = {
-        "CFBundleIdentifier": APP_ID,
-        "CFBundleShortVersionString": str(made.version),
-        "CFBundleVersion": str(made.build_number()),
-    }
-    problems = [f"{key} is {info.get(key)!r}, not {value!r}" for key, value in wanted.items() if info.get(key) != value]
-    if names_legacy(json.dumps(info, default=str)):
-        problems.append("Info.plist names the legacy app")
-    return problems
+    return info_problems(plistlib.loads((app / "Contents/Info.plist").read_bytes()), APP_ID, made)
 
 
 def helper_identifiers():
@@ -592,27 +552,17 @@ def verify_only(app, environment):
     Only the team comes from the environment; the identity that signed it is not needed. The app
     must be of the current release version (`contracts/release.json`): its Info.plist is checked
     against it like a fresh build's."""
-    team = environment.get(TEAM_VARIABLE) or ""
-    if not TEAM_PATTERN.match(team):
-        raise PackagingError(f"--verify-only needs {TEAM_VARIABLE} (a ten-character team identifier) in the environment")
+    team = verify_team(environment)
     if not (app / "Contents/Info.plist").is_file():
         raise PackagingError(f"--verify-only: {app} is not an app bundle")
     problems = verify_bundle(app, Signing("(already signed)", team), release.current())
-    for problem in problems:
-        print(f"PROBLEM: {problem}", file=sys.stderr)
-    print(f"{app}: {'identity rules hold' if not problems else str(len(problems)) + ' problem(s)'}")
-    return 1 if problems else 0
+    return verification_status(app, problems, "identity rules hold")
 
 
 def package(options, environment):
     if options.verify_only:
         return verify_only(options.verify_only, environment)
-    made = release.current()
-    wrong = release.problems()
-    if wrong:
-        raise PackagingError("The version disagrees with contracts/release.json:\n" + "\n".join(wrong))
-    require_next("bundle identifier", APP_ID)
-    require_next("product name", PRODUCT_NAME)
+    made = checked_release(APP_ID)
     signing = resolve_signing(environment, options.ad_hoc, options.release)
     print("\n".join(banner(signing)), file=sys.stderr)
     programs = {name: program_path(name, environment) for name, _ in PROGRAMS}

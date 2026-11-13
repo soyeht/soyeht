@@ -247,9 +247,9 @@ class NotaryCredentialTests(unittest.TestCase):
         key.chmod(0o600)
         environment = {key_name: value for key_name, value in FULL.items() if key_name != package_mac.NOTARY_VARIABLE}
         environment.update({
-            package_mac.NOTARY_KEY_FILE_VARIABLE: str(key),
-            package_mac.NOTARY_KEY_ID_VARIABLE: "EXAMPLEKEY1",
-            package_mac.NOTARY_ISSUER_VARIABLE: "00000000-0000-0000-0000-000000000000",
+            package_common.NOTARY_KEY_FILE_VARIABLE: str(key),
+            package_common.NOTARY_KEY_ID_VARIABLE: "EXAMPLEKEY1",
+            package_common.NOTARY_ISSUER_VARIABLE: "00000000-0000-0000-0000-000000000000",
         })
         environment.update(changes)
         return environment
@@ -260,7 +260,7 @@ class NotaryCredentialTests(unittest.TestCase):
         self.assertTrue(signing.notarizes)
         self.assertEqual(
             signing.notary,
-            ("--key", environment[package_mac.NOTARY_KEY_FILE_VARIABLE], "--key-id", "EXAMPLEKEY1",
+            ("--key", environment[package_common.NOTARY_KEY_FILE_VARIABLE], "--key-id", "EXAMPLEKEY1",
              "--issuer", "00000000-0000-0000-0000-000000000000"),
         )
 
@@ -270,15 +270,15 @@ class NotaryCredentialTests(unittest.TestCase):
 
     def test_a_half_set_api_key_names_what_is_missing(self):
         environment = self.api_key()
-        del environment[package_mac.NOTARY_ISSUER_VARIABLE]
-        with self.assertRaisesRegex(PackagingError, package_mac.NOTARY_ISSUER_VARIABLE):
+        del environment[package_common.NOTARY_ISSUER_VARIABLE]
+        with self.assertRaisesRegex(PackagingError, package_common.NOTARY_ISSUER_VARIABLE):
             package_mac.resolve_signing(environment)
         with self.assertRaisesRegex(PackagingError, "does not name a file"):
-            package_mac.resolve_signing(self.api_key(**{package_mac.NOTARY_KEY_FILE_VARIABLE: "/nonexistent/key.p8"}))
+            package_mac.resolve_signing(self.api_key(**{package_common.NOTARY_KEY_FILE_VARIABLE: "/nonexistent/key.p8"}))
 
     def test_a_notary_key_that_other_users_can_read_is_refused(self):
         environment = self.api_key()
-        key = Path(environment[package_mac.NOTARY_KEY_FILE_VARIABLE])
+        key = Path(environment[package_common.NOTARY_KEY_FILE_VARIABLE])
         key.chmod(0o640)
         with self.assertRaisesRegex(PackagingError, "chmod 600"):
             package_mac.resolve_signing(environment)
@@ -287,7 +287,7 @@ class NotaryCredentialTests(unittest.TestCase):
 
     def test_a_release_without_any_notary_credential_is_refused(self):
         environment = {key: value for key, value in FULL.items() if key != package_mac.NOTARY_VARIABLE}
-        with self.assertRaisesRegex(PackagingError, package_mac.NOTARY_KEY_FILE_VARIABLE):
+        with self.assertRaisesRegex(PackagingError, package_common.NOTARY_KEY_FILE_VARIABLE):
             package_mac.resolve_signing(environment, strict=True)
 
     def test_notarytool_gets_the_credentials_of_the_signing(self):
