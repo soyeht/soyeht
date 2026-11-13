@@ -23,7 +23,7 @@ Before the first release, once:
 | The update signing key | signing `update-manifest.json` | `SOYEHT_UPDATE_SIGNING_KEY_FILE` (a path) or `SOYEHT_UPDATE_SIGNING_KEY` (the value) in the environment of the Mac that collects; see "The update key" below. Never a file of this repository |
 | `gh` logged in with write access to `soyeht/soyeht` | the draft release | `gh auth login`, or `GH_TOKEN` in the environment |
 | The Linux x86_64 CI host | the x86_64 `.deb` and AppImage | an ssh host you name (`--linux-host`, or `SOYEHT_RELEASE_LINUX_HOST`; the repository has no default): a clone at `~/soyeht-ci/repo`, the mirror `~/soyeht-ci/mirror.git` (the release commit is fetched from it, whatever the clone's `origin` is), a git at `~/soyeht-ci/git/bin` when the login shell has none, Nix, and the settings of `docs/platforms.md`, "A Linux gate host". The release uses only `~/soyeht-ci` |
-| A Linux aarch64 (arm64) CI host | the aarch64 `.deb` and AppImage | the same set-up on an arm64 Linux machine, named by `--linux-aarch64-host` or `SOYEHT_RELEASE_LINUX_AARCH64_HOST` (and `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK` for its `git-receive-pack`, as below). The packager builds for the architecture of the machine it runs on and does not cross-build, so the x86_64 host cannot stand in for it; the build script stops at once on a host of the other architecture. The Ubuntu 26.04 arm64 VM that verified ADR 0121 is such a host once it has the set-up above, and on it (Ubuntu 24.04 and later) three things beyond it were needed: `openssh-server`, so the Mac reaches it with a key and no prompt; a single-user Nix (a `/nix` folder made for the account, then the installer with `--no-daemon`), whose `bubblewrap` fails with `setting up uid map: Permission denied` until the kernel setting `kernel.apparmor_restrict_unprivileged_userns` is `0` (a file in `/etc/sysctl.d`); and, where IPv6 drops large packets, a preference for IPv4 (`precedence ::ffff:0:0/96  100` in `/etc/gai.conf`), or the first download of the build userland stalls. Create the mirror once with `git init --bare ~/soyeht-ci/mirror.git`, and make the clone at `~/soyeht-ci/repo` from the public repository. The repository names no host. The first build there (at `ef12f8db`, about 14 minutes on 4 cores with `SOYEHT_PACKAGE_JOBS=4` and 8 GB of memory, 5.5 GB of userland and toolchain in `~/soyeht-ci/package-base`) measured 15628236 bytes for the `.deb` and 23194120 for the AppImage, and the ceilings in `scripts/package_sizes.json` are about 3% over |
+| A Linux aarch64 (arm64) CI host | the aarch64 `.deb` and AppImage | the same set-up on an arm64 Linux machine, named by `--linux-aarch64-host` or `SOYEHT_RELEASE_LINUX_AARCH64_HOST` (and `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK` for its `git-receive-pack`, as below). The packager builds for the architecture of the machine it runs on and does not cross-build, so the x86_64 host cannot stand in for it; the build script stops at once on a host of the other architecture. The Ubuntu 26.04 arm64 VM that verified ADR 0121 is such a host once it has the set-up above, and on it (Ubuntu 24.04 and later) three things beyond it were needed: `openssh-server`, so the Mac reaches it with a key and no prompt; a single-user Nix (a `/nix` folder made for the account, then the installer with `--no-daemon`), whose `bubblewrap` fails with `setting up uid map: Permission denied` until the kernel setting `kernel.apparmor_restrict_unprivileged_userns` is `0` (a file in `/etc/sysctl.d`); and, where IPv6 drops large packets, a preference for IPv4 (`precedence ::ffff:0:0/96  100` in `/etc/gai.conf`), or the first download of the build userland stalls (a `curl` with no timeout hangs on a half-open IPv6 connection; the preference for IPv4 solved it on this host, and `scripts/package_linux_rootless.sh` will get download timeouts in a separate change). Create the mirror once with `git init --bare ~/soyeht-ci/mirror.git`, and make the clone at `~/soyeht-ci/repo` from the public repository. The repository names no host. The first build there (at `ef12f8db`, about 14 minutes on 4 cores with `SOYEHT_PACKAGE_JOBS=4` and 8 GB of memory, 5.5 GB of userland and toolchain in `~/soyeht-ci/package-base`) measured 15628236 bytes for the `.deb` and 23194120 for the AppImage, and the ceilings in `scripts/package_sizes.json` are about 3% over |
 | A Windows host | the installers | Windows with the build tools of `docs/platforms.md`, "Windows packages", Inno Setup 6 and `uv`. A VM through VMPal does for a dry run (below) |
 
 ### The update key
@@ -90,13 +90,20 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
    uv run python scripts/release_flow.py prepare current     # or minor, patch, major, X.Y.Z, revision
    ```
 
-   It runs `release.py bump`, records the wire contract of the release in `contracts/released/`
-   (`release.py snapshot`, ADR 0161; commit the new files with the bump) and drafts the section of `CHANGELOG.md` from the squash commits since
-   the last tag (`scripts/changelog.py`). Edit the entries so they read well for a person who uses
-   Soyeht, delete the line that starts with `<!-- draft:`, commit the bump and the changelog, and
-   merge them as a pull request. `--dry-run` shows what it would do. Running `prepare` again replaces a
-   section that still has its draft line, and refuses one you have edited (`changelog.py draft
-   --replace --force` writes over it on purpose).
+   It checks everything that can refuse first (the version, the wire contract, the changelog), then
+   runs `release.py bump` (not for `current`), records the wire contract of the release in
+   `contracts/released/` (`release.py snapshot`, ADR 0161: it writes `protocol-v<N>.json` and adds the
+   version to `index.json`; commit both with the bump) and
+   drafts the section of `CHANGELOG.md` from the squash commits since the last tag
+   (`scripts/changelog.py`). `--dry-run` reports exactly what the real run will do, and a refusal
+   (a wire contract that differs from the recorded one, a version that cannot be raised, a finished
+   section with no entry) writes nothing, in either mode. Running `prepare` again replaces a section
+   that still has its draft line. A section you have finished (no `<!-- draft:` line) is kept as it
+   is, which is what the first release of 0.1.0 does when the changelog was written by hand: the
+   wire contract is still recorded, and `changelog.py draft --replace --force` writes over a
+   finished section on purpose. Otherwise edit the entries so they read well for a person who uses
+   Soyeht, delete the line that starts with `<!-- draft:`, commit the bump, the wire contract (`protocol-v<N>.json` and
+   `index.json`) and the changelog, and merge them as a pull request.
 
 2. **Build.** From a clean checkout of the merged commit of `main` (the script refuses any other):
 
@@ -183,7 +190,8 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
 
 `--allow-unsigned` (on `collect` and `publish`) is for a build to try on friends: it accepts the
 ad-hoc Mac image from `dist/ad-hoc/`, installers without a signature, and no update key (then there
-is no manifest), `--without windows` (or `linux`, `macos`) leaves a system out, and the release is
+is no manifest), `--without windows` (or `linux`, `macos`) leaves a system out, `--without linux-aarch64` (or `linux-x86_64`)
+leaves one Linux architecture out, so Linux x86_64 can ship without an arm64 host, and the release is
 marked as a pre-release. A pre-release is never "latest", so no client is told. Everything else is
 the same.
 
@@ -260,8 +268,9 @@ gh release upload v<version> update-manifest.json --clobber       # over the ass
 
 `renew` reads the manifest the clients read now, keeps its version, minimum, notes and packages, and signs
 them with a new sequence (the clock, or one above the old if the clock is behind) and a full life.
-Run `check-expiry` on a schedule (every week from the calendar or from a CI job that fails the run), and
-renew when it fails. A manifest that has expired already can be renewed the same way.
+Run `check-expiry` on a schedule: the workflow `.github/workflows/update-manifest-expiry.yml` does it every
+week (and on demand) against the live manifest with `--allow-unpublished`, so it passes while no release
+exists and fails the run once the manifest expires within 21 days. Renew when it fails. A manifest that has expired already can be renewed the same way.
 
 **The sequence.** A device remembers the highest `sequence` it has read and refuses every lower one
 (contract 15, section 3). So a manifest with a sequence far in the future would lock every later

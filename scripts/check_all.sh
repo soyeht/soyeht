@@ -299,6 +299,7 @@ step always both install-dev:unit uv run python -m unittest discover -s scripts 
 step always both release:unit uv run python -m unittest discover -s scripts -p 'test_release.py'
 step always both release-manifest:unit uv run python -m unittest discover -s scripts -p 'test_release_manifest.py'
 step always both release-flow:unit uv run python -m unittest discover -s scripts -p 'test_release_flow.py'
+step always both release-prepare:unit uv run python -m unittest discover -s scripts -p 'test_release_prepare.py'
 step always both changelog:unit uv run python -m unittest discover -s scripts -p 'test_changelog.py'
 step always both package-linux:unit uv run python -m unittest discover -s scripts -p 'test_package_linux.py'
 step always both package-mac:unit uv run python -m unittest discover -s scripts -p 'test_package_mac.py'

@@ -1,0 +1,24 @@
+name: update-manifest-expiry
+# Not a gate step: a weekly look at the update manifest the clients read (docs/release.md, "The
+# expiry"). The manifest is signed for 90 days and a device refuses one past its expiry, so this
+# fails the run when it expires within 21 days. It needs only the public key of
+# contracts/update.json, and it succeeds while no release exists (the address answers 404).
+# test_gate_list.py allows this one script call here and nothing else.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check-expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install uv
+        run: pipx install uv==0.11.32
+      - name: Check the published manifest
+        run: uv run python scripts/release_manifest.py check-expiry --allow-unpublished
