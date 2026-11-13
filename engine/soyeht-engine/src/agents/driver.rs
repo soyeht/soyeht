@@ -500,14 +500,13 @@ impl Core {
             self.start_read(&owner, &instance_id, next, false)?;
         }
         self.decode_agent_log(pane)?;
-        let acknowledged = self.agents.running[pane].state.acknowledged_offset;
-        if errors::invariant(
+        let running = errors::invariant(
             self.agents.running.get_mut(pane),
             "Agent runtime disappeared",
-        )?
-        .idle
-        .needs_acknowledgement(&instance_id, acknowledged)
-        {
+        )?;
+        let acknowledged = running.state.acknowledged_offset;
+        let idle = &mut running.idle;
+        if idle.needs_acknowledgement(&instance_id, acknowledged) {
             // Nobody waits for it: the supervisor keeps the output a little longer if it fails.
             self.send_later(Request::Ack {
                 instance_id,

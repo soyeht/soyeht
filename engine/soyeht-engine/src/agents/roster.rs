@@ -3,6 +3,10 @@
 //! operation. `Core` owns one `Agents` (`core.agents`); what a method needs of it alone is a
 //! method here, and what also needs the store, the panes, the clock or the background jobs stays
 //! an `impl Core` in the module of its job.
+//!
+//! The fields other than `running` are private: they are read and changed through the methods
+//! below. `running` is still open, and the next slice closes it behind the same kind of methods,
+//! so that no code outside this module reaches into the map.
 
 use super::{Running, state::State, switching::HarnessSwitchRuntime};
 use crate::{
@@ -20,19 +24,52 @@ pub struct Agents {
     /// The agent of each pane that has one, by pane id.
     pub running: BTreeMap<String, Running>,
     /// The harness switches that have started and not ended, by pane id (ADR 0126).
-    pub(crate) switches: BTreeMap<String, HarnessSwitchRuntime>,
+    switches: BTreeMap<String, HarnessSwitchRuntime>,
     /// Changes with each mutation of the harness catalogue, so a snapshot of it that a worker
     /// built meanwhile is not published stale.
-    pub(crate) catalog_epoch: u64,
+    catalog_epoch: u64,
     /// The clients that wait for a native operation to complete, by the scope and the
     /// idempotency key of the operation.
-    pub(crate) native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
+    native_waiters: BTreeMap<(String, String), Vec<Waiter>>,
 }
 
 impl Agents {
     /// Starts to keep the agent of `pane`, whose state is `state`.
-    pub(crate) fn adopt(&mut self, pane: String, state: State) {
+    pub(crate) fn track(&mut self, pane: String, state: State) {
         self.running.insert(pane, Running::new(state));
+    }
+
+    /// What the catalogue epoch is now.
+    pub(crate) fn catalog_epoch(&self) -> u64 {
+        self.catalog_epoch
+    }
+
+    /// The harness switch of `pane`, when it has one in flight.
+    pub(crate) fn switch(&self, pane: &str) -> Option<&HarnessSwitchRuntime> {
+        self.switches.get(pane)
+    }
+
+    pub(crate) fn switch_mut(&mut self, pane: &str) -> Option<&mut HarnessSwitchRuntime> {
+        self.switches.get_mut(pane)
+    }
+
+    /// Records the harness switch of `pane`, in flight from now on.
+    pub(crate) fn set_switch(&mut self, pane: String, runtime: HarnessSwitchRuntime) {
+        self.switches.insert(pane, runtime);
+    }
+
+    /// Takes the harness switch of `pane` out, to be put back with `set_switch` or dropped.
+    pub(crate) fn take_switch(&mut self, pane: &str) -> Option<HarnessSwitchRuntime> {
+        self.switches.remove(pane)
+    }
+
+    /// The panes with a harness switch in flight.
+    pub(crate) fn switch_panes(&self) -> Vec<String> {
+        self.switches.keys().cloned().collect()
+    }
+
+    pub(crate) fn has_switches(&self) -> bool {
+        !self.switches.is_empty()
     }
 
     /// The catalogue changed: a snapshot built before this is stale.

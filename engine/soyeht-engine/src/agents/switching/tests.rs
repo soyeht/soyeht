@@ -23,7 +23,7 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
         previous_queue_paused: false,
     });
     core.agents.running.get_mut("agent").unwrap().state = state;
-    core.agents.switches.insert(
+    core.agents.set_switch(
         "agent".into(),
         HarnessSwitchRuntime {
             params: PaneHarnessSwitchParams {
@@ -125,7 +125,7 @@ fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
     // A step on its way is not started again.
     core.advance_harness_switches().unwrap();
     // Both ticks returned while the supervisor was still holding the spawn.
-    assert!(core.agents.switches["agent"].candidate.is_none());
+    assert!(core.agents.switch("agent").unwrap().candidate.is_none());
     assert!(core.background.is_active("switch:agent"));
 
     release.send(()).unwrap();
@@ -134,7 +134,13 @@ fn a_switch_step_waits_for_the_supervisor_off_the_lock() {
         released.load(std::sync::atomic::Ordering::SeqCst),
         "the switch waited for the supervisor"
     );
-    let candidate = core.agents.switches["agent"].candidate.as_ref().unwrap();
+    let candidate = core
+        .agents
+        .switch("agent")
+        .unwrap()
+        .candidate
+        .as_ref()
+        .unwrap();
     assert_eq!(candidate.instance.instance_id, "candidate");
     assert_eq!(*asked.lock().unwrap(), ["spawn", "initialize"]);
 }
@@ -156,11 +162,11 @@ fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
         core.agents.running["agent"].state.clone(),
         CandidatePhase::Initializing,
     );
-    core.agents.switches.get_mut("agent").unwrap().candidate = Some(candidate);
+    core.agents.switch_mut("agent").unwrap().candidate = Some(candidate);
 
     core.advance_harness_switches().unwrap();
 
-    assert!(core.agents.switches.is_empty());
+    assert!(!core.agents.has_switches());
     let state = &core.agents.running["agent"].state;
     assert!(state.harness_switch.is_none());
     let retired = &state.retired_processes;
@@ -233,7 +239,7 @@ fn closed_agent_does_not_abort_switch_recovery_or_retired_cleanup() {
             screen,
         },
     );
-    core.agents.adopt(pane_id, state);
+    core.agents.track(pane_id, state);
 
     core.recover_harness_switches(&[]).unwrap();
     core.cleanup_retired_agent_processes().unwrap();

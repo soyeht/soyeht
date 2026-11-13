@@ -114,7 +114,7 @@ impl Core {
         }
         let pane = params.pane_id.as_str();
         let mut state = self.agent_state(pane)?;
-        if self.agents.switches.contains_key(pane)
+        if self.agents.switch(pane).is_some()
             || state.harness_switch.is_some()
             || !state.retired_processes.is_empty()
             || state.operation.is_some()
@@ -185,7 +185,7 @@ impl Core {
                 pending,
             )?
             .result;
-        self.agents.switches.insert(
+        self.agents.set_switch(
             pane.into(),
             HarnessSwitchRuntime {
                 params,
@@ -202,7 +202,7 @@ impl Core {
     /// supervisor off the Core lock (ADR 0126) and is applied by a later tick. A switch whose step
     /// is on its way waits for it. A step that fails ends the switch and restores the original.
     pub(crate) fn advance_harness_switches(&mut self) -> Result<()> {
-        let panes = self.agents.switches.keys().cloned().collect::<Vec<_>>();
+        let panes = self.agents.switch_panes();
         for pane in panes {
             if !self.background.accepts(&step_job(&pane)) {
                 continue;
@@ -216,7 +216,7 @@ impl Core {
 
     fn begin_switch_step(&mut self, pane: &str) -> Result<()> {
         let runtime = errors::invariant(
-            self.agents.switches.get(pane),
+            self.agents.switch(pane),
             "Harness switch runtime disappeared",
         )?;
         if Instant::now() >= runtime.deadline {
@@ -300,7 +300,7 @@ impl Core {
         };
         // The candidate is recorded first: a failure from here on retires its process.
         let runtime = errors::invariant(
-            self.agents.switches.get_mut(pane),
+            self.agents.switch_mut(pane),
             "Harness switch runtime disappeared",
         )?;
         runtime.candidate = Some(candidate);
@@ -314,8 +314,7 @@ impl Core {
         let used = supervisor.clone();
         let candidate = errors::invariant(
             self.agents
-                .switches
-                .get(pane)
+                .switch(pane)
                 .and_then(|runtime| runtime.candidate.as_ref()),
             "Harness switch candidate disappeared",
         )?;
@@ -357,7 +356,7 @@ impl Core {
         let (keys, output) = self.settle_supervisor(used, read)?;
         self.confirm_candidate_writes(keys);
         let output = self.settle_supervisor(used, output)?;
-        let Some(mut runtime) = self.agents.switches.remove(pane) else {
+        let Some(mut runtime) = self.agents.take_switch(pane) else {
             return Ok(());
         };
         let next_name = runtime.launch.name.clone();
@@ -379,11 +378,11 @@ impl Core {
         match advanced {
             Ok(true) => Ok(()),
             Ok(false) => {
-                self.agents.switches.insert(pane.into(), runtime);
+                self.agents.set_switch(pane.into(), runtime);
                 Ok(())
             }
             Err(error) => {
-                self.agents.switches.insert(pane.into(), runtime);
+                self.agents.set_switch(pane.into(), runtime);
                 Err(error)
             }
         }
@@ -408,7 +407,7 @@ impl Core {
     /// Ends the switch of `pane` because a step failed: its candidate is retired and the original
     /// session is restored.
     fn fail_switch(&mut self, pane: &str, error: errors::Error) -> Result<()> {
-        let Some(mut runtime) = self.agents.switches.remove(pane) else {
+        let Some(mut runtime) = self.agents.take_switch(pane) else {
             return Ok(());
         };
         let mut forget = None;

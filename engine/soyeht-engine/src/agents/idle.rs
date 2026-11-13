@@ -315,7 +315,7 @@ pub(super) mod tests {
                     screen,
                 },
             );
-            core.agents.adopt(id, ready_state());
+            core.agents.track(id, ready_state());
         }
         (core, counters, root)
     }

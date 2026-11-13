@@ -513,7 +513,7 @@ async fn catalog_result(
         let (directory, session_harnesses, epoch) =
             core_lock::with(&core, "catalog_snapshot", |state| {
                 let ids = state.agents.harness_ids();
-                Ok((state.directory.clone(), ids, state.agents.catalog_epoch))
+                Ok((state.directory.clone(), ids, state.agents.catalog_epoch()))
             })
             .await?;
         let worker_method = method.to_owned();
@@ -525,7 +525,7 @@ async fn catalog_result(
         .map_err(Error::Join)?;
         let (method, params) = (method.to_owned(), params.clone());
         let finalized = core_lock::with(&core, "catalog_finalize", move |state| {
-            if state.agents.catalog_epoch != epoch {
+            if state.agents.catalog_epoch() != epoch {
                 return Ok(None);
             }
             let finalize_started = Instant::now();

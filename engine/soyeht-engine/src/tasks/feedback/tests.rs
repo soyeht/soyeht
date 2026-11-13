@@ -297,7 +297,7 @@ fn feedback_core(profile: &FeedbackProfile, revisions: Vec<RevisionSnapshot>) ->
             screen,
         },
     );
-    core.agents.adopt("pane-1".into(), state);
+    core.agents.track("pane-1".into(), state);
     core.clock = Arc::new(FixedClock(10_000));
     let mut revision = ScriptedRevisionPort::default();
     revision.script(repository.to_string_lossy().as_ref(), revisions);

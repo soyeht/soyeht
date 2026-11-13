@@ -428,7 +428,7 @@ impl Core {
             running.state = state;
             running.idle.touch();
         } else {
-            self.agents.adopt(id.to_owned(), state);
+            self.agents.track(id.to_owned(), state);
         }
         if model_changed {
             self.usage.wake();

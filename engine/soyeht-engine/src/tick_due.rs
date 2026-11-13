@@ -112,7 +112,7 @@ fn supervisor_dues(core: &Core, next: &mut Next, now: i64) {
     core.retries_due(next, now);
     core.output_due(next, now);
     crate::languages::watching::due(core, next);
-    if !core.agents.switches.is_empty()
+    if core.agents.has_switches()
         || !core.terminal_captures.is_empty()
         || !core.agent_captures.is_empty()
     {

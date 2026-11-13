@@ -196,7 +196,7 @@ impl Core {
                 screen: prepared.screen,
             },
         );
-        self.agents.adopt(id.clone(), prepared.state);
+        self.agents.track(id.clone(), prepared.state);
         let spawned = self.spawn(&id);
         self.spawn_begun(&id, spawned);
         Ok(())

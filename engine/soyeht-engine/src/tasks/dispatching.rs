@@ -256,7 +256,7 @@ impl Core {
                     screen: prepared.2,
                 },
             );
-            self.agents.adopt(pane_id.clone(), prepared.1);
+            self.agents.track(pane_id.clone(), prepared.1);
         }
         Ok(mutation.result)
     }
@@ -586,7 +586,7 @@ impl Core {
                 screen,
             },
         );
-        self.agents.adopt(pane_id.into(), state);
+        self.agents.track(pane_id.into(), state);
         self.spawn(pane_id)?;
         Ok(true)
     }

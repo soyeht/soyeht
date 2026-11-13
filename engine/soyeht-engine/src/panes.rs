@@ -249,7 +249,7 @@ impl Core {
                 },
             );
             if let Some(agent) = agent {
-                self.agents.adopt(id.clone(), agent);
+                self.agents.track(id.clone(), agent);
             }
             if let Some((session, _)) = terminal_harness {
                 self.terminal_harnesses.insert(id.clone(), session);
