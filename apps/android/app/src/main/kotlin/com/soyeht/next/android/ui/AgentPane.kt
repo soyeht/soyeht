@@ -173,6 +173,7 @@ private fun Question(question: PermissionQuestion, agent: String, answer: (Strin
                     OptionKind.ALLOW -> Tone.Primary
                     OptionKind.ALLOW_ALWAYS -> Tone.Neutral
                     OptionKind.REJECT -> Tone.Danger
+                    OptionKind.OTHER -> Tone.Neutral
                 }
                 Pill(option.name, { answer(option.optionId) }, tone = tone)
             }

@@ -62,6 +62,30 @@ fn a_tool_update_carries_the_call_and_completes_with_it() {
 }
 
 #[test]
+fn a_tool_status_this_build_does_not_know_is_under_way_and_keeps_its_title() {
+    let tool = |status: &str| -> ToolCall {
+        serde_json::from_value(json!({
+            "toolCallId": "c", "title": "ls", "kind": "execute",
+            "status": status, "locations": []
+        }))
+        .unwrap()
+    };
+    for (status, reached, text) in [
+        ("pending", 0, "Waiting: ls"),
+        ("in_progress", 1, "Running ls"),
+        ("completed", 2, "Done: ls"),
+        ("failed", 2, "Failed: ls"),
+        // A value a later engine adds: under way, with nothing claimed about it.
+        ("paused", 1, "ls"),
+    ] {
+        let call = tool(status);
+        assert_eq!(progress(&call.status), reached);
+        assert_eq!(describe(&call), text);
+    }
+    assert_eq!(tool("paused").status, ToolStatus::Unknown);
+}
+
+#[test]
 fn a_commands_output_is_its_bytes_read_as_text() {
     let output = |bytes: &str| -> TerminalOutput {
         serde_json::from_value(json!({

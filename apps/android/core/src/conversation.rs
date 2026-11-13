@@ -22,7 +22,7 @@ pub enum ItemKind {
 }
 
 /// How far a tool call is, for the word and mark at the end of its row.
-#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, uniffi::Enum, Clone, Copy, PartialEq, Eq)]
 pub enum ToolState {
     Pending,
     Running,
@@ -47,11 +47,13 @@ pub struct ConversationItem {
 }
 
 /// What an option does, so a view can tell the one that allows from the one that refuses.
-#[derive(uniffi::Enum, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, uniffi::Enum, Clone, Copy, PartialEq, Eq)]
 pub enum OptionKind {
     Allow,
     AllowAlways,
     Reject,
+    /// A kind this build does not know: drawn like a neutral option, never as a grant.
+    Other,
 }
 
 #[derive(uniffi::Record)]
@@ -80,6 +82,30 @@ pub struct Conversation {
     pub working: bool,
 }
 
+/// How far a tool call is: a status this build does not know is under way until the message is
+/// complete, then done.
+fn tool_state(status: &ToolStatus, complete: bool) -> ToolState {
+    match status {
+        ToolStatus::Pending => ToolState::Pending,
+        ToolStatus::InProgress => ToolState::Running,
+        ToolStatus::Completed => ToolState::Done,
+        ToolStatus::Failed => ToolState::Failed,
+        ToolStatus::Unknown if complete => ToolState::Done,
+        ToolStatus::Unknown => ToolState::Running,
+    }
+}
+
+/// What an option of the wire does here: a kind this build does not know is `Other`, which a view
+/// draws like a neutral option, so no reader takes it for a grant.
+fn option_kind(kind: &PermissionOptionKind) -> OptionKind {
+    match kind {
+        PermissionOptionKind::AllowOnce => OptionKind::Allow,
+        PermissionOptionKind::AllowAlways => OptionKind::AllowAlways,
+        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => OptionKind::Reject,
+        PermissionOptionKind::Unknown => OptionKind::Other,
+    }
+}
+
 fn item(message: &TranscriptMessage, revision: u64) -> ConversationItem {
     let kind = match message.kind {
         TranscriptKind::Message => ItemKind::Message,
@@ -102,15 +128,10 @@ fn item(message: &TranscriptMessage, revision: u64) -> ConversationItem {
         kind,
         text,
         streaming: !message.complete,
-        tool_state: message.tool.as_ref().map(|tool| match tool.status {
-            ToolStatus::Pending => ToolState::Pending,
-            ToolStatus::InProgress => ToolState::Running,
-            ToolStatus::Completed => ToolState::Done,
-            ToolStatus::Failed => ToolState::Failed,
-            // A status this build does not know: under way until the message is complete, then done.
-            ToolStatus::Unknown if message.complete => ToolState::Done,
-            ToolStatus::Unknown => ToolState::Running,
-        }),
+        tool_state: message
+            .tool
+            .as_ref()
+            .map(|tool| tool_state(&tool.status, message.complete)),
         from_agent: message
             .agent_message
             .as_ref()
@@ -136,20 +157,61 @@ pub(crate) fn conversation(state: &State, pane_id: &str) -> Option<Conversation>
                 .map(|option| PermissionOption {
                     option_id: option.option_id.clone(),
                     name: option.name.clone(),
-                    kind: match option.kind {
-                        PermissionOptionKind::AllowOnce => OptionKind::Allow,
-                        // An option of a kind this build does not know gets the neutral tone.
-                        PermissionOptionKind::AllowAlways | PermissionOptionKind::Unknown => {
-                            OptionKind::AllowAlways
-                        }
-                        PermissionOptionKind::RejectOnce | PermissionOptionKind::RejectAlways => {
-                            OptionKind::Reject
-                        }
-                    },
+                    kind: option_kind(&option.kind),
                 })
                 .collect(),
         }),
         notice: view.notice.clone(),
         working: view.turn.elapsed(std::time::Instant::now()).is_some(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_known_tool_statuses_keep_their_state() {
+        for (status, state) in [
+            (ToolStatus::Pending, ToolState::Pending),
+            (ToolStatus::InProgress, ToolState::Running),
+            (ToolStatus::Completed, ToolState::Done),
+            (ToolStatus::Failed, ToolState::Failed),
+        ] {
+            assert_eq!(tool_state(&status, false), state);
+            assert_eq!(tool_state(&status, true), state);
+        }
+    }
+
+    #[test]
+    fn a_tool_status_this_build_does_not_know_runs_then_is_done() {
+        // This crate is built with `open-enums`, so a value of a later engine is kept.
+        let paused: ToolStatus = serde_json::from_value(serde_json::json!("paused")).unwrap();
+        assert_eq!(paused, ToolStatus::Unknown);
+        assert_eq!(tool_state(&paused, false), ToolState::Running);
+        assert_eq!(tool_state(&paused, true), ToolState::Done);
+    }
+
+    #[test]
+    fn a_permission_option_this_build_does_not_know_is_no_grant() {
+        let future: PermissionOptionKind =
+            serde_json::from_value(serde_json::json!("allow_everything")).unwrap();
+        assert_eq!(future, PermissionOptionKind::Unknown);
+        assert_eq!(option_kind(&future), OptionKind::Other);
+        assert_ne!(option_kind(&future), OptionKind::Allow);
+        assert_ne!(option_kind(&future), OptionKind::AllowAlways);
+        assert_ne!(option_kind(&future), OptionKind::Reject);
+    }
+
+    #[test]
+    fn the_known_permission_options_keep_their_kind() {
+        for (wire, kind) in [
+            (PermissionOptionKind::AllowOnce, OptionKind::Allow),
+            (PermissionOptionKind::AllowAlways, OptionKind::AllowAlways),
+            (PermissionOptionKind::RejectOnce, OptionKind::Reject),
+            (PermissionOptionKind::RejectAlways, OptionKind::Reject),
+        ] {
+            assert_eq!(option_kind(&wire), kind);
+        }
+    }
 }

@@ -385,16 +385,22 @@ fn text_row(
     body.text_color(rgb(palette.secondary)).into_any_element()
 }
 
-/// A tool call as a plain row: kind, title and paths in mono, the status at the trailing edge,
-/// a thin line under it.
-fn tool_row(tool: &ToolCall, palette: &Palette) -> AnyElement {
-    let (status, color) = match tool.status {
+/// The word and color at the end of a tool call's row. A status this build does not know shows no
+/// word, so the row never claims that work is running or done.
+fn status_text(status: &ToolStatus, palette: &'static Palette) -> (&'static str, u32) {
+    match status {
         ToolStatus::Pending => ("pending", palette.secondary),
         ToolStatus::InProgress => ("\u{25cf} running", palette.accent),
         ToolStatus::Completed => ("\u{2713} done", palette.success()),
         ToolStatus::Failed => ("\u{2715} failed", palette.danger()),
         ToolStatus::Unknown => ("", palette.secondary),
-    };
+    }
+}
+
+/// A tool call as a plain row: kind, title and paths in mono, the status at the trailing edge,
+/// a thin line under it.
+fn tool_row(tool: &ToolCall, palette: &'static Palette) -> AnyElement {
+    let (status, color) = status_text(&tool.status, palette);
     let locations = tool.locations.iter().map(|location| {
         let text = match location.line {
             Some(line) => format!("{}:{}", location.path, u64::from(line) + 1),
@@ -555,10 +561,57 @@ fn plan_card(plan: &[soyeht_protocol::PlanEntry], palette: &Palette) -> AnyEleme
 mod tests {
     use super::*;
 
+    fn message(kind: &str) -> TranscriptMessage {
+        let wire = format!(
+            r#"{{"localId":"m","generation":1,"seq":"1","role":"assistant","kind":"{kind}","text":"hello","complete":true}}"#
+        );
+        serde_json::from_str(&wire).unwrap()
+    }
+
     #[test]
     fn tool_kinds_are_capitalized_as_on_the_mac() {
         assert_eq!(capitalized("execute"), "Execute");
         assert_eq!(capitalized("READ"), "Read");
         assert_eq!(capitalized(""), "");
+    }
+
+    #[test]
+    fn a_tool_status_this_build_does_not_know_shows_no_word() {
+        let palette = crate::theme::ThemeName::NeoMilk.palette();
+        assert_eq!(
+            status_text(&ToolStatus::Unknown, palette),
+            ("", palette.secondary)
+        );
+        for (status, word) in [
+            (ToolStatus::Pending, "pending"),
+            (ToolStatus::InProgress, "\u{25cf} running"),
+            (ToolStatus::Completed, "\u{2713} done"),
+            (ToolStatus::Failed, "\u{2715} failed"),
+        ] {
+            assert_eq!(status_text(&status, palette).0, word);
+        }
+    }
+
+    #[test]
+    fn a_transcript_item_this_build_does_not_know_is_drawn_as_its_text() {
+        let known = message("message");
+        let future = message("future_kind");
+        assert_eq!(future.kind, TranscriptKind::Unknown);
+        let mut markdown = Replies::default();
+        let mut weight = |message: &TranscriptMessage| {
+            row_weight(
+                MessageRow {
+                    pane_id: "p",
+                    message,
+                    open: false,
+                    pages: 1,
+                },
+                &mut markdown,
+            )
+        };
+        let known_weight = weight(&known);
+        assert!(known_weight > 0);
+        assert_eq!(weight(&future), known_weight);
+        assert_eq!(weight(&message("usage")), 0);
     }
 }

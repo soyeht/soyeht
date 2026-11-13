@@ -18,7 +18,11 @@ import Testing
   #expect(ErrorKind.protocol_version_unsupported.rawValue == "protocol_version_unsupported")
   #expect(ErrorKind(rawValue: "a_new_error") == .unknown("a_new_error"))
   #expect(!ErrorKind.allCases.contains(.unknown("a_new_error")))
-  #expect(ErrorKind.allCases.count == 48)
+  // Every kind the generator lists is a value this build knows: it reads back as itself, and the
+  // list holds no catch-all, so adding an error kind to the contract needs no count here.
+  for kind in ErrorKind.allCases {
+    #expect(ErrorKind(rawValue: kind.rawValue) == kind)
+  }
 }
 
 /// A closed enum still refuses a value it does not know: only a listed one is open.
