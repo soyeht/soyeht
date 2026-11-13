@@ -58,7 +58,7 @@ SOYEHT_DEVELOPMENT_SIGNING_IDENTITY="Apple Development: Your Name (TEAMID)" \
 
 An engine from `cargo build` that is run as it is (not through the installer), or signed ad hoc or
 with another identity, does not carry the Soyeht signature, so on macOS it cannot tell the Soyeht app
-from any other program: it refuses to approve a pairing or revoke a device even for the signed app,
+from any other program: it refuses to start or approve a pairing or revoke a device even for the signed app,
 with `forbidden_role` ("This engine does not carry the Soyeht signature ...") and one
 `engine.attestation_unavailable` line in its log. Install the engine with `scripts/install_dev.py`,
 which signs it with the Apple Development identity above, to pair a phone.
@@ -85,13 +85,14 @@ Responses are JSON; errors go to stderr with a nonzero exit code.
 
 ```sh
 engine/target/debug/soyeht --profile dev pane close ID
-engine/target/debug/soyeht --profile dev device pair-start
 engine/target/debug/soyeht --profile dev device list
 ```
 
-Pairing is approved in the Mac app: on macOS the engine accepts the decision only from the signed
-app, so the CLI can start a request and show its code but cannot approve it. Displaying the code
-authorizes nothing by itself.
+A pairing is started and approved in the Mac app, and only there: on macOS the engine accepts
+`device.pair.start`, `device.pair.decide` and the revocation of another device only from the signed
+app, so a shell or the CLI can neither open a pairing window nor approve a request, and the CLI has no
+`device pair-start` (ADR 0163). A program that could open a window could put an approval prompt with a
+device name of its own in front of the person.
 
 To replace the new profile's binaries, stop those two services first.
 This terminates that profile's shells. The installer refuses to replace

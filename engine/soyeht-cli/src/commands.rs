@@ -22,7 +22,7 @@ pane auth-cancel ID | pane logout ID\n\
 pane transcript ID [--before CURSOR] [--limit COUNT]\n\
 pane queue ID [--cursor CURSOR] | pane queue-resume ID | pane queue-remove ID PROMPT_ID\n\
 harness list [--cursor CURSOR] | model list HARNESS [--pane ID] [--cursor CURSOR]\n\
-device pair-start | device list\n\
+device list\n\
 service install [--component engine|ptyd] [--programs DIR] | service uninstall|start|stop [--component engine|ptyd] | service status [--component engine|ptyd] [--programs DIR]\n\
 uninstall [--delete-data [--yes]] | diagnostics [--lines COUNT]\n\
 crash-reports status | crash-reports acknowledge [NAME...] | crash-reports import FILE\n\
@@ -163,11 +163,6 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
             rpc::<ModelListResult>(client, method::MODEL_LIST, params)
         }
         ["device", "list"] => rpc::<DeviceListResult>(client, method::DEVICE_LIST, json!({})),
-        ["device", "pair-start"] => rpc::<DevicePairStartResult>(
-            client,
-            method::DEVICE_PAIR_START,
-            json!({"idempotencyKey":key}),
-        ),
         ["file", rest @ ..] => editor_commands::execute_file(client, rest, &key),
         ["usage", rest @ ..] => editor_commands::execute_usage(client, rest, &key),
         ["task", rest @ ..] => task_commands::execute_task(client, rest, &key),

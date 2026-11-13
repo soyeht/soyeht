@@ -580,6 +580,8 @@ impl Core {
                 .map(Outcome::Reply);
         }
         let scope = self.authenticated_scope(connection, method)?;
+        // Before any stored result is looked up: a replay is matched by a scope with no signed-app bit.
+        self.authorize_before_replay(connection, method, &params)?;
         let prompt_attachments = if method == method::PANE_PROMPT {
             self.prepare_prompt_attachments(connection, &mut params)?
         } else {

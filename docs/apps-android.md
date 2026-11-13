@@ -94,11 +94,11 @@ Headless, with an engine of its own (never the one you work with):
 
 1. Start `soyeht-ptyd` and `soyeht-engine-test` (`cargo build --features test-hooks`, the program the
    end-to-end suites use) with a short `--data-dir` of their own and `--listen 127.0.0.1:PORT`. Put a file
-   named `test-attest-local-ui` in the data directory, so a local client can approve a pairing as the
-   signed Mac app would.
+   named `test-attest-local-ui` in the data directory, so a local client can start and approve a pairing as the
+   signed Mac app would (only the signed app opens a window or decides one, ADR 0163).
 2. Start the emulator without a window: `emulator -avd NAME -no-window -no-audio`. Forward the port with
    `adb reverse tcp:PORT tcp:PORT`: the emulator reaches the host's loopback only that way, and a link
    names the loopback.
-3. `adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk`, then open the link with
-   `adb shell am start -a android.intent.action.VIEW -d '<link>'` and allow access with
-   `device.pair.decide` from a local client.
+3. `adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk`, then get the link from `device.pair.start` and open it with
+   `adb shell am start -a android.intent.action.VIEW -d '<link>'`, and allow access with
+   `device.pair.decide`, both from a local client that has the marker.
