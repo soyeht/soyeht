@@ -1,5 +1,5 @@
 name: Feature request
-description: Propose a change. A feature starts in docs/contracts/.
+description: Propose a change.
 labels: ["enhancement"]
 body:
   - type: markdown
@@ -18,26 +18,9 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: What should happen. Name the contract it belongs to, or say it needs a new one.
+      description: What should happen.
     validations:
       required: true
-  - type: checkboxes
-    id: layers
-    attributes:
-      label: What it touches
-      options:
-        - label: The protocol or `contracts/` (wire methods, events, limits, tokens)
-        - label: The engine
-        - label: The Mac or iPhone apps
-        - label: The desktop client (Linux and Windows)
-        - label: A new pane type (docs/add-a-pane-type.md)
-        - label: A new harness (docs/add-a-harness.md)
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-    validations:
-      required: false
   - type: dropdown
     id: contribute
     attributes:

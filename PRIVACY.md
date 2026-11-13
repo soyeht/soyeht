@@ -1,6 +1,6 @@
 # Privacy policy
 
-Last updated: 2026-11-08
+Last updated: 2026-11-13
 
 This policy covers Soyeht Next: the Mac app, the Windows and Linux app, the iPhone and iPad app,
 the Android app (not yet released) and the engine and command line that run on your computer. Soyeht is
@@ -46,6 +46,26 @@ reads the pairing QR code on the device; the image is not stored or sent.
 Keystore, in the app's private storage, and the app opts out of backup. It asks for two
 permissions: network access, which it uses to reach your computer, and the camera, which reads the
 pairing QR code; the image is not stored or sent.
+
+## Permissions the apps ask for
+
+The camera, microphone and speech recognition permissions are asked for when you first use the
+feature that needs them. The wording on iPhone, iPad and Mac is the text in the app's `Info.plist`
+(`apps/ios/Info.plist`, `apps/mac/Resources/Info.plist`); on Android it is the manifest
+(`apps/android/app/src/main/AndroidManifest.xml`).
+
+| App | Permission | What for |
+| --- | --- | --- |
+| iPhone and iPad | Camera: "Scan the QR shown by Soyeht on the Mac to pair this iPhone or iPad." | Reads the pairing QR code when you tap "Scan Mac QR". The camera stops once a code is read. The picture is not stored or sent. Without the camera, the pairing link can be pasted or opened in the app. |
+| iPhone and iPad | Microphone: "Dictate messages to your agents: Soyeht listens only while the composer's mic is on." | Dictation (see below). |
+| iPhone and iPad | Speech recognition: "Turn what you say into text in the agent composer, on this device when it can." | Dictation (see below). |
+| iPhone and iPad | Local network: "Connect to your Mac over the tailnet to read pane screens." | Reaches your computer. |
+| Mac | Microphone and speech recognition, with the same two texts | Dictation, on the first tap of the microphone. |
+| Android (not yet released) | `CAMERA` | Reads the pairing QR code when you tap "Scan QR code". ZXing reads the picture on the phone, with no network and no Google service; the picture is not stored or sent. The app does not require a camera, and the pairing link can be pasted instead. |
+| Android (not yet released) | `INTERNET` | Reaches your computer over your tailnet. |
+
+The Mac, Windows and Linux apps do not use a camera. The Android manifest declares no permission
+other than these two.
 
 You can remove all of it. "Forget this Mac" in the phone app deletes the credential from the phone
 and asks the Mac to drop the phone's push token when the Mac is reachable; revoking the phone on
@@ -145,7 +165,7 @@ is listed on Google Play, its data-safety form declares these data
 
 ### The agents you run
 
-Soyeht runs the coding agents you choose (Claude Code, Codex, Gemini CLI, OpenCode and others) in
+Soyeht runs the coding agents you choose (Claude Code, Codex, Cursor, OpenCode and others) in
 panes on your computer. Each agent talks to its own provider, under your own account and your own
 sign-in, with your own terms with that provider. Soyeht does not proxy those
 conversations or send them anywhere: the engine keeps the transcript in its data folder on your
