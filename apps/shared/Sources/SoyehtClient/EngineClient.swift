@@ -1,26 +1,6 @@
 import Foundation
 import Observation
 import SoyehtProtocol
-import os
-
-private let engineTimeoutLogger = Logger(
-  subsystem: "com.soyeht.next", category: "engine-client-timeout")
-
-struct EngineTimeoutDiagnostic: Equatable {
-  let method: String
-  let durationMs: UInt64
-  let paneId: String?
-
-  init(method: RequestMethod, params: JsonValue, durationMs: UInt64) {
-    self.method = method.rawValue
-    self.durationMs = durationMs
-    self.paneId = params["paneId"].string.flatMap(UUID.init(uuidString:))?.uuidString.lowercased()
-  }
-
-  var logLine: String {
-    "method=\(method) durationMs=\(durationMs) paneId=\(paneId ?? "none")"
-  }
-}
 
 @MainActor @Observable
 public final class EngineClient {
@@ -77,25 +57,20 @@ public final class EngineClient {
   public internal(set) var reachability: EngineReachability?
   public internal(set) var connectionActor: Actor?
   public internal(set) var engineCapabilities: Set<String> = []
-  @ObservationIgnored private var terminalOutputSink: ((Data, Bool) -> Void)?
-  @ObservationIgnored private var terminalOutputOwner: ObjectIdentifier?
-  @ObservationIgnored private var terminalOutputSinks: [String: TerminalOutputTarget] = [:]
+  @ObservationIgnored let terminalSinks = TerminalOutputSinks()
   #if os(macOS)
     @ObservationIgnored let terminalViewRegistry = MacTerminalViewRegistry()
   #endif
   public internal(set) var terminalOutput: ((Data, Bool) -> Void)? {
-    get { terminalOutputSink }
-    set {
-      terminalOutputOwner = nil
-      terminalOutputSink = newValue
-    }
+    get { terminalSinks.selected }
+    set { terminalSinks.selected = newValue }
   }
   @ObservationIgnored private var wire: Wire?
   #if DEBUG
     @ObservationIgnored var requestStub: RequestStub?
   #endif
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
-  @ObservationIgnored private var pending: [String: Pending] = [:]
+  @ObservationIgnored private let pending = PendingRequests()
   @ObservationIgnored private var snapshot = SnapshotAssembly()
   /// Not observed: positions move with every chunk. A view reads `terminalGapTexts`.
   @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
@@ -132,39 +107,6 @@ public final class EngineClient {
   public var pairedDevice: Bool { credential != nil }
   /// Stable namespace for device-local presentation state. It is not a credential or token.
   public var engineId: String? { credential?.engineId }
-
-  private struct Pending {
-    var method: RequestMethod
-    var params: JsonValue
-    var startedAtNs: UInt64
-    var continuation: CheckedContinuation<EngineResponse, Error>
-    var timeout: Task<Void, Never>
-  }
-
-  private struct TerminalOutputTarget {
-    var owner: ObjectIdentifier
-    var sink: (Data, Bool) -> Void
-  }
-
-  struct EngineResponse: Sendable {
-    var value: JsonValue
-    var attachment: WebHostAttachment?
-  }
-
-  static func requestTimeoutDeadline(
-    method: RequestMethod, timeoutSeconds: Double,
-    waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
-    onTimeout: @escaping @MainActor @Sendable (ClientFailure) -> Void
-  ) -> Task<Void, Never> {
-    Task {
-      do { try await waitForTimeout(method, timeoutSeconds) } catch { return }
-      onTimeout(.requestTimeout(method.rawValue))
-    }
-  }
-
-  private static func waitForRequestTimeout(_: RequestMethod, _ seconds: Double) async throws {
-    try await Task.sleep(for: .seconds(seconds))
-  }
 
   public init(socket: String = ActiveProfile.socketPath, webHost: (any WebHostPort)? = nil) {
     self.socket = socket
@@ -253,12 +195,7 @@ public final class EngineClient {
     responseAttachments.reset()
     wire?.close()
     wire = nil
-    let requests = pending
-    pending.removeAll()
-    for request in requests.values {
-      request.timeout.cancel()
-      request.continuation.resume(throwing: ClientFailure.disconnected)
-    }
+    pending.failAll(ClientFailure.disconnected)
     snapshot = SnapshotAssembly()
   }
   private func session() async throws {
@@ -322,7 +259,7 @@ public final class EngineClient {
     guard let wire else { throw ClientFailure.disconnected }
     return try await pendingResponse(
       method, params, timeoutSeconds: timeoutSeconds,
-      waitForTimeout: Self.waitForRequestTimeout
+      waitForTimeout: PendingRequests.waitForTimeout
     ) { id in
       try await wire.send(
         .object([
@@ -336,34 +273,9 @@ public final class EngineClient {
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     send: @escaping @MainActor (String) async throws -> Void
   ) async throws -> EngineResponse {
-    let id = UUID().uuidString
-    return try await withCheckedThrowingContinuation { continuation in
-      let timeout = Self.requestTimeoutDeadline(
-        method: method, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout
-      ) { [weak self] failure in
-        guard let request = self?.pending.removeValue(forKey: id) else { return }
-        let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
-        let diagnostic = EngineTimeoutDiagnostic(
-          method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000
-        )
-        engineTimeoutLogger.error("Engine RPC timeout: \(diagnostic.logLine, privacy: .public)")
-        request.continuation.resume(throwing: failure)
-        self?.wire?.close()
-      }
-      pending[id] = Pending(
-        method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
-        continuation: continuation, timeout: timeout)
-      Task {
-        do {
-          try await send(id)
-        } catch {
-          if let request = self.pending.removeValue(forKey: id) {
-            request.timeout.cancel()
-            request.continuation.resume(throwing: error)
-          }
-        }
-      }
-    }
+    try await pending.response(
+      method, params, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout,
+      onTimeout: { [weak self] in self?.wire?.close() }, send: send)
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
@@ -401,50 +313,12 @@ public final class EngineClient {
     let activeWire = wire
     let host = webHost
     webHostTasks[id] = Task { [weak self] in
-      let response = await Self.webHostResponse(id: id, command: command, host: host)
+      let response = await WebHostResponder.response(id: id, command: command, host: host)
       guard let self, self.wire === activeWire else { return }
       do { try await activeWire?.send(response) } catch { activeWire?.close() }
       self.webHostTasks.removeValue(forKey: id)
     }
     return true
-  }
-  static func webHostResponse(
-    id: String, command: WebCommandParams, host: (any WebHostPort)?
-  ) async -> WebHostResponse {
-    do {
-      guard let host else {
-        throw ClientFailure.webHost(.internal_error, "The web host is not ready.")
-      }
-      let output = try await host.execute(command)
-      guard output.result.paneId == command.paneId else {
-        throw ClientFailure.webHost(.internal_error, "The web host changed pane identity.")
-      }
-      return WebHostResponse(
-        message: .object([
-          "jsonrpc": .string("2.0"), "id": .string(id),
-          "result": try .encoded(output.result),
-        ]), attachments: output.attachments)
-    } catch let ClientFailure.webHost(kind, message) {
-      return WebHostResponse(message: webHostError(id: id, kind: kind, message: message))
-    } catch {
-      return WebHostResponse(
-        message: webHostError(id: id, kind: .internal_error, message: "The web command failed."))
-    }
-  }
-  private static func webHostError(id: String, kind: ErrorKind, message: String) -> JsonValue {
-    let safe: (ErrorKind, Int64) =
-      switch kind {
-      case .stale_reference: (.stale_reference, -32025)
-      case .human_took_over: (.human_took_over, -32026)
-      case .navigation_refused: (.navigation_refused, -32028)
-      default: (.internal_error, -32018)
-      }
-    let (safeKind, code) = safe
-    let error = RpcError(code: code, message: message, data: ErrorData(kind: safeKind))
-    return .object([
-      "jsonrpc": .string("2.0"), "id": .string(id),
-      "error": (try? .encoded(error)) ?? .null,
-    ])
   }
   private func receive(_ frame: Frame) throws {
     if frame.kind == 3 {
@@ -460,7 +334,7 @@ public final class EngineClient {
     guard frame.kind == 1 else { return }
     let message = try JSONDecoder().decode(JsonValue.self, from: frame.payload)
     guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
-    if let id = message["id"].string, let request = pending.removeValue(forKey: id) {
+    if let id = message["id"].string, let request = pending.take(id) {
       request.timeout.cancel()
       if message["error"] != .null {
         if responseAttachments.isPending {
@@ -629,7 +503,7 @@ public final class EngineClient {
     closedPaneIds.removeAll()
     let terminalPaneIds = Set(panes.lazy.filter { $0.mode == .terminal }.map(\.paneId))
     terminalStreams.retainOnly(terminalPaneIds)
-    terminalOutputSinks = terminalOutputSinks.filter { terminalPaneIds.contains($0.key) }
+    terminalSinks.retainOnly(terminalPaneIds)
     for paneId in resizeTasks.keys.filter({ !terminalPaneIds.contains($0) }) {
       resizeTasks.removeValue(forKey: paneId)?.cancel()
       resizeGenerations.removeValue(forKey: paneId)
@@ -717,40 +591,28 @@ public final class EngineClient {
     perform { try await self.subscribe(paneId) }
   }
   public func gapText(for paneId: String) -> String? { terminalGapTexts[paneId] }
-  func claimTerminalOutput(
-    owner: AnyObject, sink: @escaping (Data, Bool) -> Void
-  ) {
-    // SwiftUI may install a replacement before dismantling the prior surface.
-    // The owner makes a late teardown unable to clear the replacement sink.
-    terminalOutputOwner = ObjectIdentifier(owner)
-    terminalOutputSink = sink
+  func claimTerminalOutput(owner: AnyObject, sink: @escaping (Data, Bool) -> Void) {
+    terminalSinks.claimSelected(owner: owner, sink: sink)
   }
-  func releaseTerminalOutput(owner: AnyObject) {
-    guard terminalOutputOwner == ObjectIdentifier(owner) else { return }
-    terminalOutputOwner = nil
-    terminalOutputSink = nil
-  }
+  func releaseTerminalOutput(owner: AnyObject) { terminalSinks.releaseSelected(owner: owner) }
   func claimTerminalOutput(
     paneId: String, owner: AnyObject, sink: @escaping (Data, Bool) -> Void
   ) {
-    terminalOutputSinks[paneId] = TerminalOutputTarget(
-      owner: ObjectIdentifier(owner), sink: sink)
+    terminalSinks.claim(paneId: paneId, owner: owner, sink: sink)
   }
   /// Whether `owner` held the pane's sink, which is now released.
   @discardableResult func releaseTerminalOutput(paneId: String, owner: AnyObject) -> Bool {
-    guard terminalOutputSinks[paneId]?.owner == ObjectIdentifier(owner) else { return false }
-    return terminalOutputSinks.removeValue(forKey: paneId) != nil
+    terminalSinks.release(paneId: paneId, owner: owner)
   }
   func deliverTerminalOutput(to paneId: String, bytes: Data, reset: Bool) {
-    terminalOutputSinks[paneId]?.sink(bytes, reset)
-    if paneId == selectedPaneId { terminalOutputSink?(bytes, reset) }
+    terminalSinks.deliver(to: paneId, bytes: bytes, reset: reset, selectedPaneId: selectedPaneId)
   }
-  var terminalOutputSinkCount: Int { terminalOutputSinks.count }
+  var terminalOutputSinkCount: Int { terminalSinks.count }
 
   func discardTerminalPane(_ paneId: String) {
     terminalStreams.remove(paneId)
     terminalSubscriptionsInFlight.remove(paneId)
-    terminalOutputSinks.removeValue(forKey: paneId)
+    terminalSinks.remove(paneId)
     resizeTasks.removeValue(forKey: paneId)?.cancel()
     resizeGenerations.removeValue(forKey: paneId)
     #if os(macOS)
