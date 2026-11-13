@@ -38,6 +38,7 @@ pub mod questions;
 pub mod recovery;
 pub mod registry;
 pub mod responses;
+pub mod roster;
 mod sign_in;
 pub mod state;
 pub mod subagents;
@@ -392,13 +393,15 @@ impl Core {
             return Err(errors::not_found("Pane not found"));
         }
         self.agents
+            .running
             .get(id)
             .map(|agent| agent.state.clone())
             .ok_or_else(|| errors::invalid("Agent pane required"))
     }
 
     pub(crate) fn replace_agent_state(&mut self, id: &str, state: State) -> Result<()> {
-        let running = errors::invariant(self.agents.get_mut(id), "Agent runtime disappeared")?;
+        let running =
+            errors::invariant(self.agents.running.get_mut(id), "Agent runtime disappeared")?;
         running.state = state;
         running.idle.touch();
         Ok(())
@@ -415,16 +418,17 @@ impl Core {
         }
         let model_before = self
             .agents
+            .running
             .get(id)
             .and_then(|running| crate::usage::opencode_model(&running.state))
             .map(str::to_owned);
         // A pane moved to another provider changes what the OpenCode meter follows.
         let model_changed = model_before.as_deref() != crate::usage::opencode_model(&state);
-        if let Some(running) = self.agents.get_mut(id) {
+        if let Some(running) = self.agents.running.get_mut(id) {
             running.state = state;
             running.idle.touch();
         } else {
-            self.agents.insert(id.to_owned(), Running::new(state));
+            self.agents.track(id.to_owned(), state);
         }
         if model_changed {
             self.usage.wake();
@@ -460,6 +464,7 @@ impl Core {
             == soyeht_protocol::StateSource::Protocol;
         let old_queue = self
             .agents
+            .running
             .get(&id)
             .map(|a| a.state.queue.clone())
             .unwrap_or_default();
@@ -610,7 +615,7 @@ mod usage_follow_tests {
     async fn committing_a_new_opencode_model_wakes_the_usage_schedule_and_nothing_else_does() {
         let (mut core, directory) = test_panes::core_with_agent(&[]);
         let saved = core.panes["agent"].stored.clone();
-        let mut state = core.agents["agent"].state.clone();
+        let mut state = core.agents.running["agent"].state.clone();
         state.launch.id = "registry.opencode".into();
         state.options.values = vec![model_option("zai-coding-plan/glm-5.3")];
         // The harness changes first: the pane now has a model the meter can follow.

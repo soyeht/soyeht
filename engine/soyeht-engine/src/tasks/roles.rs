@@ -168,7 +168,7 @@ mod tests {
         let (mut core, _directory) = core_with_agent(&[wire_kind::SPAWN_FAILED]);
         core.restart_after_role_change("agent");
         assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 1);
-        core.agents.get_mut("agent").unwrap().state.phase = Phase::Faulted;
+        core.agents.running.get_mut("agent").unwrap().state.phase = Phase::Faulted;
 
         set_clock(&mut core, 1_100_000);
         core.advance_spawn_retries().unwrap();
@@ -186,6 +186,7 @@ mod tests {
         // A terminal of the agent that the supervisor will not close: its close is tried again by
         // the tick, and the recovery goes on.
         core.agents
+            .running
             .get_mut("agent")
             .unwrap()
             .state
@@ -218,11 +219,11 @@ mod tests {
             Some("instance-1")
         );
         assert_ne!(core.panes["agent"].stored.pane.state, PaneState::Dead);
-        assert_ne!(core.agents["agent"].state.phase, Phase::Faulted);
+        assert_ne!(core.agents.running["agent"].state.phase, Phase::Faulted);
         assert_eq!(core.supervisor_retry.spawn_retries.attempts("agent"), 0);
         // The ledger holds the terminal's process until the supervisor has closed it.
         assert!(
-            core.agents["agent"]
+            core.agents.running["agent"]
                 .state
                 .retired_processes
                 .iter()

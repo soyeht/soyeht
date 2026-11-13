@@ -16,22 +16,7 @@ impl Core {
             .values()
             .map(|pane| pane.stored.instance_key.as_str())
             .collect();
-        for agent in self.agents.values() {
-            owned.extend(
-                agent
-                    .state
-                    .retired_processes
-                    .iter()
-                    .map(|retired| retired.instance_key.as_str()),
-            );
-            owned.extend(
-                agent
-                    .state
-                    .harness_switch
-                    .iter()
-                    .map(|switch| switch.candidate_instance_key.as_str()),
-            );
-        }
+        self.agents.extend_owned_instances(&mut owned);
         // A language server owns the process of its current instance key: one that was restarted
         // (a trust that changed while the supervisor was away) left the old one behind.
         owned.extend(

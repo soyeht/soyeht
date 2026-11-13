@@ -82,6 +82,7 @@ impl Core {
             .ok_or_else(|| errors::not_found("Agent pane not found"))?;
         let state = self
             .agents
+            .running
             .get(pane_id)
             .ok_or_else(|| errors::internal("Agent capture has no agent runtime"))?;
         let harness = HarnessIdentity::known(
@@ -107,6 +108,7 @@ impl Core {
         let generation = pane.stored.pane.generation;
         let expected_harness = self
             .agents
+            .running
             .get(pane_id)
             .map(|running| {
                 HarnessIdentity::known(

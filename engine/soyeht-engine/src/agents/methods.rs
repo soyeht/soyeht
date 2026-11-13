@@ -179,10 +179,11 @@ impl Core {
                         && pane.stored.pane.workspace_id == sender.workspace_id
                         && pane.stored.pane.mode == PaneMode::Agent
                         && pane.stored.pane.pane_id != sender_id
-                        && self.agents.contains_key(&pane.stored.pane.pane_id)
+                        && self.agents.running.contains_key(&pane.stored.pane.pane_id)
                 })
                 .filter_map(|pane| {
                     self.agents
+                        .running
                         .get(&pane.stored.pane.pane_id)
                         .map(|running| AgentMessageSource {
                             pane_id: pane.stored.pane.pane_id.clone(),
@@ -231,6 +232,7 @@ impl Core {
         let text = errors::param_str(params, "text")?;
         let harness = self
             .agents
+            .running
             .get(&sender_id)
             .map(|running| running.state.launch.name.clone())
             .ok_or_else(|| errors::invalid("Sender ACP session required"))?;

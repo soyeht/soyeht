@@ -286,7 +286,9 @@ pub fn engine_cannot_attest() -> bool {
 }
 
 /// Whether this system can tell the signed Soyeht app from any other program on the local
-/// endpoint. Where it cannot, any program of the same user counts as the app (ADR 0128).
+/// endpoint. Where it cannot, any program of the same user counts as the app for the trust of a
+/// project folder (ADR 0150) and only for that: device management needs the signed app on every
+/// system (ADR 0162).
 pub const fn available() -> bool {
     cfg!(target_os = "macos")
 }
