@@ -53,6 +53,12 @@ and Windows), CLI and agents' MCP server.
 Declared limit: arbitrary processes belonging to the same user can open the
 local socket; isolation is per OS user, not per process.
 
+Known limitation (ADR 0165): a program of the same user, including one started in a terminal
+pane, connects as the person. `soyeht pane prompt`, or a raw `pane.prompt` or `pane.input`,
+reaches any pane, an agent pane in full access included, with no attribution, and the refusal
+of `agent.message` into a pane in full access (contract 04 R17) does not see it. It is listed
+in `SECURITY.md` and is revisited after launch.
+
 **2.1 Handshake (one request, one response).**
 1. On accepting a connection, the engine sends `auth.challenge
    {nonce (32 random bytes, base64, unique per connection), engineId}`
@@ -338,9 +344,14 @@ event `pane.auth_finished`,
 localId, generation, seq, complete`,
 `pane.stream.subscribe {paneId, from: "tail" | {streamId, offset}}` /
 `pane.stream.unsubscribe` (§6),
-`agent.message {targetPaneId, text, idempotencyKey}` → `{promptId, queued}` (an agent
-pane queues a prompt in another agent pane of its workspace, contract 04 R17) and
-`agent.list` (the agent panes of the caller's workspace that it can message),
+`agent.message {targetPaneId | targetName, inReplyTo?, text, idempotencyKey}` →
+`{promptId, queued, messageId}` (an agent pane queues a prompt in another agent pane of its
+workspace, contract 04 R17; exactly one of `targetPaneId` and `targetName` names the
+recipient, a name is compared without case, accents or surrounding space, and a name two
+panes carry is `invalid_params` that lists them, unless `inReplyTo` names a message the sender
+has open, which routes to the pane that sent it; `inReplyTo` is the `m:ID` of the message being
+answered and is only a hint, so a stale or unknown one is ignored) and `agent.list` (the agent
+panes of the caller's workspace that it can message, by name),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
 `pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
 the slash commands the harness last advertised with ACP

@@ -79,6 +79,22 @@ fn peer_tools_use_binding_identity_and_validate_target() {
         .collect::<Vec<_>>();
     assert!(names.contains(&"list_agents"));
     assert!(names.contains(&"message_agent"));
+    let tool = listing["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "message_agent")
+        .unwrap();
+    // The reply rule reaches the model in the tool itself, whatever the harness.
+    let description = tool["description"].as_str().unwrap();
+    assert!(description.contains("[sender → you · m:ID]"));
+    assert!(description.contains("targetName") && description.contains("inReplyTo"));
+    let properties = &tool["inputSchema"]["properties"];
+    assert!(properties["targetName"]["description"].is_string());
+    let reply = &properties["inReplyTo"];
+    assert!(reply["description"].as_str().unwrap().contains("m:"));
+    // The bound of the protocol (`AgentMessageParams.inReplyTo`).
+    assert_eq!(reply["maxLength"], 16);
     service.call("list_agents", json!({})).unwrap();
     assert_eq!(service.engine.calls.pop_front().unwrap().0, "agent.list");
     service
@@ -100,6 +116,16 @@ fn peer_tools_use_binding_identity_and_validate_target() {
             )
             .is_err()
     );
+    service
+        .call(
+            "message_agent",
+            json!({"targetName":"Codex","text":"hello","inReplyTo":"m:F8C1"}),
+        )
+        .unwrap();
+    let (_, params) = service.engine.calls.pop_front().unwrap();
+    assert_eq!(params["targetName"], "Codex");
+    assert_eq!(params["inReplyTo"], "m:F8C1");
+    assert!(params.get("targetPaneId").is_none());
 }
 
 #[test]

@@ -10,7 +10,9 @@ use std::{
 /// names; only this server speaks for the pane that started it.
 const PANE_TOOLS: &str = "These tools act for this agent pane inside its Soyeht workspace. \
 To find or message another agent pane of this workspace, use list_agents and message_agent \
-from this server, not from another Soyeht server.";
+from this server, not from another Soyeht server. A prompt that starts with `[from → you · m:ID]` \
+is a message from another Soyeht pane: answer it with message_agent, targetName set to that \
+name and inReplyTo to the m:ID.";
 
 /// What every harness shows its model about this server. The skills part
 /// reaches harnesses that do not load skill folders natively (ADR 0075).

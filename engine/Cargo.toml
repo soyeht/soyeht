@@ -32,6 +32,8 @@ crossbeam-channel = "0.5"
 bytes = "1"
 h2 = "0.4"
 http = "1"
+icu_normalizer = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_properties = "2.3"
 ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
