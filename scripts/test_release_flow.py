@@ -72,14 +72,14 @@ class Recorder:
         self.inputs.append(stdin)
 
 
-def probe_for(release_exists=False, dirty=False, on_main=True, gh_fails=False):
+def probe_for(release_exists=False, dirty=False, on_main=True, gh_fails=False, sha=SHA):
     def probe(command):
         if command[:2] == ["git", "status"]:
             return 0, " M file\n" if dirty else ""
         if command[:2] == ["git", "merge-base"]:
             return (0 if on_main else 1), ""
         if command[:2] == ["git", "rev-parse"]:
-            return 0, SHA + "\n"
+            return 0, sha + "\n"
         if command[:3] == ["gh", "release", "list"]:
             if gh_fails:
                 return 1, ""
@@ -613,6 +613,19 @@ class BuildTests(FlowCase):
         self.assertIn("linux-aarch64.*", recorder.commands[2][3])
         _, recorder, _ = self.build("--linux", "--linux-arch", "x86_64", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
         self.assertIn("linux-x86_64.*", recorder.commands[2][3])
+
+    def test_two_commits_of_one_version_push_to_two_release_branches(self):
+        refs = []
+        for sha in (SHA, "b" * 40):
+            _, recorder, _ = self.build(
+                "--linux-arch", "x86_64", probe=probe_for(sha=sha), environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"}
+            )
+            refs.append(next(command[-1] for command in recorder.commands if command[0] == "git"))
+        self.assertEqual(refs, [
+            f"{SHA}:refs/heads/release-{VERSION}-{SHA[:12]}",
+            f"{'b' * 40}:refs/heads/release-{VERSION}-{'b' * 12}",
+        ])
+        self.assertNotEqual(refs[0], refs[1])
 
     def test_there_is_no_built_in_build_host(self):
         with self.assertRaisesRegex(release_flow.Refused, "no Linux build host"):

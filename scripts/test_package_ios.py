@@ -1,6 +1,7 @@
 import contextlib
 import io
 import plistlib
+import stat
 import sys
 import tempfile
 import unittest
@@ -84,7 +85,7 @@ class BuildTests(unittest.TestCase):
             patch.object(Path, "mkdir"),
             patch.object(package_ios, "archived_app", return_value=Path(__file__).parent),
         ):
-            package_ios.archive_app(package_ios.release.current(), {})
+            package_ios.archive_app(package_ios.release.current(), package_ios.resolve_signing(FULL), {})
         command = calls[0]
         self.assertEqual(command[0], "xcodebuild")
         self.assertEqual(command[-1], "archive")
@@ -114,7 +115,7 @@ class PreflightTests(unittest.TestCase):
         self.assertEqual(len(command), 5)
         self.assertFalse(Path(command[4]).exists(), "the scratch file is removed")
         self.assertNotIn("--entitlements", command)
-        self.assertNotIn("input", options)  # nothing is passed to it: no password, no prompt answer
+        self.assertIs(options["stdin"], package_ios.subprocess.DEVNULL)  # nothing can be asked of it: no prompt waits
 
     def test_a_locked_keychain_stops_with_the_cause_and_the_way_out(self):
         for stderr in ("probe: errSecInternalComponent", "User interaction is not allowed."):
@@ -195,6 +196,35 @@ class LoggedBuildTests(unittest.TestCase):
         for text in (printed, failure, written):
             self.assertNotIn("secret-name", text)
         self.assertIn(package_common.REDACTED, written)
+
+    def test_the_team_of_the_signing_is_masked_in_the_file_and_in_the_failure_tail(self):
+        signing = package_ios.resolve_signing(FULL)
+        self.assertIn(TEAM, signing.secrets)
+        script = f"import sys\nprint('DEVELOPMENT_TEAM={TEAM}')\nsys.exit(int(sys.argv[1]))"
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "logs/archive.log"
+            with contextlib.redirect_stdout(io.StringIO()):
+                package_common.logged([sys.executable, "-c", script, "0"], log, mask=signing.secrets)
+            self.assertEqual(log.read_text(), f"DEVELOPMENT_TEAM={package_common.REDACTED}\n")
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(PackagingError) as raised:
+                package_common.logged([sys.executable, "-c", script, "4"], log, mask=signing.secrets)
+        self.assertNotIn(TEAM, str(raised.exception))
+        self.assertIn(package_common.REDACTED, str(raised.exception))
+
+    def test_the_log_file_is_readable_by_its_owner_alone(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "logs/build.log"
+            with contextlib.redirect_stdout(io.StringIO()):
+                package_common.logged([sys.executable, "-c", "print('built')"], log)
+            self.assertEqual(stat.S_IMODE(log.stat().st_mode), 0o600)
+
+    def test_a_byte_that_is_not_utf8_does_not_stop_the_build(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "logs/build.log"
+            write = "import sys\nsys.stdout.buffer.write(b'bad \\xff byte\\n')"
+            with contextlib.redirect_stdout(io.StringIO()):
+                package_common.logged([sys.executable, "-c", write], log)
+            self.assertIn("bad \ufffd byte", log.read_text())
 
 
 class EntitlementTests(unittest.TestCase):

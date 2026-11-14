@@ -113,13 +113,14 @@ The first release of 0.1.0 keeps the version (`prepare current`). Later ones nam
 
    The Mac package is built here under `nice` with `package_mac.py --release` (it needs the three
    variables above). The Linux packages are built on a CI host of each architecture, one after the other:
-   the commit is pushed to the host's mirror, to its own branch `release-<version>-<first 12 characters of the commit>`
-   so that a second build of the version at another commit is never refused and no push is forced (the push skips
-   the pre-push hook, which would scan again a commit that is on `origin/main` and has passed the gate). A host
-   whose non-interactive ssh `PATH` has no `git-receive-pack` needs `SOYEHT_RELEASE_RECEIVE_PACK` (for the arm64
-   host `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK`) set to the full path of that program on that host: on a Nix
-   user install with the git folder of this document it is `~/soyeht-ci/git/bin/git-receive-pack`. A host with
-   `git` on that `PATH` needs neither variable. The commit is then checked out in `~/soyeht-ci/release/<commit>`, built by `package_linux_rootless.sh` and
+   the commit is pushed to the host's mirror, to its own branch `release-<version>-<first 12 characters of
+   the commit>` so that a second build of the version at another commit is never refused and no push is
+   forced (the push skips the pre-push hook, which would scan again a commit that is on `origin/main` and has
+   passed the gate). A host whose non-interactive ssh `PATH` has no `git-receive-pack` needs
+   `SOYEHT_RELEASE_RECEIVE_PACK` (for the arm64 host `SOYEHT_RELEASE_LINUX_AARCH64_RECEIVE_PACK`) set to the
+   full path of that program on that host: on a Nix user install with the git folder of this document it is
+   `~/soyeht-ci/git/bin/git-receive-pack`. A host with `git` on that `PATH` needs neither variable. The
+   commit is then checked out in `~/soyeht-ci/release/<commit>`, built by `package_linux_rootless.sh` and
    that architecture's `.deb` and AppImage copied back to `dist/`. The x86_64 host is `--linux-host` or
    `SOYEHT_RELEASE_LINUX_HOST`, the aarch64 host `--linux-aarch64-host` or
    `SOYEHT_RELEASE_LINUX_AARCH64_HOST`; there is no default for either, and `--linux` needs both.
