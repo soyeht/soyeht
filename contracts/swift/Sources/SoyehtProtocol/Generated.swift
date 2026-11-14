@@ -113,9 +113,10 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
     case `ink_language_unavailable`
     case `ink_limit_exceeded`
     case `ink_recognition_failed`
+    case `pairing_code_invalid`
     /// A value a later engine sends: shown as it comes, never an error.
     case unknown(String)
-    public static let allCases: [ErrorKind] = [.`not_found`, .`invalid_params`, .`unauthorized`, .`forbidden_role`, .`pane_busy`, .`task_has_owner`, .`transition_refused`, .`stale_version`, .`idempotency_conflict`, .`harness_unavailable`, .`needs_login`, .`cursor_too_old`, .`resync_required`, .`slow_consumer`, .`protocol_version_unsupported`, .`disk_full`, .`ptyd_unavailable`, .`stale_engine_generation`, .`internal_error`, .`snapshot_too_large`, .`engine_identity_changed`, .`stale_attempt`, .`dependency_cycle`, .`dependency_open`, .`rate_limited`, .`stale_reference`, .`human_took_over`, .`web_host_unavailable`, .`navigation_refused`, .`writing_kind_refused`, .`writing_limit_exceeded`, .`writing_sidecar_conflict`, .`writing_line_not_found`, .`writing_scene_not_found`, .`writing_section_refused`, .`harness_switch_failed`, .`attachment_limit_exceeded`, .`platform_unsupported`, .`git_unavailable`, .`file_not_text`, .`file_too_large`, .`adapter_not_acknowledged`, .`workspace_folder_missing`, .`push_unavailable`, .`ink_unsupported`, .`ink_language_unavailable`, .`ink_limit_exceeded`, .`ink_recognition_failed`]
+    public static let allCases: [ErrorKind] = [.`not_found`, .`invalid_params`, .`unauthorized`, .`forbidden_role`, .`pane_busy`, .`task_has_owner`, .`transition_refused`, .`stale_version`, .`idempotency_conflict`, .`harness_unavailable`, .`needs_login`, .`cursor_too_old`, .`resync_required`, .`slow_consumer`, .`protocol_version_unsupported`, .`disk_full`, .`ptyd_unavailable`, .`stale_engine_generation`, .`internal_error`, .`snapshot_too_large`, .`engine_identity_changed`, .`stale_attempt`, .`dependency_cycle`, .`dependency_open`, .`rate_limited`, .`stale_reference`, .`human_took_over`, .`web_host_unavailable`, .`navigation_refused`, .`writing_kind_refused`, .`writing_limit_exceeded`, .`writing_sidecar_conflict`, .`writing_line_not_found`, .`writing_scene_not_found`, .`writing_section_refused`, .`harness_switch_failed`, .`attachment_limit_exceeded`, .`platform_unsupported`, .`git_unavailable`, .`file_not_text`, .`file_too_large`, .`adapter_not_acknowledged`, .`workspace_folder_missing`, .`push_unavailable`, .`ink_unsupported`, .`ink_language_unavailable`, .`ink_limit_exceeded`, .`ink_recognition_failed`, .`pairing_code_invalid`]
     /// Never fails: a value this build does not know is `unknown`.
     public init?(rawValue: String) {
         switch rawValue {
@@ -167,6 +168,7 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
         case "ink_language_unavailable": self = .`ink_language_unavailable`
         case "ink_limit_exceeded": self = .`ink_limit_exceeded`
         case "ink_recognition_failed": self = .`ink_recognition_failed`
+        case "pairing_code_invalid": self = .`pairing_code_invalid`
         default: self = .unknown(rawValue)
         }
     }
@@ -220,6 +222,7 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
         case .`ink_language_unavailable`: "ink_language_unavailable"
         case .`ink_limit_exceeded`: "ink_limit_exceeded"
         case .`ink_recognition_failed`: "ink_recognition_failed"
+        case .`pairing_code_invalid`: "pairing_code_invalid"
         case .unknown(let value): value
         }
     }
@@ -977,10 +980,12 @@ public struct DevicePairStartResult: Codable, Sendable {
 public struct DevicePairDecideParams: Codable, Sendable {
     public var `requestId`: Id
     public var `approve`: Bool
+    public var `approvalCode`: String?
     public var `idempotencyKey`: Id
-    public init(`requestId`: Id, `approve`: Bool, `idempotencyKey`: Id) {
+    public init(`requestId`: Id, `approve`: Bool, `approvalCode`: String? = nil, `idempotencyKey`: Id) {
         self.`requestId` = `requestId`
         self.`approve` = `approve`
+        self.`approvalCode` = `approvalCode`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }
@@ -1104,8 +1109,10 @@ public struct PairProveParams: Codable, Sendable {
 
 public struct PairProveResult: Codable, Sendable {
     public var `status`: String
-    public init(`status`: String) {
+    public var `approvalCode`: String?
+    public init(`status`: String, `approvalCode`: String? = nil) {
         self.`status` = `status`
+        self.`approvalCode` = `approvalCode`
     }
 }
 
@@ -6361,6 +6368,7 @@ public enum EngineCapability: String, Codable, Sendable, CaseIterable {
     case `subscription_usage` = "subscription-usage"
     case `push` = "push"
     case `ink_recognition` = "ink-recognition"
+    case `pairing_code` = "pairing-code"
 }
 
 public enum WebInteractionMode: String, Codable, Sendable, CaseIterable {

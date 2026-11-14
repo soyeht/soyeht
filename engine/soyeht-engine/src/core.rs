@@ -7,7 +7,6 @@ use crate::{
     supervisor_handle::Supervisor,
     tasks::{revision::GitRevision, worktree::CommandWorktree},
 };
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_platform::log::{self, Line};
 use soyeht_protocol::{
@@ -109,7 +108,8 @@ pub struct Core {
     pub language_search_path: Option<std::ffi::OsString>,
     pub web_waiters: BTreeMap<String, crate::web::WebWaiter>,
     pub clients: BTreeMap<String, Connected>,
-    pub pair_address: String,
+    /// The address a pairing link names, and what the person's code mode remembers.
+    pub(crate) pairing: crate::pairing_approval::Pairing,
     /// Signs what proves this engine to a paired device (ADR 0132); kept with the database.
     pub(crate) engine_key: ed25519_dalek::SigningKey,
     /// Whether paired devices can reach this engine (tailnet listeners), ADR 0078.
@@ -167,7 +167,7 @@ impl Core {
 
     /// Makes the address this engine shows for pairing follow the port of `profile`.
     pub fn use_port_of(&mut self, profile: &Profile) {
-        self.pair_address = loopback_address(profile);
+        self.pairing.address = loopback_address(profile);
     }
 
     pub fn open(directory: &Path) -> Result<Self> {
@@ -248,7 +248,7 @@ impl Core {
             language_search_path: std::env::var_os("PATH"),
             web_waiters: BTreeMap::new(),
             clients: BTreeMap::new(),
-            pair_address: loopback_address(&DEV),
+            pairing: crate::pairing_approval::Pairing::at(loopback_address(&DEV)),
             reachability: crate::network::loopback_only(),
             push: crate::push::Notifier::disabled(),
         };
@@ -379,9 +379,7 @@ impl Core {
         let key = params["idempotencyKey"]
             .as_str()
             .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
-        let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!([method, params]).to_string(),
-        ));
+        let fingerprint = crate::auth::call_fingerprint(method, params);
         let mutation = StorePort::mutate_as(
             &mut self.store,
             &client.scope,
@@ -423,9 +421,7 @@ impl Core {
         let key = params["idempotencyKey"]
             .as_str()
             .ok_or_else(|| errors::invalid("Missing idempotency key"))?;
-        let fingerprint = STANDARD.encode(crate::auth::token_hash(
-            &json!([method, params]).to_string(),
-        ));
+        let fingerprint = crate::auth::call_fingerprint(method, params);
         let receipt = StorePort::idempotency_receipt(&self.store, &client.scope, key)
             .map_err(errors::storage)?;
         match receipt {

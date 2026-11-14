@@ -34,6 +34,7 @@ pub mod offload;
 mod operation_log;
 pub mod outbox;
 pub mod pairing;
+pub mod pairing_approval;
 pub mod pane_observations;
 mod pane_restore;
 pub mod panes;

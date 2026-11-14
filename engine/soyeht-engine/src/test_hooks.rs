@@ -14,6 +14,7 @@ use crate::{
     errors,
     hooks::Hooks,
     model::RunningPane,
+    pairing_approval::Approval,
     ports::{PortScanError, PortScanObservation, PortScanPort, SupervisorPort},
     usage::FixtureHost,
 };
@@ -39,6 +40,9 @@ const FAIL_OLD_CLOSE: &str = "test-fail-harness-switch-old-close";
 const PAUSE_EDITOR_AUTOSAVE: &str = "test-pause-editor-autosave";
 /// While this marker exists every local client counts as the signed Mac app.
 const ATTEST_LOCAL_UI: &str = "test-attest-local-ui";
+/// Holds the way a pairing is approved (`signed-app`, `persons-code` or `refused`) in place of the
+/// system's.
+const PAIRING_APPROVAL: &str = "test-pairing-approval";
 /// Names the directory of the usage fixtures (see [`FixtureHost`]).
 const USAGE_FIXTURES_VARIABLE: &str = "SOYEHT_TEST_USAGE_READER_DIR";
 /// Reads skill folders on the probe instead of by file events, which a loaded machine delivers
@@ -141,6 +145,19 @@ impl FileHooks {
 impl Hooks for FileHooks {
     fn attests_local_ui(&self) -> bool {
         self.marker(ATTEST_LOCAL_UI).exists()
+    }
+
+    fn pairing_approval(&self) -> Option<Approval> {
+        // A missing marker is no choice: the system's rule stands.
+        let Ok(text) = std::fs::read_to_string(self.marker(PAIRING_APPROVAL)) else {
+            return None;
+        };
+        match text.trim() {
+            "signed-app" => Some(Approval::SignedApp),
+            "persons-code" => Some(Approval::PersonsCode),
+            "refused" => Some(Approval::Refused),
+            _ => None,
+        }
     }
 
     fn before_agent_poll(&self, core: &mut Core, pane: &str) -> errors::Result<()> {

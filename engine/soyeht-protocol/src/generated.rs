@@ -193,6 +193,8 @@ pub enum ErrorKind {
     InkLimitExceeded,
     #[serde(rename = "ink_recognition_failed")]
     InkRecognitionFailed,
+    #[serde(rename = "pairing_code_invalid")]
+    PairingCodeInvalid,
     /// A value this build does not know (ADR 0161).
     #[cfg(feature = "open-enums")]
     #[serde(other, skip_serializing)]
@@ -816,6 +818,8 @@ pub struct DevicePairDecideParams {
     pub request_id: Id,
     #[serde(rename = "approve")]
     pub approve: bool,
+    #[serde(rename = "approvalCode", skip_serializing_if = "Option::is_none")]
+    pub approval_code: Option<String>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -916,6 +920,8 @@ pub struct PairProveParams {
 pub struct PairProveResult {
     #[serde(rename = "status")]
     pub status: String,
+    #[serde(rename = "approvalCode", skip_serializing_if = "Option::is_none")]
+    pub approval_code: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum EngineReachabilityReason {
@@ -5301,6 +5307,8 @@ pub enum EngineCapability {
     Push,
     #[serde(rename = "ink-recognition")]
     InkRecognition,
+    #[serde(rename = "pairing-code")]
+    PairingCode,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
@@ -9311,6 +9319,7 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::InkLanguageUnavailable => -32045,
         ErrorKind::InkLimitExceeded => -32046,
         ErrorKind::InkRecognitionFailed => -32047,
+        ErrorKind::PairingCodeInvalid => -32048,
         #[cfg(feature = "open-enums")]
         ErrorKind::Unknown => -32018,
     }
