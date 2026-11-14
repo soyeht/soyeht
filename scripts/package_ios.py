@@ -23,6 +23,10 @@ and for `--validate`, an App Store Connect API key (the one that notarizes the M
     SOYEHT_NOTARY_KEY_ID         its key identifier
     SOYEHT_NOTARY_ISSUER         the issuer identifier of the team's keys
 
+Before the archive, which takes about seven minutes, the script signs a scratch file with the identity
+and stops at once, with the cause, when the login keychain is locked in a session that cannot prompt.
+The output of `xcodebuild` goes to `.cache/package-ios/logs/`; the terminal gets its tail when it fails.
+
 The steps (docs/apps-iphone.md, "Store build"): `xcodebuild archive` of the Release configuration
 with no signing (a manual profile reaches the Swift package targets, which take none); the archived
 app signed with the distribution identity and the entitlements of `apps/ios/SoyehtPhone.entitlements`
@@ -38,6 +42,7 @@ import argparse
 import os
 import plistlib
 import shutil
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -58,9 +63,10 @@ from package_common import (
     checked_release,
     entitlement_values,
     info_problems,
+    logged,
+    masked,
     run,
     signature_details,
-    stream,
     verification_status,
     verify_team,
     write_checksum,
@@ -142,7 +148,7 @@ def archive_app(made, environment):
         XCODE_PROJECT, SCHEME, "generic/platform=iOS", WORK / "derived", xcode_settings(made),
         "-archivePath", archive_path(), "archive",
     )
-    stream(command, environment=environment)
+    logged(command, WORK / "logs/archive.log", environment=environment)
     app = archived_app(archive_path())
     if not app.is_dir():
         raise PackagingError(f"xcodebuild did not make {app}")
@@ -154,6 +160,39 @@ def archived_app(archive):
 
 
 # --- signing --------------------------------------------------------------------------------------
+
+PREFLIGHT_SECONDS = 60  # a keychain that has to ask the person never answers a command with no one to ask
+LOCKED_KEYCHAIN = "errSecInternalComponent"
+KEYCHAIN_HELP = (
+    "unlock the login keychain in a logged-in session (`security unlock-keychain`, or the Keychain Access "
+    "app) and run this again; this command cannot prompt for a password and never reads one"
+)
+
+
+def signing_preflight(signing, runner=subprocess.run):
+    """Sign a small scratch file with the distribution identity before the archive, which takes about
+    seven minutes, so a keychain that is locked (or an identity this account cannot use) in a session that
+    cannot prompt fails here, at once, with its cause. `runner` is `subprocess.run`. Nothing is asked and
+    no password is read or passed; the scratch file and its signature are removed."""
+    with tempfile.TemporaryDirectory(prefix="soyeht-ios-preflight-") as private:
+        probe = Path(private) / "probe"
+        probe.write_bytes(b"signing preflight\n")
+        command = ["codesign", "--force", "--sign", signing.identity, probe]
+        try:
+            result = runner([str(part) for part in command], capture_output=True, text=True, timeout=PREFLIGHT_SECONDS)
+        except subprocess.TimeoutExpired:
+            raise PackagingError(
+                f"signing a test file waited more than {PREFLIGHT_SECONDS}s: the keychain is asking for something "
+                f"nobody can answer here; {KEYCHAIN_HELP}"
+            ) from None
+    if not result.returncode:
+        return
+    detail = masked((result.stderr or result.stdout).strip(), signing.secrets)
+    if LOCKED_KEYCHAIN in detail or "User interaction is not allowed" in detail:
+        raise PackagingError(f"the keychain is locked: the signing identity cannot be used; {KEYCHAIN_HELP}")
+    if "no identity found" in detail:
+        raise PackagingError(f"{IDENTITY_VARIABLE} names no identity this account can sign with (is the certificate and its private key in the keychain?)")
+    raise PackagingError(f"signing a test file failed with status {result.returncode}:\n{detail[-500:]}")
 
 
 def signing_entitlements(source, team):
@@ -219,8 +258,9 @@ def export_archive(signing, scratch):
     with tempfile.TemporaryDirectory(prefix="soyeht-ios-export-") as private:  # the options hold the team and the identity
         options = Path(private) / "ExportOptions.plist"
         options.write_bytes(plistlib.dumps(export_options(EXPORT_OPTIONS.read_bytes(), signing)))
-        stream(
+        logged(
             ["xcodebuild", "-exportArchive", "-archivePath", archive_path(), "-exportPath", folder, "-exportOptionsPlist", options],
+            scratch / "logs/export.log",
             mask=signing.secrets,
         )
     found = sorted(folder.glob("*.ipa"))
@@ -364,6 +404,7 @@ def package(options, environment):
     key = api_key(environment) if options.validate else None
     if options.validate and not key:
         raise PackagingError("--validate needs the App Store Connect API key variables in the environment (see --help)")
+    signing_preflight(signing)
     app = archive_app(made, environment)
     sign_app(app, signing)
     exported = export_archive(signing, WORK)

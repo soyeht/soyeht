@@ -164,13 +164,17 @@ def _words(command):
 REDACTED = "<redacted>"
 
 
+def masked(text, mask=()):
+    """`text` with each secret of `mask` replaced by `<redacted>`, the longest first."""
+    for value in sorted({str(secret) for secret in mask if secret}, key=len, reverse=True):
+        text = text.replace(value, REDACTED)
+    return text
+
+
 def printable(command, mask=()):
     """The line a command is announced with: `mask` holds what must not reach a terminal or a log
     (a certificate's name, the API key's file, identifier and issuer), each replaced by `<redacted>`."""
-    line = " ".join(_words(command))
-    for value in sorted({str(secret) for secret in mask if secret}, key=len, reverse=True):
-        line = line.replace(value, REDACTED)
-    return "+ " + line
+    return "+ " + masked(" ".join(_words(command)), mask)
 
 
 def run(command, *, check=True, timeout=COMMAND_SECONDS, environment=None, cwd=None, mask=()):
@@ -192,6 +196,27 @@ def stream(command, *, environment=None, cwd=None, mask=()):
     status = subprocess.run(_words(command), env=environment, cwd=cwd).returncode
     if status:
         raise PackagingError(f"{command[0]} failed with status {status}")
+
+
+LOG_TAIL_LINES = 40
+
+
+def logged(command, log, *, environment=None, cwd=None, mask=()):
+    """Run a long build with its whole output in the file `log` (a build of the apps writes thousands
+    of lines) and print only the command and, when it fails, the end of that file. What `mask` names
+    never reaches the file or the terminal."""
+    print(printable(command, mask), flush=True)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open("w") as sink, subprocess.Popen(
+        _words(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment, cwd=cwd,
+    ) as process:
+        for line in process.stdout:
+            sink.write(masked(line, mask))
+        status = process.wait()
+    if status:
+        tail = "".join(log.read_text(errors="replace").splitlines(keepends=True)[-LOG_TAIL_LINES:])
+        raise PackagingError(f"{command[0]} failed with status {status}; the last lines of {log}:\n{tail}")
+    print(f"  log: {log}", flush=True)
 
 
 def app_build_settings(made, app_id, product_name):

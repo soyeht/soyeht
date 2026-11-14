@@ -148,8 +148,9 @@ class SizeBeforeSigningTests(unittest.TestCase):
                     patch.object(package_mac, "verify_image", return_value=[]), \
                     step("thin_libraries"), step("save_symbols"), step("strip_app"), step("sign_bundle"), \
                     step("notarize_and_staple_app"), step("sign_file"), step("notarize_and_staple_image"):
+                self.stderr = io.StringIO()
                 try:
-                    with contextlib.redirect_stderr(io.StringIO()):
+                    with contextlib.redirect_stderr(self.stderr):
                         package_mac.package(options, {})
                 except PackagingError as failure:
                     self.left = sorted((folder / "dist").rglob("*.dmg"))
@@ -182,6 +183,16 @@ class SizeBeforeSigningTests(unittest.TestCase):
         self.assertEqual(len(self.left), 1)
         # The finished image is the one that is published: it is checked once more, with no reserve.
         self.assertEqual(self.checks(1000, ceiling), 2)
+
+    def test_an_image_far_under_its_ceiling_is_a_warning_only_when_it_is_signed(self):
+        for ad_hoc in (False, True):
+            steps, failure = self.run_package(100, ad_hoc=ad_hoc, ceiling=1_000_000)
+            self.assertIsNone(failure)
+            self.assertEqual("lower it in scripts/package_sizes.json" in self.stderr.getvalue(), not ad_hoc)
+
+    def test_an_ad_hoc_image_over_its_ceiling_still_fails(self):
+        _, failure = self.run_package(1001, ad_hoc=True)
+        self.assertIn("over its ceiling", failure)
 
     def checks(self, size, ceiling):
         with patch.object(package_mac, "check_sizes", wraps=package_mac.check_sizes) as counted:

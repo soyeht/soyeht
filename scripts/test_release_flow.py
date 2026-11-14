@@ -578,7 +578,7 @@ class BuildTests(FlowCase):
         for index, (architecture, host) in enumerate((("x86_64", "ci-host"), ("aarch64", "ci-arm"))):
             push, ssh, scp = recorder.commands[3 * index : 3 * index + 3]
             receive_pack = ["--receive-pack=/nix/git-receive-pack"] if architecture == "x86_64" else []
-            self.assertEqual(push, ["git", "push", *receive_pack, f"{host}:soyeht-ci/mirror.git", f"{SHA}:refs/heads/release-{VERSION}"])
+            self.assertEqual(push, ["git", "push", *receive_pack, "--no-verify", f"{host}:soyeht-ci/mirror.git", f"{SHA}:refs/heads/release-{VERSION}-{SHA[:12]}"])
             self.assertEqual(ssh[:4], ["ssh", "-o", "BatchMode=yes", host])
             script = recorder.inputs[3 * index + 1]
             self.assertIn(f'"$HOME/soyeht-ci/release/{SHA}"', script)
@@ -603,7 +603,7 @@ class BuildTests(FlowCase):
         with self.assertRaisesRegex(release_flow.Refused, "no Linux aarch64 build host: pass --linux-aarch64-host or set SOYEHT_RELEASE_LINUX_AARCH64_HOST"):
             self.build("--linux", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
         _, recorder, _ = self.build("--linux", "--linux-aarch64-host", "arm-box", environment={release_flow.LINUX_HOST_VARIABLE: "ci-host"})
-        self.assertEqual([c[2].split(":")[0] for c in recorder.commands if c[0] == "git"], ["ci-host", "arm-box"])
+        self.assertEqual([c[-2].split(":")[0] for c in recorder.commands if c[0] == "git"], ["ci-host", "arm-box"])
         with self.assertRaises(release_flow.Refused):
             self.build("--linux", "--linux-aarch64-host=-oProxyCommand=x", environment=HOSTS)
 
@@ -621,9 +621,9 @@ class BuildTests(FlowCase):
 
     def test_the_host_comes_from_the_option_or_the_environment_and_must_be_a_name(self):
         _, recorder, _ = self.build("--linux", environment={**HOSTS, release_flow.LINUX_HOST_VARIABLE: "ci-box"})
-        self.assertTrue(recorder.commands[0][2].startswith("ci-box:"))
+        self.assertTrue(recorder.commands[0][-2].startswith("ci-box:"))
         _, recorder, _ = self.build("--linux", "--linux-host", "other", environment=HOSTS)
-        self.assertTrue(recorder.commands[0][2].startswith("other:"))
+        self.assertTrue(recorder.commands[0][-2].startswith("other:"))
         with self.assertRaises(release_flow.Refused):
             self.build("--linux", "--linux-host", "x; rm -rf ~", environment=HOSTS)
         for name in ("-oProxyCommand=x", "--upload-pack=x", "-"):
