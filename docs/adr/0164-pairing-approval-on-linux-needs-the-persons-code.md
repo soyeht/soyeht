@@ -92,7 +92,9 @@ real. The engine says which mode it is in with a new `EngineCapability`, `pairin
    that opened the request's window** (see the section on windows); the request is pending and its
    window active; the request has a code in memory, not past its deadline, with fewer than three
    wrong attempts; and the submitted digits equal it (constant-time comparison). A missing or wrong
-   code answers the new error code `pairing_code_invalid` and approves nothing; the third wrong code
+   code answers the new error code `pairing_code_invalid` and approves nothing. Only six ASCII digits
+   that do not match count as a wrong attempt: a missing code or a text that is not six digits can
+   never be right, so it costs no attempt and a typing slip does not deny the person; the third wrong code
    **denies the request** and the phone gets `pair.result` with `approved: false`. The code is single
    use: dropped when used, when the request is decided and when it expires. The code is checked
    before the call is recorded, so a wrong code leaves no receipt, and **`approvalCode` is left out of
