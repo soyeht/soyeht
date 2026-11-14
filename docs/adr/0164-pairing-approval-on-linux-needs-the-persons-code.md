@@ -1,6 +1,6 @@
 # ADR 0164: Pairing approval on Linux needs the person's code
 
-- Status: proposed (design only; the owner chose this option, "(b)", for the open question of ADR 0162 on 2026-11-14; revised after an independent security review the same day; not accepted yet)
+- Status: accepted (the owner chose this option, "(b)", for the open question of ADR 0162 on 2026-11-14, revised after an independent security review the same day, and chose to launch it without the account password)
 - Date: 2026-11-14
 - Amends ADR 0128, 0162 and 0163 for Linux. Builds on ADR 0152 (the comparison code). Follows ADR 0161 (the protocol only grows) and ADR 0079 (nothing blocks under the Core lock).
 
@@ -331,8 +331,9 @@ types the password, and no process of the user (nor a node of the tailnet) can a
   first and then for a time;
 - on X11 a keylogger of the same user can still read the password.
 
-It is pending the owner, as a possible launch opt-in ("Require my account password to pair") or a
-fast follow. This ADR is complete without it and does not block on it; slice 8 is its place.
+Decided by the owner on 2026-11-14: the launch ships the person's code with the node rules and the
+"device added" notice, without the password. The password may come later as an opt-in ("Require my
+account password to pair"); slice 8 is its place, and this ADR is complete without it.
 
 ## Compatibility and the protocol
 
