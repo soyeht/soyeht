@@ -133,11 +133,16 @@ fn a_local_client_without_the_code_cannot_approve_and_three_wrong_codes_deny() {
     let wrong = wrong_for(&request.code);
     let first = decide(&mut local, &request, Some(wrong), "d-1");
     assert_eq!(kind(&first), "pairing_code_invalid", "{first}");
-    let second = decide(&mut local, &request, Some("12"), "d-2");
+    // Not six digits: refused, and it costs no try.
+    let typo = decide(&mut local, &request, Some("12"), "d-typo");
+    assert_eq!(kind(&typo), "pairing_code_invalid", "{typo}");
+    let second = decide(&mut local, &request, Some(wrong), "d-2");
     assert_eq!(kind(&second), "pairing_code_invalid", "{second}");
     assert_eq!(devices(&mut local.client), 0);
     let third = decide(&mut local, &request, Some(wrong), "d-3");
     assert_eq!(kind(&third), "pairing_code_invalid", "{third}");
+    let denied_text = third["error"]["message"].as_str().unwrap();
+    assert!(denied_text.contains("denied"), "{denied_text}");
     let denied = request.phone.read();
     assert_eq!(denied["method"], "pair.result", "{denied}");
     assert_eq!(denied["params"]["approved"], false);

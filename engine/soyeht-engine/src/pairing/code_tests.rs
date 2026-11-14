@@ -162,10 +162,9 @@ struct Device {
     prove_params: Value,
 }
 
-fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
+/// The parameters of `pair.prove` for the answer `begun` to a `pair.begin` on `window`.
+fn prove_params(window: &str, seed: u8, name: &str, begun: &Value) -> Value {
     let device_key = key(seed);
-    let phone = rig.connect(false, false);
-    let begun = begin(rig, &phone, window, name, seed).unwrap();
     let derived =
         Sha256::digest([window.as_bytes(), device_key.verifying_key().as_bytes()].concat());
     let mut mac = Hmac::<Sha256>::new_from_slice(&derived).unwrap();
@@ -175,9 +174,15 @@ fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
             .unwrap(),
     );
     mac.update(name.as_bytes());
-    let prove_params = json!({"requestId":begun["requestId"],
+    json!({"requestId":begun["requestId"],
         "proof":STANDARD.encode(mac.finalize().into_bytes()),
-        "idempotencyKey":Uuid::new_v4().to_string()});
+        "idempotencyKey":Uuid::new_v4().to_string()})
+}
+
+fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
+    let phone = rig.connect(false, false);
+    let begun = begin(rig, &phone, window, name, seed).unwrap();
+    let prove_params = prove_params(window, seed, name, &begun);
     let proved = rig
         .call(&phone, "pair.prove", prove_params.clone())
         .unwrap();
@@ -291,7 +296,13 @@ async fn a_missing_or_wrong_code_approves_nothing_and_the_third_wrong_one_denies
     let first = decide(&mut rig, &app, &device.request, Some(wrong));
     assert_eq!(kind(&first), ErrorKind::PairingCodeInvalid);
     assert!(text(&first).contains("2 tries left"), "{}", text(&first));
-    let second = decide(&mut rig, &app, &device.request, Some("12345"));
+    // Not six digits: refused, and no try is used.
+    for typo in ["12345", "1234567", "12345x", ""] {
+        let typed = decide(&mut rig, &app, &device.request, Some(typo));
+        assert_eq!(kind(&typed), ErrorKind::PairingCodeInvalid);
+        assert!(text(&typed).contains("six digits"), "{}", text(&typed));
+    }
+    let second = decide(&mut rig, &app, &device.request, Some(wrong));
     assert!(text(&second).contains("1 tries left"), "{}", text(&second));
     assert_eq!(devices(&mut rig, &app), 0);
     assert!(rig.notifications(&device.connection).await.is_empty());
@@ -432,6 +443,26 @@ async fn a_window_with_no_connection_left_takes_no_new_request() {
     let phone = rig.connect(false, false);
     let begun = begin(&mut rig, &phone, &window, "Test phone", 7);
     assert_eq!(kind(&begun), ErrorKind::Unauthorized);
+}
+
+#[tokio::test]
+async fn a_device_is_given_no_code_when_its_window_lost_its_connection_before_it_proved() {
+    let mut rig = Rig::new(Approval::PersonsCode);
+    let app = rig.connect(true, false);
+    let window = rig.open_window(&app);
+    let phone = rig.connect(false, false);
+    let begun = begin(&mut rig, &phone, &window, "Test phone", 17).unwrap();
+    let params = prove_params(&window, 17, "Test phone", &begun);
+    rig.core.disconnect(&app).unwrap();
+    let proved = rig.call(&phone, "pair.prove", params);
+    assert_eq!(kind(&proved), ErrorKind::Unauthorized);
+    assert!(
+        rig.core
+            .pairing
+            .codes
+            .check(begun["requestId"].as_str().unwrap(), Some("000000"), 0)
+            == Verdict::NoCode
+    );
 }
 
 #[tokio::test]

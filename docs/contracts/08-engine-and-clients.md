@@ -132,8 +132,8 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
   `device.pair.decide` (blanks between the digits are allowed; `contracts/vectors/pairing-approval.json`).
   The engine approves only when the code is right (constant-time comparison), the request is
   pending, and the call comes from the local human connection that opened the request's pairing
-  window. A missing or wrong code answers `pairing_code_invalid` and approves nothing; the third
-  wrong code denies the request and the device receives `pair.result` with `approved: false` and
+  window. A missing or wrong code answers `pairing_code_invalid` and approves nothing; a text that
+  is not six digits is refused the same way and costs no try; the third wrong code denies the request and the device receives `pair.result` with `approved: false` and
   the reason `Denied on the computer`. The code is single use and ends with the request. A call
   that fails for its code leaves no receipt, and `approvalCode` is left out of the fingerprint of
   the call that is stored, so the store holds nothing derived from it. Denying needs no code.

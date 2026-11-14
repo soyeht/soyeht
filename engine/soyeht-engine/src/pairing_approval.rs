@@ -21,7 +21,9 @@ const WINDOWS_PER_CONNECTION: usize = 4;
 
 /// Whether the engine's peer rules of ADR 0164 (slice 3) are in place. Until they are, a program
 /// of the same user could be the new device, so no system runs `PersonsCode` by itself: a test
-/// selects it through `Hooks::pairing_approval`.
+/// selects it through `Hooks::pairing_approval`. This may become true only in the change that
+/// brings slice 3 of the ADR (the listener, address, `whois` and node rules); a test below stops
+/// the build when it is flipped alone.
 const PEER_RULES_ENFORCED: bool = false;
 
 /// Who may approve a pairing on this system.
@@ -132,6 +134,9 @@ pub(crate) enum Verdict {
     Right,
     /// Nothing was typed.
     Missing,
+    /// What was typed is not six ASCII digits, so it can never be right. It costs no try: counting
+    /// it adds no security and three typos would deny the person.
+    Malformed,
     /// The code is wrong; `left` tries remain.
     Wrong { left: u8 },
     /// The last try was wrong: the code is gone and the request is to be denied.
@@ -180,10 +185,10 @@ impl Codes {
         let Some(entry) = self.0.get_mut(request) else {
             return Verdict::NoCode;
         };
-        let mut digits = approval_code::read(typed);
-        let right = digits
-            .as_ref()
-            .is_some_and(|digits| entry.code.matches(digits));
+        let Some(mut digits) = approval_code::read(typed) else {
+            return Verdict::Malformed;
+        };
+        let right = entry.code.matches(&digits);
         digits.zeroize();
         if right {
             self.0.remove(request);
@@ -277,12 +282,28 @@ impl Pairing {
 }
 
 /// The name a new device gives itself is shown to the person, so it holds no control character
-/// and none of the bidirectional controls that reorder the text around it, and is no longer than
-/// the contract allows.
+/// and none of the characters that reorder, hide or break the text around it (the bidirectional
+/// controls, the line and paragraph separators, the zero-width characters and the tag
+/// characters), and is no longer than the contract allows.
 pub(crate) fn check_device_name(name: &str) -> Result<()> {
-    let bidirectional = |c: char| matches!(c, '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    let disguising = |c: char| {
+        matches!(
+            c,
+            '\u{061C}'
+                | '\u{200E}'
+                | '\u{200F}'
+                | '\u{202A}'..='\u{202E}'
+                | '\u{2066}'..='\u{2069}'
+                | '\u{2028}'
+                | '\u{2029}'
+                | '\u{200B}'..='\u{200D}'
+                | '\u{2060}'
+                | '\u{FEFF}'
+                | '\u{E0000}'..='\u{E007F}'
+        )
+    };
     if name.len() > limits::DEVICE_NAME_BYTES
-        || name.chars().any(|c| c.is_control() || bidirectional(c))
+        || name.chars().any(|c| c.is_control() || disguising(c))
     {
         return Err(errors::invalid("The device name is not allowed"));
     }
@@ -388,9 +409,16 @@ mod tests {
             codes.check("r", Some("000000"), 10),
             Verdict::Wrong { left: 2 }
         );
-        // A text that is not a code at all counts as a try.
+        // A text that is not six digits can never be right and costs no try.
+        for malformed in ["48291", "4829133", "48291a", "", "482-913"] {
+            assert_eq!(
+                codes.check("r", Some(malformed), 10),
+                Verdict::Malformed,
+                "{malformed:?}"
+            );
+        }
         assert_eq!(
-            codes.check("r", Some("48291"), 10),
+            codes.check("r", Some("000001"), 10),
             Verdict::Wrong { left: 1 }
         );
         assert_eq!(codes.check("r", Some("482914"), 10), Verdict::Exhausted);
@@ -444,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn a_device_name_has_no_control_and_no_bidirectional_character() {
+    fn a_device_name_has_no_control_and_no_disguising_character() {
         assert!(check_device_name("Caio's iPhone").is_ok());
         assert!(check_device_name("ジョンの iPhone").is_ok());
         assert!(check_device_name(&"a".repeat(limits::DEVICE_NAME_BYTES)).is_ok());
@@ -463,10 +491,29 @@ mod tests {
             "\u{202E}",
             "\u{2066}",
             "\u{2069}",
+            "line\u{2028}separator",
+            "paragraph\u{2029}separator",
+            "zero\u{200B}width",
+            "joiner\u{200C}",
+            "joiner\u{200D}",
+            "word\u{2060}joiner",
+            "\u{FEFF}bom",
+            "tag\u{E0041}",
+            "\u{E0000}",
+            "\u{E007F}",
         ] {
             assert!(check_device_name(bad).is_err(), "{bad:?}");
         }
         // The neighbours of the ranges are ordinary characters.
-        assert!(check_device_name("\u{2065}\u{206A}").is_ok());
+        assert!(check_device_name("\u{2065}\u{206A}\u{200A}\u{2061}\u{E0080}").is_ok());
     }
+
+    /// Tripwire: the person's code is for Linux only together with the peer rules of slice 3. If
+    /// this stops compiling, the rules are in and this check (and the Linux case of
+    /// `the_rule_follows_the_platform_and_waits_for_the_peer_rules_on_linux`) is to be replaced by
+    /// the tests that prove them.
+    const _: () = assert!(
+        !PEER_RULES_ENFORCED,
+        "PEER_RULES_ENFORCED may become true only with the slice 3 peer rules of ADR 0164"
+    );
 }

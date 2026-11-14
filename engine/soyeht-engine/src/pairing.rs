@@ -248,6 +248,10 @@ impl Core {
             ));
         }
         let mut pending = self.pending_pair(&id)?;
+        // A window nobody holds has no one to approve: no code is made for a device to show.
+        if self.approval().asks_for_code() && !self.pairing.windows.is_bound(&pending.code) {
+            return Err(errors::unauthorized("Pairing code expired or invalid"));
+        }
         let public = auth::public_key(&pending.key)
             .map_err(|error| errors::unauthorized(error.to_string()))?;
         if !auth::pair_proof(
@@ -649,6 +653,9 @@ impl Core {
             Verdict::Right => Ok(()),
             Verdict::Missing => Err(errors::pairing_code_invalid(
                 "Type the code your phone shows",
+            )),
+            Verdict::Malformed => Err(errors::pairing_code_invalid(
+                "Type the six digits your phone shows",
             )),
             Verdict::NoCode => Err(errors::pairing_code_invalid(
                 "No code is waiting for this request; pair again on the phone",

@@ -65,7 +65,7 @@ ring.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 webpki-roots.workspace = true
-zeroize = "1"
+zeroize.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true
