@@ -40,7 +40,7 @@ import java.util.concurrent.Executors
 @Composable
 fun ColumnScope.ScanScreen(model: AppModel) {
     val roles = LocalRoles.current
-    TopBar("Scan the code", "On the computer, choose “Pair phone”", onBack = model::stopScanning)
+    TopBar("Scan the code", PAIRING_ON_COMPUTER, onBack = model::stopScanning)
     Box(Modifier.weight(1f).fillMaxWidth().background(roles.well)) {
         CameraPreview(onText = model::scanned, onFailure = model::cameraFailed)
     }
