@@ -4445,7 +4445,22 @@
     "value": {
       "paneId": "00000000-0000-4000-8000-000000000001",
       "name": "Research",
-      "harness": "Codex"
+      "harness": "Codex",
+      "kind": "terminal"
+    }
+  },
+  {
+    "name": "AgentMessageKind",
+    "type": "AgentMessageKind",
+    "value": "terminal"
+  },
+  {
+    "name": "TerminalHarness",
+    "type": "TerminalHarness",
+    "value": {
+      "id": "registry.opencode",
+      "name": "OpenCode",
+      "version": "2.2.5"
     }
   },
   {
