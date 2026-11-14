@@ -12,7 +12,7 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 - **Orchestration over MCP.** Agents use MCP tools such as `list_agents` and `message_agent` to find each other, hand off work, and wait for replies. You set roles, communication policies and races between panes; every agent has an inbox.
 - **Task list and loops.** Every workspace has a task list. Agents pull the next task, or you hand one to them; each task has one owner at a time, and a task goes back to the list if its agent dies. A loop delivers a prompt you wrote to a pane on the schedule you choose, so an agent keeps working through the list on its own.
-- **Any harness, any model.** Soyeht does not replace your agent. Each pane runs the harness you already use (Claude Code, Codex, Gemini CLI, OpenCode, or anything that runs in a terminal) with the model it is configured for. Soyeht observes and coordinates.
+- **Any harness, any model.** Soyeht does not replace your agent. Each pane runs the harness you already use (Claude Code, Codex, Cursor, OpenCode, or anything that runs in a terminal) with the model it is configured for. Soyeht observes and coordinates.
 - **Skills in every harness.** Keep reusable `SKILL.md` skills in one place. Claude Code and Codex load them natively, typing "/" in the composer runs one, and any agent can write a new skill when you ask it to.
 - **Workspaces and panes.** Tabs of workspaces, panes side by side, one harness or shell per pane. Layout is persisted.
 - **A real terminal, plus a view over it.** The raw terminal is always there. On top of it, Soyeht reads each harness's structured output to show threads, tasks and the harness's state: working, blocked, idle.
@@ -20,7 +20,32 @@ One agent is a chat. Five harnesses running side by side are an operations probl
 
 ## Status
 
-Early. macOS is the supported platform. The engine and the Linux and Windows app build and pass their checks on those systems, but they are not supported yet. The iPhone, iPad and Android apps are companions of an engine running on your computer. There is no release yet; installation instructions will land with the first one.
+Soyeht 0.1.0 will be the first public release. Releases are published on the [releases page](https://github.com/soyeht/soyeht/releases); until the first one is there, build from source (below). It is early software: expect rough edges, and tell us about them (see "Privacy and support" below). The version history is in [CHANGELOG.md](CHANGELOG.md).
+
+| System | What works today | What does not |
+| --- | --- | --- |
+| macOS 15 or later, Apple silicon | The full app: workspaces, terminals, agent panes, editor, texts, screenplays, presentations, web panes. Pairing an iPhone or iPad. | Intel Macs. |
+| Windows 11 (x64 and Arm64) | The app has the same panes, including web panes on WebView2. The engine and the supervisor start with the window and can start at login. | Pairing a phone: the app cannot yet prove itself to the engine, so no pairing can be opened or approved ([ADR 0162](docs/adr/0162-pairing-is-decided-only-by-the-signed-app-on-every-system.md), [ADR 0163](docs/adr/0163-opening-a-pairing-window-is-the-signed-apps-alone.md)). A few features that need a macOS service report that they are unsupported ([docs/platforms.md](docs/platforms.md)). |
+| Linux (x86_64 and arm64) | The same app as on Windows, with web panes on WebKitGTK. Checked on Ubuntu 26.04 (arm64). | The same as Windows. |
+| iPhone and iPad (iOS 18 or later) | A companion of a Mac: the same terminals, agents and documents, with Apple Pencil handwriting. | Pairing with a Windows or Linux computer (above). |
+| Android | Not released yet. | Everything. The code is in this repository ([docs/apps-android.md](docs/apps-android.md)). |
+
+Not in 0.1.0 on any system: push notifications. The iPhone and iPad app does not ask for notification permission, and nothing is sent to Apple's push service. The Mac, Windows and Linux apps still raise a system notification on your computer when an agent needs you ([docs/push-notifications.md](docs/push-notifications.md)).
+
+Four harnesses are supported today: Claude Code, Codex, Cursor and OpenCode. You install and sign in to each one yourself, under your own account and terms with its provider; Soyeht does not proxy those conversations ([PRIVACY.md](PRIVACY.md)). Any other program that runs in a terminal also works in a terminal pane.
+
+### Install
+
+Once a release is published, download the package for your system from the [releases page](https://github.com/soyeht/soyeht/releases) (the newest release is at `https://github.com/soyeht/soyeht/releases/latest`). The files are named `soyeht-<version>-<system>-<architecture>.<extension>`, and each release lists a `SHA256SUMS` file.
+
+- **macOS:** open `soyeht-<version>-macos-aarch64.dmg` and drag the app to Applications. The app is signed and notarized.
+- **Windows:** run `soyeht-<version>-windows-x86_64.exe` (or `-windows-aarch64.exe` on an Arm PC). It installs for your user and needs no administrator.
+- **Linux:** `sudo apt install ./soyeht-<version>-linux-<arch>.deb`, or make `soyeht-<version>-linux-<arch>.AppImage` executable and run it. [docs/platforms.md](docs/platforms.md) lists the libraries the machine needs.
+- **iPhone and iPad:** the App Store, at launch.
+
+[docs/getting-started.md](docs/getting-started.md) goes from the first launch to a terminal, an agent and a paired phone. [PRIVACY.md](PRIVACY.md) says what leaves your devices, [SECURITY.md](SECURITY.md) how to report a vulnerability and [CONTRIBUTING.md](CONTRIBUTING.md) how to build and change Soyeht.
+
+### Build from source
 
 | Platform | App | Where | Build and test |
 | --- | --- | --- | --- |
