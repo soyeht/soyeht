@@ -3,6 +3,19 @@
 # agent catalogue because the bytes of the embedded snapshot no longer match their digest.
 * text=auto eol=lf
 
+# Binary files, kept byte for byte: no end-of-line conversion and no text diff.
+*.png binary
+*.ico binary
+*.icns binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+
 # Outputs of contracts/generate.py: collapsed in review diffs. Regenerate them, never edit them.
 apps/desktop/crates/soyeht-desktop/src/theme/generated.rs linguist-generated=true
 apps/shared/Sources/SoyehtClient/Generated.swift linguist-generated=true
