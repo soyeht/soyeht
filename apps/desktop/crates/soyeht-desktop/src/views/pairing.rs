@@ -313,13 +313,16 @@ pub(super) fn pairing_sheet(
         .cursor_pointer()
         .on_click(cx.listener(|this, _: &ClickEvent, _, cx| ui::close(this, cx)))
         .child(copy::CLOSE);
+    // What waits for the person comes before the code a phone scans: the sheet is no taller than
+    // the window, and the field and its buttons are what the person came back for.
     let mut card = sheet::panel(palette, "pairing", extent)
-        .child(sheet::header(palette, copy::PAIR_BUTTON, subtitle, close))
-        .children(window_body(wb, &phase, remaining, palette, cx));
+        .child(sheet::header(palette, copy::PAIR_BUTTON, subtitle, close));
     for request in &requests {
         card = card.child(request_card(wb, request, offers_code, palette, cx));
     }
-    let card = card.child(row().justify_end().child(done));
+    let card = card
+        .children(window_body(wb, &phase, remaining, palette, cx))
+        .child(row().justify_end().child(done));
     Some(
         sheet::centered_layer()
             .id("pairing-overlay")

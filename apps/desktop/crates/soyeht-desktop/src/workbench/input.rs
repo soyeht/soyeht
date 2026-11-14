@@ -72,13 +72,15 @@ impl Workbench {
             cx.stop_propagation();
             return;
         }
-        // The pairing sheet owns the keys it does not give to its field: Escape closes it, and
-        // none reaches a pane under it.
+        // The pairing sheet owns the keys: Escape closes it, and none reaches a pane under it
+        // (`keys_target` gives the pane none while it is shown). The others are left to
+        // propagate, never stopped here: a stopped key never reaches the text input of the field
+        // the code is typed in.
         if self.state.pairing.shown() {
-            if keystroke.key == "escape" {
+            if crate::pairing_ui::closes_sheet(&keystroke.key) {
                 crate::pairing_ui::close(self, cx);
+                cx.stop_propagation();
             }
-            cx.stop_propagation();
             return;
         }
         // The pane in front takes the keys only while the stage shows it and no field holds the

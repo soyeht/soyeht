@@ -110,6 +110,11 @@ fn act(
     cx.notify();
 }
 
+/// Whether `key` closes the sheet. Every other key is the field's, or nobody's.
+pub(crate) fn closes_sheet(key: &str) -> bool {
+    key == "escape"
+}
+
 /// The person chose "Pair a phone", or asked for a new window.
 pub(crate) fn open(this: &mut Workbench, cx: &mut Context<Workbench>) {
     act(this, cx, |_, state, _| state.open_pairing());
@@ -193,5 +198,18 @@ pub(crate) fn settle(this: &mut Workbench, cx: &mut Context<Workbench>) {
         let palette = this.theme.palette();
         let field = this.pairing_ui.code_field(&id, palette, cx);
         this.focus_field_when_drawn(&field, cx);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_escape_is_taken_from_the_field_the_code_is_typed_in() {
+        assert!(closes_sheet("escape"));
+        for key in ["1", "backspace", "enter", "tab", "v", "left"] {
+            assert!(!closes_sheet(key), "{key}");
+        }
     }
 }
