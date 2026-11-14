@@ -285,7 +285,7 @@ impl Core {
     }
 
     fn review_author_is_live(&self, pane_id: &str) -> bool {
-        self.agents.running.contains_key(pane_id)
+        self.agents.has(pane_id)
             && self.panes.get(pane_id).is_some_and(|pane| {
                 !pane.stored.closed && pane.stored.pane.state != PaneState::Dead
             })

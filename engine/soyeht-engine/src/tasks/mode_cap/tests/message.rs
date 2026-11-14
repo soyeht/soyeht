@@ -39,7 +39,7 @@ async fn an_agent_cannot_send_a_message_into_a_pane_in_full_access() {
 async fn a_pane_asked_to_start_in_full_access_takes_no_message_before_its_modes_are_announced() {
     let mut rig = Rig::new("claude", "default");
     insert_agent_pane(&mut rig.core, &rig.directory, "target", WORKSPACE);
-    if let Some(running) = rig.core.agents.running.get_mut("target") {
+    if let Some(running) = rig.core.agents.get_mut("target") {
         running.state.mode = Some("allow_all".into());
     }
     let sender = rig.connect(Role::Agent, Some("chief"));

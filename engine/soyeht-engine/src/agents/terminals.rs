@@ -157,7 +157,9 @@ impl Terminal {
 impl Core {
     pub fn poll_agent_terminals(&mut self, pane: &str) -> Result<()> {
         let releasing = releasing_terminals(&self.store, pane)?;
-        let ids: Vec<_> = self.agents.running[pane]
+        let ids: Vec<_> = self
+            .agents
+            .agent(pane)
             .state
             .terminals
             .keys()

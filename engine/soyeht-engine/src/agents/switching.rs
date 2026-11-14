@@ -422,7 +422,7 @@ impl Core {
     }
 
     pub(crate) fn recover_harness_switches(&mut self, instances: &[Instance]) -> Result<()> {
-        let panes = self.agents.running.keys().cloned().collect::<Vec<_>>();
+        let panes = self.agents.panes();
         for pane in panes {
             // Closing an agent is forbidden while a switch is pending, so a
             // closed pane has no switch to recover. Keep it out of the
@@ -466,7 +466,6 @@ impl Core {
             if !self.background.accepts(&job)
                 || self
                     .agents
-                    .running
                     .get(&pane)
                     .is_none_or(|agent| !agent.idle.retired_close_due(now))
             {
@@ -479,7 +478,6 @@ impl Core {
             // poll-loop error that starves every pane after it.
             let Some(retired) = self
                 .agents
-                .running
                 .get(&pane)
                 .map(|agent| agent.state.retired_processes.clone())
             else {
@@ -545,7 +543,7 @@ impl Core {
     /// delays the next try, and is logged once per change of kind.
     fn note_retired_closes(&mut self, pane: &str, refused: Result<()>) {
         let now = self.now_ms();
-        let Some(agent) = self.agents.running.get_mut(pane) else {
+        let Some(agent) = self.agents.get_mut(pane) else {
             return;
         };
         match refused {
@@ -589,12 +587,7 @@ impl Core {
         pane: &str,
         change: impl FnOnce(&mut Vec<RetiredAgentProcess>),
     ) -> Result<()> {
-        let Some(mut state) = self
-            .agents
-            .running
-            .get(pane)
-            .map(|agent| agent.state.clone())
-        else {
+        let Some(mut state) = self.agents.get(pane).map(|agent| agent.state.clone()) else {
             return Ok(());
         };
         let before = state.retired_processes.len();

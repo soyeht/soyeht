@@ -153,7 +153,7 @@ impl Core {
         let attention = self.feedback_attention(&decision, pane.as_deref())?;
         if let Some(pane) = pane
             .as_ref()
-            .filter(|pane| self.agents.running.contains_key(pane.as_str()))
+            .filter(|pane| self.agents.has(pane.as_str()))
             .cloned()
         {
             return self.commit_feedback_to_pane(pane, task, decision, attention);
@@ -175,7 +175,6 @@ impl Core {
             .is_empty();
         let human_draft_active = self
             .agents
-            .running
             .get(pane)
             .is_some_and(|running| running.state.draft_until_ms > self.now_ms());
         Ok(FeedbackPaneFacts {

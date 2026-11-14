@@ -551,7 +551,6 @@ impl Core {
         if saved.closed {
             let child_keys: Vec<_> = self
                 .agents
-                .running
                 .get(id)
                 .map(|agent| {
                     agent
@@ -575,8 +574,8 @@ impl Core {
         if let Some(instance) = existing.filter(|instance| !instance.closed) {
             return self.adopt(id, instance);
         }
-        if self.agents.running.contains_key(id) {
-            if self.agents.running[id].state.phase == crate::agents::state::Phase::Faulted {
+        if self.agents.has(id) {
+            if self.agents.agent(id).state.phase == crate::agents::state::Phase::Faulted {
                 return self.close_agent_processes(id);
             }
             return self.recover_missing_agent(id);
@@ -627,7 +626,7 @@ impl Core {
     }
 
     pub(crate) fn adopt(&mut self, id: &str, instance: &Instance) -> Result<()> {
-        if self.agents.running.contains_key(id) {
+        if self.agents.has(id) {
             return self.adopt_agent(id, instance);
         }
         let mut saved = self.panes[id].stored.clone();
@@ -730,13 +729,10 @@ impl Core {
                 continue;
             }
             // A tick woken by a read polls the agents and the panes a notice marked.
-            if self.polling_woken()
-                && !self.agents.running.contains_key(&id)
-                && !self.pane_marked(&id)
-            {
+            if self.polling_woken() && !self.agents.has(&id) && !self.pane_marked(&id) {
                 continue;
             }
-            if self.agents.running.contains_key(&id) {
+            if self.agents.has(&id) {
                 let polled = self.poll_agent(&id);
                 self.settle_agent_poll(&id, polled)?;
                 continue;

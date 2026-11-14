@@ -287,7 +287,7 @@ impl Core {
             return self.delete_experiment_capture_data(connection, params);
         }
         let id = errors::param_str(params, "paneId")?;
-        if method == method::PANE_CLOSE && self.agents.running.contains_key(id) {
+        if method == method::PANE_CLOSE && self.agents.has(id) {
             return self.close_agent(connection, params);
         }
         if method == method::PANE_CLOSE {

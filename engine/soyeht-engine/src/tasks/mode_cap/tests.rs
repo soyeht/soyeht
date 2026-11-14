@@ -27,12 +27,12 @@ fn agent(harness: &str, current: &str) -> crate::agents::state::State {
 }
 
 fn executor_state(rig: &Rig) -> &crate::agents::state::State {
-    &rig.core.agents.running["executor"].state
+    &rig.core.agents.agent("executor").state
 }
 
 fn announce(core: &mut Core, directory: &std::path::Path, pane: &str, harness: &str, mode: &str) {
     insert_agent_pane(core, directory, pane, WORKSPACE);
-    if let Some(running) = core.agents.running.get_mut(pane) {
+    if let Some(running) = core.agents.get_mut(pane) {
         running.state = agent(harness, mode);
     }
 }
@@ -114,7 +114,6 @@ impl Rig {
         let (_, running) = self
             .core
             .agents
-            .running
             .iter()
             .find(|(pane, _)| !FIXED_PANES.contains(&pane.as_str()))?;
         Some(&running.state)
@@ -220,7 +219,7 @@ fn a_mode_the_target_harness_does_not_announce_is_refused_whatever_another_harne
 #[test]
 fn a_dispatcher_whose_mode_cannot_be_ranked_is_the_lowest() {
     let mut rig = Rig::new("claude", "plan");
-    rig.core.agents.running.get_mut("chief").unwrap().state = agent_with_modes(
+    rig.core.agents.get_mut("chief").unwrap().state = agent_with_modes(
         "claude",
         "mystery",
         &[
@@ -431,10 +430,10 @@ async fn a_chief_in_full_access_cannot_pass_it_on_by_leaving_the_mode_out() {
 /// asked to start in `requested`.
 fn started_executor(harness: &str, current: &str, chief_mode: &str, requested: &str) -> Rig {
     let mut rig = Rig::new("claude", chief_mode);
-    let ceiling = ModeCeiling::of(&rig.core.agents.running["chief"].state, false);
+    let ceiling = ModeCeiling::of(&rig.core.agents.agent("chief").state, false);
     let directory = rig.directory.clone();
     announce(&mut rig.core, &directory, "executor", harness, current);
-    let state = &mut rig.core.agents.running.get_mut("executor").unwrap().state;
+    let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
     state.session_id = Some("session".into());
     state.mode_ceiling = Some(ceiling);
     state.mode = Some(requested.into());
@@ -447,7 +446,7 @@ fn started_executor(harness: &str, current: &str, chief_mode: &str, requested: &
 /// What the pane `executor` asks its harness for once its session opened: the mode it would
 /// request, or `None` when the pane is to stop.
 fn requested_mode(rig: &mut Rig) -> Option<ConfigValue> {
-    let state = &mut rig.core.agents.running.get_mut("executor").unwrap().state;
+    let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
     let mut changes = crate::agents::Changes::default();
     crate::agents::configuration::hold_mode_ceiling(state, 1, &mut changes)
         .unwrap()
@@ -485,7 +484,7 @@ fn a_refusal_of_the_lower_mode_stops_the_pane_instead_of_trying_again() {
         Some(ConfigValue::V0("read-only".into()))
     );
     // The harness refused: it stays in `agent`, which is above the ceiling.
-    let state = &mut rig.core.agents.running.get_mut("executor").unwrap().state;
+    let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
     state.requested_options.clear();
     assert_eq!(requested_mode(&mut rig), None);
 }
@@ -502,7 +501,7 @@ fn a_pane_with_no_mode_within_the_ceiling_is_stopped() {
 #[test]
 fn a_restart_for_a_task_keeps_the_ceiling_and_checks_the_mode_again() {
     let rig = started_executor("claude", "default", "default", "plan");
-    let mut old = rig.core.agents.running["executor"].state.clone();
+    let mut old = rig.core.agents.agent("executor").state.clone();
     // The first session was checked; the restarted one is a new session.
     old.mode_ceiling
         .as_mut()
@@ -551,7 +550,6 @@ fn a_person_who_picks_a_mode_above_the_ceiling_lifts_it_and_a_mode_within_it_doe
     adopt_executor(&mut rig);
     rig.core
         .agents
-        .running
         .get_mut("executor")
         .unwrap()
         .state
@@ -579,13 +577,7 @@ fn a_person_who_picks_a_mode_above_the_ceiling_lifts_it_and_a_mode_within_it_doe
         "idempotencyKey":"set-mode-2"}});
     // The first change is still pending on the harness; the engine takes the next one once it
     // has been confirmed.
-    rig.core
-        .agents
-        .running
-        .get_mut("executor")
-        .unwrap()
-        .state
-        .operation = None;
+    rig.core.agents.get_mut("executor").unwrap().state.operation = None;
     rig.core.dispatch(&person, again).unwrap();
     assert!(executor_state(&rig).mode_ceiling.is_none());
 }
@@ -594,7 +586,7 @@ fn a_person_who_picks_a_mode_above_the_ceiling_lifts_it_and_a_mode_within_it_doe
 /// on a prompt. Returns its session.
 fn start_working(rig: &mut Rig) -> String {
     adopt_executor(rig);
-    let state = &mut rig.core.agents.running.get_mut("executor").unwrap().state;
+    let state = &mut rig.core.agents.get_mut("executor").unwrap().state;
     state.requested_options.clear();
     let mut ceiling = state.mode_ceiling.take().unwrap();
     // The session was opened and checked: the mode it runs is within the ceiling.
@@ -640,7 +632,7 @@ fn executor_moving_itself(harness: &str, chief_mode: &str, current: &str, report
 /// What the transcript of the pane `executor` says when the harness ends its turn as cancelled,
 /// and its state afterwards.
 fn cancelled_turn(rig: &Rig) -> (Vec<String>, crate::agents::state::State) {
-    let mut state = rig.core.agents.running["executor"].state.clone();
+    let mut state = rig.core.agents.agent("executor").state.clone();
     let mut saved = rig.core.panes["executor"].stored.clone();
     let mut changes = crate::agents::Changes::default();
     let prompt_id = state.active.as_ref().unwrap().prompt_id.clone();
@@ -662,7 +654,7 @@ fn cancelled_turn(rig: &Rig) -> (Vec<String>, crate::agents::state::State) {
 fn an_agent_that_moves_itself_above_the_ceiling_is_stopped_and_checked_again() {
     // The chief is in `auto`; the executor ran in `read-only` and moves to `agent`.
     let rig = executor_moving_itself("codex", "auto", "read-only", "agent");
-    let state = &rig.core.agents.running["executor"].state;
+    let state = &rig.core.agents.agent("executor").state;
     assert!(state.cancel_at_ms.is_some(), "the turn is cancelled");
     assert!(state.queue_paused, "the queue is held");
     let ceiling = state.mode_ceiling.as_ref().unwrap();
@@ -683,7 +675,7 @@ fn an_agent_that_moves_itself_above_the_ceiling_is_stopped_and_checked_again() {
 #[test]
 fn a_move_within_the_ceiling_leaves_the_turn_alone() {
     let rig = executor_moving_itself("claude", "auto", "default", "plan");
-    let state = &rig.core.agents.running["executor"].state;
+    let state = &rig.core.agents.agent("executor").state;
     assert!(state.cancel_at_ms.is_none());
     assert!(!state.queue_paused);
     assert!(!state.mode_ceiling.as_ref().unwrap().pending());
@@ -692,7 +684,7 @@ fn a_move_within_the_ceiling_leaves_the_turn_alone() {
 #[test]
 fn a_full_access_move_of_the_agent_is_above_any_ceiling() {
     let rig = executor_moving_itself("claude", "auto", "default", "bypassPermissions");
-    let state = &rig.core.agents.running["executor"].state;
+    let state = &rig.core.agents.agent("executor").state;
     assert!(state.cancel_at_ms.is_some());
     assert!(state.mode_ceiling.as_ref().unwrap().pending());
 }
@@ -773,7 +765,6 @@ fn a_person_cancelling_a_turn_keeps_the_usual_transcript_line() {
     let mut rig = executor_moving_itself("claude", "auto", "default", "plan");
     rig.core
         .agents
-        .running
         .get_mut("executor")
         .unwrap()
         .state

@@ -4,9 +4,8 @@
 //! method here, and what also needs the store, the panes, the clock or the background jobs stays
 //! an `impl Core` in the module of its job.
 //!
-//! The fields other than `running` are private: they are read and changed through the methods
-//! below. `running` is still open, and the next slice closes it behind the same kind of methods,
-//! so that no code outside this module reaches into the map.
+//! Every field is private: it is read and changed through the methods below, so that no code
+//! outside this module reaches into a map.
 
 use super::{Running, state::State, switching::HarnessSwitchRuntime};
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
     model::Waiter,
     tick_due::Next,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, btree_map};
 
 /// The most clients that wait on one native operation.
 const NATIVE_WAITER_LIMIT: usize = 128;
@@ -22,7 +21,7 @@ const NATIVE_WAITER_LIMIT: usize = 128;
 #[derive(Default)]
 pub struct Agents {
     /// The agent of each pane that has one, by pane id.
-    pub running: BTreeMap<String, Running>,
+    running: BTreeMap<String, Running>,
     /// The harness switches that have started and not ended, by pane id (ADR 0126).
     switches: BTreeMap<String, HarnessSwitchRuntime>,
     /// Changes with each mutation of the harness catalogue, so a snapshot of it that a worker
@@ -37,6 +36,40 @@ impl Agents {
     /// Starts to keep the agent of `pane`, whose state is `state`.
     pub(crate) fn track(&mut self, pane: String, state: State) {
         self.running.insert(pane, Running::new(state));
+    }
+
+    /// Whether `pane` has an agent.
+    pub(crate) fn has(&self, pane: &str) -> bool {
+        self.running.contains_key(pane)
+    }
+
+    /// The agent of `pane`, when it has one.
+    pub(crate) fn get(&self, pane: &str) -> Option<&Running> {
+        self.running.get(pane)
+    }
+
+    pub(crate) fn get_mut(&mut self, pane: &str) -> Option<&mut Running> {
+        self.running.get_mut(pane)
+    }
+
+    /// The agent of `pane`, for a caller that has just seen that the pane has one.
+    pub(crate) fn agent(&self, pane: &str) -> &Running {
+        &self.running[pane]
+    }
+
+    /// Every agent with its pane id, in pane id order.
+    pub(crate) fn iter(&self) -> btree_map::Iter<'_, String, Running> {
+        self.running.iter()
+    }
+
+    /// Every agent, in pane id order.
+    pub(crate) fn values(&self) -> btree_map::Values<'_, String, Running> {
+        self.running.values()
+    }
+
+    /// The panes that have an agent, in id order.
+    pub(crate) fn panes(&self) -> Vec<String> {
+        self.running.keys().cloned().collect()
     }
 
     /// What the catalogue epoch is now.

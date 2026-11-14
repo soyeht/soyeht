@@ -349,7 +349,7 @@ impl Core {
     /// Stops a pane that has no process and will not get one, with `reason` as the phrase the
     /// clients show beside its dead state.
     pub(crate) fn stop_pane(&mut self, id: &str, reason: &str) -> Result<()> {
-        if self.agents.running.contains_key(id) {
+        if self.agents.has(id) {
             return self.fail_agent(id, reason);
         }
         let mut stopped = self.panes[id].stored.clone();
