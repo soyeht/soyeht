@@ -21,7 +21,7 @@ Soyeht has most of the parts, none of them this:
   owner, attempts and a state machine, and only the chief or a person dispatches. Nothing tells the
   dispatcher that the executor ended, the dispatcher cannot give a running executor a follow-up or stop it,
   and the dispatcher's own mode does not bound the executor's.
-- **`agent.message`** queues an attributed prompt to another pane with the reply route (`agents/peer.rs`).
+- **`agent.message`** queues an attributed prompt to another pane with a short header of the two names and a message id (`agents/peer.rs`, ADR 0165).
   It has no lineage, no limit on how many panes an agent can cause to exist, no ceiling on permission and no report.
 - **Subagents of a harness** are transcript rows inside one pane (contract 04 section 5, `agents/subagents.rs`). They belong to one harness,
   end with the turn, share the worktree, cannot be stepped into and cannot be another harness.

@@ -21,6 +21,7 @@ export const limits = {
   "agentMessagesPerWindow": 6,
   "agentMessageWindowSec": 60,
   "agentMessageBytes": 60000,
+  "agentNameChars": 40,
   "transcriptPageMessages": 200,
   "transcriptPageBytes": 524288,
   "transcriptMessageBytes": 262144,

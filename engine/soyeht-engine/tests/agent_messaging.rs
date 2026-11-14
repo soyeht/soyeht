@@ -127,12 +127,27 @@ fn a_codex_pane_asks_a_claude_pane_and_receives_its_answer_and_back() {
         .unwrap(),
     )
     .unwrap();
-    let route = format!("targetPaneId={codex}.\n\nask: capital of France?");
+    let history: Vec<&str> = native["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|turn| turn[0].as_str().unwrap())
+        .collect();
+    let received = history
+        .iter()
+        .find(|turn| turn.ends_with("\nask: capital of France?"))
+        .unwrap();
+    let (header, _) = received.split_once('\n').unwrap();
     assert!(
-        native["history"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|turn| turn[0].as_str().unwrap().ends_with(&route))
+        header.starts_with(&format!("[{CODEX} → {CLAUDE} · m:")),
+        "{header}"
+    );
+    assert!(
+        header.ends_with(']') && header.chars().count() < 40,
+        "{header}"
+    );
+    assert!(
+        !received.contains(&codex),
+        "the harness receives names, not pane ids"
     );
 }

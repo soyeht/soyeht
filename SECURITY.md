@@ -56,6 +56,21 @@ parts are security-sensitive, and a problem in any of them is in scope:
 - **The process supervisor** (`soyeht-ptyd`), push notifications, and the skills and MCP
   server that agents are given.
 
+## Known limitations
+
+These are stated, not hidden, and are revisited after launch:
+
+- **A program of the same user can act as the person, including on an agent pane.** A program
+  that connects to the engine's local endpoint, one started in a terminal pane included, is the
+  person to the engine: `soyeht pane prompt`, or a raw `pane.prompt` or `pane.input`, reaches
+  any pane, an agent pane in full access included, with no attribution. The refusal that stops
+  one agent pane from messaging another that is in full access does not see it. This is the
+  boundary the engine already declares: isolation is per OS user, not per process
+  (`docs/contracts/08-engine-and-clients.md`, section 2).
+- **A message between agents is text another agent read somewhere.** The engine attributes it,
+  names its sender in a one-line header the sender cannot forge, removes the characters that
+  hide or reorder text, and limits the rate, but it does not judge what the message asks for.
+
 ## What is out of scope
 
 - A process running as the same OS user that already controls everything that user owns.

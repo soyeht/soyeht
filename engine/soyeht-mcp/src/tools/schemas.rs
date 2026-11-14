@@ -5,13 +5,15 @@ use serde_json::{Map, Value, json};
 pub(super) fn agent_message_schema() -> Value {
     object(
         fields(&[
+            ("targetName", id()),
             ("targetPaneId", id()),
+            ("inReplyTo", id()),
             (
                 "text",
                 bounded_string(soyeht_protocol::limits::AGENT_MESSAGE_BYTES),
             ),
         ]),
-        &["targetPaneId", "text"],
+        &["text"],
     )
 }
 

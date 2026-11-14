@@ -100,6 +100,16 @@ fn peer_tools_use_binding_identity_and_validate_target() {
             )
             .is_err()
     );
+    service
+        .call(
+            "message_agent",
+            json!({"targetName":"Codex","text":"hello","inReplyTo":"m:F8C1"}),
+        )
+        .unwrap();
+    let (_, params) = service.engine.calls.pop_front().unwrap();
+    assert_eq!(params["targetName"], "Codex");
+    assert_eq!(params["inReplyTo"], "m:F8C1");
+    assert!(params.get("targetPaneId").is_none());
 }
 
 #[test]

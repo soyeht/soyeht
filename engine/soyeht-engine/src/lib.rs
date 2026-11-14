@@ -66,6 +66,7 @@ pub mod test_hooks;
 mod test_panes;
 #[cfg(test)]
 mod test_paths;
+mod text_reduction;
 mod tick;
 mod tick_due;
 pub mod transport;

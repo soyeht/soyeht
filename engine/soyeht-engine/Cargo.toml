@@ -66,6 +66,8 @@ rustls.workspace = true
 tokio-rustls.workspace = true
 webpki-roots.workspace = true
 zeroize.workspace = true
+icu_normalizer.workspace = true
+icu_properties.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true

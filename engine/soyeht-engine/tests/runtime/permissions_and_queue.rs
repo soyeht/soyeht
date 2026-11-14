@@ -178,19 +178,7 @@ fn agent_panes_keep_creation_order_while_one_asks_and_the_other_is_messaged() {
         json!({"paneId":first,"text":"permission","idempotencyKey":"order-asks"}),
     );
     client.wait_state(&first, "waiting_for_you");
-    let store = Store::open(&rig.path).unwrap();
-    let runtime: Value = soyeht_store::agents::runtime(&store, &first)
-        .unwrap()
-        .unwrap();
-    let (socket, _) = binding_hello(
-        &rig.path.join("engine.sock"),
-        runtime["binding"].as_str().unwrap(),
-    );
-    let mut agent = Client {
-        socket,
-        next: 1,
-        messages: vec![],
-    };
+    let mut agent = agent_client(&rig, &first);
     agent.call(
         "agent.message",
         json!({"targetPaneId":second,"text":"hello","idempotencyKey":"order-message"}),

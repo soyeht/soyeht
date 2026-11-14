@@ -41,12 +41,13 @@ fn next_prompt<S: StorePort, C: Clock + ?Sized>(
     Ok((open, next))
 }
 
-/// The `session/prompt` parameters for a queued prompt. Only files this agent
-/// could take inline are read; a file that is gone or too large is linked.
+/// The `session/prompt` parameters for a queued prompt of the pane named `pane_name`. Only files
+/// this agent could take inline are read; a file that is gone or too large is linked.
 fn prompt_payload(
     state: &super::state::State,
     session: &str,
     prompt: &PromptItem,
+    pane_name: &str,
 ) -> Result<Value> {
     let capabilities = state
         .initialized
@@ -74,7 +75,7 @@ fn prompt_payload(
         .collect();
     prompt::prompt_with_files(
         session,
-        &super::peer::native_text(prompt),
+        &super::peer::native_text(prompt, pane_name),
         &files,
         capabilities,
     )
@@ -706,7 +707,7 @@ impl Core {
             .events
             .push(super::methods::queued(pane, &state, self.now_ms())?);
         sign_in::record_started(&mut state, saved.pane.generation, &prompt, &mut changes)?;
-        let payload = prompt_payload(&state, &session, &prompt)?;
+        let payload = prompt_payload(&state, &session, &prompt, &saved.pane.name)?;
         responses::call(
             &mut state,
             &mut changes,

@@ -840,7 +840,9 @@ export interface AgentListResult {
 }
 
 export interface AgentMessageParams {
-  "targetPaneId": Id;
+  "targetPaneId"?: Id;
+  "targetName"?: string;
+  "inReplyTo"?: string;
   "text": string;
   "idempotencyKey": Id;
 }
@@ -848,6 +850,7 @@ export interface AgentMessageParams {
 export interface AgentMessageResult {
   "promptId": Id;
   "queued": boolean;
+  "messageId"?: string;
 }
 
 export interface PermissionOption {
