@@ -409,3 +409,19 @@ fn agent_list_leaves_out_the_terminals_of_other_workspaces() {
     assert_eq!(rig.programs.asked(), 0);
     rig.finish();
 }
+
+#[test]
+fn a_list_scan_remembers_the_workspace_it_was_limited_to() {
+    let mut rig = Rig::new();
+    let sender = rig.agent_binding("chief");
+    let (_pane, instance) = rig.terminal("shell");
+    rig.programs
+        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.agent_list(&sender);
+    let scanned = rig.core.tick.foreground.scanned.clone();
+    assert_eq!(
+        scanned.map(|(scope, _)| scope),
+        Some(Some(WORKSPACE.into()))
+    );
+    rig.finish();
+}

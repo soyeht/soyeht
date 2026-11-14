@@ -49,8 +49,8 @@ const SCAN_JOB: &str = "terminal.foreground";
 pub(crate) struct Service {
     /// When the next periodic scan is due, in the engine's clock.
     next_ms: i64,
-    /// When the last scan was applied.
-    scanned_ms: Option<i64>,
+    /// When the last scan was applied, and the workspace it was limited to (`None`: every one).
+    scanned: Option<(Option<String>, i64)>,
     /// Whether the last look found a terminal to scan and an app that watches.
     watching: bool,
     versions: Arc<Mutex<Versions>>,
@@ -187,7 +187,7 @@ impl Core {
         self.spawn_background(
             SCAN_JOB.into(),
             move || scan.run(),
-            move |core, scanned| core.finish_foreground(&used, scanned),
+            move |core, scanned| core.finish_foreground(&used, None, scanned),
         )
     }
 
@@ -200,11 +200,16 @@ impl Core {
 
     /// Puts a scan's findings into the panes, for each that is still the process it read. A scan
     /// that failed on a link that was replaced meanwhile says nothing about the new one.
-    fn finish_foreground(&mut self, used: &Supervisor, scanned: Result<Vec<Found>>) -> Result<()> {
+    fn finish_foreground(
+        &mut self,
+        used: &Supervisor,
+        workspace: Option<String>,
+        scanned: Result<Vec<Found>>,
+    ) -> Result<()> {
         let Some(found) = self.settle_if_current(used, scanned)? else {
             return Ok(());
         };
-        self.tick.foreground.scanned_ms = Some(self.now_ms());
+        self.tick.foreground.scanned = Some((workspace, self.now_ms()));
         for Found {
             pane_id,
             instance_id,
@@ -259,8 +264,12 @@ impl Core {
         let fresh = self
             .tick
             .foreground
-            .scanned_ms
-            .is_some_and(|at| self.now_ms().saturating_sub(at) < FRESH_MS);
+            .scanned
+            .as_ref()
+            .is_some_and(|(scope, at)| {
+                scope.as_deref().is_none_or(|scope| scope == workspace_id)
+                    && self.now_ms().saturating_sub(*at) < FRESH_MS
+            });
         let targets = if fresh {
             Vec::new()
         } else {
@@ -273,13 +282,14 @@ impl Core {
         }
         let scan = self.start_scan(targets)?;
         let used = scan.supervisor.clone();
+        let scanned_workspace = workspace_id.clone();
         Ok(Outcome::Offload(
             Offload::new(
                 "Terminal scan timed out",
                 SCAN_TIMEOUT,
                 move || scan.run(),
                 move |core, scanned| {
-                    core.finish_foreground(&used, scanned)?;
+                    core.finish_foreground(&used, Some(scanned_workspace), scanned)?;
                     core.agent_list_reply(&sender_id, &workspace_id)
                         .map(Outcome::Reply)
                 },
