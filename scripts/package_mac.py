@@ -595,7 +595,9 @@ def package(options, environment):
     problems += verify_image(image, signing, made)
     checksum = write_checksum(image)
     report(image, checksum, app, signing, problems, symbols)
-    check_sizes([image])  # the signed and stapled image is the one that is published
+    # The signed and stapled image is the one that is published. The ceilings are of signed images, so
+    # an ad-hoc image far under one says nothing (it is over it only when it truly is).
+    check_sizes([image], warn=not signing.ad_hoc)
     return 1 if problems else 0
 
 

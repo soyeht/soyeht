@@ -243,7 +243,10 @@ def build_linux(runner, host, version, sha, destination, environment, architectu
     receive_pack = LINUX_BUILDERS[architecture][1]
     if environment.get(receive_pack):
         push.append(f"--receive-pack={environment[receive_pack]}")
-    runner.must([*push, f"{host}:{MIRROR}", f"{sha}:refs/heads/release-{version}"])
+    # One ref per commit, so a second build of the version at another commit is never a non-fast-forward.
+    # `--no-verify`: the commit is an origin/main commit (`source_problems` refuses any other) that already
+    # passed the merge gate, and the pre-push hook would run the whole quality scan again for each host.
+    runner.must([*push, "--no-verify", f"{host}:{MIRROR}", f"{sha}:refs/heads/release-{version}-{sha[:12]}"])
     runner.must(["ssh", "-o", "BatchMode=yes", host, "bash", "-l", "-s"], stdin=linux_script(version, sha, architecture))
     runner.must(["scp", "-o", "BatchMode=yes", f"{host}:{TREES}/{sha}/dist/soyeht-{version}-linux-{architecture}.*", str(destination) + "/"])
 

@@ -1,6 +1,7 @@
 import contextlib
 import io
 import plistlib
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -78,7 +79,7 @@ class BuildTests(unittest.TestCase):
     def test_the_archive_command_builds_a_release_for_a_device(self):
         calls = []
         with (
-            patch.object(package_ios, "stream", side_effect=lambda command, **_: calls.append([str(part) for part in command])),
+            patch.object(package_ios, "logged", side_effect=lambda command, log, **_: calls.append([str(part) for part in command])),
             patch.object(package_ios.shutil, "rmtree"),
             patch.object(Path, "mkdir"),
             patch.object(package_ios, "archived_app", return_value=Path(__file__).parent),
@@ -90,6 +91,110 @@ class BuildTests(unittest.TestCase):
         self.assertIn("generic/platform=iOS", command)
         self.assertEqual(command[command.index("-configuration") + 1], "Release")
         self.assertEqual(command[command.index("-scheme") + 1], "SoyehtPhone")
+
+
+class PreflightTests(unittest.TestCase):
+    """The signing is tried on a scratch file before the archive, so a locked keychain fails at once."""
+
+    def preflight(self, *, returncode=0, stderr="", timeout=False):
+        calls = []
+
+        def runner(command, **options):
+            calls.append((command, options))
+            if timeout:
+                raise package_ios.subprocess.TimeoutExpired(command, options["timeout"])
+            return result(stderr=stderr, returncode=returncode)
+
+        package_ios.signing_preflight(package_ios.resolve_signing(FULL), runner)
+        return calls
+
+    def test_a_usable_identity_signs_a_scratch_file_and_nothing_more(self):
+        (command, options), = self.preflight()
+        self.assertEqual(command[:4], ["codesign", "--force", "--sign", FULL[package_ios.IDENTITY_VARIABLE]])
+        self.assertEqual(len(command), 5)
+        self.assertFalse(Path(command[4]).exists(), "the scratch file is removed")
+        self.assertNotIn("--entitlements", command)
+        self.assertNotIn("input", options)  # nothing is passed to it: no password, no prompt answer
+
+    def test_a_locked_keychain_stops_with_the_cause_and_the_way_out(self):
+        for stderr in ("probe: errSecInternalComponent", "User interaction is not allowed."):
+            with self.assertRaisesRegex(PackagingError, "keychain is locked.*unlock the login keychain.*cannot prompt"):
+                self.preflight(returncode=1, stderr=stderr)
+
+    def test_a_keychain_that_asks_and_never_gets_an_answer_is_the_same_stop(self):
+        with self.assertRaisesRegex(PackagingError, "waited.*unlock the login keychain"):
+            self.preflight(timeout=True)
+
+    def test_an_identity_the_account_does_not_have_is_named_by_its_variable_not_its_value(self):
+        with self.assertRaises(PackagingError) as raised:
+            self.preflight(returncode=1, stderr=f"{FULL[package_ios.IDENTITY_VARIABLE]}: no identity found")
+        self.assertIn(package_ios.IDENTITY_VARIABLE, str(raised.exception))
+        self.assertNotIn("Example", str(raised.exception))
+
+    def test_another_failure_shows_its_output_with_the_identity_masked(self):
+        with self.assertRaises(PackagingError) as raised:
+            self.preflight(returncode=2, stderr=f"odd failure of {FULL[package_ios.IDENTITY_VARIABLE]}")
+        self.assertIn("status 2", str(raised.exception))
+        self.assertIn("odd failure", str(raised.exception))
+        self.assertNotIn("Example", str(raised.exception))
+
+    def test_the_run_checks_the_keychain_before_it_archives(self):
+        order = []
+        with (
+            patch.object(package_ios, "signing_preflight", side_effect=lambda *_: order.append("preflight")),
+            patch.object(package_ios, "archive_app", side_effect=lambda *_: order.append("archive") or 1 / 0),
+            patch.object(package_ios.release, "problems", return_value=[]),
+            self.assertRaises(ZeroDivisionError),
+        ):
+            package_ios.package(package_ios.parser().parse_args([]), FULL)
+        self.assertEqual(order, ["preflight", "archive"])
+        with (
+            patch.object(package_ios, "signing_preflight", side_effect=PackagingError("locked")),
+            patch.object(package_ios, "archive_app") as archive,
+            patch.object(package_ios.release, "problems", return_value=[]),
+            self.assertRaisesRegex(PackagingError, "locked"),
+        ):
+            package_ios.package(package_ios.parser().parse_args([]), FULL)
+        archive.assert_not_called()
+
+
+class LoggedBuildTests(unittest.TestCase):
+    """A build's output goes to a file; the terminal gets the command and, on failure, the tail."""
+
+    SCRIPT = "import sys\nfor n in range(300): print('line', n, 'secret-name')\nsys.exit(int(sys.argv[1]))"
+
+    def run_logged(self, status, mask=("secret-name",)):
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "logs/build.log"
+            out = io.StringIO()
+            failure = None
+            with contextlib.redirect_stdout(out):
+                try:
+                    package_common.logged([sys.executable, "-c", self.SCRIPT, str(status)], log, mask=mask)
+                except PackagingError as raised:
+                    failure = str(raised)
+            return out.getvalue(), failure, log.read_text()
+
+    def test_a_build_that_passes_prints_its_command_and_log_path_not_its_output(self):
+        printed, failure, written = self.run_logged(0)
+        self.assertIsNone(failure)
+        self.assertNotIn("line 1 ", printed)
+        self.assertIn("log:", printed)
+        self.assertEqual(len(written.splitlines()), 300)
+
+    def test_a_build_that_fails_shows_only_the_tail_and_where_the_rest_is(self):
+        _, failure, written = self.run_logged(3)
+        self.assertIn("status 3", failure)
+        self.assertIn("line 299", failure)
+        self.assertNotIn("line 100 ", failure)
+        self.assertEqual(len(failure.splitlines()), package_common.LOG_TAIL_LINES + 1)
+        self.assertIn("build.log", failure)
+
+    def test_what_is_masked_reaches_neither_the_file_nor_the_terminal(self):
+        printed, failure, written = self.run_logged(3)
+        for text in (printed, failure, written):
+            self.assertNotIn("secret-name", text)
+        self.assertIn(package_common.REDACTED, written)
 
 
 class EntitlementTests(unittest.TestCase):
@@ -173,7 +278,7 @@ class ExportTests(unittest.TestCase):
             calls = []
             written = {}
 
-            def export(command, **_):
+            def export(command, log, **_):
                 calls.append([str(part) for part in command])
                 options = Path(command[command.index("-exportOptionsPlist") + 1])
                 written.update(plistlib.loads(options.read_bytes()), options_file=options)
@@ -181,7 +286,7 @@ class ExportTests(unittest.TestCase):
                 folder.mkdir(parents=True, exist_ok=True)
                 (folder / "Soyeht Next.ipa").write_bytes(b"zip")
 
-            with patch.object(package_ios, "stream", side_effect=export):
+            with patch.object(package_ios, "logged", side_effect=export):
                 ipa = package_ios.export_archive(signing, scratch)
             self.assertEqual(ipa.name, "Soyeht Next.ipa")
             self.assertEqual(calls[0][:2], ["xcodebuild", "-exportArchive"])
@@ -194,7 +299,7 @@ class ExportTests(unittest.TestCase):
                 (scratch / "export/Another.ipa").write_bytes(b"zip")
                 (scratch / "export/More.ipa").write_bytes(b"zip")
 
-            with patch.object(package_ios, "stream", side_effect=two):
+            with patch.object(package_ios, "logged", side_effect=two):
                 with self.assertRaisesRegex(PackagingError, "not one"):
                     package_ios.export_archive(signing, scratch)
 
@@ -450,6 +555,7 @@ class ValidateTests(unittest.TestCase):
             ipa.write_bytes(b"zip")
             with (
                 patch.object(package_ios, "archive_app", return_value=Path(temporary)),
+                patch.object(package_ios, "signing_preflight"),
                 patch.object(package_ios, "sign_app"),
                 patch.object(package_ios, "export_archive", return_value=ipa),
                 patch.object(package_ios, "save_symbols", return_value=None),
