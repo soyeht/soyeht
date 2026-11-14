@@ -172,7 +172,10 @@ fn the_engine_marks_itself_non_dumpable_after_it_starts() {
     use std::os::unix::fs::MetadataExt as _;
     let rig = Rig::new();
     let pid = rig.engine.as_ref().unwrap().id();
-    // The files of a process that cannot be dumped belong to the superuser.
+    // The files of a process that cannot be dumped belong to the superuser, not to the user who
+    // runs it. Inside a user namespace with no mapping for the superuser (a build sandbox), that
+    // owner shows as the overflow id, so the test asks only that it is not this user.
     let owner = fs::metadata(format!("/proc/{pid}/status")).unwrap().uid();
-    assert_eq!(owner, 0, "the engine is dumpable");
+    let mine = fs::metadata("/proc/self/status").unwrap().uid();
+    assert_ne!(owner, mine, "the engine is dumpable");
 }
