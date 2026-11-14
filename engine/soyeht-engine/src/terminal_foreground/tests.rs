@@ -1,0 +1,411 @@
+//! The scans, with a supervisor that says what each terminal runs.
+
+use super::*;
+use crate::{
+    dispatch::Outcome,
+    outbox,
+    panes::persist_new_pane,
+    supervisor_link::tests::Manual,
+    test_panes::{Answering, core_with_workspace, insert_agent_pane, insert_terminal_pane},
+};
+use serde_json::Value;
+use soyeht_protocol::{Actor, Role, method};
+use soyeht_ptyd::wire::Foreground;
+use std::{
+    path::Path,
+    sync::atomic::{AtomicI64, AtomicUsize, Ordering},
+};
+
+const WORKSPACE: &str = "workspace-1";
+
+fn program(pid: u32, exe: &str, arguments: &[&str]) -> Program {
+    Program {
+        pid,
+        parent_pid: None,
+        executable: Some(exe.into()),
+        arguments: arguments
+            .iter()
+            .map(|argument| (*argument).into())
+            .collect(),
+    }
+}
+
+/// The programs of each terminal instance, in the order they were set.
+type ByInstance = Vec<(String, Vec<Program>)>;
+
+/// What the supervisor says each terminal runs; `asked` counts its `Foreground` requests.
+#[derive(Clone, Default)]
+struct Programs {
+    by_instance: Arc<Mutex<ByInstance>>,
+    asked: Arc<AtomicUsize>,
+}
+
+impl Programs {
+    fn set(&self, instance: &str, programs: Vec<Program>) {
+        let mut by_instance = self.by_instance.lock().unwrap();
+        by_instance.retain(|(id, _)| id != instance);
+        by_instance.push((instance.into(), programs));
+    }
+
+    fn asked(&self) -> usize {
+        self.asked.load(Ordering::SeqCst)
+    }
+
+    fn supervisor(&self) -> Box<dyn crate::ports::SupervisorPort> {
+        let programs = self.clone();
+        Box::new(Answering(move |request| match request {
+            Request::Foreground { instance_ids } => {
+                programs.asked.fetch_add(1, Ordering::SeqCst);
+                let known = programs.by_instance.lock().unwrap();
+                Ok(Response::Foregrounds(
+                    instance_ids
+                        .into_iter()
+                        .filter_map(|instance_id| {
+                            let programs = known
+                                .iter()
+                                .find(|(id, _)| *id == instance_id)
+                                .map(|(_, programs)| programs.clone())?;
+                            Some(Foreground {
+                                instance_id,
+                                programs,
+                            })
+                        })
+                        .collect(),
+                ))
+            }
+            _ => Ok(Response::Ok),
+        }))
+    }
+}
+
+struct Rig {
+    core: Core,
+    directory: std::path::PathBuf,
+    programs: Programs,
+    clock: Arc<Manual>,
+    _receivers: Vec<outbox::Receiver>,
+}
+
+impl Rig {
+    fn new() -> Self {
+        let (mut core, directory) = core_with_workspace(WORKSPACE);
+        let programs = Programs::default();
+        let clock = Arc::new(Manual(AtomicI64::new(1_000_000)));
+        core.clock = clock.clone();
+        core.link_supervisor(programs.supervisor());
+        Self {
+            core,
+            directory,
+            programs,
+            clock,
+            _receivers: Vec::new(),
+        }
+    }
+
+    fn advance(&self, milliseconds: i64) {
+        self.clock.0.fetch_add(milliseconds, Ordering::SeqCst);
+    }
+
+    fn terminal(&mut self, label: &str) -> (String, String) {
+        let pane = insert_terminal_pane(&mut self.core, &self.directory, label, false);
+        let Some(running) = self.core.panes.get_mut(&pane) else {
+            panic!("the pane was just inserted");
+        };
+        running.stored.pane.workspace_id = WORKSPACE.into();
+        let stored = running.stored.clone();
+        StorePort::mutate(
+            &mut self.core.store,
+            "test",
+            &pane,
+            "seed-terminal",
+            |change| {
+                persist_new_pane(change, &stored, None)?;
+                Ok((json!({}), Vec::new()))
+            },
+        )
+        .unwrap();
+        (pane, format!("{label}-instance"))
+    }
+
+    /// An app that has subscribed to events.
+    fn watch(&mut self) {
+        let (sender, receiver) = outbox::channel();
+        self._receivers.push(receiver);
+        let connection = self.core.connect(true, false, sender).unwrap();
+        self.core.clients.get_mut(&connection).unwrap().events = true;
+    }
+
+    /// An agent binding of `pane`, as `soyeht-mcp` is.
+    fn agent_binding(&mut self, pane: &str) -> String {
+        insert_agent_pane(&mut self.core, &self.directory, pane, WORKSPACE);
+        let (sender, receiver) = outbox::channel();
+        self._receivers.push(receiver);
+        let connection = self.core.connect(true, false, sender).unwrap();
+        self.core.clients.get_mut(&connection).unwrap().actor = Some(Actor {
+            role: Role::Agent,
+            client: "test".into(),
+            device_id: None,
+            pane_id: Some(pane.into()),
+        });
+        connection
+    }
+
+    fn harness_of(&self, pane: &str) -> Option<TerminalHarness> {
+        self.core.panes[pane].stored.pane.terminal_harness.clone()
+    }
+
+    fn agent_list(&mut self, connection: &str) -> Value {
+        let outcome = self
+            .core
+            .agent_peer(connection, method::AGENT_LIST, &json!({}))
+            .unwrap();
+        let outcome = match outcome {
+            Outcome::Offload(offload) => offload.run_inline(&mut self.core).unwrap(),
+            outcome => outcome,
+        };
+        let Outcome::Reply(value) = outcome else {
+            panic!("expected a reply");
+        };
+        value
+    }
+
+    fn finish(self) {
+        crate::test_paths::remove_after(self.core, self.directory);
+    }
+}
+
+/// A `claude` that answers `--version`, at the path the supervisor will say it runs.
+#[cfg(unix)]
+fn fake_claude(directory: &Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let versions = directory.join("claude").join("versions");
+    std::fs::create_dir_all(&versions).unwrap();
+    let file = versions.join("2.1.325");
+    std::fs::write(&file, "#!/bin/sh\necho \"9.9.9 (Claude Code)\"\n").unwrap();
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    file.to_string_lossy().into_owned()
+}
+
+#[cfg(unix)]
+#[test]
+fn a_terminal_that_runs_a_known_harness_is_recorded_with_its_version_and_cleared_when_it_leaves() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    let claude = fake_claude(&rig.directory);
+    rig.programs.set(
+        &instance,
+        vec![program(40, &claude, &["claude", "--resume"])],
+    );
+
+    rig.core.advance_foreground().unwrap();
+
+    assert_eq!(
+        rig.harness_of(&pane),
+        Some(TerminalHarness {
+            id: "registry.claude-acp".into(),
+            name: "Claude Code".into(),
+            version: Some("9.9.9".into()),
+        })
+    );
+    // It is durable: the store holds the pane with its harness.
+    let stored = rig.core.store.panes().unwrap();
+    let saved = stored
+        .iter()
+        .find(|record| record.pane.pane_id == pane)
+        .unwrap();
+    assert_eq!(
+        saved
+            .pane
+            .terminal_harness
+            .as_ref()
+            .map(|harness| harness.name.as_str()),
+        Some("Claude Code")
+    );
+
+    // The person leaves the harness: the shell is in the foreground again.
+    rig.programs
+        .set(&instance, vec![program(41, "/bin/zsh", &["-zsh"])]);
+    rig.advance(INTERVAL_MS);
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.harness_of(&pane), None);
+    rig.finish();
+}
+
+#[test]
+fn a_plain_shell_has_no_harness() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    rig.programs
+        .set(&instance, vec![program(41, "/bin/zsh", &["-zsh"])]);
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 1);
+    assert_eq!(rig.harness_of(&pane), None);
+    rig.finish();
+}
+
+#[test]
+fn the_harness_without_a_readable_version_is_still_recorded() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    // The file is not on this disk, so `--version` is never run.
+    rig.programs.set(
+        &instance,
+        vec![program(
+            12,
+            "/nowhere/opencode-v2/2.2.5/bin/opencode",
+            &["opencode", "--standalone"],
+        )],
+    );
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(
+        rig.harness_of(&pane),
+        Some(TerminalHarness {
+            id: "registry.opencode".into(),
+            name: "OpenCode".into(),
+            version: None,
+        })
+    );
+    rig.finish();
+}
+
+#[test]
+fn nothing_is_scanned_while_no_app_watches_or_no_terminal_is_open() {
+    let mut rig = Rig::new();
+    let (_pane, instance) = rig.terminal("shell");
+    rig.programs
+        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 0, "no app watches");
+    rig.finish();
+
+    let mut rig = Rig::new();
+    rig.watch();
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 0, "no terminal is open");
+    rig.finish();
+}
+
+#[test]
+fn a_scan_is_not_repeated_before_its_period_is_up() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (_pane, instance) = rig.terminal("shell");
+    rig.programs
+        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.advance_foreground().unwrap();
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 1);
+    rig.advance(INTERVAL_MS);
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 2);
+    rig.finish();
+}
+
+#[test]
+fn a_pane_the_supervisor_cannot_read_keeps_its_harness() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    rig.programs.set(
+        &instance,
+        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
+    );
+    rig.core.advance_foreground().unwrap();
+    assert!(rig.harness_of(&pane).is_some());
+    // No answer for the instance: the supervisor could not read it.
+    rig.programs.by_instance.lock().unwrap().clear();
+    rig.advance(INTERVAL_MS);
+    rig.core.advance_foreground().unwrap();
+    assert!(rig.harness_of(&pane).is_some());
+    rig.finish();
+}
+
+#[test]
+fn a_pane_whose_process_ended_loses_the_harness_it_had() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    rig.programs.set(
+        &instance,
+        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
+    );
+    rig.core.advance_foreground().unwrap();
+    assert!(rig.harness_of(&pane).is_some());
+    if let Some(running) = rig.core.panes.get_mut(&pane) {
+        running.stored.pane.state = PaneState::Dead;
+    }
+    rig.advance(INTERVAL_MS);
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.harness_of(&pane), None);
+    rig.finish();
+}
+
+#[test]
+fn agent_list_names_the_terminals_that_run_a_harness_and_leaves_the_others_out() {
+    let mut rig = Rig::new();
+    let sender = rig.agent_binding("chief");
+    insert_agent_pane(&mut rig.core, &rig.directory, "peer", WORKSPACE);
+    let (running, running_instance) = rig.terminal("busy");
+    let (_plain, plain_instance) = rig.terminal("plain");
+    rig.programs.set(
+        &running_instance,
+        vec![program(
+            13,
+            "/h/.local/share/cursor-agent/versions/2026.09.02-c22c1a3/node",
+            &[
+                "/h/.local/bin/cursor-agent",
+                "--use-system-ca",
+                "/h/.local/share/cursor-agent/versions/2026.09.02-c22c1a3/index.js",
+            ],
+        )],
+    );
+    rig.programs
+        .set(&plain_instance, vec![program(1, "/bin/zsh", &["zsh"])]);
+
+    let listed = rig.agent_list(&sender);
+
+    let items = listed["items"].as_array().unwrap();
+    let described: Vec<(&str, &str)> = items
+        .iter()
+        .map(|item| {
+            (
+                item["paneId"].as_str().unwrap(),
+                item["kind"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        described,
+        [(running.as_str(), "terminal"), ("peer", "agent")]
+    );
+    let terminal = items.iter().find(|item| item["paneId"] == running).unwrap();
+    assert_eq!(terminal["harness"], "Cursor Agent");
+    assert_eq!(terminal["name"], "busy");
+    assert_eq!(rig.programs.asked(), 1);
+
+    // A second list in the same second answers from what was read.
+    rig.agent_list(&sender);
+    assert_eq!(rig.programs.asked(), 1);
+    rig.finish();
+}
+
+#[test]
+fn agent_list_leaves_out_the_terminals_of_other_workspaces() {
+    let mut rig = Rig::new();
+    let sender = rig.agent_binding("chief");
+    let (other, instance) = rig.terminal("elsewhere");
+    if let Some(running) = rig.core.panes.get_mut(&other) {
+        running.stored.pane.workspace_id = "another-workspace".into();
+    }
+    rig.programs.set(
+        &instance,
+        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
+    );
+    let listed = rig.agent_list(&sender);
+    assert!(listed["items"].as_array().unwrap().is_empty());
+    assert_eq!(rig.programs.asked(), 0);
+    rig.finish();
+}

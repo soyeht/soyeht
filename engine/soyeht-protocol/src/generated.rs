@@ -370,6 +370,8 @@ pub struct Pane {
     pub writing_kind: Option<WritingKind>,
     #[serde(rename = "writingSection", skip_serializing_if = "Option::is_none")]
     pub writing_section: Option<WritingSection>,
+    #[serde(rename = "terminalHarness", skip_serializing_if = "Option::is_none")]
+    pub terminal_harness: Option<TerminalHarness>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Device {
@@ -1612,6 +1614,28 @@ pub struct PromptItem {
     pub agent_message: Option<AgentMessageSource>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentMessageKind {
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "web")]
+    Web,
+    /// A value this build does not know (ADR 0161).
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TerminalHarness {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "version", skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageSource {
     #[serde(rename = "paneId")]
     pub pane_id: Id,
@@ -1619,6 +1643,8 @@ pub struct AgentMessageSource {
     pub name: String,
     #[serde(rename = "harness")]
     pub harness: String,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AgentMessageKind>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentListParams {}

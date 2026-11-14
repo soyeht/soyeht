@@ -436,7 +436,7 @@ impl Core {
                 self.agent_method(connection, method, params, prompt_attachments)?
             }
             method::AGENT_LIST | method::AGENT_MESSAGE => {
-                self.agent_peer_method(connection, method, params)?
+                return self.agent_peer(connection, method, params);
             }
             method::PANE_PERMISSION_ANSWER => self.permission_answer(connection, method, params)?,
             method::PANE_ELICITATION_ANSWER => self.agent_answer(connection, method, params)?,

@@ -35,8 +35,10 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+mod foreground;
 mod watch;
 
+use foreground::execute_foreground;
 use watch::{Watchers, hello_refusal, welcome};
 
 struct Live {
@@ -267,6 +269,7 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
         Request::Kill { instance_id } => execute_kill(state, &instance_id),
         Request::Close { instance_id } => execute_close(state, &instance_id),
         Request::PendingInputs => execute_pending_inputs(state),
+        Request::Foreground { instance_ids } => execute_foreground(state, &instance_ids),
         Request::PendingRequests { instance_id } => execute_pending_requests(state, &instance_id),
         Request::PendingRequestChunk {
             instance_id,

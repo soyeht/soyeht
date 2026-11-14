@@ -54,6 +54,7 @@ fn parse(text: &str) -> Option<(AgentMessageSource, &str)> {
             pane_id: pane_id.into(),
             name: name.into(),
             harness: harness.into(),
+            kind: None,
         },
         body,
     ))
@@ -83,6 +84,7 @@ mod tests {
             pane_id: "pane-7".into(),
             name: "Claude (review)".into(),
             harness: "Claude Agent".into(),
+            kind: None,
         };
         let queued = prompt("ping.\n\nsecond line", Some(source.clone()));
         let native = native_text(&queued);

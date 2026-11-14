@@ -2,6 +2,7 @@ use super::Changes;
 use crate::model::turn_ended;
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     ports::StorePort,
 };
@@ -9,7 +10,7 @@ use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::TurnStopReason;
 use soyeht_protocol::{
-    AgentMessageSource, PaneMode, PaneState, PromptOrigin, event, limits, method,
+    AgentMessageKind, AgentMessageSource, PaneMode, PaneState, PromptOrigin, event, limits, method,
 };
 use soyeht_store::agents;
 
@@ -149,12 +150,8 @@ pub(crate) fn cancel(
 }
 
 impl Core {
-    pub fn agent_peer_method(
-        &mut self,
-        connection: &str,
-        method: &str,
-        params: &Value,
-    ) -> Result<Value> {
+    /// The agent pane a connection is bound to: its id and the pane.
+    fn agent_sender(&self, connection: &str) -> Result<(String, soyeht_protocol::Pane)> {
         let sender_id = self
             .clients
             .get(connection)
@@ -170,29 +167,67 @@ impl Core {
             .stored
             .pane
             .clone();
+        Ok((sender_id, sender))
+    }
+
+    /// `agent.list` and `agent.message`, which an agent binding may call.
+    pub(crate) fn agent_peer(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
         if method == method::AGENT_LIST {
-            let items: Vec<AgentMessageSource> = self
-                .panes
-                .values()
-                .filter(|pane| {
-                    !pane.stored.closed
-                        && pane.stored.pane.workspace_id == sender.workspace_id
-                        && pane.stored.pane.mode == PaneMode::Agent
-                        && pane.stored.pane.pane_id != sender_id
-                        && self.agents.has(&pane.stored.pane.pane_id)
-                })
-                .filter_map(|pane| {
-                    self.agents
-                        .get(&pane.stored.pane.pane_id)
-                        .map(|running| AgentMessageSource {
-                            pane_id: pane.stored.pane.pane_id.clone(),
-                            name: pane.stored.pane.name.clone(),
-                            harness: running.state.launch.name.clone(),
-                        })
-                })
-                .collect();
-            return Ok(json!({"items":items}));
+            let (sender_id, sender) = self.agent_sender(connection)?;
+            return self.agent_list(sender_id, sender.workspace_id);
         }
+        self.agent_peer_method(connection, method, params)
+            .map(Outcome::Reply)
+    }
+
+    /// The reply of `agent.list`: the other agent panes of the sender's workspace, and the
+    /// terminal panes of it that run a known harness (see `terminal_foreground`).
+    pub(crate) fn agent_list_reply(&self, sender_id: &str, workspace_id: &str) -> Result<Value> {
+        let in_workspace = |pane: &&crate::model::RunningPane| {
+            !pane.stored.closed
+                && pane.stored.pane.workspace_id == workspace_id
+                && pane.stored.pane.pane_id != sender_id
+        };
+        let items: Vec<AgentMessageSource> = self
+            .panes
+            .values()
+            .filter(in_workspace)
+            .filter_map(|pane| {
+                let listed = &pane.stored.pane;
+                let (harness, kind) = match listed.mode {
+                    PaneMode::Agent => (
+                        self.agents.get(&listed.pane_id)?.state.launch.name.clone(),
+                        AgentMessageKind::Agent,
+                    ),
+                    PaneMode::Terminal => (
+                        listed.terminal_harness.as_ref()?.name.clone(),
+                        AgentMessageKind::Terminal,
+                    ),
+                    _ => return None,
+                };
+                Some(AgentMessageSource {
+                    pane_id: listed.pane_id.clone(),
+                    name: listed.name.clone(),
+                    harness,
+                    kind: Some(kind),
+                })
+            })
+            .collect();
+        Ok(json!({"items":items}))
+    }
+
+    pub fn agent_peer_method(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let (sender_id, sender) = self.agent_sender(connection)?;
         let target_id = errors::param_str(params, "targetPaneId")?;
         let target = self
             .panes
@@ -238,6 +273,7 @@ impl Core {
             pane_id: sender_id.clone(),
             name: sender.name,
             harness,
+            kind: None,
         };
         let prompt = state.enqueue(text.into(), PromptOrigin::Automatic, self.timestamp())?;
         let item = state

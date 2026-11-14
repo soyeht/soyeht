@@ -149,5 +149,6 @@ fn create(
         path: None,
         writing_kind: None,
         writing_section: None,
+        terminal_harness: None,
     })
 }

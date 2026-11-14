@@ -6,7 +6,10 @@ use std::collections::BTreeMap;
 ///
 /// 6: a connection first proves that it can read the supervisor's secret (ADR 0160), so an engine
 /// of this build cannot talk to a supervisor of version 5 or the other way round.
-pub const VERSION: u32 = 6;
+///
+/// 7: `Foreground`, the programs a terminal runs in its foreground (ADR 0165), so an engine of
+/// this build asks a question a supervisor of version 6 does not know.
+pub const VERSION: u32 = 7;
 
 /// What a connection is for. The default is the request connection, the only one older engines and
 /// supervisors know, so a hello without a role is the one of today.
@@ -93,6 +96,10 @@ pub enum Request {
         operation_key: String,
     },
     PendingInputs,
+    /// What each of these terminals runs in its foreground (at most [`MAX_FOREGROUND`]).
+    Foreground {
+        instance_ids: Vec<String>,
+    },
     PendingRequests {
         instance_id: String,
     },
@@ -139,6 +146,8 @@ pub enum Response {
         bytes: usize,
     },
     InputReceipts(Vec<String>),
+    /// The answer to `Foreground`, for the processes that are terminals the supervisor holds.
+    Foregrounds(Vec<Foreground>),
     PendingRequests {
         items: Vec<PendingRequest>,
         recovery_gap: bool,
@@ -149,6 +158,44 @@ pub enum Response {
         kind: String,
         message: String,
     },
+}
+
+/// How many terminals one `Foreground` may ask about.
+pub const MAX_FOREGROUND: usize = 256;
+
+/// What one terminal runs in its foreground: on Unix the leader of the foreground process group,
+/// on Windows the processes of the terminal's job, a process before what it started. No programs
+/// when the terminal has none left to read (it ended, or the group's leader did).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Foreground {
+    pub instance_id: String,
+    pub programs: Vec<Program>,
+}
+
+/// A process in a terminal's foreground.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Program {
+    pub pid: u32,
+    /// The parent, when it is another program of the same list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_pid: Option<u32>,
+    /// The file it runs, when the system tells.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable: Option<String>,
+    /// Its `argv`, `argv[0]` first, bounded in number and length.
+    #[serde(default)]
+    pub arguments: Vec<String>,
+}
+
+impl From<soyeht_platform::process::inspect::Program> for Program {
+    fn from(program: soyeht_platform::process::inspect::Program) -> Self {
+        Self {
+            pid: program.pid,
+            parent_pid: program.parent,
+            executable: program.executable,
+            arguments: program.arguments,
+        }
+    }
 }
 
 /// A process the engine has read to a point.

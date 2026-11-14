@@ -89,7 +89,7 @@ pub struct Core {
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
     /// What the tick remembers between its runs (ADR 0147, step 1b).
-    tick: crate::tick_due::State,
+    pub(crate) tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -695,6 +695,7 @@ impl Core {
         self.isolated("retired_agents", Self::cleanup_retired_agent_processes);
         self.isolated("experiment_captures", Self::reconcile_experiment_captures);
         let drained = self.drain_panes();
+        self.isolated("foreground", Self::advance_foreground);
         self.advance_language_servers();
         self.isolated("task_reviews", Self::advance_task_reviews);
         self.isolated("task_feedback", Self::advance_task_feedback);

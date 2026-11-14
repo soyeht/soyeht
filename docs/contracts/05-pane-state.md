@@ -66,3 +66,33 @@ status of 0 only informs ("Terminal process finished."), so a one-shot command s
 sign-in ends clean; a positive status warns ("Terminal process exited with status N."); a process
 that ended without a status (a negative value) warns too. `terminalNotices` of
 `contracts/vectors/pane-state-presentation.json` fixes the cases that the Mac and desktop clients pass.
+
+## The harness a terminal pane runs (ADR 0165)
+
+A terminal pane has a harness when the foreground program of its terminal is one the engine knows: Claude Code,
+Codex, OpenCode or Cursor Agent (not any other program, and not a harness in WSL, `tmux`, `ssh` or a container, whose
+processes are not the pane's). The pane then carries `terminalHarness` with `id` (the registry id the apps know it by),
+`name` and, when `--version` could be read, `version`. It is absent while the foreground is a shell or anything else,
+and `pane.updated` carries every change of it.
+
+**What the supervisor reports.** `Foreground` (supervisor protocol 7) lists, for terminals the engine names, the programs
+in their foreground, each with its pid, executable path and `argv`. On macOS and Linux it is the leader of the terminal's
+foreground process group (`tcgetpgrp`); on Windows, which has no foreground group in a pseudo console, it is the
+processes of the pane's job in tree order (a parent before its children, a parent id counting only when that process is
+no younger than its child, since ids are reused), and the engine takes the shallowest known harness reached from the
+shell only through shells and launchers, never one of a harness's own children.
+
+**How the engine tells a harness.** By a table of data (`terminal_foreground/harnesses.rs`), on the executable path,
+`argv[0]` and the script argument of a host program: Claude Code runs a file named after its version with `argv[0]`
+`claude`; Codex and OpenCode run a native file under the package manager's folder with their own name as `argv[0]`;
+Cursor Agent runs its bundled `node` with `argv[0]` the path it was started by (or its short name `agent`) and its own
+script as the first argument; on Windows an npm install runs the harness's script under `node`. The matcher is tested
+on those shapes as they were measured.
+
+**The version.** `<harness> --version`, through `soyeht_process::run` with a deadline and never under the engine's lock,
+asked of the file the harness is (Cursor's bundled `node` is asked through the program it was started as), cached by the
+file's path and modification time. A harness that did not answer is asked again after a minute. The engine never starts
+a harness's interface to read it.
+
+**When it is read.** On a period of 2 seconds while an app subscribed to events watches and a terminal is open, and on
+demand for `agent.list`.

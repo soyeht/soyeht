@@ -3,11 +3,19 @@ use crate::{
     child::Child,
     io::{Output, input_without_waiting},
 };
-use soyeht_platform::process::windows::{self as winproc, Console, Job, Launch};
+use soyeht_platform::process::{
+    inspect::Program,
+    windows::{self as winproc, Console, Job, Launch},
+};
 use std::{fs::File, io, process::Command, sync::Arc};
 
 /// The pseudo console of the session.
 pub(super) type Terminal = Console;
+
+/// The processes of the child's job: a pseudo console has no foreground group to ask.
+pub(super) fn foreground(_terminal: &Terminal, child: &Child) -> io::Result<Vec<Program>> {
+    child.programs()
+}
 
 pub(super) fn spawn(command: Command, rows: u16, cols: u16) -> io::Result<Session> {
     let (input_read, input_write) = winproc::pipe()?;

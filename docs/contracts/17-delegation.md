@@ -282,6 +282,12 @@ directions. A helper reaches its parent only through its report. The web family 
 creates a pane); those are the workspace's ordinary web panes and count against `webPanesPerWorkspace`. A helper
 is a worker, never the chief. Delegated helpers are left out of every other pane's `agent.list`.
 
+**What `agent.list` lists.** The other agent panes of the sender's workspace, each with `kind` `agent`, and the terminal
+panes of that workspace whose foreground program is a known harness (Claude Code, Codex, OpenCode or Cursor Agent), each
+with `kind` `terminal` and the harness's name as `harness` (ADR 0165, contract 05 "The harness a terminal pane runs").
+A terminal that runs a shell or any other program is not listed. The terminals are as fresh as one second: a list asked
+after a longer quiet waits for a new scan of the workspace's terminals, which runs off the engine's lock.
+
 ## 8. Delivery, the mode, permissions and what is data
 
 ### The report path

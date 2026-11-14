@@ -67,6 +67,8 @@ pub(crate) struct State {
     /// A subscriber was left behind by the last pump: its outbox was full, or what it still has
     /// to be sent is more than one pump carries.
     pub(crate) streams_behind: bool,
+    /// The scans of what the terminal panes run (ADR 0165).
+    pub(crate) foreground: crate::terminal_foreground::Service,
 }
 
 /// How long the tick may sleep, from the end of a run: the earliest deadline of every subsystem
@@ -111,6 +113,7 @@ fn file_and_service_dues(core: &Core, next: &mut Next, now: i64) {
 fn supervisor_dues(core: &Core, next: &mut Next, now: i64) {
     core.retries_due(next, now);
     core.output_due(next, now);
+    core.foreground_due(next, now);
     crate::languages::watching::due(core, next);
     if core.agents.has_switches()
         || !core.terminal_captures.is_empty()

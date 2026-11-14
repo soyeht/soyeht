@@ -58,6 +58,7 @@ mod supervisor_watch;
 pub mod tasks;
 mod terminal_capture;
 mod terminal_drain;
+mod terminal_foreground;
 mod terminal_harness;
 pub mod terminal_projection;
 #[cfg(feature = "test-hooks")]
