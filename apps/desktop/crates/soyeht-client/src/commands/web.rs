@@ -31,7 +31,6 @@ pub(super) fn request(command: &Command) -> Option<Request> {
             path: None,
             writing_kind: None,
             writing_section: None,
-            terminal_harness: None,
         }),
         Command::NavigateWeb {
             pane_id,
