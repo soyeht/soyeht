@@ -1424,6 +1424,10 @@
       "properties": {
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
+        },
+        "confirmTailnet": {
+          "type": "boolean",
+          "description": "True when the person confirms the tailnet change that a pairing was refused for (ADR 0164): the engine pins the identity it saw. Only an engine that asks for the person's code (`pairing-code`) reads it, and only from the local human."
         }
       },
       "required": [
@@ -1449,6 +1453,10 @@
         },
         "reachability": {
           "$ref": "#/$defs/EngineReachability"
+        },
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True while a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (`confirmTailnet`; ADR 0164). Absent otherwise."
         }
       },
       "required": [

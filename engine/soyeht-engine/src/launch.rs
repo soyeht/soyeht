@@ -46,6 +46,14 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
         data: directory.clone(),
         log: ENGINE_LOG,
     });
+    // The approval code of a pairing lives in this process's memory (ADR 0164): no other program of
+    // the same user may read or attach to it. An exec clears the mark, so it is set here, in the
+    // final program. A system with no such mark has nothing to set.
+    match soyeht_platform::process::non_dumpable() {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::Unsupported => {}
+        Err(error) => soyeht_platform::log::failure("engine.non_dumpable_failed", &error),
+    }
     let hooks = hooks(&directory);
     // The launch `PATH` remembered from the last start, then the person's own CLI found on it:
     // the first agent pane does not wait for either. Here and not in `Core::open`, so that a

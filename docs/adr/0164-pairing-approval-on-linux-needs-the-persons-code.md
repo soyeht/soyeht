@@ -373,6 +373,47 @@ Soyeht on the phone); a new phone with a Mac sees no field and shows the old scr
 6. Android keeps its core (the shared Rust pairing code carries the new field and an event for the
    code); its screen waits for its own release.
 
+## What slice 3 found and changed
+
+Slice 3 (the peer rules in the engine) was verified natively on Linux (Ubuntu, kernel 7.0, aarch64),
+with a real `getifaddrs`, a real `SO_BINDTODEVICE` listener and a veth pair named `tailscale0` in
+an unprivileged user and network namespace (`unshare -Urn`), against a daemon that answers as the
+local API of `tailscaled` does.
+
+- **`SO_BINDTODEVICE` does not refuse a local connection to the tailnet address.** The listener
+  bound to the interface that holds the address accepted a program of this computer that connected
+  to that address, from that same address: the local table routes the address to its own
+  interface, so the kernel delivers the loopback connection as arriving through it. What the
+  binding does do is refuse packets for the address that arrive through another interface (a host
+  on the LAN that sends frames for the tailnet address). The decision of item 1 therefore stays as
+  written for what it does, and the weight of keeping this computer's own programs out moves to
+  item 3: the peer's address is not any address of this machine. A local program's connection to
+  the tailnet address has that address as its source, and a source address of another range is not
+  a Tailscale one; a program cannot bind a Tailscale source address that the machine does not hold
+  and still receive the answers.
+- **The optional bind probe of item 3 is not made.** With `ip_nonlocal_bind` set, a bind to any
+  address succeeds and every peer would be refused. The list of interfaces covers the case, and the
+  list includes interfaces that are down.
+- **The lookup is not done at `accept` but at the call**, off the Core lock (`Outcome::Offload`), so
+  the interfaces and `whois` are fresh for each `pair.begin`, each `pair.prove` and each tailnet
+  `hello` of a device. The cheap rules (listener, range) run first and refuse without asking the
+  system.
+- **The tailnet change is confirmed by `device.pair.start {confirmTailnet: true}`**, and the app
+  learns that a refusal waits from `tailnetChanged` in the answer of the same call. Both are
+  optional fields; the engine remembers the identity it saw in memory, so a confirmation with
+  nothing refused does nothing. A live signal to a sheet that is already open (an event) belongs to
+  the desktop view.
+- **The store gains two tables** (`device_nodes`, `pairing_tailnet`; schema version 36). The Mac
+  migrates its database like any other: the tables stay empty there. An engine older than the
+  database refuses to start (contract 07), so going back to a build before this one
+  needs the backup the migration makes.
+- **Unprivileged access to the `whois` of the daemon** was not exercised against a real
+  `tailscaled`, which neither Linux host has; the local API's read calls are open to every local
+  account, as the nginx authentication helper of Tailscale relies on, and the client is checked
+  against a daemon that speaks HTTP over the same kind of socket. The first real run is the
+  owner's, and a daemon that refuses fails closed with a message that says Tailscale could not be
+  asked.
+
 ## Slices
 
 | # | Slice | Size |
@@ -386,7 +427,8 @@ Soyeht on the phone); a new phone with a Mac sees no field and shows the old scr
 | 7 | Tests and docs, alongside 2 to 6; `docs/agent-acceptances.md`, `docs/dev-local.md`, `docs/security-testing.md` | M, 2 days |
 | 8 | Optional, pending the owner: polkit confirmation | M, 3 days |
 
-Slices 1 to 4 are one engine change and need the second-agent review (pairing, protocol, store,
+Slices 1 to 3 are in the engine (the mode and the code, then the peer rules, with which Linux selects
+`PersonsCode` by itself). Slices 1 to 4 are one engine change and need the second-agent review (pairing, protocol, store,
 dependencies, security). The order is 1, 2, 3, 4, then 5 and 6 in parallel.
 
 Tests:

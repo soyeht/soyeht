@@ -2,6 +2,15 @@ use super::*;
 use crate::ports::testing::{FixedClock, MemoryStore};
 use soyeht_protocol::ErrorKind;
 
+/// The signed app's rule, which every system can run.
+struct SignedAppRule;
+
+impl crate::hooks::Hooks for SignedAppRule {
+    fn pairing_approval(&self) -> Option<Approval> {
+        Some(Approval::SignedApp)
+    }
+}
+
 fn pending(expires: i64) -> Pending {
     Pending {
         id: "request".into(),
@@ -14,6 +23,7 @@ fn pending(expires: i64) -> Pending {
         token: None,
         device: None,
         expires,
+        node: None,
     }
 }
 
@@ -40,7 +50,7 @@ async fn pairing_is_decided_by_the_mac_app_and_never_by_a_paired_device() {
     use soyeht_protocol::Actor;
     let directory = std::env::temp_dir().join(format!("soyeht-pairing-roles-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory).unwrap();
-    let mut core = Core::open(&directory).unwrap();
+    let mut core = Core::open_with(&directory, std::sync::Arc::new(SignedAppRule)).unwrap();
     let (local_outbox, _local) = outbox::channel();
     // A shell or script on the local socket, and the signed app (a peer the system attests).
     let local = core.connect(true, false, local_outbox).unwrap();

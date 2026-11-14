@@ -21,6 +21,7 @@
 //!   Unix, a job object on Windows), the Windows launch of a child into one, and the start of a
 //!   program that outlives its parent (`process::detached`), and `process::end_child`, which kills a
 //!   `std::process::Child` that still runs and reaps it within a bound.
+//! - [`tailscale`]: a request to the local Tailscale daemon, which says who a peer address is.
 //! - [`program`]: a program that ends itself when its own file is gone.
 //! - [`fs`]: owner-only files and directories and opens that never follow a link.
 //! - [`worktrunk`]: the name of the worktree program, which Windows spells `git-wt`.
@@ -44,6 +45,7 @@ pub mod process;
 pub mod program;
 #[cfg(feature = "tokio")]
 pub mod shutdown;
+pub mod tailscale;
 #[cfg(any(test, feature = "test-support"))]
 pub mod testing;
 pub mod user;

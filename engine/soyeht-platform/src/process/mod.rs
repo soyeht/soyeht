@@ -8,6 +8,7 @@
 //! that still runs and reaps it within a bound, the same on every system.
 
 pub mod detached;
+mod dump;
 mod end;
 #[cfg(unix)]
 mod unix;
@@ -16,6 +17,7 @@ pub mod windows;
 
 use std::io;
 
+pub use dump::non_dumpable;
 pub use end::end_child;
 #[cfg(unix)]
 pub use unix::{GroupSignal, kill_tree, signal_group};

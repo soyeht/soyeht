@@ -144,16 +144,47 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
 - a client sends `approvalCode` only when the capability is offered; in `SignedApp` mode the field
   is ignored.
 
-Until the rules about where a new device may connect from (ADR 0164, slice 3) are in the engine,
-no shipped engine selects `PersonsCode`: Linux refuses as the paragraph below says, and only a
-test hook runs the mode.
+**Where a new device may connect from (ADR 0164).** In `PersonsCode` mode `pair.begin` and
+`pair.prove` are served only when every one of these holds, checked before any stored answer is
+looked up (so a replay from a local program gets none); any doubt refuses with `unauthorized`, a
+message that says why and no address or name:
+
+1. the connection was accepted by a tailnet listener (the engine follows the tailnet interface and
+   binds each listener to it on Linux); the local endpoint and a listener at an address given with
+   `--listen` get no pairing, nor does a computer whose Tailscale runs in userspace mode, or a
+   connection that `tailscale serve` or Funnel delivers from loopback;
+2. the peer is the address the engine's `accept` saw, in its canonical form (`::ffff:127.0.0.1` is
+   loopback), and never a header, a `Forwarded` field or a PROXY line;
+3. the peer is a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) that is not an
+   address of any interface of this machine, up or down, listed afresh for the call;
+4. the local Tailscale daemon (the `whois` of its local API) names a node for the peer that has a
+   stable id and is not this computer's node. The lookup blocks, so it runs off the Core lock; a
+   daemon that cannot be asked, or that answers late, refuses the call;
+5. the tailnet and this computer's node key are what the first pairing served pinned. Once either
+   differs, `pair.begin` is refused until the person confirms the change: the app calls
+   `device.pair.start {confirmTailnet: true}`, which pins the identity the refusal saw. While a
+   refusal waits, the answer to `device.pair.start` carries `tailnetChanged: true`. This raises a
+   cost and no more: the confirmation is a local call;
+6. the peer's node is not one a device's authenticated `hello` came from. In this mode the engine
+   asks Tailscale for the node of each tailnet `hello` and keeps it (a lookup that fails never
+   blocks the `hello`; the node is then not recorded). A paired device's node, over either address
+   family, cannot begin a pairing, and the node of a device revoked less than 24 hours ago cannot
+   either. Nothing unblocks it earlier;
+7. a request is proved from the node that began it: the node is kept with the pending request, and
+   a `pair.prove`, or a replayed `pair.begin`, from another node is refused.
+
+Each refusal writes one `engine.pair_refused` line with a `kind` only (`listener`, `address`,
+`local_address`, `whois_unavailable`, `same_node`, `node_changed`, `device_node`, `revoked_node`,
+`tailnet_changed`); a run of one kind writes one line. The engine also marks itself non-dumpable on
+Linux (`prctl(PR_SET_DUMPABLE, 0)`) once it runs, so another program of the same user cannot read the
+codes it holds.
 
 Only the signed Soyeht app opens the window, decides a request or revokes a device, on every
 system where the engine attests it (ADR 0162, 0163): a shell, the command line, a script or a terminal a paired device opened on
 the local endpoint gets `forbidden_role` and no window opens, so it cannot put an approval prompt
 with a name of its own in front of the person. Neither the command line nor the MCP program has a
-command for any of the three. Where the engine cannot tell the app from another program, which today
-is Windows and Linux, no connection counts as the app, so a pairing is started or approved and a
+command for any of the three. Where the engine cannot tell the app from another program and has no other rule, which today
+is Windows, no connection counts as the app, so a pairing is started or approved and a
 device revoked nowhere on that system until its app can prove itself (ADR 0162, which holds the open
 question). A paired device may revoke only itself (ADR 0128). Attestation does not stop a program of
 the same operating-system user that writes the database or adds a LaunchAgent, such as a phone's

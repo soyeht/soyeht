@@ -1,10 +1,13 @@
 use crate::{
     auth,
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     model,
     network::TailnetUpdate,
     pairing_approval::{Approval, Verdict, check_device_name},
+    pairing_gate,
+    pairing_peers::{Admitted, Refusal},
     ports::{Clock, StorePort},
     ui_attestation,
 };
@@ -15,9 +18,9 @@ use serde_json::{Value, json};
 use soyeht_platform::log;
 use soyeht_protocol::{
     Device, DevicePairDecideParams, DevicePairDecideResult, DevicePairPending,
-    DevicePairRequestedDraft, DevicePairStartResult, DevicePairedDraft, DeviceRevokeParams,
-    DeviceRevokeResult, DeviceRevokedDraft, PairBeginParams, PairBeginResult, PairProveParams,
-    PairProveResult, PairResultEvent, Role, event, limits, method, pairing_link,
+    DevicePairRequestedDraft, DevicePairStartParams, DevicePairStartResult, DevicePairedDraft,
+    DeviceRevokeParams, DeviceRevokeResult, DeviceRevokedDraft, PairBeginParams, PairBeginResult,
+    PairProveParams, PairProveResult, PairResultEvent, Role, event, limits, method, pairing_link,
 };
 use std::sync::Once;
 use uuid::Uuid;
@@ -37,6 +40,10 @@ pub(crate) struct Pending {
     token: Option<String>,
     device: Option<Device>,
     pub(crate) expires: i64,
+    /// The tailnet node `pair.begin` came from, where the person's code is asked for: `pair.prove`
+    /// must come from the same one (ADR 0164).
+    #[serde(default)]
+    node: Option<String>,
 }
 
 fn active_pending<S: StorePort, C: Clock + ?Sized>(
@@ -141,19 +148,37 @@ impl Core {
         connection: &str,
         method: &str,
         params: &Value,
-    ) -> Result<Value> {
+    ) -> Result<Outcome> {
         if self.pairing_client(connection)?.actor.is_some() {
             return Err(errors::unauthorized("Pairing requires a fresh connection"));
         }
         // Before any stored answer is looked up: a replay from where no device pairs gets none.
-        self.refuse_local_pairing(connection)?;
+        if self.approval().asks_for_code() {
+            return pairing_gate::pair_offload(self, connection, method, params);
+        }
+        self.pair_serve(connection, method, params, None)
+            .map(Outcome::Reply)
+    }
+
+    /// Serves `pair.begin` or `pair.prove` for a peer the rules admitted (`admitted` is `None`
+    /// where the person's code is not asked for, and no peer rule applies).
+    pub(crate) fn pair_serve(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+        admitted: Option<Admitted>,
+    ) -> Result<Value> {
+        if self.pairing_client(connection)?.actor.is_some() {
+            return Err(errors::unauthorized("Pairing requires a fresh connection"));
+        }
         let fingerprint = auth::call_fingerprint(method, params);
         if method == method::PAIR_BEGIN {
             let begin: PairBeginParams = model::typed_params(params)?;
-            return self.pair_begin(connection, &fingerprint, begin);
+            return self.pair_begin(connection, &fingerprint, begin, admitted.as_ref());
         }
         let prove: PairProveParams = model::typed_params(params)?;
-        self.pair_prove(connection, &fingerprint, prove)
+        self.pair_prove(connection, &fingerprint, prove, admitted.as_ref())
     }
 
     fn pair_begin(
@@ -161,6 +186,7 @@ impl Core {
         connection: &str,
         fingerprint: &str,
         begin: PairBeginParams,
+        admitted: Option<&Admitted>,
     ) -> Result<Value> {
         let PairBeginParams {
             code,
@@ -182,7 +208,8 @@ impl Core {
             let id = result["requestId"]
                 .as_str()
                 .ok_or_else(|| errors::internal("Missing pairing request"))?;
-            self.pending_pair(id)?;
+            let pending = self.pending_pair(id)?;
+            self.require_begin_node(&pending, admitted)?;
             self.pairing_client_mut(connection)?.pair_request = Some(id.into());
             return Ok(result);
         }
@@ -209,6 +236,7 @@ impl Core {
             token: None,
             device: None,
             expires,
+            node: admitted.map(|admitted| admitted.node.id.clone()),
         };
         let now = self.now_unix();
         // Signed here and kept in the receipt: a replay answers with the same proof.
@@ -236,6 +264,7 @@ impl Core {
         connection: &str,
         fingerprint: &str,
         prove: PairProveParams,
+        admitted: Option<&Admitted>,
     ) -> Result<Value> {
         let PairProveParams {
             request_id: id,
@@ -248,6 +277,7 @@ impl Core {
             ));
         }
         let mut pending = self.pending_pair(&id)?;
+        self.require_begin_node(&pending, admitted)?;
         // A window nobody holds has no one to approve: no code is made for a device to show.
         if self.approval().asks_for_code() && !self.pairing.windows.is_bound(&pending.code) {
             return Err(errors::unauthorized("Pairing code expired or invalid"));
@@ -428,6 +458,11 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
+        let start: DevicePairStartParams = model::typed_params(params)?;
+        // The person's confirmation of a tailnet change, which only the local human can make
+        // (`authorize_device_management` has already seen to that). Pinned only when the window is
+        // made now: a replayed call confirms nothing.
+        let confirms = self.approval().asks_for_code() && start.confirm_tailnet == Some(true);
         let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
         let now = self.now_unix();
         let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
@@ -442,6 +477,7 @@ impl Core {
             uri,
             qr: Some(qr),
             reachability: None,
+            tailnet_changed: None,
         })?;
         let result = self
             .mutate(connection, method, params, |tx| {
@@ -455,8 +491,12 @@ impl Core {
         // Only a window made now is this connection's; a replayed one stays with its opener.
         if self.approval().asks_for_code() && result.code == code {
             self.pairing.windows.bind(&code, connection);
+            if confirms {
+                pairing_gate::confirm_tailnet(self)?;
+            }
         }
         result.reachability = Some(self.reachability.clone());
+        result.tailnet_changed = self.pairing.unconfirmed.is_some().then_some(true);
         let result = model::to_value(&result)?;
         Ok(result)
     }
@@ -464,6 +504,7 @@ impl Core {
     fn device_revoke(&mut self, connection: &str, method: &str, params: &Value) -> Result<Value> {
         let revoke: DeviceRevokeParams = model::typed_params(params)?;
         let id = revoke.device_id.as_str();
+        let now = self.now_unix();
         let mut device: Device = StorePort::device(&self.store, id)
             .map_err(errors::storage)?
             .ok_or_else(|| errors::not_found("Device not found"))?;
@@ -477,6 +518,8 @@ impl Core {
         let result = self
             .mutate(connection, method, params, |tx| {
                 tx.revoke_device(id, &device)?;
+                // The node of a revoked device stays refused for a day (ADR 0164).
+                soyeht_store::pairing_nodes::mark_revoked(tx, id, now)?;
                 Ok((revoked, vec![event]))
             })?
             .result;
@@ -608,19 +651,16 @@ impl Core {
             .unwrap_or_else(Approval::for_this_system)
     }
 
-    /// `pair.begin` and `pair.prove` come from another device, never from a program on this
-    /// computer's own endpoint, which would be the person's request and its own approval at once.
-    pub(crate) fn refuse_local_pairing(&self, connection: &str) -> Result<()> {
-        let local = self
-            .clients
-            .get(connection)
-            .is_some_and(|client| client.local);
-        if self.approval().asks_for_code() && local {
-            return Err(errors::unauthorized(
-                "A device pairs from another device, not from this computer",
-            ));
+    /// A request is begun and proved from one node (ADR 0164): where the person's code is asked for,
+    /// the call must come from the node that began `pending`.
+    fn require_begin_node(&mut self, pending: &Pending, admitted: Option<&Admitted>) -> Result<()> {
+        let Some(admitted) = admitted else {
+            return Ok(());
+        };
+        if pending.node.as_deref() == Some(admitted.node.id.as_str()) {
+            return Ok(());
         }
-        Ok(())
+        Err(pairing_gate::refused(self, Refusal::NodeChanged))
     }
 
     /// The code `pair.prove` answers a device with, when this engine asks for one and the request
@@ -675,5 +715,7 @@ impl Core {
 
 #[cfg(test)]
 mod code_tests;
+#[cfg(test)]
+mod peer_tests;
 #[cfg(test)]
 mod tests;

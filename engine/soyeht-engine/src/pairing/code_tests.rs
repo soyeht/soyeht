@@ -7,50 +7,69 @@ use crate::{
     dispatch::Outcome,
     hooks::Hooks,
     outbox::{self, Receiver},
+    pairing_peers::{ListenerKind, PairingPeers, Peer},
+    test_hooks::{FIXTURE_PHONE_ADDRESS, FIXTURE_PHONE_NODE, FixturePeers},
 };
 use ed25519_dalek::SigningKey;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{ErrorKind, frame::Frame};
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
 
-struct Mode(Approval);
+pub(super) struct Mode(Approval, Arc<FixturePeers>);
 
 impl Hooks for Mode {
     fn pairing_approval(&self) -> Option<Approval> {
         Some(self.0)
     }
+
+    fn pairing_peers(&self) -> Option<Arc<dyn PairingPeers>> {
+        Some(self.1.clone())
+    }
 }
 
-type Answer = std::result::Result<Value, errors::Error>;
+/// The address a test phone connects from, and its node.
+pub(super) fn phone_address() -> IpAddr {
+    FIXTURE_PHONE_ADDRESS
+}
+
+pub(super) type Answer = std::result::Result<Value, errors::Error>;
 
 /// A core with the given rule and the traffic of its local connections, which no code may
 /// appear in.
-struct Rig {
-    core: Core,
+pub(super) struct Rig {
+    pub(super) core: Core,
     directory: PathBuf,
+    pub(super) peers: Arc<FixturePeers>,
     local_traffic: Vec<String>,
     receivers: Vec<(String, Receiver)>,
 }
 
 impl Rig {
-    fn new(approval: Approval) -> Self {
+    pub(super) fn new(approval: Approval) -> Self {
         let directory =
             std::env::temp_dir().join(format!("soyeht-pairing-code-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        let core = Core::open_with(&directory, Arc::new(Mode(approval))).unwrap();
+        let peers = Arc::new(FixturePeers::as_seen());
+        peers.set_node(phone_address(), Some(FIXTURE_PHONE_NODE));
+        let core = Core::open_with(&directory, Arc::new(Mode(approval, peers.clone()))).unwrap();
         Self {
             core,
             directory,
+            peers,
             local_traffic: vec![],
             receivers: vec![],
         }
     }
 
     /// A connection, local or not, that has said `hello` when it is local.
-    fn connect(&mut self, local: bool, signed_ui: bool) -> String {
+    pub(super) fn connect(&mut self, local: bool, signed_ui: bool) -> String {
         let (outbox, receiver) = outbox::channel();
         let connection = self.core.connect(local, signed_ui, outbox).unwrap();
+        if !local {
+            let peer = Peer::new(ListenerKind::Tailnet, phone_address());
+            crate::pairing_gate::note_peer(&mut self.core, &connection, peer);
+        }
         if local {
             let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
                 "client":"code-test","clientVersion":"1","protocolVersion":1}});
@@ -60,7 +79,7 @@ impl Rig {
         connection
     }
 
-    fn call(&mut self, connection: &str, method: &str, mut params: Value) -> Answer {
+    pub(super) fn call(&mut self, connection: &str, method: &str, mut params: Value) -> Answer {
         if params.get("idempotencyKey").is_none() {
             params["idempotencyKey"] = json!(Uuid::new_v4().to_string());
         }
@@ -68,7 +87,7 @@ impl Rig {
         let local = self.core.clients[connection].local;
         let answer = self
             .core
-            .dispatch(connection, request)
+            .dispatch_inline(connection, request)
             .map(|outcome| match outcome {
                 Outcome::Reply(value) => value,
                 Outcome::Snapshot { parts, result } => {
@@ -90,7 +109,7 @@ impl Rig {
     }
 
     /// The notifications the connection was sent since the last call, as text.
-    async fn notifications(&mut self, connection: &str) -> Vec<Value> {
+    pub(super) async fn notifications(&mut self, connection: &str) -> Vec<Value> {
         let receiver = &mut self
             .receivers
             .iter_mut()
@@ -111,7 +130,7 @@ impl Rig {
     }
 
     /// A window opened by `app`, and the code of its window.
-    fn open_window(&mut self, app: &str) -> String {
+    pub(super) fn open_window(&mut self, app: &str) -> String {
         let window = self.call(app, "device.pair.start", json!({})).unwrap();
         window["code"].as_str().unwrap().to_owned()
     }
@@ -123,20 +142,20 @@ impl Drop for Rig {
     }
 }
 
-fn kind(answer: &Answer) -> ErrorKind {
+pub(super) fn kind(answer: &Answer) -> ErrorKind {
     errors::kind(answer.as_ref().unwrap_err())
 }
 
-fn text(answer: &Answer) -> String {
+pub(super) fn text(answer: &Answer) -> String {
     answer.as_ref().unwrap_err().to_string()
 }
 
-fn key(seed: u8) -> SigningKey {
+pub(super) fn key(seed: u8) -> SigningKey {
     SigningKey::from_bytes(&[seed; 32])
 }
 
 /// `pair.begin` on `window` from `connection`, as the device with the key of `seed`.
-fn begin(rig: &mut Rig, connection: &str, window: &str, name: &str, seed: u8) -> Answer {
+pub(super) fn begin(rig: &mut Rig, connection: &str, window: &str, name: &str, seed: u8) -> Answer {
     rig.call(
         connection,
         "pair.begin",
@@ -146,7 +165,7 @@ fn begin(rig: &mut Rig, connection: &str, window: &str, name: &str, seed: u8) ->
 }
 
 /// The `pair.result` the connection was sent.
-async fn pair_result(rig: &mut Rig, connection: &str) -> Value {
+pub(super) async fn pair_result(rig: &mut Rig, connection: &str) -> Value {
     let sent = rig.notifications(connection).await;
     sent.into_iter()
         .find(|message| message["method"] == "pair.result")
@@ -155,15 +174,15 @@ async fn pair_result(rig: &mut Rig, connection: &str) -> Value {
 }
 
 /// A device that has begun a pairing with `window` and proved it, as the answer to `pair.prove`.
-struct Device {
-    connection: String,
-    request: String,
-    proved: Value,
-    prove_params: Value,
+pub(super) struct Device {
+    pub(super) connection: String,
+    pub(super) request: String,
+    pub(super) proved: Value,
+    pub(super) prove_params: Value,
 }
 
 /// The parameters of `pair.prove` for the answer `begun` to a `pair.begin` on `window`.
-fn prove_params(window: &str, seed: u8, name: &str, begun: &Value) -> Value {
+pub(super) fn prove_params(window: &str, seed: u8, name: &str, begun: &Value) -> Value {
     let device_key = key(seed);
     let derived =
         Sha256::digest([window.as_bytes(), device_key.verifying_key().as_bytes()].concat());
@@ -179,7 +198,7 @@ fn prove_params(window: &str, seed: u8, name: &str, begun: &Value) -> Value {
         "idempotencyKey":Uuid::new_v4().to_string()})
 }
 
-fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
+pub(super) fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
     let phone = rig.connect(false, false);
     let begun = begin(rig, &phone, window, name, seed).unwrap();
     let prove_params = prove_params(window, seed, name, &begun);
@@ -194,7 +213,7 @@ fn pair_with(rig: &mut Rig, window: &str, seed: u8, name: &str) -> Device {
     }
 }
 
-fn decide(rig: &mut Rig, app: &str, request: &str, code: Option<&str>) -> Answer {
+pub(super) fn decide(rig: &mut Rig, app: &str, request: &str, code: Option<&str>) -> Answer {
     let mut params = json!({"requestId":request,"approve":true});
     if let Some(code) = code {
         params["approvalCode"] = json!(code);
@@ -202,14 +221,14 @@ fn decide(rig: &mut Rig, app: &str, request: &str, code: Option<&str>) -> Answer
     rig.call(app, "device.pair.decide", params)
 }
 
-fn devices(rig: &mut Rig, app: &str) -> usize {
+pub(super) fn devices(rig: &mut Rig, app: &str) -> usize {
     rig.call(app, "device.list", json!({})).unwrap()["items"]
         .as_array()
         .unwrap()
         .len()
 }
 
-fn code_of(device: &Device) -> String {
+pub(super) fn code_of(device: &Device) -> String {
     device.proved["approvalCode"].as_str().unwrap().to_owned()
 }
 
@@ -583,7 +602,11 @@ async fn an_engine_that_restarted_holds_no_code_and_no_window_for_the_old_reques
     // The engine ends: every code and binding is gone, the store keeps the request.
     drop(std::mem::replace(
         &mut rig.core,
-        Core::open_with(&directory, Arc::new(Mode(Approval::PersonsCode))).unwrap(),
+        Core::open_with(
+            &directory,
+            Arc::new(Mode(Approval::PersonsCode, rig.peers.clone())),
+        )
+        .unwrap(),
     ));
     rig.local_traffic.clear();
     let new_app = rig.connect(true, false);
@@ -688,13 +711,17 @@ async fn a_refused_system_refuses_the_local_human_and_says_the_app_cannot_prove_
 }
 
 #[tokio::test]
-async fn a_shipped_engine_has_no_hook_and_does_not_offer_the_code_on_any_system() {
+async fn a_shipped_engine_has_no_hook_and_offers_the_code_on_linux_only() {
     let directory = std::env::temp_dir().join(format!("soyeht-pairing-prod-{}", Uuid::new_v4()));
     std::fs::create_dir(&directory).unwrap();
     let core = Core::open(&directory).unwrap();
     assert_eq!(core.approval(), Approval::for_this_system());
-    assert!(!core.approval().asks_for_code());
-    assert!(!core.capabilities().contains(&"pairing-code".to_string()));
+    // Only Linux asks for the person's code, and it offers the capability with it.
+    assert_eq!(core.approval().asks_for_code(), cfg!(target_os = "linux"));
+    assert_eq!(
+        core.capabilities().contains(&"pairing-code".to_string()),
+        cfg!(target_os = "linux")
+    );
     drop(core);
     std::fs::remove_dir_all(directory).unwrap();
 }
