@@ -491,7 +491,7 @@ A Linux machine can run the merge gate's engine, desktop and end-to-end steps fo
 a Mac sends it (`post_merge.py --remote HOST --remote-root PATH`, docs/dev-local.md), so the Mac
 does not build them. `scripts/remote_gate.sh` is the entry point on the host and
 `scripts/linux-gate.nix` the Nix shell it runs the gate in. The shell holds the pinned Rust
-toolchain (`rust-toolchain.toml`, with the Windows target for the engine's Windows lint), a C
+toolchain (`rust-toolchain.toml`, with the Windows target for the Windows lints), a C
 toolchain, the GPUI libraries, git, zsh (without its first-run wizard, as on a Mac), uv, Python
 and sccache, so it works on NixOS, where a rustup toolchain cannot run, and needs no
 administrator rights. NixOS has no `/bin/bash` or `/usr/bin/git`, which some tests and the
