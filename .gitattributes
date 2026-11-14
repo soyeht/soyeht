@@ -1,3 +1,8 @@
+# A text file is checked out with LF on every system. Windows' Git converts to CRLF by default, and
+# a build from such a checkout is not the one the repository holds: the engine refuses to start its
+# agent catalogue because the bytes of the embedded snapshot no longer match their digest.
+* text=auto eol=lf
+
 # Outputs of contracts/generate.py: collapsed in review diffs. Regenerate them, never edit them.
 apps/desktop/crates/soyeht-desktop/src/theme/generated.rs linguist-generated=true
 apps/shared/Sources/SoyehtClient/Generated.swift linguist-generated=true

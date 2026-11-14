@@ -374,6 +374,25 @@ Every program is signed with `signtool sign /fd SHA256 /tr <timestamp> /td SHA25
 same command, and the installer is verified as well. A certificate, a password or a token is never in the
 repository.
 
+*A Certum certificate through SimplySign (not yet used for a release).* The Certum Open Source code-signing
+certificate lives in Certum's cloud, not on the builder. **SimplySign Desktop** on the Windows host signs in with
+a code from the SimplySign mobile app and then shows the certificate, as a virtual smart card, in the
+**Current User** store of the Windows account that is signed in. So the flow is the thumbprint one above:
+
+1. Install SimplySign Desktop on the host that runs `package_windows.py` and sign in (the mobile app gives the
+   code). The session ends after a while, and a signing run that finds the card gone fails; sign in again first.
+2. Read the thumbprint: `Get-ChildItem Cert:\CurrentUser\My -CodeSigningCert | Format-Table Thumbprint, Subject, NotAfter`.
+3. `$env:SOYEHT_WINDOWS_SIGN_THUMBPRINT = "<thumbprint>"`, then `package_windows.py --require-signature` in the
+   same account (a service or another user does not see the card). The default timestamp service works with it;
+   `SOYEHT_WINDOWS_SIGN_TIMESTAMP_URL` can name Certum's.
+
+Things to know before the first release, none yet tried here: SimplySign Desktop is an x64 program, so on a
+Windows on Arm builder its sign-in on that machine is unconfirmed (signing does not depend on the architecture
+of the programs, but this script builds and signs in one run, on one host); an Open Source certificate names a
+person as the publisher, not the product; and a new certificate has no SmartScreen reputation, so the warning
+can persist for the first downloads. Sign with a timestamp (the script always does), so the installers stay valid
+after the certificate expires.
+
 ## Agents messaging each other
 
 An agent pane of one harness can message a pane of another on every system, the same
