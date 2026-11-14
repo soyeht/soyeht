@@ -150,44 +150,90 @@ fn a_wrong_code_says_how_many_tries_are_left_and_the_right_one_is_sent_and_allow
     assert!(!pairing.shown(), "the sheet has done its work");
 }
 
-/// The engine denies the request at the last wrong code and sends the app only the refusal, with
-/// no event: the request must not stay open for an Allow the engine can only refuse.
+/// What the engine sends the window when it denies a request itself, at the third wrong code.
+fn denied_by_the_engine(pairing: &mut Pairing, id: &str) {
+    let handled = pairing
+        .notified(
+            &EventName::PairResult,
+            json!({"requestId": id, "approved": false, "reason": "Denied on the computer"}),
+        )
+        .unwrap();
+    assert!(handled);
+}
+
+fn refused_code(pairing: &mut Pairing, id: &str, message: &str) {
+    pairing.apply(Event::DecideFailed {
+        request_id: id.to_owned(),
+        refusal: refusal(ErrorKind::PairingCodeInvalid, message),
+    });
+}
+
+/// The app does not count the refusals: the engine's count spans reconnects and windows, and the
+/// refusals of a missing code or of no code at all share the error kind. The request is closed by
+/// the engine's own denial, whichever of that and the refused call's answer arrives first.
 #[test]
-fn the_third_wrong_code_ends_the_request_as_the_engine_denied_it() {
+fn the_request_closes_on_the_engines_denial_and_on_no_refusal_of_a_code() {
+    for denial_first in [true, false] {
+        let mut pairing = adopted(true);
+        showing(&mut pairing, 1000.0);
+        requested(&mut pairing, "r1", FINGERPRINT);
+        // However many refusals come, none of them closes the request.
+        for (code, message) in [
+            ("111111", "That code is not right. 2 tries left"),
+            (
+                "222222",
+                "No code is waiting for this request; pair again on the phone",
+            ),
+            ("333333", "Type the code your phone shows"),
+            ("444444", "That code is not right. 1 tries left"),
+            ("555555", "That code is not right. 1 tries left"),
+        ] {
+            pairing.decide("r1", true, code).unwrap();
+            refused_code(&mut pairing, "r1", message);
+            let request = &pairing.requests()[0];
+            assert!(!request.closed && !request.deciding, "{message}");
+            assert_eq!(request.note.as_deref(), Some(message));
+        }
+        pairing.decide("r1", true, "666666").unwrap();
+        let last = "Too many wrong codes. The request was denied";
+        if denial_first {
+            denied_by_the_engine(&mut pairing, "r1");
+            refused_code(&mut pairing, "r1", last);
+        } else {
+            refused_code(&mut pairing, "r1", last);
+            denied_by_the_engine(&mut pairing, "r1");
+        }
+        let request = &pairing.requests()[0];
+        assert!(request.closed && !request.deciding);
+        // The engine's refusal text is what the card shows.
+        assert_eq!(request.note.as_deref(), Some(last));
+        assert_eq!(
+            pairing.decide("r1", true, "777777"),
+            Err(Rejected::Unavailable)
+        );
+        pairing.dismiss("r1");
+        assert!(pairing.requests().is_empty());
+    }
+}
+
+/// A denial with no refusal of a code to go with it (a window of another request, or one this
+/// sheet never saw) closes only the request it names, and shows the engine's reason.
+#[test]
+fn a_denial_closes_the_request_it_names_and_an_unknown_or_allowed_result_changes_nothing() {
     let mut pairing = adopted(true);
     showing(&mut pairing, 1000.0);
     requested(&mut pairing, "r1", FINGERPRINT);
-    for (left, code) in [(2, "111111"), (1, "222222")] {
-        pairing.decide("r1", true, code).unwrap();
-        pairing.apply(Event::DecideFailed {
-            request_id: "r1".to_owned(),
-            refusal: refusal(
-                ErrorKind::PairingCodeInvalid,
-                &format!("That code is not right. {left} tries left"),
-            ),
-        });
-        assert!(!pairing.requests()[0].closed, "{left} tries are left");
-    }
-    pairing.decide("r1", true, "333333").unwrap();
-    pairing.apply(Event::DecideFailed {
-        request_id: "r1".to_owned(),
-        refusal: refusal(
-            ErrorKind::PairingCodeInvalid,
-            "Too many wrong codes. The request was denied",
-        ),
-    });
-    let request = &pairing.requests()[0];
-    assert!(request.closed && !request.deciding);
-    assert_eq!(
-        request.note.as_deref(),
-        Some("Too many wrong codes. The request was denied")
-    );
-    assert_eq!(
-        pairing.decide("r1", true, "444444"),
-        Err(Rejected::Unavailable)
-    );
-    pairing.dismiss("r1");
-    assert!(pairing.requests().is_empty());
+    requested(&mut pairing, "r2", "other");
+    denied_by_the_engine(&mut pairing, "unknown");
+    let allowed = json!({"requestId": "r1", "approved": true, "deviceId": "d1"});
+    assert!(pairing.notified(&EventName::PairResult, allowed).unwrap());
+    assert!(pairing.requests().iter().all(|request| !request.closed));
+    denied_by_the_engine(&mut pairing, "r1");
+    let [first, second] = pairing.requests() else {
+        panic!("both requests are still listed");
+    };
+    assert!(first.closed && !second.closed);
+    assert_eq!(first.note.as_deref(), Some("Denied on the computer"));
 }
 
 #[test]

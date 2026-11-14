@@ -187,6 +187,44 @@ fn a_phone_is_paired_with_the_code_it_shows_after_a_wrong_one() {
 }
 
 #[test]
+fn the_request_closes_on_the_engines_denial_and_not_on_a_count_of_refusals() {
+    let mut rig = Rig::connected("pair-engine-denial", &["pairing-code"], json!([]));
+    rig.open("2999-01-01T00:00:00Z");
+    rig.request_arrives("r1");
+    // The engine uses one error kind for a code it has none for, so these never close the card.
+    for _ in 0..4 {
+        let call = rig.decide("r1", true, "111111");
+        answer_error(
+            &mut rig.remote,
+            &call,
+            &ErrorKind::PairingCodeInvalid,
+            "No code is waiting for this request; pair again on the phone",
+        );
+        rig.settle(|state| !state.pairing.requests()[0].deciding);
+        assert!(!rig.state.pairing.requests()[0].closed);
+    }
+    // The engine denies it at its own third wrong code: it says so before it refuses the call.
+    let call = rig.decide("r1", true, "222222");
+    rig.remote.send(&notification(
+        "pair.result",
+        json!({"requestId": "r1", "approved": false, "reason": "Denied on the computer"}),
+    ));
+    answer_error(
+        &mut rig.remote,
+        &call,
+        &ErrorKind::PairingCodeInvalid,
+        "Too many wrong codes. The request was denied",
+    );
+    rig.settle(|state| state.pairing.requests()[0].closed && !state.pairing.requests()[0].deciding);
+    let request = &rig.state.pairing.requests()[0];
+    assert_eq!(
+        request.note.as_deref(),
+        Some("Too many wrong codes. The request was denied")
+    );
+    rig.finish();
+}
+
+#[test]
 fn a_denial_carries_no_code_and_the_sheet_stays() {
     let mut rig = Rig::connected("pair-deny", &["pairing-code"], json!([]));
     rig.open("2999-01-01T00:00:00Z");

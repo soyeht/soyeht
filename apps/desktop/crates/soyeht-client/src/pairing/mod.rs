@@ -21,7 +21,8 @@ use crate::{Error, timestamp};
 use serde_json::Value;
 use soyeht_protocol::{
     Device, DevicePairPending, DevicePairRequestedEvent, DevicePairStartResult, DevicePairedEvent,
-    DeviceRevokedEvent, EngineCapability, ErrorKind, approval_code, limits, pairing_link,
+    DeviceRevokedEvent, EngineCapability, ErrorKind, PairResultEvent, approval_code, limits,
+    pairing_link,
 };
 
 /// The window the engine opened for a phone to scan.
@@ -119,9 +120,6 @@ pub struct Request {
     pub note: Option<String>,
     /// The request is over, so it offers nothing but to be dismissed.
     pub closed: bool,
-    /// The codes the engine refused for this request. The engine denies the request at the last
-    /// wrong one and tells the app nothing but the refusal, so the app counts them as it does.
-    wrong_codes: u8,
 }
 
 impl Request {
@@ -134,7 +132,6 @@ impl Request {
             deciding: false,
             note: None,
             closed: false,
-            wrong_codes: 0,
         }
     }
 }
@@ -327,9 +324,33 @@ impl Pairing {
                 let revoked: DeviceRevokedEvent = serde_json::from_value(params)?;
                 self.revoked(&revoked.device_id);
             }
+            EventName::PairResult => {
+                let result: PairResultEvent = serde_json::from_value(params)?;
+                self.denied(&result);
+            }
             _ => return Ok(false),
         }
         Ok(true)
+    }
+
+    /// The engine denied a request on its own, which it does at the third wrong code: the request
+    /// is over, whatever answer the call that was refused arrives with. An allowed one is told
+    /// by `device.paired`.
+    fn denied(&mut self, result: &PairResultEvent) {
+        if result.approved {
+            return;
+        }
+        let Some(request) = self
+            .requests
+            .iter_mut()
+            .find(|r| r.request_id == result.request_id)
+        else {
+            return;
+        };
+        request.closed = true;
+        if request.note.is_none() {
+            request.note = result.reason.clone();
+        }
     }
 
     fn revoked(&mut self, device_id: &str) {
@@ -455,7 +476,8 @@ impl Pairing {
     }
 
     /// A request the engine did not decide. Its refusal for a wrong code says how many tries are
-    /// left, and the request stays; a request the engine no longer holds is over.
+    /// left, and the request stays until the engine says it denied it; a request the engine no
+    /// longer holds is over.
     fn decision_failed(&mut self, request_id: &str, refusal: Refusal) {
         let Some(request) = self
             .requests
@@ -470,12 +492,9 @@ impl Pairing {
                 request.closed = true;
                 request.note = Some(copy::REQUEST_GONE.to_owned());
             }
-            Some(ErrorKind::PairingCodeInvalid) => {
-                request.note = Some(refusal.message);
-                request.wrong_codes += 1;
-                // The engine has denied it: pressing Allow again could only be refused.
-                request.closed = request.wrong_codes >= approval_code::WRONG_CODES_ALLOWED;
-            }
+            // The engine's words say what is wrong with the code and how many tries are left. The
+            // request stays: the engine closes it, with `pair.result`, when it denies it.
+            Some(ErrorKind::PairingCodeInvalid) => request.note = Some(refusal.message),
             _ => request.note = Some(refusal.message),
         }
     }

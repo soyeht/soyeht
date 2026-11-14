@@ -17,8 +17,10 @@ use soyeht_protocol::PaneMode;
 
 impl Workbench {
     pub(crate) fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
-        // The trust sheet has the keyboard: nothing is pasted into a pane under it.
-        if self.state.trust_prompt().is_some() {
+        // A sheet has the keyboard: nothing is pasted into a pane under it. The field of the
+        // pairing sheet takes its own paste before this action is reached, so this is the paste of
+        // a key or a menu item with no field in front.
+        if self.sheet_is_modal() {
             return;
         }
         let Some(item) = cx.read_from_clipboard() else {
@@ -75,7 +77,8 @@ impl Workbench {
         // The pairing sheet owns the keys: Escape closes it, and none reaches a pane under it
         // (`keys_target` gives the pane none while it is shown). The others are left to
         // propagate, never stopped here: a stopped key never reaches the text input of the field
-        // the code is typed in.
+        // the code is typed in. A shortcut they trigger is an action, and no action that changes
+        // a pane or a workspace runs while the sheet is shown (`sheet_is_modal`).
         if self.state.pairing.shown() {
             if crate::pairing_ui::closes_sheet(&keystroke.key) {
                 crate::pairing_ui::close(self, cx);
@@ -168,8 +171,7 @@ impl Workbench {
             (self.destination, start_shown),
             self.field_request.is_some(),
             pane_takes_keys(window.focused(cx), self.focus.clone()),
-        ) && self.state.trust_prompt().is_none()
-            && !self.state.pairing.shown();
+        ) && !self.sheet_is_modal();
         let pane = self.state.focused_pane()?;
         match pane.mode {
             PaneMode::Editor if free => Some(KeyTarget::Editor(pane.pane_id.clone())),

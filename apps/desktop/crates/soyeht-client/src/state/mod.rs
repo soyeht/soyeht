@@ -567,7 +567,10 @@ impl State {
                 effects
             }
             EventName::WritingChanged => self.writing_changed(params)?,
-            EventName::DevicePairRequested | EventName::DevicePaired | EventName::DeviceRevoked => {
+            EventName::DevicePairRequested
+            | EventName::DevicePaired
+            | EventName::DeviceRevoked
+            | EventName::PairResult => {
                 self.pairing.notified(&name, params)?;
                 Vec::new()
             }

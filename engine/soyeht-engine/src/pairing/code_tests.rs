@@ -288,6 +288,7 @@ async fn a_missing_or_wrong_code_approves_nothing_and_the_third_wrong_one_denies
     let code = code_of(&device);
     let wrong = if code == "000000" { "000001" } else { "000000" };
     rig.notifications(&device.connection).await;
+    rig.notifications(&app).await;
     // Nothing typed: refused, and no try is used.
     for _ in 0..4 {
         let answer = decide(&mut rig, &app, &device.request, None);
@@ -306,13 +307,18 @@ async fn a_missing_or_wrong_code_approves_nothing_and_the_third_wrong_one_denies
     assert!(text(&second).contains("1 tries left"), "{}", text(&second));
     assert_eq!(devices(&mut rig, &app), 0);
     assert!(rig.notifications(&device.connection).await.is_empty());
+    // Refusals that are not the third say nothing of a denial to the window either.
+    assert!(rig.notifications(&app).await.is_empty());
     let third = decide(&mut rig, &app, &device.request, Some(wrong));
     assert_eq!(kind(&third), ErrorKind::PairingCodeInvalid);
     assert!(text(&third).contains("denied"), "{}", text(&third));
-    // The device is told, in the words of this mode.
+    // The device is told, in the words of this mode, and so is the window that opened the
+    // request, since the refused call's own answer is an error and not the denial of a Deny.
     let result = pair_result(&mut rig, &device.connection).await;
     assert_eq!(result["approved"], false);
     assert_eq!(result["reason"], "Denied on the computer");
+    assert_eq!(pair_result(&mut rig, &app).await, result);
+    assert_eq!(result["requestId"], device.request);
     // The right code is too late, and nothing was added.
     let late = decide(&mut rig, &app, &device.request, Some(&code));
     assert_eq!(kind(&late), ErrorKind::TransitionRefused);

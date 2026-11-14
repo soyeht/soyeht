@@ -133,8 +133,11 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
   The engine approves only when the code is right (constant-time comparison), the request is
   pending, and the call comes from the local human connection that opened the request's pairing
   window. A missing or wrong code answers `pairing_code_invalid` and approves nothing; a text that
-  is not six digits is refused the same way and costs no try; the third wrong code denies the request and the device receives `pair.result` with `approved: false` and
-  the reason `Denied on the computer`. The code is single use and ends with the request. A call
+  is not six digits is refused the same way and costs no try; the third wrong code denies the
+  request: the device receives `pair.result` with `approved: false` and the reason `Denied on the
+  computer`, and so does the connection that opened the request's window (the call that made the
+  third wrong code is answered with a refusal, not with the denial a Deny gets as its result), after
+  which the request is in no list. The code is single use and ends with the request. A call
   that fails for its code leaves no receipt, and `approvalCode` is left out of the fingerprint of
   the call that is stored, so the store holds nothing derived from it. Denying needs no code.
 - each pairing window is bound in memory to the local connection that opened it (at most four live
@@ -155,8 +158,10 @@ field for the six digits; the app sends `approvalCode` (the digits the vector re
 dropped) with an approval only to such an engine, sends none with a denial, and refuses a text that
 is not six digits itself, with no call. The engine's own words for `pairing_code_invalid` (which
 say how many tries are left) are shown beside the request. The engine denies the request at the
-third wrong code and sends the app nothing but that refusal, so the app counts the refusals
-(`approval_code::WRONG_CODES_ALLOWED`) and closes the request, which then offers only Dismiss. The sheet keeps the one connection of
+third wrong code and sends the app that `pair.result` with `approved: false`; the app counts
+nothing itself (the engine's count spans reconnects and windows, and one error kind covers a
+missing code, no code and a wrong one), and closes the request, which then offers only Dismiss,
+with the refusal's words beside it. The sheet keeps the one connection of
 the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
 new window on the next connection. An engine that refuses (Windows, and Linux until the peer rules
 of slice 3) is shown with the app's words, "This computer cannot pair a phone yet.", and its own

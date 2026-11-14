@@ -246,6 +246,9 @@ impl Workbench {
     }
 
     fn new_task_key(&mut self, dispatch: bool, cx: &mut Context<Self>) {
+        if self.sheet_is_modal() {
+            return;
+        }
         if self.tasks_ui.form.is_some() {
             self.submit_new_task(dispatch, cx);
         } else {

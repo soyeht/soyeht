@@ -10,13 +10,12 @@
 //! of a receipt, of a log line or of an event, and it has no `Debug`, `Serialize` or `Clone`.
 
 use crate::errors::{self, Result};
-use soyeht_protocol::{
-    approval_code::{self, WRONG_CODES_ALLOWED},
-    limits,
-};
+use soyeht_protocol::{approval_code, limits};
 use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
+/// Wrong codes a request tolerates; the last one denies it.
+const WRONG_CODES_ALLOWED: u8 = 3;
 /// Pairing windows one local connection keeps open; a new one closes its oldest.
 const WINDOWS_PER_CONNECTION: usize = 4;
 
@@ -257,6 +256,13 @@ impl Windows {
         self.bound
             .get(window)
             .is_some_and(|bound| bound.connection == connection)
+    }
+
+    /// The connection that opened `window`, while it is held.
+    pub(crate) fn owner(&self, window: &str) -> Option<&str> {
+        self.bound
+            .get(window)
+            .map(|bound| bound.connection.as_str())
     }
 
     pub(crate) fn release(&mut self, connection: &str) {
