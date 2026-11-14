@@ -13,6 +13,7 @@ use crate::{
     composer::ReturnedPrompt,
     editor::EditorCommand,
     event::Event,
+    pairing::Command as PairingCommand,
     preference_requests,
     writing::Command as WritingCommand,
 };
@@ -294,6 +295,8 @@ pub enum Command {
     Editor(EditorCommand),
     /// What a writing pane and the lists of the sections ask of the engine.
     Writing(WritingCommand),
+    /// What the pairing sheet and the list of devices ask of the engine.
+    Pairing(PairingCommand),
 }
 
 /// What the new-task form asks the engine to create.
@@ -367,6 +370,7 @@ impl Command {
                 .or_else(|| crate::editor::commands::failure(editor, &error.to_string())),
             Self::Writing(writing) => writing.failure(),
             Self::SetProjectTrust { .. } => Some(Event::ProjectTrustFailed),
+            Self::Pairing(pairing) => Some(Event::Pairing(pairing.failure(error))),
             // Whatever the reason (a refusal, no answer in time, a connection that went, a queue
             // that was full), the engine did not take the message: it goes back to its composer.
             Self::Prompt {
@@ -391,8 +395,10 @@ impl Command {
     /// its own: in the pane of a file the engine refused as text, or by the command's own
     /// failure event (a layout the engine refused says so in its message).
     pub fn failure_is_shown_in_place(&self, error: &crate::Error) -> bool {
-        matches!(self, Self::SetLayout { .. } | Self::SetProjectTrust { .. })
-            || matches!(self, Self::Writing(writing) if writing.failure_is_shown_in_place())
+        matches!(
+            self,
+            Self::SetLayout { .. } | Self::SetProjectTrust { .. } | Self::Pairing(_)
+        ) || matches!(self, Self::Writing(writing) if writing.failure_is_shown_in_place())
             || matches!(self, Self::Editor(editor) if crate::editor::commands::refused(editor, error).is_some())
     }
 

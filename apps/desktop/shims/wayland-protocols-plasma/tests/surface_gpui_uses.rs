@@ -1,5 +1,7 @@
 //! The names and calls that `gpui_linux` makes on the blur module, and the promise that blur stays off.
 
+#![cfg(unix)]
+
 use wayland_client::globals::GlobalList;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Dispatch, Proxy, QueueHandle, delegate_noop};

@@ -6,6 +6,10 @@
 //! `[patch.crates-io]` in `apps/desktop/Cargo.toml`, with a protocol written here (in `protocol/`)
 //! from the calls GPUI makes. Its interfaces carry names that no compositor advertises: GPUI looks
 //! for the manager global, finds none, and blur stays off.
+//!
+//! Wayland is a Unix protocol, so on Windows the crate is empty: the workspace builds it there too.
+
+#![cfg(unix)]
 
 pub mod blur {
     pub mod client {

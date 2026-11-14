@@ -13,7 +13,10 @@ description = "Soyeht's stand-in for the blur module of wayland-protocols-plasma
 # gpui_linux asks for this feature; the stand-in has the client side only, always.
 client = []
 
-[dependencies]
+# Wayland is a Unix protocol: `wayland-sys` does not compile on Windows, and the shim is a member of
+# the workspace, so a Windows build of the workspace would build it. On Windows the crate is empty
+# and has no dependency.
+[target.'cfg(unix)'.dependencies]
 wayland-client = "0.31"
 wayland-backend = "0.3"
 wayland-scanner = "0.31"
