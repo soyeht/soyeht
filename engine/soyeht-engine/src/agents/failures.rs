@@ -43,7 +43,8 @@ impl Core {
     }
 
     pub fn close_agent_processes(&mut self, pane: &str) -> Result<()> {
-        let saved = &self.panes[pane].stored;
+        let running = self.agents.require(pane)?;
+        let saved = &errors::invariant(self.panes.get(pane), "Agent pane disappeared")?.stored;
         let current = self.ptyd.as_ref().map(|p| p.supervisor_id());
         let mut processes = Vec::new();
         if saved.supervisor_id.as_deref() == current
@@ -56,21 +57,17 @@ impl Core {
                 supervisor_id: supervisor_id.clone(),
             });
         }
-        let terminals = self.agents.agent(pane).state.terminals.values();
         processes.extend(
-            terminals
+            running
+                .state
+                .terminals
+                .values()
                 .filter(|terminal| terminal.supervisor_id.as_deref() == current)
                 .filter_map(Terminal::retirement),
         );
         // A faulted agent is visited on every tick; each process is handed over once. The ledger
         // closes it, again and again until the supervisor has, and it survives a lost link.
-        processes.retain(|process| {
-            !self
-                .agents
-                .agent(pane)
-                .idle
-                .already_closed(&process.instance_id)
-        });
+        processes.retain(|process| !running.idle.already_closed(&process.instance_id));
         let handed: Vec<_> = processes
             .iter()
             .map(|process| process.instance_id.clone())
@@ -324,4 +321,33 @@ pub(super) fn fail_work_in_flight(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod no_agent_tests {
+    use crate::{errors, test_panes};
+    use soyeht_protocol::ErrorKind;
+
+    /// A pane with no agent, and one that does not exist, fail with a typed error where the
+    /// roster once indexed a map and panicked.
+    #[test]
+    fn an_agent_step_on_a_pane_with_no_agent_fails_with_an_error_and_changes_nothing() {
+        let (mut core, directory) = test_panes::core_with_workspace("workspace");
+        let shell = test_panes::insert_terminal_pane(&mut core, &directory, "shell", false);
+        let before = core.panes[&shell].stored.clone();
+
+        for pane in [shell.as_str(), "missing"] {
+            assert!(core.fail_agent(pane, "Agent process exited").is_err());
+            assert!(core.poll_agent(pane).is_err());
+            assert!(core.poll_agent_terminals(pane).is_err());
+            assert!(core.close_agent_processes(pane).is_err());
+            assert!(core.agent_spawn_config(pane).is_err());
+            assert!(!core.agent_may_rest(pane));
+        }
+        let error = core.agents.require(&shell).err();
+        assert!(error.is_some_and(|error| errors::kind(&error) == ErrorKind::InternalError));
+        assert!(!core.panes[&shell].stored.closed);
+        assert_eq!(core.panes[&shell].stored.instance_id, before.instance_id);
+        crate::test_paths::remove_after(core, directory);
+    }
 }

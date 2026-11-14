@@ -382,7 +382,7 @@ impl Core {
     /// checkpoint can lag the raw log, but it never advances beyond durable data.
     fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
         let base = self.panes[pane].stored.sequence_base;
-        let offset = self.agents.agent(pane).decoder.next_offset();
+        let offset = self.agents.require(pane)?.decoder.next_offset();
         let end = self.panes[pane].screen.next_offset();
         let mut from = base
             .checked_add(offset)
@@ -409,7 +409,7 @@ impl Core {
                 }
                 Record::Data { offset, bytes } => (offset, bytes),
             };
-            if self.agents.agent(pane).state.discard_until_newline {
+            if self.agents.require(pane)?.state.discard_until_newline {
                 let newline = bytes.iter().position(|byte| *byte == b'\n');
                 let skipped = newline.map_or(bytes.len(), |at| at + 1);
                 if !self.skip_interrupted_agent_record(
@@ -462,7 +462,7 @@ impl Core {
     }
 
     pub fn poll_agent(&mut self, pane: &str) -> Result<()> {
-        if self.agents.agent(pane).state.phase == Phase::Faulted {
+        if self.agents.require(pane)?.state.phase == Phase::Faulted {
             // A sign-in can finish after its agent stopped; the person's
             // completed sign-in must still bring the agent back.
             self.poll_agent_authentication(pane)?;
@@ -492,7 +492,7 @@ impl Core {
         self.append_agent_output(pane, &output, seq)?;
         // The next read starts while the rest of the poll runs, unless an idle agent said nothing.
         let quiet = output.from_seq == seq && output.next_seq == seq && !output.exited;
-        if quiet && self.agents.agent(pane).is_settled(self.now_ms()) {
+        if quiet && self.agents.require(pane)?.is_settled(self.now_ms()) {
             self.pause_reads(&owner);
         } else {
             let next = self.panes[pane].screen.next_offset() - sequence_base;
@@ -513,19 +513,19 @@ impl Core {
             // Exit does not imply that the last page has been consumed. Keep
             // draining before retiring the process or trying to write to it.
             if output.next_seq != output.end_seq
-                || self.agents.agent(pane).decoder.next_offset() != output.end_seq
+                || self.agents.require(pane)?.decoder.next_offset() != output.end_seq
             {
                 return Ok(());
             }
-            if self.agents.agent(pane).state.phase != Phase::RestartAfterProbe {
+            if self.agents.require(pane)?.state.phase != Phase::RestartAfterProbe {
                 return self.fail_agent(pane, "Agent process exited");
             }
         }
         // An idle agent has nothing to advance until its state changes.
-        if self.agents.agent(pane).is_settled(self.now_ms()) {
+        if self.agents.require(pane)?.is_settled(self.now_ms()) {
             return Ok(());
         }
-        let revision = self.agents.agent(pane).idle.revision();
+        let revision = self.agents.require(pane)?.idle.revision();
         if !self.check_agent_deadlines(pane)? {
             return Ok(());
         }

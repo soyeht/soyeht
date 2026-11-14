@@ -48,13 +48,21 @@ impl Agents {
         self.running.get(pane)
     }
 
+    /// The agent of `pane` to change, when it has one.
     pub(crate) fn get_mut(&mut self, pane: &str) -> Option<&mut Running> {
         self.running.get_mut(pane)
     }
 
-    /// The agent of `pane`, for a caller that has just seen that the pane has one.
+    /// The agent of `pane`, for a caller that needs it to exist: an internal error when it does
+    /// not, so a pane that lost its agent stops the request and never the engine.
+    pub(crate) fn require(&self, pane: &str) -> Result<&Running> {
+        errors::invariant(self.running.get(pane), "Agent runtime disappeared")
+    }
+
+    /// The agent of `pane`, in a test that has just made it.
+    #[cfg(test)]
     pub(crate) fn agent(&self, pane: &str) -> &Running {
-        &self.running[pane]
+        self.require(pane).expect("the pane has an agent")
     }
 
     /// Every agent with its pane id, in pane id order.

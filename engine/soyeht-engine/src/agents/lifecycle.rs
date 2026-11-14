@@ -94,12 +94,12 @@ impl Core {
     }
 
     /// The process the agent of pane `id` runs under the identity the pane has saved.
-    pub(crate) fn agent_spawn_config(&self, id: &str) -> Spawn {
-        let saved = &self.panes[id].stored;
-        let state = &self.agents.agent(id).state;
+    pub(crate) fn agent_spawn_config(&self, id: &str) -> Result<Spawn> {
+        let saved = &errors::invariant(self.panes.get(id), "Agent pane disappeared")?.stored;
+        let state = &self.agents.require(id)?.state;
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
-        Spawn {
+        Ok(Spawn {
             instance_key: saved.instance_key.clone(),
             generation: saved.pane.generation,
             kind: ProcessKind::PipesAcp,
@@ -112,7 +112,7 @@ impl Core {
             env: super::environment::launch_environment_with(state.launch.environment.as_deref()),
             cols: saved.pane.cols as u16,
             rows: saved.pane.rows as u16,
-        }
+        })
     }
 
     pub fn adopt_agent(&mut self, id: &str, instance: &Instance) -> Result<()> {

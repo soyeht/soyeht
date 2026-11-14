@@ -171,7 +171,7 @@ impl Core {
     /// the harness a terminal pane runs).
     pub(crate) fn pane_spawn_config(&self, id: &str) -> Result<Spawn> {
         if self.agents.has(id) {
-            return Ok(self.agent_spawn_config(id));
+            return self.agent_spawn_config(id);
         }
         let pane = &self.panes[id].stored;
         let launch: Option<Spawn> = match self.terminal_harnesses.get(id) {
