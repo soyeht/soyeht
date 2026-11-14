@@ -36,7 +36,7 @@ impl Core {
         if state.harness_switch.is_some() {
             return Err(errors::pane_busy("Harness switch is still pending"));
         }
-        let saved = self.panes[&params.pane_id].stored.clone();
+        let saved = self.pane(&params.pane_id)?.stored.clone();
         if saved.pane.state != PaneState::Idle
             || state.phase != Phase::Ready
             || state.active.is_some()

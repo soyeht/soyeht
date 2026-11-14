@@ -173,7 +173,7 @@ impl Core {
         if self.agents.has(id) {
             return self.agent_spawn_config(id);
         }
-        let pane = &self.panes[id].stored;
+        let pane = &self.pane(id)?.stored;
         let launch: Option<Spawn> = match self.terminal_harnesses.get(id) {
             Some(session) => Some(session.spawn.clone()),
             None => StorePort::pane_launch(&self.store, id).map_err(errors::storage)?,

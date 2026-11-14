@@ -612,11 +612,12 @@ impl Core {
     }
 
     pub(crate) fn resize_terminal_capture(&mut self, pane_id: &str) -> Result<()> {
+        let pane = &self.pane(pane_id)?.stored.pane;
+        let (rows, cols) = (pane.rows, pane.cols);
         let Some(capture) = self.terminal_captures.get_mut(pane_id) else {
             return Ok(());
         };
-        let pane = &self.panes[pane_id].stored.pane;
-        if let Err(error) = capture.resize(pane.rows, pane.cols) {
+        if let Err(error) = capture.resize(rows, cols) {
             self.fail_experiment_capture(pane_id, Some(error.to_string()))?;
         }
         Ok(())

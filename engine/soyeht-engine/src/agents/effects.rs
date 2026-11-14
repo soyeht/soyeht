@@ -78,7 +78,7 @@ impl Core {
             .take(4)
         {
             let state = self.agent_state(pane)?;
-            let saved = self.panes[pane].stored.clone();
+            let saved = self.pane(pane)?.stored.clone();
             let root = Path::new(&saved.pane.cwd);
             let mut editor_write = None;
             let result = if request.generation != saved.pane.generation

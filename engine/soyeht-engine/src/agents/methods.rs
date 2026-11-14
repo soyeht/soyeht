@@ -269,7 +269,7 @@ impl Core {
         }
         let task_owner_loss = self.task_owner_loss(pane, "returned: the pane closed")?;
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let instance = saved.instance_id.clone();
         let child_instances: Vec<_> = state
             .terminals
@@ -342,7 +342,7 @@ impl Core {
     ) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes::default();
         let now_ms = self.now_ms();
         let timestamp = self.timestamp();

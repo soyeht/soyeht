@@ -156,7 +156,7 @@ impl Core {
             original.harness_switch.clone(),
             "Harness switch checkpoint disappeared",
         )?;
-        let old_saved = self.panes[pane].stored.clone();
+        let old_saved = self.pane(pane)?.stored.clone();
         let new_generation = old_saved
             .pane
             .generation
@@ -168,7 +168,7 @@ impl Core {
         saved.instance_id = None;
         saved.supervisor_id = None;
         saved.pane.pid = None;
-        saved.sequence_base = self.panes[pane].screen.next_offset();
+        saved.sequence_base = self.pane(pane)?.screen.next_offset();
         let mut state = State::new(launch.clone(), binary_digest.to_owned(), None)?;
         state.mode = original.mode.clone();
         state.mode_ceiling = original.mode_ceiling.clone();

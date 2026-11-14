@@ -352,7 +352,7 @@ impl Core {
         if self.agents.has(id) {
             return self.fail_agent(id, reason);
         }
-        let mut stopped = self.panes[id].stored.clone();
+        let mut stopped = self.pane(id)?.stored.clone();
         stopped.pane.pid = None;
         stopped.instance_id = None;
         stopped.supervisor_id = None;

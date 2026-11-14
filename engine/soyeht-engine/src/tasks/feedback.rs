@@ -244,7 +244,7 @@ impl Core {
             ..Changes::default()
         };
         apply_attention_change(&mut changes, attention);
-        let saved = self.panes[&pane].stored.clone();
+        let saved = self.pane(&pane)?.stored.clone();
         self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
     }

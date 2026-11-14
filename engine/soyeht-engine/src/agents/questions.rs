@@ -623,7 +623,7 @@ impl Core {
     ) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let request = self
             .store
             .agent_request(errors::param_str(params, "requestId")?)

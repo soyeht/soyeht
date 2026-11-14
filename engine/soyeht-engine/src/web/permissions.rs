@@ -215,7 +215,7 @@ impl Core {
         params: &WebCommandParams,
         kind: PermissionRequestKind,
     ) -> Result<WebPermissionRequest> {
-        let pane = &self.panes[&params.pane_id].stored.pane;
+        let pane = &self.pane(&params.pane_id)?.stored.pane;
         let expires_ms = self.now_ms().saturating_add(QUESTION_TIMEOUT_MS);
         let expires_at = chrono::DateTime::from_timestamp_millis(expires_ms)
             .ok_or_else(|| errors::internal("Permission deadline is outside timestamp range"))?
@@ -249,7 +249,7 @@ impl Core {
     }
 
     fn persist_web_permission(&mut self, request: &WebPermissionRequest) -> Result<()> {
-        let mut saved = self.panes[&request.pane_id].stored.clone();
+        let mut saved = self.pane(&request.pane_id)?.stored.clone();
         if request.kind == PermissionRequestKind::WebSession {
             saved.pane.web_session = Some(WebSessionState::PermissionRequired);
         }

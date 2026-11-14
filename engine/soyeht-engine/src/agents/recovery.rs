@@ -105,7 +105,7 @@ impl Core {
     /// asked off the lock (ADR 0126): with the answer not here yet this starts the job and says
     /// `false`, and the caller leaves the gap for its next poll.
     fn recover_agent_requests_before(&mut self, pane: &str, before: u64) -> Result<bool> {
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         let instance = errors::invariant(
             saved.instance_id.as_ref(),
             "Agent process has no adopted instance during recovery",
@@ -210,7 +210,7 @@ impl Core {
         output: &Output,
         seq: u64,
     ) -> Result<()> {
-        let sequence_base = self.panes[pane].stored.sequence_base;
+        let sequence_base = self.pane(pane)?.stored.sequence_base;
         if output.from_seq != seq {
             if output.from_seq < seq
                 || output
@@ -256,7 +256,7 @@ impl Core {
             return Ok(false);
         }
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes {
             replay_messages: state.phase == Phase::Loading,
             ..Changes::default()
@@ -309,7 +309,7 @@ impl Core {
         state.acknowledged_offset = to;
         state.discard_until_newline = !complete;
         self.commit_agent(
-            self.panes[pane].stored.clone(),
+            self.pane(pane)?.stored.clone(),
             state,
             Changes::default(),
             None,

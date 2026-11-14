@@ -171,7 +171,7 @@ impl Core {
         refused_attention: Option<AttentionItem>,
     ) -> Result<Value> {
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes {
             task_human_move: Some(movement),
             ..Changes::default()

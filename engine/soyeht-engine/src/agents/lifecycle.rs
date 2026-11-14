@@ -19,7 +19,7 @@ impl Core {
         id: &str,
         after: Option<&str>,
     ) -> Result<()> {
-        let mut saved = self.panes[id].stored.clone();
+        let mut saved = self.pane(id)?.stored.clone();
         let mut state = self.agent_state(id)?;
         if state.phase == Phase::RestartAfterProbe {
             return self.restart_after_probe(id);
@@ -65,7 +65,7 @@ impl Core {
         saved.instance_id = None;
         saved.supervisor_id = None;
         saved.instance_key = uuid::Uuid::new_v4().to_string();
-        saved.sequence_base = self.panes[id].screen.next_offset();
+        saved.sequence_base = self.pane(id)?.screen.next_offset();
         state.client = Default::default();
         // The children of the lost agent are closed from the ledger, which outlives a lost link;
         // the ones of another supervisor are gone with it.
@@ -121,7 +121,7 @@ impl Core {
                 "Agent adoption requires ACP pipes",
             ));
         }
-        let mut saved = self.panes[id].stored.clone();
+        let mut saved = self.pane(id)?.stored.clone();
         let mut state = self.agent_state(id)?;
         saved.instance_id = Some(instance.instance_id.clone());
         saved.supervisor_id = Some(instance.supervisor_id.clone());
