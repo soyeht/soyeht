@@ -19,6 +19,25 @@ fn send(agent: &mut Client, target: Value, text: &str, key: &str) -> Value {
     agent.request("agent.message", params)
 }
 
+/// Three agent panes of one workspace, all held, so the messages stay in the queue where a test
+/// reads them.
+fn held_trio(rig: &Rig) -> (Client, [String; 3]) {
+    let (mut human, first) = rig.agent();
+    let workspace = human.pane(&first)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    let (_, third) = rig.agent_in_workspace(&workspace);
+    for pane in [&first, &second, &third] {
+        human.call(
+            "pane.draft",
+            json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
+        );
+    }
+    (human, [first, second, third])
+}
+
 fn kind(response: &Value) -> &str {
     response["error"]["data"]["kind"].as_str().unwrap()
 }
@@ -26,20 +45,7 @@ fn kind(response: &Value) -> &str {
 #[test]
 fn a_message_names_its_recipient_and_an_ambiguous_name_lists_the_candidates() {
     let rig = Rig::new();
-    let (mut human, sender) = rig.agent();
-    let workspace = human.pane(&sender)["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let (_, first) = rig.agent_in_workspace(&workspace);
-    let (_, second) = rig.agent_in_workspace(&workspace);
-    // Held, so the messages stay in the queue where the test reads them.
-    for pane in [&first, &second] {
-        human.call(
-            "pane.draft",
-            json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
-        );
-    }
+    let (mut human, [sender, first, second]) = held_trio(&rig);
     rename(&mut human, &first, "Lívia");
     rename(&mut human, &second, " livia");
     let mut agent = agent_client(&rig, &sender);
@@ -129,19 +135,7 @@ fn a_message_names_its_recipient_and_an_ambiguous_name_lists_the_candidates() {
 #[test]
 fn a_reply_reaches_the_sender_when_two_panes_carry_its_name() {
     let rig = Rig::new();
-    let (mut human, replier) = rig.agent();
-    let workspace = human.pane(&replier)["workspaceId"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    let (_, first) = rig.agent_in_workspace(&workspace);
-    let (_, second) = rig.agent_in_workspace(&workspace);
-    for pane in [&replier, &first, &second] {
-        human.call(
-            "pane.draft",
-            json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
-        );
-    }
+    let (mut human, [replier, first, second]) = held_trio(&rig);
     rename(&mut human, &first, "Twin");
     rename(&mut human, &second, "Twin");
 
