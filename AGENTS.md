@@ -464,7 +464,10 @@ inherit the main actor.
   `soyeht-service` for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
   `soyeht-engine` and `soyeht-cli` as well when the host also has a C compiler that targets
   Windows (their dependencies compile C); `scripts/check_engine_windows.ps1` checks all of
-  it on Windows itself.
+  it on Windows itself. The desktop's Windows build is checked too: `desktop:clippy-windows`
+  clippy-checks the whole workspace for the same target when the host has a C compiler that
+  targets Windows, and otherwise `cargo check`s the crates that build without one
+  (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`).
 
 ## Repository hygiene
 

@@ -193,6 +193,24 @@ lint_windows() {
     cargo clippy --locked --target x86_64-pc-windows-msvc "${packages[@]}" --all-targets -- -D warnings
 }
 
+# The desktop builds for Windows on a host with no Windows session, as the engine's Windows lint
+# does. A whole-workspace check needs a C compiler for Windows: GPUI builds stacker, whose build
+# script fails without one. So the crates whose dependencies need no C compiler are checked, and
+# the whole workspace is linted when the host can build C for Windows.
+lint_desktop_windows() {
+    if ! rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
+        echo 'check_all: skipped the Windows check of the desktop; run: rustup target add x86_64-pc-windows-msvc'
+        return 0
+    fi
+    if windows_c_compiler; then
+        cargo clippy --locked --target x86_64-pc-windows-msvc --workspace --all-targets -- -D warnings
+    else
+        echo 'check_all: checked only the desktop crates that need no C compiler; stacker needs a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
+        cargo check --locked --target x86_64-pc-windows-msvc --all-targets \
+            -p soyeht-client -p soyeht-webview -p ztracing -p wayland-protocols-plasma
+    fi
+}
+
 # Whether the C compiler the `cc` crate would pick can build for Windows. The engine's
 # dependencies compile C, and a host without a Windows sysroot fails in their build scripts.
 windows_c_compiler() {
@@ -376,6 +394,8 @@ step timing full engine:timing-capture-cadence in_dir engine capture_test \
 
 step desktop both desktop:fmt in_dir apps/desktop cargo fmt --all --check
 step desktop both desktop:clippy in_dir apps/desktop cargo clippy --locked --workspace --all-targets -- -D warnings
+# Windows-only code has no host build here either: check the desktop for the Windows target.
+step desktop both desktop:clippy-windows in_dir apps/desktop lint_desktop_windows
 # The design-audit tools (`dev-tools`) are not in the shipping build: lint and test them too.
 step desktop both desktop:clippy-all-features in_dir apps/desktop cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 # The whole test run, `tests/` directories included: they drive the client against a scripted
