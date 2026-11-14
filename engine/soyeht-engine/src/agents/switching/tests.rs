@@ -10,7 +10,7 @@ use std::fs;
 
 /// Records a switch of the test agent to "other" that must be ready by `deadline`.
 fn arm_switch(core: &mut Core, deadline: Instant) {
-    let mut state = core.agents.running["agent"].state.clone();
+    let mut state = core.agents.agent("agent").state.clone();
     state.harness_switch = Some(HarnessSwitchCheckpoint {
         user: UserOperation {
             scope: "scope".into(),
@@ -22,7 +22,7 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
         candidate_instance_key: "candidate-key".into(),
         previous_queue_paused: false,
     });
-    core.agents.running.get_mut("agent").unwrap().state = state;
+    core.agents.get_mut("agent").unwrap().state = state;
     core.agents.set_switch(
         "agent".into(),
         HarnessSwitchRuntime {
@@ -159,7 +159,7 @@ fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
     .unwrap();
     let candidate = candidate_with(
         core.panes["agent"].stored.clone(),
-        core.agents.running["agent"].state.clone(),
+        core.agents.agent("agent").state.clone(),
         CandidatePhase::Initializing,
     );
     core.agents.switch_mut("agent").unwrap().candidate = Some(candidate);
@@ -167,7 +167,7 @@ fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
     core.advance_harness_switches().unwrap();
 
     assert!(!core.agents.has_switches());
-    let state = &core.agents.running["agent"].state;
+    let state = &core.agents.agent("agent").state;
     assert!(state.harness_switch.is_none());
     let retired = &state.retired_processes;
     assert_eq!(retired.len(), 1);

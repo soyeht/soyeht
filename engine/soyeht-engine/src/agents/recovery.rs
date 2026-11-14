@@ -288,7 +288,7 @@ impl Core {
         }
         self.commit_agent(saved, state, changes, None, json!({}))?;
         errors::invariant(
-            self.agents.running.get_mut(pane),
+            self.agents.get_mut(pane),
             "Agent runtime disappeared during gap recovery",
         )?
         .decoder = Decoder::new(to);
@@ -316,7 +316,7 @@ impl Core {
             json!({}),
         )?;
         errors::invariant(
-            self.agents.running.get_mut(pane),
+            self.agents.get_mut(pane),
             "Agent runtime disappeared while skipping an interrupted record",
         )?
         .decoder = Decoder::new(to);
@@ -357,11 +357,11 @@ mod tests {
             "the recovery waited for the supervisor: {:?}",
             began.elapsed()
         );
-        assert_eq!(core.agents.running["agent"].decoder.next_offset(), 0);
+        assert_eq!(core.agents.agent("agent").decoder.next_offset(), 0);
 
         apply_until_done(&mut core, "recover:agent");
         assert!(core.agent_output_gap("agent", 5).unwrap());
-        assert_eq!(core.agents.running["agent"].decoder.next_offset(), 5);
+        assert_eq!(core.agents.agent("agent").decoder.next_offset(), 5);
     }
 
     /// A supervisor that takes `delay` to list the requests it holds, and then answers with `then`.

@@ -268,7 +268,7 @@ impl Core {
                 "Variant agent belongs to another workspace",
             ));
         }
-        Ok(self.agents.running.contains_key(pane_id)
+        Ok(self.agents.has(pane_id)
             && !pane.stored.closed
             && pane.stored.pane.state != PaneState::Dead)
     }

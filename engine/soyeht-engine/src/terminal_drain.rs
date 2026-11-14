@@ -167,7 +167,7 @@ impl Core {
             || saved.instance_id.as_deref() != Some(started.instance_id.as_str())
             || saved.sequence_base != started.sequence_base
             || running.screen.next_offset() != started.next
-            || self.agents.running.contains_key(id)
+            || self.agents.has(id)
             || self.capture_restore_pending(id)
         {
             return Ok(());

@@ -324,7 +324,8 @@ fn engine_feedback_is_durable_prioritized_deduplicated_and_enters_attention() {
 
     core.advance_task_feedback().unwrap();
     assert_eq!(
-        core.agents.running["pane-1"]
+        core.agents
+            .agent("pane-1")
             .state
             .queue
             .iter()
@@ -341,7 +342,7 @@ fn engine_feedback_is_durable_prioritized_deduplicated_and_enters_attention() {
         1
     );
     core.advance_task_feedback().unwrap();
-    assert_eq!(core.agents.running["pane-1"].state.queue.len(), 2);
+    assert_eq!(core.agents.agent("pane-1").state.queue.len(), 2);
 
     core.task_revision_due.clear();
     core.advance_task_feedback().unwrap();

@@ -382,7 +382,7 @@ impl Core {
     /// checkpoint can lag the raw log, but it never advances beyond durable data.
     fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
         let base = self.panes[pane].stored.sequence_base;
-        let offset = self.agents.running[pane].decoder.next_offset();
+        let offset = self.agents.agent(pane).decoder.next_offset();
         let end = self.panes[pane].screen.next_offset();
         let mut from = base
             .checked_add(offset)
@@ -409,7 +409,7 @@ impl Core {
                 }
                 Record::Data { offset, bytes } => (offset, bytes),
             };
-            if self.agents.running[pane].state.discard_until_newline {
+            if self.agents.agent(pane).state.discard_until_newline {
                 let newline = bytes.iter().position(|byte| *byte == b'\n');
                 let skipped = newline.map_or(bytes.len(), |at| at + 1);
                 if !self.skip_interrupted_agent_record(
@@ -428,7 +428,6 @@ impl Core {
             let decoded = decode(
                 &mut self
                     .agents
-                    .running
                     .get_mut(pane)
                     .ok_or_else(|| {
                         errors::internal("Agent runtime disappeared while decoding output")
@@ -441,7 +440,7 @@ impl Core {
                 Ok(records) => records,
                 Err(error) => {
                     let running = errors::invariant(
-                        self.agents.running.get_mut(pane),
+                        self.agents.get_mut(pane),
                         "Agent runtime disappeared after a decoder failure",
                     )?;
                     running.decoder = Decoder::new(running.state.acknowledged_offset);
@@ -451,7 +450,7 @@ impl Core {
             for record in decoded {
                 if let Err(error) = self.native_record(pane, record, true) {
                     let running = errors::invariant(
-                        self.agents.running.get_mut(pane),
+                        self.agents.get_mut(pane),
                         "Agent runtime disappeared after a native record failure",
                     )?;
                     running.decoder = Decoder::new(running.state.acknowledged_offset);
@@ -463,7 +462,7 @@ impl Core {
     }
 
     pub fn poll_agent(&mut self, pane: &str) -> Result<()> {
-        if self.agents.running[pane].state.phase == Phase::Faulted {
+        if self.agents.agent(pane).state.phase == Phase::Faulted {
             // A sign-in can finish after its agent stopped; the person's
             // completed sign-in must still bring the agent back.
             self.poll_agent_authentication(pane)?;
@@ -493,17 +492,14 @@ impl Core {
         self.append_agent_output(pane, &output, seq)?;
         // The next read starts while the rest of the poll runs, unless an idle agent said nothing.
         let quiet = output.from_seq == seq && output.next_seq == seq && !output.exited;
-        if quiet && self.agents.running[pane].is_settled(self.now_ms()) {
+        if quiet && self.agents.agent(pane).is_settled(self.now_ms()) {
             self.pause_reads(&owner);
         } else {
             let next = self.panes[pane].screen.next_offset() - sequence_base;
             self.start_read(&owner, &instance_id, next, false)?;
         }
         self.decode_agent_log(pane)?;
-        let running = errors::invariant(
-            self.agents.running.get_mut(pane),
-            "Agent runtime disappeared",
-        )?;
+        let running = errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?;
         let acknowledged = running.state.acknowledged_offset;
         let idle = &mut running.idle;
         if idle.needs_acknowledgement(&instance_id, acknowledged) {
@@ -517,19 +513,19 @@ impl Core {
             // Exit does not imply that the last page has been consumed. Keep
             // draining before retiring the process or trying to write to it.
             if output.next_seq != output.end_seq
-                || self.agents.running[pane].decoder.next_offset() != output.end_seq
+                || self.agents.agent(pane).decoder.next_offset() != output.end_seq
             {
                 return Ok(());
             }
-            if self.agents.running[pane].state.phase != Phase::RestartAfterProbe {
+            if self.agents.agent(pane).state.phase != Phase::RestartAfterProbe {
                 return self.fail_agent(pane, "Agent process exited");
             }
         }
         // An idle agent has nothing to advance until its state changes.
-        if self.agents.running[pane].is_settled(self.now_ms()) {
+        if self.agents.agent(pane).is_settled(self.now_ms()) {
             return Ok(());
         }
-        let revision = self.agents.running[pane].idle.revision();
+        let revision = self.agents.agent(pane).idle.revision();
         if !self.check_agent_deadlines(pane)? {
             return Ok(());
         }
@@ -582,7 +578,7 @@ impl Core {
             json!({}),
         )?;
         errors::invariant(
-            self.agents.running.get_mut(pane),
+            self.agents.get_mut(pane),
             "Agent runtime disappeared during restart",
         )?
         .decoder = Decoder::new(0);

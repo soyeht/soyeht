@@ -33,7 +33,6 @@ impl Core {
         };
         let panes = self
             .agents
-            .running
             .iter()
             .filter(|(pane, _)| open(pane))
             .map(|(_, running)| &running.state);
@@ -132,7 +131,7 @@ mod tests {
     #[test]
     fn a_closed_pane_is_not_followed() {
         let (mut core, directory) = test_panes::core_with_agent(&[]);
-        let state = &mut core.agents.running.get_mut("agent").unwrap().state;
+        let state = &mut core.agents.get_mut("agent").unwrap().state;
         *state = opencode("opencode-go/glm-5.3-flash", 5);
         assert_eq!(
             core.usage_hints().opencode_model.as_deref(),

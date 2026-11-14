@@ -285,7 +285,7 @@ impl Core {
 
     fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
         let mut found = None;
-        for (pane, running) in &self.agents.running {
+        for (pane, running) in self.agents.iter() {
             let active = self
                 .panes
                 .get(pane)

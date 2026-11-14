@@ -648,7 +648,7 @@ impl Core {
         };
         self.commit_agent(saved, state, changes, None, json!({}))?;
         errors::invariant(
-            self.agents.running.get_mut(pane_id),
+            self.agents.get_mut(pane_id),
             "Agent runtime disappeared during task restart",
         )?
         .decoder = soyeht_protocol::ndjson::Decoder::new(0);

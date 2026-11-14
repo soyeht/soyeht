@@ -56,7 +56,7 @@ impl Core {
                 supervisor_id: supervisor_id.clone(),
             });
         }
-        let terminals = self.agents.running[pane].state.terminals.values();
+        let terminals = self.agents.agent(pane).state.terminals.values();
         processes.extend(
             terminals
                 .filter(|terminal| terminal.supervisor_id.as_deref() == current)
@@ -65,7 +65,9 @@ impl Core {
         // A faulted agent is visited on every tick; each process is handed over once. The ledger
         // closes it, again and again until the supervisor has, and it survives a lost link.
         processes.retain(|process| {
-            !self.agents.running[pane]
+            !self
+                .agents
+                .agent(pane)
                 .idle
                 .already_closed(&process.instance_id)
         });
@@ -75,12 +77,9 @@ impl Core {
             .collect();
         self.retire_processes(pane, processes)?;
         for instance_id in handed {
-            errors::invariant(
-                self.agents.running.get_mut(pane),
-                "Agent runtime disappeared",
-            )?
-            .idle
-            .mark_closed(instance_id);
+            errors::invariant(self.agents.get_mut(pane), "Agent runtime disappeared")?
+                .idle
+                .mark_closed(instance_id);
         }
         Ok(())
     }

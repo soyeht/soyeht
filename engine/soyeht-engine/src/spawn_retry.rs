@@ -306,7 +306,6 @@ impl Core {
                     && pane.stored.pane.state != PaneState::Dead
             }) && self
                 .agents
-                .running
                 .get(&id)
                 .is_none_or(|agent| agent.state.phase != Phase::Faulted);
             if !startable {

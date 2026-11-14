@@ -175,7 +175,6 @@ impl Core {
             json!({}),
         )?;
         self.agents
-            .running
             .get_mut(pane)
             .ok_or_else(|| errors::internal("Candidate runtime disappeared after commit"))?
             .decoder = std::mem::replace(&mut candidate.decoder, Decoder::new(0));
@@ -189,7 +188,7 @@ impl Core {
         // Flow control only: a missed ack keeps output retained until the next one.
         self.send_later(Request::Ack {
             instance_id: candidate.instance.instance_id.clone(),
-            seq: self.agents.running[pane].state.acknowledged_offset,
+            seq: self.agents.agent(pane).state.acknowledged_offset,
         });
         Ok(())
     }

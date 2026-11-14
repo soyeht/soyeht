@@ -204,7 +204,7 @@ impl Core {
 
     fn reviewer_finished(&self, review: &TaskReviewRecord<ReviewCheckpoint>) -> bool {
         let pane = self.panes.get(&review.reviewer_pane_id);
-        let state = self.agents.running.get(&review.reviewer_pane_id);
+        let state = self.agents.get(&review.reviewer_pane_id);
         match (pane, state) {
             (Some(pane), Some(state)) if !pane.stored.closed => {
                 (pane.stored.pane.state == PaneState::Idle && state.state.has_finished_turn)
