@@ -229,7 +229,7 @@ impl Core {
             false,
         )?);
         let result = review_comment_result(comment_id, task_id, true)?;
-        let saved = self.panes[&pane_id].stored.clone();
+        let saved = self.pane(&pane_id)?.stored.clone();
         let changes = crate::agents::Changes {
             events,
             task_editor_feedback: task_feedback,

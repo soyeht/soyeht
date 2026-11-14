@@ -346,7 +346,7 @@ impl Core {
         let state = queued
             .as_ref()
             .map_or_else(|| self.agent_state(pane), |(state, _)| Ok(state.clone()))?;
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         let mut emitted = change.events();
         if queued.is_some() {
             let prompt_ids = state.queue.iter().map(|item| item.prompt_id.clone());

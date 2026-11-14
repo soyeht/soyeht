@@ -145,7 +145,7 @@ impl Core {
             previous_queue_paused: state.queue_paused,
         };
         state.harness_switch = Some(checkpoint.clone());
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes {
             acknowledged_package: acknowledging,
             ..Changes::default()
@@ -595,7 +595,7 @@ impl Core {
         if state.retired_processes.len() == before {
             return Ok(());
         }
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         self.commit_agent(saved, state, Changes::default(), None, json!({}))
             .map(drop)
     }

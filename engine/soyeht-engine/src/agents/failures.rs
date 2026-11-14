@@ -92,7 +92,7 @@ impl Core {
             reason_end -= 1;
         }
         let reason = &reason[..reason_end];
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes {
             retire_instance: saved.instance_id.clone().zip(saved.supervisor_id.clone()),
             clear_replay: true,
@@ -194,7 +194,7 @@ impl Core {
     /// Stores `state` and `changes` for the pane as it is, with no user request behind them.
     fn commit_agent_state(&mut self, pane: &str, state: &State, changes: Changes) -> Result<()> {
         self.commit_agent(
-            self.panes[pane].stored.clone(),
+            self.pane(pane)?.stored.clone(),
             state.clone(),
             changes,
             None,
@@ -209,7 +209,7 @@ impl Core {
         state: super::state::State,
         now: i64,
     ) -> Result<()> {
-        let saved = &self.panes[pane].stored;
+        let saved = &self.pane(pane)?.stored;
         let waiting_for_non_prompt_reply = state.active.is_none()
             && (state.operation.is_some()
                 || matches!(
@@ -324,7 +324,7 @@ pub(super) fn fail_work_in_flight(
 }
 
 #[cfg(test)]
-mod no_agent_tests {
+mod pane_failure_tests {
     use crate::{errors, test_panes};
     use soyeht_protocol::ErrorKind;
 
@@ -344,6 +344,9 @@ mod no_agent_tests {
             assert!(core.agent_spawn_config(pane).is_err());
             assert!(!core.agent_may_rest(pane));
         }
+        assert!(core.pane(&shell).is_ok());
+        assert!(core.pane("missing").is_err());
+        assert!(core.pane_spawn_config("missing").is_err());
         let error = core.agents.require(&shell).err();
         assert!(error.is_some_and(|error| errors::kind(&error) == ErrorKind::InternalError));
         assert!(!core.panes[&shell].stored.closed);

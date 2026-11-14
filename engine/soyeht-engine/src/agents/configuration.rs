@@ -432,7 +432,7 @@ impl Core {
             return Ok(());
         }
         let mut changes = Changes::default();
-        let generation = self.panes[pane].stored.pane.generation;
+        let generation = self.pane(pane)?.stored.pane.generation;
         if !hold_mode_ceiling(&mut state, generation, &mut changes)? {
             return self.fail_agent(pane, MODE_CEILING_STOP);
         }
@@ -499,7 +499,7 @@ impl Core {
             }
         }
         self.commit_agent(
-            self.panes[pane].stored.clone(),
+            self.pane(pane)?.stored.clone(),
             state,
             changes,
             None,

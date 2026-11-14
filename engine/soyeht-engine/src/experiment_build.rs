@@ -231,7 +231,7 @@ impl Core {
     }
 
     fn restore_capture(&mut self, id: &str) -> Result<()> {
-        let restored = match self.panes[id].stored.pane.mode {
+        let restored = match self.pane(id)?.stored.pane.mode {
             PaneMode::Terminal => self.prepare_terminal_capture(id).map(|capture| {
                 self.terminal_captures.insert(id.to_owned(), capture);
             }),

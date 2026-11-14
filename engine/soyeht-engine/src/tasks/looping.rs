@@ -230,7 +230,7 @@ impl Core {
                 json!({"paneId":pane,"reason":"round_limit"}),
             ));
         }
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         self.commit_agent(
             saved,
             state,

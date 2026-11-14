@@ -170,7 +170,7 @@ impl Core {
                 continue;
             }
             let mut state = self.agent_state(pane)?;
-            let saved = self.panes[pane].stored.clone();
+            let saved = self.pane(pane)?.stored.clone();
             let mut terminal = state.terminals[&id].clone();
             let Some(instance_id) = terminal.instance_id.clone() else {
                 continue;
@@ -306,7 +306,7 @@ impl Core {
             }
             return Ok(());
         };
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         let mut changes = Changes::default();
         let result = match started {
             Started::Process(instance) => {
@@ -349,7 +349,7 @@ impl Core {
             .take(8)
         {
             let mut state = self.agent_state(pane)?;
-            let saved = self.panes[pane].stored.clone();
+            let saved = self.pane(pane)?.stored.clone();
             let mut changes = Changes::default();
             let result = if request.method == "terminal/create" {
                 let id = request.request_id.clone();

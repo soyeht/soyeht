@@ -330,7 +330,7 @@ impl Core {
         advances_stream: bool,
     ) -> Result<()> {
         let mut state = self.agent_state(pane)?;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let was_no_signal = saved.pane.state == PaneState::NoSignal;
         let had_active_prompt = state.active.is_some();
         let now_ms = self.now_ms();
@@ -381,13 +381,13 @@ impl Core {
     /// First consume any raw records synced before an engine crash. The public
     /// checkpoint can lag the raw log, but it never advances beyond durable data.
     fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
-        let base = self.panes[pane].stored.sequence_base;
+        let base = self.pane(pane)?.stored.sequence_base;
         let offset = self.agents.require(pane)?.decoder.next_offset();
-        let end = self.panes[pane].screen.next_offset();
+        let end = self.pane(pane)?.screen.next_offset();
         let mut from = base
             .checked_add(offset)
             .ok_or_else(|| errors::internal("Agent offset exhausted"))?;
-        let first = self.panes[pane].screen.first_offset();
+        let first = self.pane(pane)?.screen.first_offset();
         if from < first {
             // The requests the gap hides are read off the lock; the log is read again next poll.
             if !self.agent_output_gap(pane, first - base)? {
@@ -398,7 +398,7 @@ impl Core {
         if from == end {
             return Ok(());
         }
-        let records = self.panes[pane].screen.read(from, end, 64 * 1024)?;
+        let records = self.pane(pane)?.screen.read(from, end, 64 * 1024)?;
         for record in records {
             let (mut offset, mut bytes) = match record {
                 Record::Gap { to, .. } => {
@@ -476,13 +476,13 @@ impl Core {
         let hooks = Arc::clone(&self.hooks);
         hooks.before_agent_poll(self, pane)?;
         self.decode_agent_log(pane)?;
-        let stored = &self.panes[pane].stored;
+        let stored = &self.pane(pane)?.stored;
         let sequence_base = stored.sequence_base;
         let instance_id = errors::invariant(
             stored.instance_id.clone(),
             "Agent process has no adopted instance",
         )?;
-        let seq = self.panes[pane].screen.next_offset() - sequence_base;
+        let seq = self.pane(pane)?.screen.next_offset() - sequence_base;
         // The read waits for the supervisor off the lock (ADR 0119): with none ready the agent
         // waits for the next tick.
         let Some(read) = self.take_read(&owner, &instance_id, seq, false)? else {
@@ -495,7 +495,7 @@ impl Core {
         if quiet && self.agents.require(pane)?.is_settled(self.now_ms()) {
             self.pause_reads(&owner);
         } else {
-            let next = self.panes[pane].screen.next_offset() - sequence_base;
+            let next = self.pane(pane)?.screen.next_offset() - sequence_base;
             self.start_read(&owner, &instance_id, next, false)?;
         }
         self.decode_agent_log(pane)?;
@@ -535,7 +535,7 @@ impl Core {
     }
 
     pub(crate) fn restart_after_probe(&mut self, pane: &str) -> Result<()> {
-        let saved = self.panes[pane].stored.clone();
+        let saved = self.pane(pane)?.stored.clone();
         let retire_instance = saved.instance_id.clone().zip(saved.supervisor_id.clone());
         let replaced = saved.instance_id;
         if let Some(instance_id) = &replaced {
@@ -543,7 +543,7 @@ impl Core {
             // starts after the close has been sent, not beside it.
             self.close_process(instance_id);
         }
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let mut state = self.agent_state(pane)?;
         saved.instance_key = Uuid::new_v4().to_string();
         saved.pane.generation = saved
@@ -554,7 +554,7 @@ impl Core {
         saved.instance_id = None;
         saved.supervisor_id = None;
         saved.pane.pid = None;
-        saved.sequence_base = self.panes[pane].screen.next_offset();
+        saved.sequence_base = self.pane(pane)?.screen.next_offset();
         state.client = Default::default();
         state.initialized = None;
         state.options = Default::default();
@@ -626,7 +626,7 @@ impl Core {
         }
         state.phase = Phase::RestartAfterProbe;
         self.commit_agent(
-            self.panes[pane].stored.clone(),
+            self.pane(pane)?.stored.clone(),
             state,
             changes,
             None,
@@ -642,7 +642,7 @@ impl Core {
             .agent_open_requests(pane)
             .map_err(errors::storage)?;
         for request in &open {
-            let selected = questions::automatic(state, request, &self.panes[pane].stored.pane.cwd)?;
+            let selected = questions::automatic(state, request, &self.pane(pane)?.stored.pane.cwd)?;
             let expired = request.expires_ms <= self.now_ms();
             if !expired && selected.is_none() {
                 continue;
@@ -661,7 +661,7 @@ impl Core {
                 &mut changes,
             )?;
             self.commit_agent(
-                self.panes[pane].stored.clone(),
+                self.pane(pane)?.stored.clone(),
                 state.clone(),
                 changes,
                 None,
@@ -673,7 +673,7 @@ impl Core {
 
     /// Sends the next queued prompt, and shows the pane as working while one is active.
     fn start_next_prompt(&mut self, pane: &str, mut state: State) -> Result<()> {
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         let (open, next) = next_prompt(
             &self.store,
             self.clock.as_ref(),
@@ -792,3 +792,6 @@ mod tests {
         assert_eq!(released.unwrap().text, "do work");
     }
 }
+
+#[cfg(test)]
+mod pane_tests;

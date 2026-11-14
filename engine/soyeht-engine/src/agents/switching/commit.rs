@@ -87,7 +87,7 @@ impl Core {
             original.harness_switch.clone(),
             "Harness switch checkpoint disappeared before commit",
         )?;
-        let old_saved = self.panes[pane].stored.clone();
+        let old_saved = self.pane(pane)?.stored.clone();
         let session_id = errors::invariant(
             candidate.state.session_id.clone(),
             "Candidate session did not open",
@@ -165,7 +165,7 @@ impl Core {
         // The original process can emit output while its replacement starts.
         // Anchor the candidate generation only after that output is ingested;
         // the base captured at spawn is necessarily stale in that case.
-        candidate.saved.sequence_base = self.panes[pane].screen.next_offset();
+        candidate.saved.sequence_base = self.pane(pane)?.screen.next_offset();
         let candidate_base = candidate.saved.sequence_base;
         self.commit_agent(
             candidate.saved.clone(),
@@ -248,7 +248,7 @@ impl Core {
                 previous_harness: &state.launch.name,
                 new_harness: next_name,
                 task_title: task.as_ref().map(|task| task.title.as_str()),
-                worktree_path: Some(&self.panes[pane].stored.pane.cwd),
+                worktree_path: Some(&self.pane(pane)?.stored.pane.cwd),
                 branch: None,
                 transcript_path: None,
                 messages: &messages,
@@ -270,7 +270,7 @@ impl Core {
             "Failed harness switch has no checkpoint",
         )?;
         state.queue_paused = checkpoint.previous_queue_paused;
-        let mut saved = self.panes[pane].stored.clone();
+        let mut saved = self.pane(pane)?.stored.clone();
         saved.pane.state = if state.active.is_some() {
             PaneState::Working
         } else {
@@ -321,7 +321,7 @@ impl Core {
             supervisor_id: instance.supervisor_id.clone(),
         });
         self.commit_agent(
-            self.panes[pane].stored.clone(),
+            self.pane(pane)?.stored.clone(),
             state,
             Changes::default(),
             None,

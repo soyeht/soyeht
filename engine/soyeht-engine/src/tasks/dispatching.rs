@@ -549,7 +549,7 @@ impl Core {
             .as_deref()
             .ok_or_else(|| errors::internal("Dispatch checkpoint has no worktree"))?;
         if self.panes.contains_key(pane_id) {
-            if self.panes[pane_id].stored.instance_id.is_none()
+            if self.pane(pane_id)?.stored.instance_id.is_none()
                 && self.agent_state(pane_id)?.session_id.is_none()
             {
                 self.start_reserved_task_pane(task, pane_id, cwd)?;
@@ -641,7 +641,7 @@ impl Core {
         saved.instance_key = Uuid::new_v4().to_string();
         saved.instance_id = None;
         saved.supervisor_id = None;
-        saved.sequence_base = self.panes[pane_id].screen.next_offset();
+        saved.sequence_base = self.pane(pane_id)?.screen.next_offset();
         let changes = Changes {
             retire_instance: old_instance.clone().zip(old_supervisor),
             ..Changes::default()

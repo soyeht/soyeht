@@ -535,7 +535,7 @@ impl Core {
         instances: &[Instance],
         reserved_panes: &std::collections::BTreeSet<String>,
     ) -> Result<()> {
-        let saved = self.panes[id].stored.clone();
+        let saved = self.pane(id)?.stored.clone();
         if matches!(
             saved.pane.mode,
             soyeht_protocol::PaneMode::Editor
@@ -619,7 +619,7 @@ impl Core {
             next.instance_key = Uuid::new_v4().to_string();
             next.instance_id = None;
             next.supervisor_id = None;
-            next.sequence_base = self.panes[id].screen.next_offset();
+            next.sequence_base = self.pane(id)?.screen.next_offset();
             self.save_runtime(id, next)?;
         }
         self.spawn(id)
@@ -629,7 +629,7 @@ impl Core {
         if self.agents.has(id) {
             return self.adopt_agent(id, instance);
         }
-        let mut saved = self.panes[id].stored.clone();
+        let mut saved = self.pane(id)?.stored.clone();
         saved.instance_id = Some(instance.instance_id.clone());
         saved.supervisor_id = Some(instance.supervisor_id.clone());
         saved.pane.pid = Some(instance.pid);
@@ -740,6 +740,12 @@ impl Core {
             self.drain_terminal(&id)?;
         }
         Ok(())
+    }
+
+    /// The pane `id` runs, for a caller that needs it to exist: an internal error when it does
+    /// not, so a request for a pane that went away stops and never the engine.
+    pub(crate) fn pane(&self, id: &str) -> Result<&RunningPane> {
+        errors::invariant(self.panes.get(id), "Pane disappeared")
     }
 
     pub fn now_ms(&self) -> i64 {

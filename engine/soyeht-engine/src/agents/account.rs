@@ -125,7 +125,7 @@ impl Core {
         }
         Ok(self
             .commit_agent(
-                self.panes[id].stored.clone(),
+                self.pane(id)?.stored.clone(),
                 state,
                 changes,
                 Some((connection, method::PANE_AUTH_CANCEL, params)),
@@ -161,7 +161,7 @@ impl Core {
         )?;
         Ok(self
             .commit_agent(
-                self.panes[id].stored.clone(),
+                self.pane(id)?.stored.clone(),
                 state,
                 changes,
                 Some((connection, method::PANE_AUTH_LOGOUT, params)),

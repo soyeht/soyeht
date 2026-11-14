@@ -205,7 +205,7 @@ impl Core {
             let result = json!({"paneId":id,"terminalPaneId":pane});
             return Ok(Outcome::Reply(
                 self.commit_agent(
-                    self.panes[id].stored.clone(),
+                    self.pane(id)?.stored.clone(),
                     state,
                     Changes::default(),
                     Some((connection, method::PANE_AUTH_START, params)),
@@ -245,7 +245,7 @@ impl Core {
             let changes = embedded_auth(&mut state, &method.public.id, self.now_ms())?;
             return Ok(Outcome::Reply(
                 self.commit_agent(
-                    self.panes[id].stored.clone(),
+                    self.pane(id)?.stored.clone(),
                     state,
                     changes,
                     Some((connection, method::PANE_AUTH_START, params)),
@@ -263,7 +263,7 @@ impl Core {
         let auth = verified_terminal_auth(&self.directory, &state, method.args.clone())?;
         let (child, launch) = login_terminal(
             &self.directory,
-            &self.panes[id].stored.pane,
+            &self.pane(id)?.stored.pane,
             &state,
             auth,
             method.env,
@@ -273,7 +273,7 @@ impl Core {
         state.login_pane_id = Some(child_id.clone());
         state.relogin = relogin;
         // The agent pane publishes the running sign-in with the terminal's creation.
-        let mut saved = self.panes[id].stored.clone();
+        let mut saved = self.pane(id)?.stored.clone();
         saved.pane.agent = Some(state.public(self.now_ms()));
         let generation = saved.pane.generation;
         let created = auth_pane_created(&saved.pane, &child.pane)?;
@@ -358,7 +358,7 @@ impl Core {
                 .push(auth_finished(id, false, unfinished_reason(&child))?);
         }
         self.commit_agent(
-            self.panes[id].stored.clone(),
+            self.pane(id)?.stored.clone(),
             state,
             changes,
             None,
@@ -398,7 +398,7 @@ impl Core {
         }
         changes.events.push(auth_finished(id, signed_in, reason)?);
         self.commit_agent(
-            self.panes[id].stored.clone(),
+            self.pane(id)?.stored.clone(),
             state,
             changes,
             None,

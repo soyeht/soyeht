@@ -109,7 +109,7 @@ impl Core {
         if !self.background.accepts(&job) {
             return Ok(());
         }
-        let saved = self.panes[id].stored.clone();
+        let saved = self.pane(id)?.stored.clone();
         let instance_id = errors::invariant(
             saved.instance_id.clone(),
             "Running pane has no adopted process",
@@ -118,7 +118,7 @@ impl Core {
         if self.watch.is_active() && !self.watch.should_read(&instance_id, self.polling_woken()) {
             return Ok(());
         }
-        let next = self.panes[id].screen.next_offset();
+        let next = self.pane(id)?.screen.next_offset();
         let seq = next.saturating_sub(saved.sequence_base);
         let supervisor = self.supervisor()?;
         let started = Started {

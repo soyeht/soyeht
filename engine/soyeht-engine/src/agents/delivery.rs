@@ -51,7 +51,7 @@ impl Core {
         if !self.background.accepts(&job) {
             return Ok(());
         }
-        let saved = &self.panes[pane].stored;
+        let saved = &self.pane(pane)?.stored;
         if saved.closed
             || saved.pane.generation != prior.generation
             || saved.instance_id.as_deref() != Some(&prior.instance_id)
