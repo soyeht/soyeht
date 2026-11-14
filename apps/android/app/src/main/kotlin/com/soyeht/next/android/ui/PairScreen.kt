@@ -14,6 +14,13 @@ import com.soyeht.next.android.*
 import com.soyeht.next.android.theme.*
 import androidx.compose.ui.text.TextStyle
 
+/**
+ * What the pairing screens tell the person about the computer. The Mac's button is “Pair iPhone or
+ * iPad” and the desktop client has no pairing yet, so the text names no label a computer lacks.
+ */
+internal const val PAIRING_ON_COMPUTER =
+    "On the computer, open Soyeht and choose the pairing button to show the code."
+
 @Composable
 fun PairScreen(model: AppModel) {
     val roles = LocalRoles.current
@@ -38,7 +45,7 @@ fun PairScreen(model: AppModel) {
         ) {
             Text("Soyeht", color = roles.ink, fontFamily = Faces.chrome, fontWeight = FontWeight.Bold, fontSize = metrics.title.sp)
             Text(
-                "Pair with the computer where Soyeht runs. On the computer choose “Pair phone”, then scan the code, " +
+                "Pair with the computer where Soyeht runs. $PAIRING_ON_COMPUTER Then scan the code, " +
                     "paste the link here or open it on this device. Both must be on the same tailnet.",
                 color = roles.secondary,
                 fontSize = metrics.paneBody.sp,

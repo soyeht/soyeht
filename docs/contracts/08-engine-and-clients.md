@@ -83,7 +83,7 @@ address holds at most 16 of the listeners' (ADR 0129).
 
 **2.2 iPhone pairing (the path to a `deviceToken`).**
 Only on the WebSocket connection, before authenticated `hello`, and only
-while the Mac's “Add iPhone” window is open:
+while the Mac's “Pair iPhone or iPad” window is open:
 1. Mac: `device.pair.start {}` → `{code, expiresAt (10 min), uri, qr?,
    reachability?}`; the app displays a QR with `qr` (`uri` when an older engine sends no `qr`): the same
    fields, engine id, address, `code` and `engineKey`, the engine's Ed25519 public key in URL-safe
