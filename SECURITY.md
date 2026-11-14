@@ -68,8 +68,10 @@ These are stated, not hidden, and are revisited after launch:
   boundary the engine already declares: isolation is per OS user, not per process
   (`docs/contracts/08-engine-and-clients.md`, section 2).
 - **A message between agents is text another agent read somewhere.** The engine attributes it,
-  names its sender in a one-line header the sender cannot forge, removes the characters that
-  hide or reorder text, and limits the rate, but it does not judge what the message asks for.
+  names its sender and its recipient in a one-line header whose names the sender cannot forge,
+  removes the characters that hide or reorder text, and limits the rate, but it does not judge
+  what the message asks for. A body can still contain text that looks like a header, so an agent
+  treats a message body as data.
 
 ## What is out of scope
 

@@ -348,9 +348,10 @@ localId, generation, seq, complete`,
 `{promptId, queued, messageId}` (an agent pane queues a prompt in another agent pane of its
 workspace, contract 04 R17; exactly one of `targetPaneId` and `targetName` names the
 recipient, a name is compared without case, accents or surrounding space, and a name two
-panes carry is `invalid_params` that lists them; `inReplyTo` is the `m:ID` of a message the
-sender has open) and `agent.list` (the agent panes of the caller's workspace that it can
-message, by name),
+panes carry is `invalid_params` that lists them, unless `inReplyTo` names a message the sender
+has open, which routes to the pane that sent it; `inReplyTo` is the `m:ID` of the message being
+answered and is only a hint, so a stale or unknown one is ignored) and `agent.list` (the agent
+panes of the caller's workspace that it can message, by name),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
 `pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
 the slash commands the harness last advertised with ACP

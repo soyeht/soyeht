@@ -113,6 +113,33 @@ fn peer_tools_use_binding_identity_and_validate_target() {
 }
 
 #[test]
+fn the_reply_rule_reaches_the_model_in_the_tool_itself() {
+    let service = Service::new(
+        FakeEngine {
+            role: Role::Agent,
+            calls: VecDeque::new(),
+        },
+        context(false),
+    );
+    let tools = service.list();
+    let tool = tools["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "message_agent")
+        .unwrap();
+    let description = tool["description"].as_str().unwrap();
+    assert!(description.contains("[sender → you · m:ID]"));
+    assert!(description.contains("targetName") && description.contains("inReplyTo"));
+    let properties = &tool["inputSchema"]["properties"];
+    assert!(properties["targetName"]["description"].is_string());
+    let reply = &properties["inReplyTo"];
+    assert!(reply["description"].as_str().unwrap().contains("m:"));
+    // The bound of the protocol (`AgentMessageParams.inReplyTo`).
+    assert_eq!(reply["maxLength"], 16);
+}
+
+#[test]
 fn role_lists_are_closed_and_the_lead_cannot_complete() {
     let agent = Service::new(
         FakeEngine {

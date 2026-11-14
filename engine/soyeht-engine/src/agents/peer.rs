@@ -92,7 +92,7 @@ pub(crate) fn native_text<'a>(prompt: &'a PromptItem, recipient: &str) -> Cow<'a
 
 /// Restores the sender and the sender's text of a replayed peer prompt.
 pub(crate) fn restore_replayed(message: &mut TranscriptMessage) {
-    let Some((source, text)) = parse(&message.text) else {
+    let Some((source, text)) = parse(&message.text).or_else(|| parse_legacy(&message.text)) else {
         return;
     };
     message.text = text.into();
@@ -119,6 +119,30 @@ fn parse(text: &str) -> Option<(AgentMessageSource, &str)> {
             body,
         )
     })
+}
+
+/// The header of the first form of this prompt, which a session recorded before the short header
+/// still holds in its native history: `Message from the Soyeht agent NAME (HARNESS). Reply with
+/// the message_agent tool of the soyeht-workspace MCP server using targetPaneId=PANE`, then a
+/// blank line and the words. A replay folds it to the sender and the words, so the person never
+/// reads the route.
+fn parse_legacy(text: &str) -> Option<(AgentMessageSource, &str)> {
+    let rest = text.strip_prefix("Message from the Soyeht agent ")?;
+    let (header, body) = rest.split_once(".\n\n")?;
+    let route = format!(
+        "). Reply with the message_agent tool of the {} MCP server using targetPaneId=",
+        super::mcp::SERVER_NAME
+    );
+    let (sender, pane_id) = header.rsplit_once(route.as_str())?;
+    let (name, harness) = sender.rsplit_once(" (")?;
+    Some((
+        AgentMessageSource {
+            pane_id: pane_id.into(),
+            name: name.into(),
+            harness: harness.into(),
+        },
+        body,
+    ))
 }
 
 #[cfg(test)]
@@ -193,6 +217,26 @@ mod tests {
         restore_replayed(&mut typed);
         assert_eq!(typed.text, "[a person typed this]\nand more");
         assert!(typed.agent_message.is_none());
+    }
+
+    #[test]
+    fn a_session_recorded_with_the_long_header_replays_as_the_sender_and_the_words() {
+        let old = "Message from the Soyeht agent Claude (Claude Agent). Reply with the message_agent \
+tool of the soyeht-workspace MCP server using targetPaneId=5d0f3a52-1111-4222-8333-444444444444.\n\nping.\n\nsecond line";
+        let mut message = replayed(old.into());
+        restore_replayed(&mut message);
+        // The person reads the sender's words and name, never the route or a pane id.
+        assert_eq!(message.text, "ping.\n\nsecond line");
+        assert!(!message.text.contains("targetPaneId"));
+        let restored = message.agent_message.unwrap();
+        assert_eq!(restored.name, "Claude");
+        assert_eq!(restored.harness, "Claude Agent");
+
+        // Text that only begins like it is left alone.
+        let mut other = replayed("Message from the Soyeht agent Claude, hello.\n\nx".into());
+        restore_replayed(&mut other);
+        assert!(other.agent_message.is_none());
+        assert!(other.text.starts_with("Message from the Soyeht agent"));
     }
 
     #[test]

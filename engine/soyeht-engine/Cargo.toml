@@ -61,13 +61,13 @@ ed25519-dalek.workspace = true
 bytes.workspace = true
 h2.workspace = true
 http.workspace = true
+icu_normalizer.workspace = true
+icu_properties.workspace = true
 ring.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 webpki-roots.workspace = true
 zeroize.workspace = true
-icu_normalizer.workspace = true
-icu_properties.workspace = true
 
 [dev-dependencies]
 hmac.workspace = true

@@ -111,20 +111,82 @@ fn a_message_names_its_recipient_and_an_ambiguous_name_lists_the_candidates() {
     );
     assert_eq!(answered["result"]["queued"], true, "{answered}");
 
-    // A reply names a message the pane has open; an id that names none is refused.
-    let mut reply_to = |id: &str, key: &str| {
-        send(
+    // The id of a reply is only a hint: one that names no open message (it was answered, or it
+    // is not an id at all) does not stop the reply, which reaches the recipient by its name.
+    for (id, key) in [("m:ZZZZ", "no-such-message"), ("garbage", "not-an-id")] {
+        let reply = send(
             &mut agent,
             json!({"targetName":"Another","inReplyTo":id}),
             "reply",
             key,
-        )
-    };
-    assert_eq!(
-        kind(&reply_to("m:ZZZZ", "no-such-message")),
-        "invalid_params"
+        );
+        assert_eq!(reply["result"]["queued"], true, "{reply}");
+    }
+    let queue = human.call("pane.queue.list", json!({"paneId":second,"limit":64}));
+    assert_eq!(queue["items"].as_array().unwrap().len(), 2);
+}
+
+#[test]
+fn a_reply_reaches_the_sender_when_two_panes_carry_its_name() {
+    let rig = Rig::new();
+    let (mut human, replier) = rig.agent();
+    let workspace = human.pane(&replier)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, first) = rig.agent_in_workspace(&workspace);
+    let (_, second) = rig.agent_in_workspace(&workspace);
+    for pane in [&replier, &first, &second] {
+        human.call(
+            "pane.draft",
+            json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
+        );
+    }
+    rename(&mut human, &first, "Twin");
+    rename(&mut human, &second, "Twin");
+
+    // The second twin writes to the replier, who answers by the name it was shown.
+    let sent = send(
+        &mut agent_client(&rig, &second),
+        json!({"targetPaneId":replier}),
+        "question",
+        "ask",
     );
-    assert_eq!(kind(&reply_to("garbage", "not-an-id")), "invalid_params");
+    let id = sent["result"]["messageId"].as_str().unwrap().to_owned();
+    let mut agent = agent_client(&rig, &replier);
+    let queue_len = |human: &mut Client, pane: &str| {
+        let queue = human.call("pane.queue.list", json!({"paneId":pane,"limit":64}));
+        queue["items"].as_array().unwrap().len()
+    };
+
+    // Without the id, or with one that names no open message, the name stays ambiguous.
+    let lost = send(&mut agent, json!({"targetName":"Twin"}), "a", "no-id");
+    assert_eq!(kind(&lost), "invalid_params");
+    let stale = send(
+        &mut agent,
+        json!({"targetName":"Twin","inReplyTo":"m:ZZZZ"}),
+        "a",
+        "stale",
+    );
+    assert_eq!(kind(&stale), "invalid_params");
+    assert_eq!(
+        queue_len(&mut human, &first) + queue_len(&mut human, &second),
+        0
+    );
+
+    // With the id of the message it answers, the reply goes to the pane that sent it.
+    let reply = send(
+        &mut agent,
+        json!({"targetName":"Twin","inReplyTo":id}),
+        "answer",
+        "by-id",
+    );
+    assert_eq!(reply["result"]["queued"], true, "{reply}");
+    let queue = human.call("pane.queue.list", json!({"paneId":second,"limit":64}));
+    assert_eq!(queue["items"].as_array().unwrap().len(), 1);
+    assert_eq!(queue["items"][0]["text"], "answer");
+    assert_eq!(queue["items"][0]["agentMessage"]["paneId"], replier);
+    assert_eq!(queue_len(&mut human, &first), 0);
 }
 
 #[test]

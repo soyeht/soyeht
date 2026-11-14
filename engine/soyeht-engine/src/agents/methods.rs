@@ -219,9 +219,6 @@ impl Core {
         if text.trim().is_empty() {
             return Err(errors::invalid("The message has no printable text"));
         }
-        if let Some(reply_to) = params.get("inReplyTo").and_then(Value::as_str) {
-            self.require_open_message(&sender_id, reply_to)?;
-        }
         let source = self.peer_source(&sender)?;
         let prompt_id = {
             let open: Vec<&PromptItem> = state.queue.iter().chain(&state.active).collect();
@@ -261,14 +258,17 @@ impl Core {
         let text = |key: &str| params.get(key).and_then(Value::as_str);
         match (text("targetPaneId"), text("targetName")) {
             (Some(pane), None) => Ok(pane.to_owned()),
-            (None, Some(name)) => self.peer_by_name(sender, name),
+            (None, Some(name)) => self.peer_by_name(sender, name, text("inReplyTo")),
             _ => Err(errors::invalid(
                 "Give exactly one of targetPaneId and targetName",
             )),
         }
     }
 
-    fn peer_by_name(&self, sender: &Pane, name: &str) -> Result<String> {
+    /// The pane `name` names. When two panes carry the name, a reply (`in_reply_to`, the id of a
+    /// message `sender` has open) goes to the pane that sent that message; the id is only a hint
+    /// and a stale or unknown one decides nothing.
+    fn peer_by_name(&self, sender: &Pane, name: &str, in_reply_to: Option<&str>) -> Result<String> {
         let wanted = text_reduction::folded(name);
         let matches: Vec<&Pane> = self
             .peers_of(sender)
@@ -280,8 +280,31 @@ impl Core {
                 text_reduction::name(name)
             ))),
             [pane] => Ok(pane.pane_id.clone()),
-            several => Err(errors::invalid(self.ambiguous_name(name, several))),
+            several => self
+                .reply_sender(sender, in_reply_to, several)
+                .ok_or_else(|| errors::invalid(self.ambiguous_name(name, several))),
         }
+    }
+
+    /// The pane that sent the open message `id` of `sender`, when it is one of `candidates`.
+    fn reply_sender(
+        &self,
+        sender: &Pane,
+        id: Option<&str>,
+        candidates: &[&Pane],
+    ) -> Option<String> {
+        let Ok(state) = self.agent_state(&sender.pane_id) else {
+            return None;
+        };
+        let open: Vec<&PromptItem> = state.queue.iter().chain(&state.active).collect();
+        let from = &peer::open_message(&open, id?)?
+            .agent_message
+            .as_ref()?
+            .pane_id;
+        candidates
+            .iter()
+            .find(|pane| &pane.pane_id == from)
+            .map(|pane| pane.pane_id.clone())
     }
 
     /// The panes `sender` may address by name: the other open agent panes of its workspace.
@@ -325,16 +348,6 @@ impl Core {
             name: text_reduction::name(&sender.name),
             harness: text_reduction::name(&running.state.launch.name),
         })
-    }
-
-    /// Refuses a reply to a message `pane` does not have open (queued or running): the short id
-    /// of a message names it among those only.
-    pub(crate) fn require_open_message(&self, pane: &str, id: &str) -> Result<()> {
-        let state = self.agent_state(pane)?;
-        let open: Vec<&PromptItem> = state.queue.iter().chain(&state.active).collect();
-        peer::open_message(&open, id)
-            .map(|_| ())
-            .ok_or_else(|| errors::invalid("inReplyTo names no message this pane has open"))
     }
 
     fn ambiguous_name(&self, name: &str, matches: &[&Pane]) -> String {

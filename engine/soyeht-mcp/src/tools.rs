@@ -43,7 +43,7 @@ const TOOLS: [Tool; 36] = [
         name: "message_agent",
         method: method::AGENT_MESSAGE,
         audience: Audience::Both,
-        description: "Queue a message for another ACP agent pane, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for its clean input. Answer a received message with inReplyTo set to its m:ID.",
+        description: "Queue a message for another ACP agent pane, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for its clean input. A message you receive starts with [sender → you · m:ID]; to answer it, call this tool with targetName = the name before the arrow and inReplyTo = the ID after m:.",
         schema: agent_message_schema,
     },
     Tool {
