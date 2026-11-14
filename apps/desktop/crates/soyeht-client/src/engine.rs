@@ -9,7 +9,7 @@ use crate::{
     device::{self, Credential},
     editor,
     event::Event,
-    paging, preferences,
+    paging, pairing, preferences,
     reconnect::Backoff,
     rpc::Rpc,
     session::{EventSink, Session},
@@ -484,6 +484,7 @@ fn execute(rpc: &Rpc, command: &Command) -> Result<Option<Event>> {
         Command::Input { pane_id, bytes } => return send_input(rpc, pane_id, bytes).map(|()| None),
         Command::Editor(editor) => return editor::commands::run(rpc, editor),
         Command::Writing(writing) => return writing::commands::run(rpc, writing),
+        Command::Pairing(command) => return pairing::run(rpc, command),
         Command::LoadQueue { pane_id } => return paging::queue(rpc, pane_id).map(Some),
         Command::LoadTasks { workspace_id } => return paging::tasks(rpc, workspace_id).map(Some),
         // A harness whose models cannot be read is told apart from a failed request: the

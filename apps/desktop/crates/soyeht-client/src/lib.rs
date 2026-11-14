@@ -35,6 +35,7 @@ pub mod loops;
 pub mod markdown;
 pub mod new_agent;
 mod paging;
+pub mod pairing;
 pub mod pane_close;
 pub mod permission_preview;
 mod preference_requests;

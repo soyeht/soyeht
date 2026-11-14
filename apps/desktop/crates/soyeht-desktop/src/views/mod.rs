@@ -24,6 +24,7 @@ mod markdown;
 pub(crate) use markdown::Replies;
 pub(crate) mod menus;
 pub(crate) mod overlay;
+mod pairing;
 mod pane;
 mod pane_drag;
 mod permission;
@@ -135,6 +136,7 @@ impl Render for Workbench {
                     .then(|| self.preferences_overlay(palette, window.viewport_size(), cx)),
             )
             .children(self.trust_prompt_sheet(cx, palette))
+            .children(pairing::pairing_sheet(self, cx, palette))
             .children(resize_handles::handles(window))
             .child(crate::workbench::input_surface(&self.focus, cx));
         // A page that is a window of its own stays where it was until it is told to go.

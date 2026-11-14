@@ -42,26 +42,17 @@ impl Workbench {
             .cloned()
             .unwrap_or_default();
         let connected = self.state.connection == Connection::Connected;
-        let page = column()
-            .flex_1()
-            .min_h_0()
-            .w_full()
-            .max_w(px(desktop::WRITING_LIST_WIDTH))
-            .gap(px(space::X14))
-            .px(px(space::X18))
-            .py(px(space::X14))
+        let page = place_page()
             .child(self.place_title(cx, connected, palette, section))
             .children(self.place_form(palette, section, cx))
             .child(search_line(search, palette))
             .child(self.place_list(workspace, section, &list, &query, palette, cx));
-        pane_card_shell(palette)
-            .child(titled_bar(
-                palette,
-                Destination::of_section(section).icon(),
-                title_face(palette).child(rules::title(section)),
-            ))
-            .child(column().flex_1().min_h_0().items_center().child(page))
-            .into_any_element()
+        place_card(
+            palette,
+            Destination::of_section(section).icon(),
+            rules::title(section),
+            page,
+        )
     }
 
     /// The section's name and what it holds, and the button that makes a document.
@@ -74,38 +65,21 @@ impl Workbench {
     ) -> Div {
         let owner = section.clone();
         let make = pressable(
-            row()
-                .id(id("place-new", rules::name(section)))
-                .cursor_pointer()
-                .px(px(space::X12))
-                .py(px(space::X6))
-                .gap(px(space::X6))
-                .rounded_full()
-                .bg(rgb(palette.ink))
-                .text_color(rgb(palette.face))
-                .text_size(px(type_scale::CONTROL))
-                .font_weight(FontWeight::BOLD),
+            make_pill(
+                id("place-new", rules::name(section)),
+                palette,
+                "New document",
+            ),
             connected,
             cx,
             move |this, cx| this.place_new(&owner, cx),
+        );
+        place_heading(
+            palette,
+            rules::title(section),
+            rules::subtitle(section),
+            make,
         )
-        .child(icon(Icon::Plus, desktop::INLINE_GLYPH, palette.face))
-        .child("New document");
-        row()
-            .items_end()
-            .child(
-                column()
-                    .gap(px(space::X4))
-                    .flex_1()
-                    .min_w_0()
-                    .child(
-                        chrome_text(FontWeight::BOLD, type_scale::TITLE)
-                            .text_color(rgb(palette.ink))
-                            .child(rules::title(section)),
-                    )
-                    .child(caption(palette).child(rules::subtitle(section))),
-            )
-            .child(make)
     }
 
     /// The form that makes a document, while it is open.
@@ -146,12 +120,8 @@ impl Workbench {
             move |this, cx| this.place_create(&creating_in, cx),
         );
         Some(
-            column()
+            well_card(palette)
                 .flex_none()
-                .gap(px(space::X10))
-                .p(px(space::X14))
-                .rounded(px(radius::CONTROL))
-                .bg(rgb(palette.well))
                 .child(
                     chrome_text(FontWeight::BOLD, type_scale::SUBHEADING)
                         .text_color(rgb(palette.ink))
@@ -218,13 +188,7 @@ impl Workbench {
                 .into_any_element(),
             );
         }
-        div()
-            .id("place-list")
-            .flex_1()
-            .min_h_0()
-            .overflow_y_scroll()
-            .child(column().gap(px(space::X4)).children(rows))
-            .into_any_element()
+        scrolling_list("place-list", space::X4, rows)
     }
 
     /// A document of the list: its mark, its title and where it is kept. A click opens it.
@@ -238,30 +202,8 @@ impl Workbench {
     ) -> AnyElement {
         let (workspace, path, section) =
             (workspace.to_owned(), entry.path.clone(), section.clone());
-        let mark_icon = Destination::of_section(&section).icon();
-        let mark = row()
-            .size(px(desktop::WRITING_ROW_ICON_BOX))
-            .flex_none()
-            .justify_center()
-            .rounded(px(radius::COMPACT))
-            .bg(rgb(palette.well))
-            .child(icon(
-                mark_icon,
-                desktop::HEADER_ACTION_GLYPH,
-                palette.accent,
-            ));
-        let words = column()
-            .min_w_0()
-            .flex_1()
-            .child(
-                div()
-                    .truncate()
-                    .font_weight(FontWeight::BOLD)
-                    .text_size(px(type_scale::BODY))
-                    .text_color(rgb(palette.ink))
-                    .child(SharedString::from(entry.title.clone())),
-            )
-            .child(mono_note(palette).child(SharedString::from(entry.path.clone())));
+        let mark = entry_mark(palette, Destination::of_section(&section).icon());
+        let words = entry_words(palette, &entry.title, &entry.path);
         pressable(
             row()
                 .id(id("place-row", &entry.path))
@@ -317,8 +259,125 @@ impl Workbench {
     }
 }
 
+/// A list that scrolls, `gap` between its `rows`.
+pub(super) fn scrolling_list(key: &'static str, gap: f32, rows: Vec<AnyElement>) -> AnyElement {
+    div()
+        .id(key)
+        .flex_1()
+        .min_h_0()
+        .overflow_y_scroll()
+        .child(column().gap(px(gap)).children(rows))
+        .into_any_element()
+}
+
+/// A card on the well that holds one thing: a form, a request, a question.
+pub(super) fn well_card(palette: &Palette) -> Div {
+    column()
+        .gap(px(space::X10))
+        .p(px(space::X14))
+        .rounded(px(radius::CONTROL))
+        .bg(rgb(palette.well))
+}
+
+/// The mark at the start of a line of a list: `glyph` in a well.
+pub(super) fn entry_mark(palette: &Palette, glyph: Icon) -> Div {
+    row()
+        .size(px(desktop::WRITING_ROW_ICON_BOX))
+        .flex_none()
+        .justify_center()
+        .rounded(px(radius::COMPACT))
+        .bg(rgb(palette.well))
+        .child(icon(glyph, desktop::HEADER_ACTION_GLYPH, palette.accent))
+}
+
+/// What a line of a list says: a title, and under it a note in the mono face.
+pub(super) fn entry_words(palette: &Palette, title: &str, note: &str) -> Div {
+    column()
+        .min_w_0()
+        .flex_1()
+        .child(
+            div()
+                .truncate()
+                .font_weight(FontWeight::BOLD)
+                .text_size(px(type_scale::BODY))
+                .text_color(rgb(palette.ink))
+                .child(SharedString::from(title.to_owned())),
+        )
+        .child(mono_note(palette).child(SharedString::from(note.to_owned())))
+}
+
+/// The card of a place: the pane shell with its bar, and `page` centered under it.
+pub(super) fn place_card(
+    palette: &'static Palette,
+    mark: Icon,
+    title: &'static str,
+    page: Div,
+) -> AnyElement {
+    pane_card_shell(palette)
+        .child(titled_bar(palette, mark, title_face(palette).child(title)))
+        .child(column().flex_1().min_h_0().items_center().child(page))
+        .into_any_element()
+}
+
+/// The column a place lays its page out in.
+pub(super) fn place_page() -> Div {
+    column()
+        .flex_1()
+        .min_h_0()
+        .w_full()
+        .max_w(px(desktop::WRITING_LIST_WIDTH))
+        .gap(px(space::X14))
+        .px(px(space::X18))
+        .py(px(space::X14))
+}
+
+/// What the top of a place says: its name and what it holds, and `action` at the right.
+pub(super) fn place_heading(
+    palette: &Palette,
+    title: &'static str,
+    subtitle: &'static str,
+    action: impl IntoElement,
+) -> Div {
+    row()
+        .items_end()
+        .child(
+            column()
+                .gap(px(space::X4))
+                .flex_1()
+                .min_w_0()
+                .child(
+                    chrome_text(FontWeight::BOLD, type_scale::TITLE)
+                        .text_color(rgb(palette.ink))
+                        .child(title),
+                )
+                .child(caption(palette).child(subtitle)),
+        )
+        .child(action)
+}
+
+/// The ink pill that makes something: a plus and `label`.
+pub(super) fn make_pill(
+    key: impl Into<gpui::ElementId>,
+    palette: &Palette,
+    label: &'static str,
+) -> gpui::Stateful<Div> {
+    row()
+        .id(key)
+        .cursor_pointer()
+        .px(px(space::X12))
+        .py(px(space::X6))
+        .gap(px(space::X6))
+        .rounded_full()
+        .bg(rgb(palette.ink))
+        .text_color(rgb(palette.face))
+        .text_size(px(type_scale::CONTROL))
+        .font_weight(FontWeight::BOLD)
+        .child(icon(Icon::Plus, desktop::INLINE_GLYPH, palette.face))
+        .child(label)
+}
+
 /// The well that holds a line of the form.
-fn field_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
+pub(super) fn field_line(field: Entity<ComposerField>, palette: &Palette) -> Div {
     focus_on_press(
         well_row(palette)
             .bg(rgb(palette.face))

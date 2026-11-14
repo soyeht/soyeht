@@ -144,6 +144,23 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
 - a client sends `approvalCode` only when the capability is offered; in `SignedApp` mode the field
   is ignored.
 
+**The desktop client's pairing view (ADR 0164, slice 5).** The Windows and Linux app draws the place
+"iPhone or iPad" of the rail: the paired devices, each with Revoke (after "Revoke this device's
+access?"), the requests that wait while the sheet is closed with Deny, and the button "Pair a phone",
+which opens the sheet. The sheet calls `device.pair.start` and draws the QR code of `qr` (or `uri`
+from an engine that has no `qr`) with the time the window has left, the link to copy and, when
+`reachability` says a phone cannot reach the computer, why. Each request that comes in is listed
+with the device's name and its comparison code, and where the engine offers `pairing-code` with a
+field for the six digits; the app sends `approvalCode` (the digits the vector reads, blanks
+dropped) with an approval only to such an engine, sends none with a denial, and refuses a text that
+is not six digits itself, with no call. The engine's own words for `pairing_code_invalid` (which
+say how many tries are left) are shown beside the request. The sheet keeps the one connection of
+the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
+new window on the next connection. An engine that refuses (Windows, and Linux until the peer rules
+of slice 3) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
+refusal under them, in place of a code. `contracts/vectors/pairing-approval.json` and
+`pairing-comparison.json` are passed by the client's tests.
+
 Until the rules about where a new device may connect from (ADR 0164, slice 3) are in the engine,
 no shipped engine selects `PersonsCode`: Linux refuses as the paragraph below says, and only a
 test hook runs the mode.

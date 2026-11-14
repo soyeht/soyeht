@@ -72,6 +72,15 @@ impl Workbench {
             cx.stop_propagation();
             return;
         }
+        // The pairing sheet owns the keys it does not give to its field: Escape closes it, and
+        // none reaches a pane under it.
+        if self.state.pairing.shown() {
+            if keystroke.key == "escape" {
+                crate::pairing_ui::close(self, cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
         // The pane in front takes the keys only while the stage shows it and no field holds the
         // keyboard (`keys_target`, the rule the typed text follows too).
         let target = self.keys_target(window, cx);
@@ -157,7 +166,8 @@ impl Workbench {
             (self.destination, start_shown),
             self.field_request.is_some(),
             pane_takes_keys(window.focused(cx), self.focus.clone()),
-        ) && self.state.trust_prompt().is_none();
+        ) && self.state.trust_prompt().is_none()
+            && !self.state.pairing.shown();
         let pane = self.state.focused_pane()?;
         match pane.mode {
             PaneMode::Editor if free => Some(KeyTarget::Editor(pane.pane_id.clone())),

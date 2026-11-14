@@ -98,6 +98,7 @@ impl Workbench {
     /// say) waits.
     fn form_open(&self) -> bool {
         self.state.trust_prompt().is_some()
+            || self.state.pairing.shown()
             || self.start.as_ref().is_some_and(|start| start.shown)
             || (self.destination == Destination::Tasks && self.tasks_ui.form.is_some())
             || self.places.form_open_in(self.destination)

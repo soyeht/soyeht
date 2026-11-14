@@ -4,8 +4,8 @@
 
 use crate::{
     agent::AgentView, catalogue::Catalogue, editor::Editors, event::Event, new_agent::NewAgent,
-    preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot, streams::StreamOutput,
-    trust::Trusts, writing::Writings,
+    pairing::Pairing, preferences::Preferences, screen::TerminalScreen, snapshot::Snapshot,
+    streams::StreamOutput, trust::Trusts, writing::Writings,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -100,6 +100,8 @@ pub struct State {
     pub writings: Writings,
     /// Whether the person trusts the folder of each workspace, and which questions they put off.
     trust: Trusts,
+    /// The pairing sheet, the requests that come in on its window and the paired devices.
+    pub pairing: Pairing,
     pub(crate) expected: Vec<Expected>,
     /// The arrangement a divider is being dragged to, shown in place of the stored one.
     pub(crate) layout_draft: Option<layout_draft::LayoutDraft>,
@@ -151,6 +153,7 @@ impl Default for State {
             editors: Editors::default(),
             writings: Writings::default(),
             trust: Trusts::default(),
+            pairing: Pairing::default(),
             expected: Vec::new(),
             layout_draft: None,
             confirmed_layouts: HashMap::new(),
@@ -315,6 +318,7 @@ impl State {
                 self.forget_requests();
                 self.editors.connection_lost();
                 self.trust.connection_lost();
+                self.pairing.connection_lost();
                 Vec::new()
             }
             Event::Starting => {
@@ -412,6 +416,10 @@ impl State {
             }
             Event::Editor(event) => self.editor_event(event),
             Event::Writing(event) => self.writing_event(event),
+            Event::Pairing(event) => {
+                self.pairing.apply(event);
+                Vec::new()
+            }
             event @ (Event::ProjectTrust { .. } | Event::ProjectTrustFailed) => {
                 self.trust_event(event)
             }
@@ -457,6 +465,11 @@ impl State {
             effects.push(Effect::SubscribeTerminal(pane.pane_id.clone()));
         }
         effects.extend(self.adopt_agents(&snapshot.requests));
+        effects.extend(self.adopt_pairing(
+            &snapshot.capabilities,
+            &snapshot.devices,
+            &snapshot.requests,
+        ));
         effects.extend(self.adopt_slash_sources());
         self.adopt_loops(&snapshot.loops);
         self.adopt_tasks(&snapshot.tasks, &snapshot.attention);
@@ -554,6 +567,10 @@ impl State {
                 effects
             }
             EventName::WritingChanged => self.writing_changed(params)?,
+            EventName::DevicePairRequested | EventName::DevicePaired | EventName::DeviceRevoked => {
+                self.pairing.notified(&name, params)?;
+                Vec::new()
+            }
             EventName::ProjectTrustChanged => {
                 let changed = serde_json::from_value::<ProjectTrustChangedEvent>(params)?;
                 self.trust.changed(changed.workspace_ids, changed.trust);
@@ -761,6 +778,7 @@ fn screen_for(pane: &Pane) -> TerminalScreen {
 
 mod editor;
 mod effect;
+mod pairing;
 pub use effect::Effect;
 mod layout_draft;
 pub mod problem;

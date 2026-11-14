@@ -80,6 +80,9 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
         writing: serde_json::from_value(Value::Array(list("writing")))
             .map_err(describe("writing"))?,
         trust: serde_json::from_value(Value::Array(list("trust"))).map_err(describe("trust"))?,
+        devices: serde_json::from_value(Value::Array(list("devices")))
+            .map_err(describe("devices"))?,
+        capabilities: list("capabilities"),
         cursor: 1,
     };
     let mut events = vec![Event::Connected(snapshot)];
@@ -313,9 +316,10 @@ fn section(name: &str) -> Option<Section> {
 
 /// The place of the rail a spec names (`editor`, `terminal`), when it names one that draws panes.
 pub fn place(spec: &str) -> Option<Destination> {
-    Destination::ALL
-        .into_iter()
-        .find(|place| place.is_pane_grid() && place.label().eq_ignore_ascii_case(spec))
+    Destination::ALL.into_iter().find(|place| {
+        (place.is_pane_grid() || *place == Destination::Phone)
+            && place.label().eq_ignore_ascii_case(spec)
+    })
 }
 
 /// The tasks surface a spec names: `tasks` (the board), `tasks:list`, `task:<id>` (the board with

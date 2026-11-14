@@ -1,6 +1,7 @@
 use crate::{
-    catalogue::Catalogue, composer::ReturnedPrompt, editor::EditorEvent, preferences::Preferences,
-    snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate, writing::WritingEvent,
+    catalogue::Catalogue, composer::ReturnedPrompt, editor::EditorEvent, pairing,
+    preferences::Preferences, snapshot::Snapshot, streams::StreamOutput, tasks::TaskUpdate,
+    writing::WritingEvent,
 };
 use serde_json::Value;
 use soyeht_protocol::{
@@ -96,4 +97,6 @@ pub enum Event {
     Editor(EditorEvent),
     /// What the engine told the writing panes and the lists of their sections.
     Writing(WritingEvent),
+    /// The engine's answer to what the pairing sheet asked, or why it gave none.
+    Pairing(pairing::Event),
 }
