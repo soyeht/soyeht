@@ -5,7 +5,7 @@
   <key>NSMicrophoneUsageDescription</key>
   <string>Dictate messages to your agents: Soyeht listens only while the composer's mic is on.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>Turn what you say into text in the agent composer, on this device when it can.</string>
+  <string>Turn what you say into text in the agent composer. Soyeht asks Apple's speech recognition to work on this device when your language supports it; otherwise Apple may process the audio.</string>
   <key>UTExportedTypeDeclarations</key>
   <array>
     <dict>

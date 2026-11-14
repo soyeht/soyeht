@@ -40,7 +40,9 @@ token the Mac issued, the Mac's public key and its address) is stored in the iOS
 only while the device is unlocked, and it does not move to another device through a backup or
 iCloud Keychain (`apps/shared/Sources/SoyehtClient/CredentialVault.swift`). Appearance settings
 such as the theme and the terminal text size are kept in the app's own preferences. The camera
-reads the pairing QR code on the device; the image is not stored or sent.
+reads the pairing QR code on the device; the image is not stored or sent. When you pair, the
+device's name (as iOS gives it to the app) is sent to your own computer, which shows it in
+its list of paired devices; it goes nowhere else.
 
 **On Android** (the app is not published yet), the credential is sealed with a key in the Android
 Keystore, in the app's private storage, and the app opts out of backup. It asks for two
@@ -58,8 +60,8 @@ feature that needs them. The wording on iPhone, iPad and Mac is the text in the 
 | --- | --- | --- |
 | iPhone and iPad | Camera: "Scan the QR shown by Soyeht on the Mac to pair this iPhone or iPad." | Reads the pairing QR code when you tap "Scan Mac QR". The camera stops once a code is read. The picture is not stored or sent. Without the camera, the pairing link can be pasted or opened in the app. |
 | iPhone and iPad | Microphone: "Dictate messages to your agents: Soyeht listens only while the composer's mic is on." | Dictation (see below). |
-| iPhone and iPad | Speech recognition: "Turn what you say into text in the agent composer, on this device when it can." | Dictation (see below). |
-| iPhone and iPad | Local network: "Connect to your Mac over the tailnet to read pane screens." | Reaches your computer. |
+| iPhone and iPad | Speech recognition: "Turn what you say into text in the agent composer. Soyeht asks Apple's speech recognition to work on this device when your language supports it; otherwise Apple may process the audio." | Dictation (see below). |
+| iPhone and iPad | Local network: "Connect to your own computer that runs Soyeht, to show and control its terminals and agents." | Reaches your computer. |
 | Mac | Microphone and speech recognition, with the same two texts | Dictation, on the first tap of the microphone. |
 | Android (not yet released) | `CAMERA` | Reads the pairing QR code when you tap "Scan QR code". ZXing reads the picture on the phone, with no network and no Google service; the picture is not stored or sent. The app does not require a camera, and the pairing link can be pasted instead. |
 | Android (not yet released) | `INTERNET` | Reaches your computer over your tailnet. |

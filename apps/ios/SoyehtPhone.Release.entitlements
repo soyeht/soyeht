@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The App Store build declares no capability: push notifications are off in 0.1.0, so the App ID
+	     needs no Push Notifications capability. The Debug build keeps SoyehtPhone.entitlements, which
+	     has the development push entitlement. When push ships, add `aps-environment` here. -->
+</dict>
+</plist>

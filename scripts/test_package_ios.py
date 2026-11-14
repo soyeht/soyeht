@@ -11,6 +11,7 @@ from unittest.mock import patch
 import package_common
 import package_ios
 from generated_legacy import BUNDLE_IDS
+from generated_profile import PROFILES
 from legacy_guard import names_legacy
 from package_common import PackagingError
 
@@ -28,6 +29,8 @@ GOOD_ENTITLEMENTS = {
     "keychain-access-groups": [f"{TEAM}.*", "com.apple.token"],
     "beta-reports-active": True,
 }
+# What the store app of 0.1.0 is signed with: no push, because the repository's release file has none.
+GOOD_APP_ENTITLEMENTS = {key: value for key, value in GOOD_ENTITLEMENTS.items() if key != "aps-environment"}
 GOOD_DETAILS = f"Authority=Apple Distribution: Example ({TEAM})\nTeamIdentifier={TEAM}\n"
 GOOD_PROFILE = {"Entitlements": {"application-identifier": f"{TEAM}.{package_ios.APP_ID}", "get-task-allow": False}}
 
@@ -67,11 +70,16 @@ class BuildTests(unittest.TestCase):
     def test_the_app_is_the_production_one_with_the_contracts_version(self):
         made = package_ios.release.current()
         settings = package_ios.xcode_settings(made)
-        self.assertEqual(settings["SOYEHT_APP_BUNDLE_ID"], "com.soyeht.next.ios")
+        self.assertEqual(settings["SOYEHT_APP_BUNDLE_ID"], PROFILES["prod"]["appIds"]["ios"])
+        self.assertEqual(package_ios.APP_ID, "com.soyeht.next.ios")
         self.assertEqual(settings["SOYEHT_PRODUCT_NAME"], "Soyeht Next")
         self.assertEqual(settings["MARKETING_VERSION"], str(made.version))
         self.assertEqual(settings["CURRENT_PROJECT_VERSION"], str(made.build_number()))
         self.assertEqual(settings["CODE_SIGNING_ALLOWED"], "NO")
+
+    def test_the_dev_identifier_of_the_project_is_the_one_of_the_profile(self):
+        project = (package_ios.ROOT / "apps/ios/SoyehtPhone.xcodeproj/project.pbxproj").read_text()
+        self.assertIn(f'"SOYEHT_APP_BUNDLE_ID" = "{PROFILES["dev"]["appIds"]["ios"]}";', project)
 
     def test_the_identifier_is_one_of_the_rewrite_and_not_the_legacy_apps(self):
         self.assertIn("next", package_ios.APP_ID)
@@ -244,6 +252,16 @@ class EntitlementTests(unittest.TestCase):
         package_ios.signing_entitlements(self.SOURCE, TEAM)
         self.assertEqual(self.SOURCE, {"aps-environment": "development"})
 
+    def test_the_store_build_declares_no_capability_while_push_is_off(self):
+        self.assertEqual(package_ios.declared_entitlements(), set())
+
+    def test_the_project_signs_release_with_that_file_and_debug_keeps_the_push_one(self):
+        project = (package_ios.ROOT / "apps/ios/SoyehtPhone.xcodeproj/project.pbxproj").read_text()
+        self.assertEqual(project.count(f'"CODE_SIGN_ENTITLEMENTS" = "{package_ios.ENTITLEMENTS.name}";'), 1)
+        debug = package_ios.ROOT / "apps/ios/SoyehtPhone.entitlements"
+        self.assertEqual(project.count(f'"CODE_SIGN_ENTITLEMENTS" = "{debug.name}";'), 1)
+        self.assertIn("aps-environment", plistlib.loads(debug.read_bytes()))
+
     def test_the_repository_file_is_what_the_script_signs_with(self):
         source = plistlib.loads(package_ios.ENTITLEMENTS.read_bytes())
         self.assertEqual(set(package_ios.signing_entitlements(source, TEAM)) - set(source), set(package_ios.IDENTITY_KEYS))
@@ -265,6 +283,13 @@ class EntitlementTests(unittest.TestCase):
         for name, (entitled, expected) in cases.items():
             with self.subTest(name):
                 self.assertIn(expected, "\n".join(package_ios.check_entitlements(entitled, TEAM, declared)))
+
+    def test_a_push_entitlement_in_the_store_app_is_refused_while_the_file_has_none(self):
+        declared = package_ios.declared_entitlements()
+        self.assertEqual(package_ios.check_entitlements(GOOD_APP_ENTITLEMENTS, TEAM, declared), [])
+        self.assertEqual(
+            package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, declared), ["unexpected entitlement aps-environment"]
+        )
 
     def test_push_the_file_does_not_declare_is_unexpected_in_the_app(self):
         problems = package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, set())
@@ -481,14 +506,14 @@ class VerifyTests(unittest.TestCase):
             with (
                 patch.object(package_ios, "run", return_value=result()),
                 patch.object(package_ios, "signature_details", return_value=GOOD_DETAILS),
-                patch.object(package_ios, "entitlement_values", return_value=GOOD_ENTITLEMENTS),
+                patch.object(package_ios, "entitlement_values", return_value=GOOD_APP_ENTITLEMENTS),
                 patch.object(package_ios, "embedded_profile", return_value=GOOD_PROFILE),
             ):
                 self.assertEqual(package_ios.verify_app(app, TEAM, made), [])
             with (
                 patch.object(package_ios, "run", return_value=result()),
                 patch.object(package_ios, "signature_details", return_value=""),
-                patch.object(package_ios, "entitlement_values", return_value={**GOOD_ENTITLEMENTS, "get-task-allow": True}),
+                patch.object(package_ios, "entitlement_values", return_value={**GOOD_APP_ENTITLEMENTS, "get-task-allow": True}),
                 patch.object(package_ios, "embedded_profile", return_value={**GOOD_PROFILE, "ProvisionedDevices": ["x"]}),
             ):
                 problems = package_ios.verify_app(app, TEAM, made)

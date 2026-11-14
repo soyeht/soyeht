@@ -29,7 +29,8 @@ The output of `xcodebuild` goes to `.cache/package-ios/logs/`; the terminal gets
 
 The steps (docs/apps-iphone.md, "Store build"): `xcodebuild archive` of the Release configuration
 with no signing (a manual profile reaches the Swift package targets, which take none); the archived
-app signed with the distribution identity and the entitlements of `apps/ios/SoyehtPhone.entitlements`
+app signed with the distribution identity and the entitlements of
+`apps/ios/SoyehtPhone.Release.entitlements` (no capability: push notifications are off in 0.1.0)
 completed with the identity keys an unsigned archive lacks; `xcodebuild -exportArchive` for the
 `app-store-connect` method; and a check of the file: its identifier, version and build number, its
 entitlements, that it is signed with a distribution certificate and that its profile is an App Store
@@ -49,9 +50,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import release
+from generated_profile import PROFILES
 from package_common import (
     HASH_PATTERN,
     PRODUCT_NAME,
+    PROFILE_NAME,
     ROOT,
     TEAM_PATTERN,
     TEAM_VARIABLE,
@@ -73,12 +76,13 @@ from package_common import (
     xcodebuild_command,
 )
 
-APP_ID = "com.soyeht.next.ios"  # the production identifier of the iOS app (ADR 0112); not in `profiles.json`
+PROFILE = PROFILES[PROFILE_NAME]
+APP_ID = PROFILE["appIds"]["ios"]  # com.soyeht.next.ios, from `contracts/profiles.json` (ADR 0112)
 OPERATING_SYSTEM = "ios"
 ARTIFACT_ARCHITECTURE = "aarch64"  # what the package name calls the one architecture of an iPhone
 XCODE_PROJECT = ROOT / "apps/ios/SoyehtPhone.xcodeproj"
 SCHEME = "SoyehtPhone"
-ENTITLEMENTS = ROOT / "apps/ios/SoyehtPhone.entitlements"
+ENTITLEMENTS = ROOT / "apps/ios/SoyehtPhone.Release.entitlements"  # no capability: push is off in 0.1.0; the Debug build has its own file
 EXPORT_OPTIONS = ROOT / "apps/ios/ExportOptions.plist"
 WORK = ROOT / ".cache/package-ios"
 DIST = ROOT / "dist" / "ios"

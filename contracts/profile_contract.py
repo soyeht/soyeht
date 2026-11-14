@@ -14,7 +14,7 @@ PROFILE_LOGS = ("engine", "ptyd", "desktop")
 
 PROFILE_NAMES = ("dev", "prod")
 PROFILE_SYSTEMS = ("macos", "windows", "linux")
-PROFILE_APP_SYSTEMS = ("macos", "windows", "linux")
+PROFILE_APP_SYSTEMS = ("macos", "ios", "windows", "linux")
 PROFILE_NAME_KEYS = ("macApp", "window", "windowsFolder")
 # `displayNames.windowsFolder` is the folder below `%LOCALAPPDATA%\Programs` the Windows installer
 # uses. It is a name for the machine as much as for people: the login tasks hold the absolute path of
