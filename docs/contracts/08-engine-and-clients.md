@@ -133,8 +133,11 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
   The engine approves only when the code is right (constant-time comparison), the request is
   pending, and the call comes from the local human connection that opened the request's pairing
   window. A missing or wrong code answers `pairing_code_invalid` and approves nothing; a text that
-  is not six digits is refused the same way and costs no try; the third wrong code denies the request and the device receives `pair.result` with `approved: false` and
-  the reason `Denied on the computer`. The code is single use and ends with the request. A call
+  is not six digits is refused the same way and costs no try; the third wrong code denies the
+  request: the device receives `pair.result` with `approved: false` and the reason `Denied on the
+  computer`, and so does the connection that opened the request's window (the call that made the
+  third wrong code is answered with a refusal, not with the denial a Deny gets as its result), after
+  which the request is in no list. The code is single use and ends with the request. A call
   that fails for its code leaves no receipt, and `approvalCode` is left out of the fingerprint of
   the call that is stored, so the store holds nothing derived from it. Denying needs no code.
 - each pairing window is bound in memory to the local connection that opened it (at most four live
@@ -143,6 +146,27 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
   local connection, and the device name may hold no control or bidirectional-control character.
 - a client sends `approvalCode` only when the capability is offered; in `SignedApp` mode the field
   is ignored.
+
+**The desktop client's pairing view (ADR 0164, slice 5).** The Windows and Linux app draws the place
+"iPhone or iPad" of the rail: the paired devices, each with Revoke (after "Revoke this device's
+access?"), the requests that wait while the sheet is closed with Deny, and the button "Pair a phone",
+which opens the sheet. The sheet calls `device.pair.start` and draws the QR code of `qr` (or `uri`
+from an engine that has no `qr`) with the time the window has left, the link to copy and, when
+`reachability` says a phone cannot reach the computer, why. Each request that comes in is listed
+with the device's name and its comparison code, and where the engine offers `pairing-code` with a
+field for the six digits; the app sends `approvalCode` (the digits the vector reads, blanks
+dropped) with an approval only to such an engine, sends none with a denial, and refuses a text that
+is not six digits itself, with no call. The engine's own words for `pairing_code_invalid` (which
+say how many tries are left) are shown beside the request. The engine denies the request at the
+third wrong code and sends the app that `pair.result` with `approved: false`; the app counts
+nothing itself (the engine's count spans reconnects and windows, and one error kind covers a
+missing code, no code and a wrong one), and closes the request, which then offers only Dismiss,
+with the refusal's words beside it. The sheet keeps the one connection of
+the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
+new window on the next connection. An engine that refuses (Windows, and Linux until the peer rules
+of slice 3) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
+refusal under them, in place of a code. `contracts/vectors/pairing-approval.json` and
+`pairing-comparison.json` are passed by the client's tests.
 
 Until the rules about where a new device may connect from (ADR 0164, slice 3) are in the engine,
 no shipped engine selects `PersonsCode`: Linux refuses as the paragraph below says, and only a

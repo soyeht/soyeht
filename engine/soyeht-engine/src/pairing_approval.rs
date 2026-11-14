@@ -258,6 +258,13 @@ impl Windows {
             .is_some_and(|bound| bound.connection == connection)
     }
 
+    /// The connection that opened `window`, while it is held.
+    pub(crate) fn owner(&self, window: &str) -> Option<&str> {
+        self.bound
+            .get(window)
+            .map(|bound| bound.connection.as_str())
+    }
+
     pub(crate) fn release(&mut self, connection: &str) {
         self.bound.retain(|_, bound| bound.connection != connection);
     }

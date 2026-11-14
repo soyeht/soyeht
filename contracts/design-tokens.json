@@ -632,6 +632,7 @@
     "referenceScreenplayCharacterWidth": 9.59375,
     "referenceScreenplayLineHeight": 27,
     "referenceScreenplayPointSize": 16,
-    "webAddressMinimumWidth": 160
+    "webAddressMinimumWidth": 160,
+    "pairingQrSide": 260
   }
 }

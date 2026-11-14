@@ -686,6 +686,7 @@ pub mod desktop {
     pub const REFERENCE_SCREENPLAY_LINE_HEIGHT: f32 = 27.0;
     pub const REFERENCE_SCREENPLAY_POINT_SIZE: f32 = 16.0;
     pub const WEB_ADDRESS_MINIMUM_WIDTH: f32 = 160.0;
+    pub const PAIRING_QR_SIDE: f32 = 260.0;
 }
 pub mod elevation {
     /// An outer shadow pair of a raised surface: light up and left, dark down and right.

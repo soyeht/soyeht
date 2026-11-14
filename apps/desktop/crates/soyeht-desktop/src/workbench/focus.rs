@@ -3,7 +3,7 @@
 use super::Workbench;
 use crate::{composer_field::ComposerField, destination::Destination};
 use gpui::{Context, Entity, FocusHandle, Focusable, Window};
-use soyeht_client::Command;
+use soyeht_client::{Command, State};
 use soyeht_protocol::PaneMode;
 
 impl Workbench {
@@ -92,12 +92,20 @@ impl Workbench {
         self.field_request = Some(field.focus_handle(cx));
     }
 
+    /// A sheet that is modal for the window's actions is shown: the trust question or the pairing
+    /// sheet. No action that changes a pane or a workspace runs under it, whichever way it
+    /// arrives (its key, or the menu item, which no key handler sees); a copy may.
+    pub(crate) fn sheet_is_modal(&self) -> bool {
+        modal_sheet_shown(&self.state)
+    }
+
     /// A sheet or form is on the stage and owns the keyboard: the new-task sheet, the
     /// new-document form of the place on the stage, the "Start with an agent" form, or the trust
     /// question. A pane that asks for the keyboard meanwhile (a terminal that finished opening,
     /// say) waits.
     fn form_open(&self) -> bool {
         self.state.trust_prompt().is_some()
+            || self.state.pairing.shown()
             || self.start.as_ref().is_some_and(|start| start.shown)
             || (self.destination == Destination::Tasks && self.tasks_ui.form.is_some())
             || self.places.form_open_in(self.destination)
@@ -108,6 +116,11 @@ impl Workbench {
             self.send(Command::Focus { pane_id });
         }
     }
+}
+
+/// Whether a sheet that is modal for actions is shown (see [`Workbench::sheet_is_modal`]).
+fn modal_sheet_shown(state: &State) -> bool {
+    state.trust_prompt().is_some() || state.pairing.shown()
 }
 
 /// Who takes the keyboard at the start of a frame.
@@ -139,6 +152,16 @@ fn grant<F, P>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_pairing_sheet_is_modal_for_actions_while_it_is_shown_and_not_after() {
+        let mut state = State::default();
+        assert!(!modal_sheet_shown(&state));
+        state.open_pairing();
+        assert!(modal_sheet_shown(&state), "a sheet waiting for its window");
+        state.pairing.close();
+        assert!(!modal_sheet_shown(&state));
+    }
 
     #[test]
     fn a_form_that_just_opened_takes_the_keyboard_before_a_pane_of_the_same_frame() {

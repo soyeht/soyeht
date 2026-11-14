@@ -24,6 +24,9 @@ impl Workbench {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.sheet_is_modal() {
+            return;
+        }
         self.choose_folder(cx);
     }
 
