@@ -271,8 +271,8 @@ impl TailnetListeners {
 /// replace an address that already faces the network.
 pub(crate) async fn update_pair_address(shared: &Shared, address: SocketAddr) -> Result<()> {
     core_lock::with(shared, "pair_address", move |state| {
-        if !address.ip().is_loopback() || state.pair_address.starts_with("127.") {
-            state.pair_address = address.to_string();
+        if !address.ip().is_loopback() || state.pairing.address.starts_with("127.") {
+            state.pairing.address = address.to_string();
         }
         Ok(())
     })
@@ -286,7 +286,7 @@ pub(crate) async fn follow_tailnet(
     core: Shared,
 ) -> Result<impl Future<Output = Result<()>> + Send + use<>> {
     // In memory only and held for an instant, so an async task may take it directly.
-    let loopback = core_lock::lock(&core, "tailnet")?.pair_address.clone();
+    let loopback = core_lock::lock(&core, "tailnet")?.pairing.address.clone();
     let apply = move |update| core_lock::lock(&core, "tailnet")?.apply_tailnet(update, &loopback);
     if let Some(update) = tailnet.refresh().await {
         apply(update)?;

@@ -4,6 +4,7 @@ use crate::{
     errors::{self, Result},
     model,
     network::TailnetUpdate,
+    pairing_approval::{Approval, Verdict, check_device_name},
     ports::{Clock, StorePort},
     ui_attestation,
 };
@@ -21,18 +22,21 @@ use soyeht_protocol::{
 use std::sync::Once;
 use uuid::Uuid;
 
+/// A pairing request as the store keeps it. It holds no approval code: that lives in memory only
+/// (`pairing_approval`).
 #[derive(Serialize, Deserialize, Clone, Debug)]
-struct Pending {
-    id: String,
-    code: String,
+pub(crate) struct Pending {
+    pub(crate) id: String,
+    /// The code of the window the request came in on, not the person's approval code.
+    pub(crate) code: String,
     name: String,
     key: String,
     challenge: [u8; 32],
     proved: bool,
-    approved: Option<bool>,
+    pub(crate) approved: Option<bool>,
     token: Option<String>,
     device: Option<Device>,
-    expires: i64,
+    pub(crate) expires: i64,
 }
 
 fn active_pending<S: StorePort, C: Clock + ?Sized>(
@@ -51,10 +55,10 @@ fn active_pending<S: StorePort, C: Clock + ?Sized>(
 /// app is refused: say so, and log it once with its kind only (docs/dev-local.md says how to sign
 /// the engine). On a system that attests nothing the app cannot be told from a shell either, and
 /// the refusal says that the app cannot yet prove itself there (ADR 0162).
-fn refusal(local_human: bool) -> errors::Error {
+fn refusal(local_human: bool, approval: Approval) -> errors::Error {
     static LOGGED: Once = Once::new();
     // No signature to blame and nothing to log: this is the system's rule, not an engine fault.
-    if local_human && !ui_attestation::available() {
+    if local_human && (approval == Approval::Refused || !ui_attestation::available()) {
         return errors::forbidden_role(
             "Pairing is started and approved, and other devices are revoked, only in the signed Soyeht app, and on this system the app cannot yet prove itself to the engine, so no pairing is started or approved and no device is revoked here",
         );
@@ -75,6 +79,15 @@ fn refusal(local_human: bool) -> errors::Error {
     )
 }
 
+/// What a device reads when its request was denied where the person is.
+fn denial_text(approval: Approval) -> &'static str {
+    if approval.asks_for_code() {
+        "Denied on the computer"
+    } else {
+        "Denied on Mac"
+    }
+}
+
 impl Core {
     fn pairing_client(&self, connection: &str) -> Result<&model::Connected> {
         errors::invariant(
@@ -90,12 +103,18 @@ impl Core {
         )
     }
 
-    pub fn pending_pair_view(&self) -> Result<Value> {
+    /// The requests awaiting the person, as `connection` sees them: where the person's code is asked
+    /// for, only the ones that came in on a window this connection opened.
+    pub fn pending_pair_view(&self, connection: &str) -> Result<Value> {
         let rows: Vec<Pending> = StorePort::active_pair_requests(&self.store, self.now_unix())
             .map_err(errors::storage)?;
+        let own_windows_only = self.approval().asks_for_code();
         let mut requests = vec![];
         for pending in rows {
-            if pending.proved && pending.approved.is_none() {
+            if pending.proved
+                && pending.approved.is_none()
+                && (!own_windows_only || self.owns_window_of(connection, &pending))
+            {
                 let public = auth::public_key(&pending.key)
                     .map_err(|error| errors::internal(error.to_string()))?;
                 let expires_at = chrono::DateTime::from_timestamp(pending.expires, 0)
@@ -126,7 +145,9 @@ impl Core {
         if self.pairing_client(connection)?.actor.is_some() {
             return Err(errors::unauthorized("Pairing requires a fresh connection"));
         }
-        let fingerprint = STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
+        // Before any stored answer is looked up: a replay from where no device pairs gets none.
+        self.refuse_local_pairing(connection)?;
+        let fingerprint = auth::call_fingerprint(method, params);
         if method == method::PAIR_BEGIN {
             let begin: PairBeginParams = model::typed_params(params)?;
             return self.pair_begin(connection, &fingerprint, begin);
@@ -164,6 +185,14 @@ impl Core {
             self.pending_pair(id)?;
             self.pairing_client_mut(connection)?.pair_request = Some(id.into());
             return Ok(result);
+        }
+        if self.approval().asks_for_code() {
+            check_device_name(&name)?;
+            // A window nobody holds (its connection ended, or the engine restarted) has no one
+            // to decide for it.
+            if !self.pairing.windows.is_bound(&code) {
+                return Err(errors::unauthorized("Pairing code expired or invalid"));
+            }
         }
         let expires = StorePort::active_pair_window_expiry(&self.store, &code, self.now_unix())
             .map_err(errors::storage)?;
@@ -219,6 +248,10 @@ impl Core {
             ));
         }
         let mut pending = self.pending_pair(&id)?;
+        // A window nobody holds has no one to approve: no code is made for a device to show.
+        if self.approval().asks_for_code() && !self.pairing.windows.is_bound(&pending.code) {
+            return Err(errors::unauthorized("Pairing code expired or invalid"));
+        }
         let public = auth::public_key(&pending.key)
             .map_err(|error| errors::unauthorized(error.to_string()))?;
         if !auth::pair_proof(
@@ -244,6 +277,7 @@ impl Core {
         };
         let result = model::to_value(&PairProveResult {
             status: "pending".into(),
+            approval_code: None,
         })?;
         let mutation = StorePort::mutate(&mut self.store, &scope, &idem, fingerprint, |tx| {
             tx.update_pair_request(&id, &pending)?;
@@ -254,13 +288,21 @@ impl Core {
         if pending.approved.is_some() {
             self.send_pair_result(connection, &pending)?;
         }
-        Ok(mutation.result)
+        // Added after the stored result is made, as `device.pair.start` adds `reachability`: a
+        // replay is given the code from memory and the store never holds it.
+        let Some(approval_code) = self.approval_code_for(&pending)? else {
+            return Ok(mutation.result);
+        };
+        let mut proved: PairProveResult = serde_json::from_value(mutation.result)
+            .map_err(|_| errors::internal("Stored pairing result is malformed"))?;
+        proved.approval_code = Some(approval_code);
+        model::to_value(&proved)
     }
 
     /// Records what a tailnet lookup changed and tells live clients when reachability moved.
     /// Without a tailnet listener, pairing links fall back to the loopback address.
     pub fn apply_tailnet(&mut self, update: TailnetUpdate, loopback: &str) -> Result<()> {
-        self.pair_address = update
+        self.pairing.address = update
             .pair_address
             .map_or_else(|| loopback.to_string(), |address| address.to_string());
         if self.reachability == update.reachability {
@@ -282,7 +324,7 @@ impl Core {
             device_id: approved
                 .then(|| pending.device.as_ref().map(|d| d.device_id.clone()))
                 .flatten(),
-            reason: (!approved).then(|| "Denied on Mac".into()),
+            reason: (!approved).then(|| denial_text(self.approval()).into()),
         };
         if let Some(client) = self.clients.get(connection) {
             client.outbox.send(model::notification(
@@ -310,11 +352,13 @@ impl Core {
         }
     }
 
-    /// Who may change which devices can control this computer (ADR 0128, 0162, 0163). Opening a
-    /// pairing window, deciding a request and revoking a device are the signed app's alone, on every
-    /// system: a window lets a device put its own name in front of the person. Where the engine
-    /// cannot attest the app (`ui_attestation::available`), no connection is the app and all three
-    /// are refused. A paired device may only revoke itself. `authorize_before_replay` asks before a
+    /// Who may change which devices can control this computer (ADR 0128, 0162, 0163, 0164). Opening a
+    /// pairing window, deciding a request and revoking a device are the signed app's alone where the
+    /// engine attests the app (macOS): a window lets a device put its own name in front of the
+    /// person. Where it cannot (`Approval::Refused`), no connection is the app and all three are
+    /// refused. Where the person's code stands in for the app (`Approval::PersonsCode`), the local
+    /// human may call them, and deciding is the local connection that opened the request's
+    /// window. A paired device may only revoke itself. `authorize_before_replay` asks before a
     /// stored result is looked up, and `device_request` asks again.
     fn authorize_device_management(
         &self,
@@ -328,19 +372,39 @@ impl Core {
             let target: DeviceRevokeParams = model::typed_params(params)?;
             actor.is_some_and(|actor| actor.device_id.as_deref() == Some(target.device_id.as_str()))
         };
-        let app = client.is_some_and(|client| client.signed_ui);
+        let approval = self.approval();
+        let app = client.is_some_and(|client| approval.admits_local_human(client.signed_ui));
         let allowed = match actor.map(|actor| &actor.role) {
             Some(Role::HumanLocal) => app,
             Some(Role::HumanDevice) => own_revocation,
             _ => false,
         };
         if allowed {
+            if approval.asks_for_code() && method == method::DEVICE_PAIR_DECIDE {
+                self.require_own_window(connection, params)?;
+            }
             return Ok(());
         }
-        Err(refusal(matches!(
-            actor.map(|actor| &actor.role),
-            Some(Role::HumanLocal)
-        )))
+        Err(refusal(
+            matches!(actor.map(|actor| &actor.role), Some(Role::HumanLocal)),
+            approval,
+        ))
+    }
+
+    /// A request is decided only by the connection that opened its window (ADR 0164). A request
+    /// that is gone is not this check's to answer: the call finds that out itself, or replays its
+    /// stored result.
+    fn require_own_window(&self, connection: &str, params: &Value) -> Result<()> {
+        let decide: DevicePairDecideParams = model::typed_params(params)?;
+        let pending: Option<Pending> =
+            StorePort::active_pair_request(&self.store, &decide.request_id, self.now_unix())
+                .map_err(errors::storage)?;
+        if pending.is_none_or(|pending| self.owns_window_of(connection, &pending)) {
+            return Ok(());
+        }
+        Err(errors::forbidden_role(
+            "A pairing request is decided in the window that opened it",
+        ))
     }
 
     pub fn device_request(
@@ -370,8 +434,8 @@ impl Core {
         let expires_at = chrono::DateTime::from_timestamp(expires, 0)
             .ok_or_else(|| errors::internal("Pairing expiration is out of range"))?;
         let key = auth::engine_key_text(&self.engine_key);
-        let uri = pairing_link::uri(self.store.store_id(), &self.pair_address, &code, &key);
-        let qr = pairing_link::qr(self.store.store_id(), &self.pair_address, &code, &key);
+        let uri = pairing_link::uri(self.store.store_id(), &self.pairing.address, &code, &key);
+        let qr = pairing_link::qr(self.store.store_id(), &self.pairing.address, &code, &key);
         let started = model::to_value(&DevicePairStartResult {
             code: code.clone(),
             expires_at: expires_at.to_rfc3339_opts(SecondsFormat::Secs, true),
@@ -388,6 +452,10 @@ impl Core {
         // Live state, not part of the idempotent record: a replay sees today's reachability.
         let mut result: DevicePairStartResult = serde_json::from_value(result)
             .map_err(|_| errors::internal("Stored pairing result is malformed"))?;
+        // Only a window made now is this connection's; a replayed one stays with its opener.
+        if self.approval().asks_for_code() && result.code == code {
+            self.pairing.windows.bind(&code, connection);
+        }
         result.reachability = Some(self.reachability.clone());
         let result = model::to_value(&result)?;
         Ok(result)
@@ -441,6 +509,13 @@ impl Core {
         let public =
             auth::public_key(&pending.key).map_err(|error| errors::invalid(error.to_string()))?;
         let approve = decide.approve;
+        let asks_for_code = self.approval().asks_for_code();
+        if asks_for_code && !self.owns_window_of(connection, &pending) {
+            return Err(errors::forbidden_role(
+                "A pairing request is decided in the window that opened it",
+            ));
+        }
+        let held = pending.clone();
         pending.approved = Some(approve);
         if approve {
             let available =
@@ -448,6 +523,9 @@ impl Core {
                     .map_err(errors::storage)?;
             if !available {
                 return Err(errors::unauthorized("Pairing code expired or already used"));
+            }
+            if asks_for_code {
+                self.check_approval_code(&held, decide.approval_code.as_deref())?;
             }
             pending.token =
                 Some(auth::token().map_err(|error| errors::internal(error.to_string()))?);
@@ -492,6 +570,7 @@ impl Core {
                 Ok((decided, events))
             })?
             .result;
+        self.pairing.codes.forget(id);
         for (connection, _) in self
             .clients
             .iter()
@@ -501,229 +580,100 @@ impl Core {
         }
         Ok(result)
     }
+
+    /// The third wrong code denies the request, as the person's own Deny would.
+    pub(crate) fn deny_after_wrong_codes(&mut self, pending: &Pending) -> Result<()> {
+        let mut denied = pending.clone();
+        denied.approved = Some(false);
+        let scope = format!("pair-wrong-codes:{}", pending.id);
+        StorePort::mutate(&mut self.store, &scope, "denied", "denied", |tx| {
+            tx.update_pair_request(&denied.id, &denied)?;
+            Ok((json!({}), vec![]))
+        })
+        .map_err(errors::storage)?;
+        for (connection, _) in self
+            .clients
+            .iter()
+            .filter(|(_, c)| c.pair_request.as_deref() == Some(denied.id.as_str()))
+        {
+            self.send_pair_result(connection, &denied)?;
+        }
+        Ok(())
+    }
+
+    /// The rule in force: a test's choice, else the system's.
+    pub(crate) fn approval(&self) -> Approval {
+        self.hooks
+            .pairing_approval()
+            .unwrap_or_else(Approval::for_this_system)
+    }
+
+    /// `pair.begin` and `pair.prove` come from another device, never from a program on this
+    /// computer's own endpoint, which would be the person's request and its own approval at once.
+    pub(crate) fn refuse_local_pairing(&self, connection: &str) -> Result<()> {
+        let local = self
+            .clients
+            .get(connection)
+            .is_some_and(|client| client.local);
+        if self.approval().asks_for_code() && local {
+            return Err(errors::unauthorized(
+                "A device pairs from another device, not from this computer",
+            ));
+        }
+        Ok(())
+    }
+
+    /// The code `pair.prove` answers a device with, when this engine asks for one and the request
+    /// still awaits a decision.
+    pub(crate) fn approval_code_for(&mut self, pending: &Pending) -> Result<Option<String>> {
+        if !self.approval().asks_for_code() || pending.approved.is_some() {
+            return Ok(None);
+        }
+        let now = self.now_unix();
+        self.pairing
+            .codes
+            .issue(&pending.id, pending.expires, now)
+            .map(Some)
+    }
+
+    /// Whether `connection` is the one whose window `pending` came in on.
+    pub(crate) fn owns_window_of(&self, connection: &str, pending: &Pending) -> bool {
+        self.pairing.windows.is_bound_to(&pending.code, connection)
+    }
+
+    /// Checks the code the person typed for `pending`. A wrong code answers
+    /// `pairing_code_invalid` and approves nothing; the last wrong one also denies the request.
+    pub(crate) fn check_approval_code(
+        &mut self,
+        pending: &Pending,
+        typed: Option<&str>,
+    ) -> Result<()> {
+        let now = self.now_unix();
+        match self.pairing.codes.check(&pending.id, typed, now) {
+            Verdict::Right => Ok(()),
+            Verdict::Missing => Err(errors::pairing_code_invalid(
+                "Type the code your phone shows",
+            )),
+            Verdict::Malformed => Err(errors::pairing_code_invalid(
+                "Type the six digits your phone shows",
+            )),
+            Verdict::NoCode => Err(errors::pairing_code_invalid(
+                "No code is waiting for this request; pair again on the phone",
+            )),
+            Verdict::Wrong { left } => Err(errors::pairing_code_invalid(format!(
+                "That code is not right. {left} tries left"
+            ))),
+            Verdict::Exhausted => {
+                self.deny_after_wrong_codes(pending)?;
+                Err(errors::pairing_code_invalid(
+                    "Too many wrong codes. The request was denied",
+                ))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ports::testing::{FixedClock, MemoryStore};
-    use soyeht_protocol::ErrorKind;
-
-    fn pending(expires: i64) -> Pending {
-        Pending {
-            id: "request".into(),
-            code: "123456".into(),
-            name: "Phone".into(),
-            key: "key".into(),
-            challenge: [7; 32],
-            proved: false,
-            approved: None,
-            token: None,
-            device: None,
-            expires,
-        }
-    }
-
-    #[test]
-    fn pairing_rule_uses_the_clock_and_store_ports_for_expiry() {
-        let mut store = MemoryStore::default();
-        store
-            .pair_requests
-            .insert("request".into(), serde_json::to_value(pending(11)).unwrap());
-
-        assert_eq!(
-            active_pending(&store, &FixedClock(10_000), "request")
-                .unwrap()
-                .name,
-            "Phone"
-        );
-        let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
-        assert_eq!(errors::kind(&error), ErrorKind::Unauthorized);
-    }
-
-    #[tokio::test]
-    async fn pairing_is_decided_by_the_mac_app_and_never_by_a_paired_device() {
-        use crate::outbox;
-        use soyeht_protocol::Actor;
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-pairing-roles-{}", Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        let (local_outbox, _local) = outbox::channel();
-        // A shell or script on the local socket, and the signed app (a peer the system attests).
-        let local = core.connect(true, false, local_outbox).unwrap();
-        let (app_outbox, _app) = outbox::channel();
-        let app = core.connect(true, true, app_outbox).unwrap();
-        for connection in [&local, &app] {
-            let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
-                "client":"roles-test","clientVersion":"1","protocolVersion":1}});
-            core.dispatch(connection, hello).unwrap();
-        }
-        let (device_outbox, _device) = outbox::channel();
-        let phone = core.connect(false, false, device_outbox).unwrap();
-        core.clients.get_mut(&phone).unwrap().actor = Some(Actor {
-            role: Role::HumanDevice,
-            client: "phone".into(),
-            device_id: Some("device-1".into()),
-            pane_id: None,
-        });
-        // The error kind of each call, or `None` when it went through.
-        let mut kinds = |connection: &str| {
-            let calls = [
-                ("device.pair.start", json!({})),
-                (
-                    "device.pair.decide",
-                    json!({"requestId":"r","approve":true}),
-                ),
-                ("device.revoke", json!({"deviceId":"device-2"})),
-                ("device.revoke", json!({"deviceId":"device-1"})),
-            ];
-            calls.map(|(method, mut params)| {
-                params["idempotencyKey"] = json!(Uuid::new_v4().to_string());
-                let request = json!({"jsonrpc":"2.0","id":1,"method":method,"params":params});
-                core.dispatch(connection, request)
-                    .err()
-                    .map(|error| errors::kind(&error))
-            })
-        };
-
-        // A device is refused all but its own revocation, which gets as far as the lookup.
-        assert_eq!(
-            kinds(&phone),
-            [
-                Some(ErrorKind::ForbiddenRole),
-                Some(ErrorKind::ForbiddenRole),
-                Some(ErrorKind::ForbiddenRole),
-                Some(ErrorKind::NotFound)
-            ]
-        );
-        // The app keeps all of them: the window opens, the rest find nothing to act on.
-        let app_kinds = || {
-            [
-                None,
-                Some(ErrorKind::Unauthorized),
-                Some(ErrorKind::NotFound),
-                Some(ErrorKind::NotFound),
-            ]
-        };
-        assert_eq!(kinds(&app), app_kinds());
-        // A shell cannot open a window, decide a request or revoke a device, on any system.
-        let refused = || Some(ErrorKind::ForbiddenRole);
-        assert_eq!(kinds(&local), [refused(), refused(), refused(), refused()]);
-        drop(core);
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-
-    /// An engine that is not signed refuses even the app, and says why.
-    #[cfg(target_os = "macos")]
-    #[tokio::test]
-    async fn an_unsigned_engine_says_why_it_cannot_tell_the_app_from_a_shell() {
-        let (client, _server) = tokio::net::UnixStream::pair().unwrap();
-        let token = ui_attestation::peer_audit_token(&client).unwrap();
-        assert!(!ui_attestation::signed_ui_peer(
-            token,
-            &soyeht_protocol::profile::DEV
-        ));
-        assert!(ui_attestation::engine_cannot_attest());
-        assert!(
-            refusal(true)
-                .to_string()
-                .contains("does not carry the Soyeht signature")
-        );
-        assert!(
-            !refusal(false)
-                .to_string()
-                .contains("does not carry the Soyeht signature")
-        );
-    }
-
-    /// Where nothing is attested, the refusal says the app cannot yet prove itself, not that the
-    /// person should use an app that has no way to be believed.
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn a_system_without_attestation_says_the_app_cannot_yet_prove_itself() {
-        assert!(!ui_attestation::available());
-        let message = refusal(true).to_string();
-        assert!(message.contains("cannot yet prove itself"), "{message}");
-        assert!(message.contains("Soyeht app"), "{message}");
-    }
-
-    #[tokio::test]
-    async fn tailnet_reachability_reaches_status_pairing_and_live_clients() {
-        use crate::{dispatch::Outcome, network, outbox};
-        use soyeht_protocol::{EngineReachabilityReason, frame::Frame};
-        let directory =
-            std::env::temp_dir().join(format!("soyeht-reachability-{}", Uuid::new_v4()));
-        std::fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        let (outbox, mut receiver) = outbox::channel();
-        let connection = core.connect(true, true, outbox).unwrap();
-        let _challenge = receiver.next().await.unwrap().unwrap();
-        let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
-            "client":"reachability-test","clientVersion":"1","protocolVersion":1}});
-        core.dispatch(&connection, hello).unwrap();
-        core.clients.get_mut(&connection).unwrap().events = true;
-        let call = |core: &mut Core, id: u32, method: &str| {
-            let params = json!({"idempotencyKey":Uuid::new_v4().to_string()});
-            let request = json!({"jsonrpc":"2.0","id":id,"method":method,"params":params});
-            match core.dispatch(&connection, request).unwrap() {
-                Outcome::Reply(result) => result,
-                _ => panic!("{method} did not reply"),
-            }
-        };
-        let loopback = core.pair_address.clone();
-
-        let missing = network::unreachable(EngineReachabilityReason::TailnetAddressNotFound);
-        let update = |reachability, pair_address| TailnetUpdate {
-            reachability,
-            pair_address,
-        };
-        core.apply_tailnet(update(missing.clone(), None), &loopback)
-            .unwrap();
-        let status = call(&mut core, 2, "engine.status");
-        assert_eq!(
-            status["reachability"],
-            json!({"remote":false,"reason":"tailnet_address_not_found"})
-        );
-        let pair = call(&mut core, 3, "device.pair.start");
-        assert_eq!(pair["reachability"]["remote"], false);
-        assert!(pair["uri"].as_str().unwrap().contains(&loopback));
-
-        let tailnet: std::net::SocketAddr = "100.64.0.9:7777".parse().unwrap();
-        core.apply_tailnet(update(network::reachable(), Some(tailnet)), &loopback)
-            .unwrap();
-        let mut announced = vec![];
-        while let Ok(Some(packet)) =
-            tokio::time::timeout(std::time::Duration::from_millis(50), receiver.next())
-                .await
-                .unwrap_or(Ok(None))
-        {
-            if let Frame::Json(bytes) = packet.frame {
-                let message: Value = serde_json::from_slice(&bytes).unwrap();
-                if message["method"] == "engine.reachability_changed" {
-                    announced.push(message["params"].clone());
-                }
-            }
-        }
-        assert_eq!(
-            announced,
-            [
-                json!({"remote":false,"reason":"tailnet_address_not_found"}),
-                json!({"remote":true})
-            ]
-        );
-        assert_eq!(
-            call(&mut core, 4, "engine.status")["reachability"]["remote"],
-            true
-        );
-        let pair = call(&mut core, 5, "device.pair.start");
-        assert!(
-            pair["uri"]
-                .as_str()
-                .unwrap()
-                .contains("address=100.64.0.9:7777")
-        );
-        drop(core);
-        std::fs::remove_dir_all(directory).unwrap();
-    }
-}
+mod code_tests;
+#[cfg(test)]
+mod tests;

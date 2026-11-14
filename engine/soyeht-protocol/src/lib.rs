@@ -7,6 +7,7 @@ pub mod contract;
 mod generated;
 pub mod limits;
 pub use generated::*;
+pub mod approval_code;
 pub mod attachment;
 pub mod data_directory;
 pub mod device_auth;

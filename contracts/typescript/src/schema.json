@@ -136,7 +136,8 @@
         "ink_unsupported",
         "ink_language_unavailable",
         "ink_limit_exceeded",
-        "ink_recognition_failed"
+        "ink_recognition_failed",
+        "pairing_code_invalid"
       ]
     },
     "RpcError": {
@@ -1466,6 +1467,11 @@
         "approve": {
           "type": "boolean"
         },
+        "approvalCode": {
+          "type": "string",
+          "maxLength": 32,
+          "description": "The six-digit code the pairing device shows, typed by the person at this computer (ADR 0164). Required to approve on an engine that offers the `pairing-code` capability and ignored on any other; blanks between the digits are allowed. It is never part of the call's idempotency fingerprint, so no stored record holds anything derived from it."
+        },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
         }
@@ -1685,6 +1691,10 @@
       "properties": {
         "status": {
           "type": "string"
+        },
+        "approvalCode": {
+          "type": "string",
+          "description": "Six decimal digits the pairing device shows for the person to type at the computer (ADR 0164). Present only in an engine that offers the `pairing-code` capability, only on a connection the engine allows to pair, and never stored or sent anywhere else. Absent from every pairing with a Mac."
         }
       },
       "required": [
@@ -10457,7 +10467,7 @@
     },
     "EngineCapability": {
       "type": "string",
-      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158).",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158). `pairing-code` is offered only by an engine whose person approves a pairing by typing the code the new device shows (ADR 0164): a client sends `approvalCode` in `device.pair.decide` only when it is offered.",
       "enum": [
         "terminal",
         "workspaces",
@@ -10468,7 +10478,8 @@
         "workspace-tasks",
         "subscription-usage",
         "push",
-        "ink-recognition"
+        "ink-recognition",
+        "pairing-code"
       ]
     },
     "WebInteractionMode": {
@@ -15174,7 +15185,8 @@
     "ink_unsupported": -32044,
     "ink_language_unavailable": -32045,
     "ink_limit_exceeded": -32046,
-    "ink_recognition_failed": -32047
+    "ink_recognition_failed": -32047,
+    "pairing_code_invalid": -32048
   },
   "x-clientPolicy": {
     "timeouts": {
@@ -15326,7 +15338,11 @@
       "projectTrustRestrict": "Keep restricted",
       "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
       "projectTrustFailed": "Soyeht could not save this choice.",
-      "updateSoyeht": "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one."
+      "updateSoyeht": "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one.",
+      "pairingCodeTitle": "Type this code on your computer",
+      "pairingCodeInstruction": "Open Soyeht on your computer, choose Pair a phone and type the code there. The computer shows the same code beside the request:",
+      "pairingCodeMismatch": "If it shows another one, or none, tap Cancel.",
+      "pairingCodeRefused": "The code was not accepted. Start again on the computer."
     },
     "inlineImageTypes": [
       "image/png",

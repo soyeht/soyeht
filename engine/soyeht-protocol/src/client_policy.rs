@@ -118,6 +118,10 @@ pub const PROJECT_TRUST_RESTRICTED_NOTE: &str =
 pub const PROJECT_TRUST_FAILED: &str = "Soyeht could not save this choice.";
 pub const UPDATE_SOYEHT: &str =
     "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one.";
+pub const PAIRING_CODE_TITLE: &str = "Type this code on your computer";
+pub const PAIRING_CODE_INSTRUCTION: &str = "Open Soyeht on your computer, choose Pair a phone and type the code there. The computer shows the same code beside the request:";
+pub const PAIRING_CODE_MISMATCH: &str = "If it shows another one, or none, tap Cancel.";
+pub const PAIRING_CODE_REFUSED: &str = "The code was not accepted. Start again on the computer.";
 pub const CLIENT_NAME_MAC: &str = "mac";
 pub const CLIENT_NAME_MAC_DEV: &str = "mac-dev";
 pub const CLIENT_NAME_IPHONE: &str = "iphone";

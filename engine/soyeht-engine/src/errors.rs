@@ -45,6 +45,7 @@ pub enum Error {
     AdapterNotAcknowledged(String),
     WorkspaceFolderMissing(String),
     PushUnavailable(String),
+    PairingCodeInvalid(String),
     Internal(String),
     SnapshotTooLarge(String),
     Storage(soyeht_store::Error),
@@ -134,6 +135,7 @@ constructor!(file_too_large, FileTooLarge);
 constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
 constructor!(workspace_folder_missing, WorkspaceFolderMissing);
 constructor!(push_unavailable, PushUnavailable);
+constructor!(pairing_code_invalid, PairingCodeInvalid);
 
 /// The failure to open a workspace's root folder: `workspace_folder_missing` when the folder is gone
 /// (deleted, moved or on a disk that is not mounted), so a client says so instead of reporting
@@ -301,6 +303,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
         Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
         Error::PushUnavailable(_) => ErrorKind::PushUnavailable,
+        Error::PairingCodeInvalid(_) => ErrorKind::PairingCodeInvalid,
         Error::Internal(_)
         | Error::Protocol(_)
         | Error::WebSocket(_)
@@ -416,6 +419,7 @@ fn message(error: &Error) -> String {
         | Error::AdapterNotAcknowledged(message)
         | Error::WorkspaceFolderMissing(message)
         | Error::PushUnavailable(message)
+        | Error::PairingCodeInvalid(message)
         | Error::Internal(message)
         | Error::SnapshotTooLarge(message) => message.clone(),
         Error::RateLimited { message, .. } => message.clone(),

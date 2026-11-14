@@ -1,0 +1,94 @@
+{
+  "description": "The approval code of a pairing on Linux (ADR 0164): six decimal digits that the pairing device shows and the person types at the computer. The device shows them in two groups of three (`482 913`) and the computer reads what the person typed as follows: only the ASCII digits 0 to 9 and the ASCII space count, blanks may stand anywhere and are ignored, and exactly six digits must remain. Any other character (a letter, a tab, a line break, a hyphen, a full-width or an Arabic-Indic digit, a combining mark) makes the whole text not a code. `digits` is the six digits that remain, or null; `grouped` is how a device shows a code that was read (three digits, one space, three digits). The Rust protocol crate passes the `digits` of every case; the clients that show a code pass the `grouped` ones.",
+  "cases": [
+    {
+      "name": "six digits",
+      "input": "482913",
+      "digits": "482913",
+      "grouped": "482 913"
+    },
+    {
+      "name": "the grouping the phone shows",
+      "input": "482 913",
+      "digits": "482913",
+      "grouped": "482 913"
+    },
+    {
+      "name": "leading zeros are digits",
+      "input": "000123",
+      "digits": "000123",
+      "grouped": "000 123"
+    },
+    {
+      "name": "blanks anywhere and around",
+      "input": "  4 8 2   9 1 3 ",
+      "digits": "482913",
+      "grouped": "482 913"
+    },
+    {
+      "name": "five digits",
+      "input": "48291",
+      "digits": null
+    },
+    {
+      "name": "seven digits",
+      "input": "4829131",
+      "digits": null
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "digits": null
+    },
+    {
+      "name": "only blanks",
+      "input": "      ",
+      "digits": null
+    },
+    {
+      "name": "a letter among the digits",
+      "input": "48291a",
+      "digits": null
+    },
+    {
+      "name": "a hyphen between the groups",
+      "input": "482-913",
+      "digits": null
+    },
+    {
+      "name": "a tab between the groups",
+      "input": "482\t913",
+      "digits": null
+    },
+    {
+      "name": "a line break after the digits",
+      "input": "482913\n",
+      "digits": null
+    },
+    {
+      "name": "a non-breaking space",
+      "input": "482 913",
+      "digits": null
+    },
+    {
+      "name": "full-width digits",
+      "input": "４８２９１３",
+      "digits": null
+    },
+    {
+      "name": "Arabic-Indic digits",
+      "input": "٤٨٢٩١٣",
+      "digits": null
+    },
+    {
+      "name": "a combining mark after the sixth digit",
+      "input": "482913́",
+      "digits": null
+    },
+    {
+      "name": "a plus sign",
+      "input": "+482913",
+      "digits": null
+    }
+  ]
+}

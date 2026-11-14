@@ -8,18 +8,18 @@ use ed25519_dalek::{Signer, SigningKey};
 use hmac::{Hmac, Mac};
 use soyeht_protocol::limits;
 
-fn kind(answer: &Value) -> &str {
+pub(super) fn kind(answer: &Value) -> &str {
     answer["error"]["data"]["kind"]
         .as_str()
         .unwrap_or("<no error>")
 }
 
-fn key_text(key: &SigningKey) -> String {
+pub(super) fn key_text(key: &SigningKey) -> String {
     STANDARD.encode(key.verifying_key().to_bytes())
 }
 
 /// The proof of a device that knows `code`, over `challenge` and the name `Test phone`.
-fn proof_for(code: &str, key: &SigningKey, challenge: &Value) -> String {
+pub(super) fn proof_for(code: &str, key: &SigningKey, challenge: &Value) -> String {
     let derived = Sha256::digest([code.as_bytes(), key.verifying_key().as_bytes()].concat());
     pairing_proof(&derived, challenge)
 }
@@ -35,7 +35,7 @@ pub(super) fn listener_address(rig: &Rig) -> String {
     address_of(&window)
 }
 
-fn address_of(window: &Value) -> String {
+pub(super) fn address_of(window: &Value) -> String {
     window["uri"]
         .as_str()
         .unwrap()
@@ -66,7 +66,7 @@ fn open_window(rig: &Rig) -> Window {
     }
 }
 
-fn begin(phone: &mut Phone, code: &str, key: &SigningKey, idempotency: &str) -> Value {
+pub(super) fn begin(phone: &mut Phone, code: &str, key: &SigningKey, idempotency: &str) -> Value {
     phone.request(
         "pair.begin",
         json!({"code":code,"deviceName":"Test phone","devicePublicKey":key_text(key),
@@ -123,7 +123,7 @@ fn connected_device(paired: &Paired) -> Phone {
     phone
 }
 
-fn devices(local: &mut Client) -> usize {
+pub(super) fn devices(local: &mut Client) -> usize {
     local.call("device.list", json!({}))["items"]
         .as_array()
         .unwrap()

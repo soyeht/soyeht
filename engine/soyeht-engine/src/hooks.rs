@@ -84,6 +84,12 @@ pub trait Hooks: Send + Sync {
         false
     }
 
+    /// The way a pairing is approved, in place of the system's (ADR 0164): a test runs the Linux
+    /// rules on a Mac, or the Windows ones anywhere.
+    fn pairing_approval(&self) -> Option<crate::pairing_approval::Approval> {
+        None
+    }
+
     /// A recognizer that replaces the system's for `ink.recognize`.
     fn ink_recognizer(&self) -> Option<Box<dyn Recognizer>> {
         None

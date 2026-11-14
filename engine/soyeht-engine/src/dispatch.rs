@@ -114,6 +114,7 @@ impl Core {
     pub fn disconnect(&mut self, id: &str) -> Result<()> {
         let web_result = self.disconnect_web_host(id);
         self.clients.remove(id);
+        self.pairing.windows.release(id);
         self.agents.forget_connection(id);
         self.language_waiters.retain(|_, waiters| {
             waiters.retain(|waiter| waiter.connection != id);
@@ -378,8 +379,7 @@ impl Core {
                 .idempotency_receipt(scope, key)
                 .map_err(errors::storage)?;
             if let Some(previous) = previous {
-                let incoming =
-                    STANDARD.encode(auth::token_hash(&json!([method, params]).to_string()));
+                let incoming = auth::call_fingerprint(method, params);
                 if incoming != previous.fingerprint {
                     return Err(errors::idempotency_conflict(
                         "Idempotency key reused with different content",
@@ -627,7 +627,7 @@ impl Core {
     fn snapshot_parts(&mut self, connection: &str) -> Result<Outcome> {
         let snapshot = self.store.snapshot().map_err(errors::storage)?;
         let mut sections = snapshot.sections;
-        let pairing = self.pending_pair_view()?;
+        let pairing = self.pending_pair_view(connection)?;
         if let Some((_, requests)) = sections.iter_mut().find(|(name, _)| name == "requests") {
             let requests = requests
                 .as_array_mut()
@@ -725,6 +725,9 @@ impl Core {
         // Recognition of handwriting is listed only where the system has a recognizer (ADR 0158).
         if self.ink.available() {
             offered.push(EngineCapability::InkRecognition);
+        }
+        if self.approval().asks_for_code() {
+            offered.push(EngineCapability::PairingCode);
         }
         offered.iter().map(errors::wire_name).collect()
     }

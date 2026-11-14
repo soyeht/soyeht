@@ -4,8 +4,9 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use ed25519_dalek::{Signature, Signer as _, SigningKey, VerifyingKey};
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_protocol::device_auth;
+use soyeht_protocol::{device_auth, method};
 // The bytes both sides sign are written once, in the protocol crate (ADR 0134).
 pub use device_auth::{engine_hello_bytes, engine_pair_bytes, hello_bytes};
 
@@ -13,6 +14,19 @@ pub fn random_bytes() -> Result<[u8; 32]> {
     let mut bytes = [0; 32];
     getrandom::fill(&mut bytes).map_err(|_| Error::RandomUnavailable)?;
     Ok(bytes)
+}
+
+/// What a stored result of a call is matched by: the method and its parameters, without
+/// `approvalCode`, which is the person's secret and must leave nothing derived from it in the
+/// store (ADR 0164).
+pub fn call_fingerprint(call: &str, params: &Value) -> String {
+    let mut params = params.clone();
+    if call == method::DEVICE_PAIR_DECIDE
+        && let Some(fields) = params.as_object_mut()
+    {
+        fields.remove("approvalCode");
+    }
+    STANDARD.encode(token_hash(&json!([call, params]).to_string()))
 }
 
 pub fn token() -> Result<String> {

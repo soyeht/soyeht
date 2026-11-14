@@ -149,7 +149,11 @@ export const clientPolicy = {
     "projectTrustRestrict": "Keep restricted",
     "projectTrustRestrictedNote": "This folder is restricted: language servers run with code execution off, or do not start.",
     "projectTrustFailed": "Soyeht could not save this choice.",
-    "updateSoyeht": "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one."
+    "updateSoyeht": "This app and the computer speak different versions of Soyeht. Update Soyeht on the older one.",
+    "pairingCodeTitle": "Type this code on your computer",
+    "pairingCodeInstruction": "Open Soyeht on your computer, choose Pair a phone and type the code there. The computer shows the same code beside the request:",
+    "pairingCodeMismatch": "If it shows another one, or none, tap Cancel.",
+    "pairingCodeRefused": "The code was not accepted. Start again on the computer."
   },
   "inlineImageTypes": [
     "image/png",

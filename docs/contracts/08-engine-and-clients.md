@@ -100,7 +100,12 @@ while the Mac's “Pair iPhone or iPad” window is open:
    challenge || deviceName)`, `key = SHA-256(code || devicePublicKey)` →
    `{status: "pending"}`; Mac receives `device.pair_requested {requestId,
    deviceName, fingerprint = SHA-256(devicePublicKey) in short hex}`. Both screens show the same short comparison code, the first sixteen hexadecimal digits of that fingerprint in four groups of four, and the Mac asks the person to allow only if the device shows the same one. Every place the Mac can approve a request shows the code beside Allow, and a fingerprint with no code can only be denied (ADR 0152; `contracts/vectors/pairing-comparison.json`).
-4. Mac: `device.pair.decide {requestId, approve: true|false}`. The engine waits
+   Where the engine offers the `pairing-code` capability (Linux, ADR 0164; see below), the answer
+   also carries `approvalCode`: six decimal digits that the device shows in large type, under the
+   comparison code, with the words of `pairingCodeTitle`, `pairingCodeInstruction` and
+   `pairingCodeMismatch`. An answer with no `approvalCode`, which is every pairing with a Mac,
+   shows nothing more than before.
+4. Mac: `device.pair.decide {requestId, approve: true|false, approvalCode?}`. The engine waits
    for consent until the code deadline (10 min); this pre-pairing dialogue
    is NOT subject to `hello`'s 5 s limit.
 5. iPhone receives `pair.result {requestId, approved, deviceToken?, deviceId?,
@@ -112,8 +117,39 @@ while the Mac's “Pair iPhone or iPad” window is open:
    `consumed`, `bad_proof`, `denied`, `revoked`.
 `device.revoke {deviceId}` invalidates the token, closes open connections and
 removes that device's push tokens.
+**The person's code (ADR 0164).** On a system that cannot attest the app, the engine asks for
+an action no program of the same user can fake. The rule is chosen by platform alone, never by a
+failed attestation: `SignedApp` on macOS (everything in this section as written), `PersonsCode`
+on Linux, `Refused` on Windows (nothing starts or approves a pairing until its app proves itself).
+An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
+
+- when `pair.prove` verifies, it makes a code, six digits from the system's random source, and
+  returns it as `approvalCode` in the answer to `pair.prove`, to the pairing device only. The code
+  lives in engine memory only: never in the store, a receipt, a log line, an event, a snapshot or
+  any frame of a local connection. A replay of `pair.prove` gets the same code; after an engine
+  restart it gets a new one.
+- the person types the code at the computer and the app sends it as `approvalCode` in
+  `device.pair.decide` (blanks between the digits are allowed; `contracts/vectors/pairing-approval.json`).
+  The engine approves only when the code is right (constant-time comparison), the request is
+  pending, and the call comes from the local human connection that opened the request's pairing
+  window. A missing or wrong code answers `pairing_code_invalid` and approves nothing; a text that
+  is not six digits is refused the same way and costs no try; the third wrong code denies the request and the device receives `pair.result` with `approved: false` and
+  the reason `Denied on the computer`. The code is single use and ends with the request. A call
+  that fails for its code leaves no receipt, and `approvalCode` is left out of the fingerprint of
+  the call that is stored, so the store holds nothing derived from it. Denying needs no code.
+- each pairing window is bound in memory to the local connection that opened it (at most four live
+  per connection; the fifth closes the oldest): only that connection decides the requests that
+  come in on it and sees them in its snapshot. `pair.begin` and `pair.prove` are refused on a
+  local connection, and the device name may hold no control or bidirectional-control character.
+- a client sends `approvalCode` only when the capability is offered; in `SignedApp` mode the field
+  is ignored.
+
+Until the rules about where a new device may connect from (ADR 0164, slice 3) are in the engine,
+no shipped engine selects `PersonsCode`: Linux refuses as the paragraph below says, and only a
+test hook runs the mode.
+
 Only the signed Soyeht app opens the window, decides a request or revokes a device, on every
-system (ADR 0162, 0163): a shell, the command line, a script or a terminal a paired device opened on
+system where the engine attests it (ADR 0162, 0163): a shell, the command line, a script or a terminal a paired device opened on
 the local endpoint gets `forbidden_role` and no window opens, so it cannot put an approval prompt
 with a name of its own in front of the person. Neither the command line nor the MCP program has a
 command for any of the three. Where the engine cannot tell the app from another program, which today
@@ -176,8 +212,8 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
 | `device.list` | yes | yes | no | no |
-| `device.pair.start` (ADR 0163) | yes, only in the signed app, on every system | no | no | no |
-| `device.pair.decide`, `device.revoke` (ADR 0162) | yes, only in the signed app, on every system | own device only (`device.revoke`) | no | no |
+| `device.pair.start` (ADR 0163, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human | no | no | no |
+| `device.pair.decide`, `device.revoke` (ADR 0162, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human, and a decision only from the connection that opened the window and with the person's code to approve | own device only (`device.revoke`) | no | no |
 | `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `project.trust.set` (trust a folder, contract 18) | yes, in the signed app where the system can attest it (macOS) | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
@@ -461,6 +497,7 @@ and a later request succeeds once Git is installed),
 (it exceeds the editor's size limit); a client shows both in the editor pane, not as a dialog
 (ADR 0094),
 `push_unavailable` (`push.register` while the engine cannot send alerts, §2.3; nothing is stored),
+`pairing_code_invalid` (`device.pair.decide` with a missing or wrong `approvalCode` on an engine that offers `pairing-code`, §2.2; nothing is approved, the third wrong code denies the request, and the message says how many tries are left),
 `adapter_not_acknowledged` (a built-in agent that its package runner downloads unchecked,
 `HarnessInfo.package` with `packageLocked` false, was asked to start without a person's
 acknowledgement of that exact `name@version`: `pane.create` and `pane.harness.switch` carry it as
