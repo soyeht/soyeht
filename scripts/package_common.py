@@ -204,14 +204,18 @@ LOG_TAIL_LINES = 40
 def logged(command, log, *, environment=None, cwd=None, mask=()):
     """Run a long build with its whole output in the file `log` (a build of the apps writes thousands
     of lines) and print only the command and, when it fails, the end of that file. What `mask` names
-    never reaches the file or the terminal."""
+    never reaches the file or the terminal. The file is readable by its owner alone, and each line
+    reaches it as it comes, so the build can be followed while it runs."""
     print(printable(command, mask), flush=True)
     log.parent.mkdir(parents=True, exist_ok=True)
-    with log.open("w") as sink, subprocess.Popen(
-        _words(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=environment, cwd=cwd,
+    descriptor = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w") as sink, subprocess.Popen(
+        _words(command), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace",
+        env=environment, cwd=cwd,
     ) as process:
         for line in process.stdout:
             sink.write(masked(line, mask))
+            sink.flush()
         status = process.wait()
     if status:
         tail = "".join(log.read_text(errors="replace").splitlines(keepends=True)[-LOG_TAIL_LINES:])

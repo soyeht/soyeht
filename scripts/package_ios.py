@@ -105,8 +105,9 @@ class Signing:
 
     @property
     def secrets(self):
-        """What a printed command must not show: the certificate's name holds a person's name."""
-        return (self.identity,)
+        """What a printed command or a build log must not show: the certificate's name holds a
+        person's name, and `xcodebuild` prints the team as well."""
+        return (self.identity, self.team)
 
 
 def resolve_signing(environment):
@@ -139,8 +140,9 @@ def xcode_settings(made):
     return app_build_settings(made, APP_ID, PRODUCT_NAME)
 
 
-def archive_app(made, environment):
-    """The Release archive, unsigned. The signing happens on the archived app (`sign_app`)."""
+def archive_app(made, signing, environment):
+    """The Release archive, unsigned. The signing happens on the archived app (`sign_app`); `signing`
+    only says what the build's log masks."""
     if archive_path().exists():
         shutil.rmtree(archive_path())
     WORK.mkdir(parents=True, exist_ok=True)
@@ -148,7 +150,7 @@ def archive_app(made, environment):
         XCODE_PROJECT, SCHEME, "generic/platform=iOS", WORK / "derived", xcode_settings(made),
         "-archivePath", archive_path(), "archive",
     )
-    logged(command, WORK / "logs/archive.log", environment=environment)
+    logged(command, WORK / "logs/archive.log", environment=environment, mask=signing.secrets)
     app = archived_app(archive_path())
     if not app.is_dir():
         raise PackagingError(f"xcodebuild did not make {app}")
@@ -179,7 +181,10 @@ def signing_preflight(signing, runner=subprocess.run):
         probe.write_bytes(b"signing preflight\n")
         command = ["codesign", "--force", "--sign", signing.identity, probe]
         try:
-            result = runner([str(part) for part in command], capture_output=True, text=True, timeout=PREFLIGHT_SECONDS)
+            result = runner(
+                [str(part) for part in command],
+                capture_output=True, text=True, timeout=PREFLIGHT_SECONDS, stdin=subprocess.DEVNULL,
+            )
         except subprocess.TimeoutExpired:
             raise PackagingError(
                 f"signing a test file waited more than {PREFLIGHT_SECONDS}s: the keychain is asking for something "
@@ -405,7 +410,7 @@ def package(options, environment):
     if options.validate and not key:
         raise PackagingError("--validate needs the App Store Connect API key variables in the environment (see --help)")
     signing_preflight(signing)
-    app = archive_app(made, environment)
+    app = archive_app(made, signing, environment)
     sign_app(app, signing)
     exported = export_archive(signing, WORK)
     folder = options.dist
