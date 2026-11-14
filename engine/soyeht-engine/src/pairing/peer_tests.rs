@@ -279,6 +279,60 @@ async fn a_begin_replayed_from_another_node_is_refused_and_binds_nothing() {
 }
 
 #[tokio::test]
+async fn a_call_for_no_window_or_request_of_this_engine_never_asks_the_system() {
+    let (mut rig, _app, window) = rig_with_window();
+    let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+    // A window code nobody opened: refused before the interfaces or Tailscale are asked.
+    let unknown = begin(&mut rig, &phone, "no-such-window", "Test phone", 20);
+    assert_eq!(kind(&unknown), ErrorKind::Unauthorized);
+    assert_eq!(text(&unknown), "Pairing code expired or invalid");
+    // A request this connection did not begin.
+    let proved = rig.call(
+        &phone,
+        "pair.prove",
+        json!({"requestId":"no-such-request","proof":"AAAA"}),
+    );
+    assert_eq!(kind(&proved), ErrorKind::Unauthorized);
+    assert_eq!(text(&proved), "Begin pairing on this connection first");
+    assert_eq!(rig.peers.asked(), 0);
+    // A window of this engine is looked up: the interfaces and the daemon are asked.
+    assert!(begin(&mut rig, &phone, &window, "Test phone", 20).is_ok());
+    assert!(rig.peers.asked() >= 3);
+}
+
+#[tokio::test]
+async fn a_device_that_was_just_approved_already_holds_its_node_before_it_reconnects() {
+    let (mut rig, app, window) = rig_with_window();
+    paired(&mut rig, &app, &window, 21).await;
+    // No `hello` yet: the node of its pairing is already its own.
+    assert_eq!(
+        pairing_nodes::uses_of(&rig.core.store, FIXTURE_PHONE_NODE)
+            .unwrap()
+            .len(),
+        1
+    );
+    refused_with(&begin_from_phone(&mut rig, &app, 22), Refusal::DeviceNode);
+    // A device that was only denied leaves no node behind.
+    let window = rig.open_window(&app);
+    rig.peers.set_node(ip(OTHER_ADDRESS), Some(OTHER_NODE));
+    let other = tailnet_peer(&mut rig, OTHER_ADDRESS);
+    let denied = begin(&mut rig, &other, &window, "Other phone", 23).unwrap();
+    let params = prove_params(&window, 23, "Other phone", &denied);
+    rig.call(&other, "pair.prove", params).unwrap();
+    rig.call(
+        &app,
+        "device.pair.decide",
+        json!({"requestId":denied["requestId"],"approve":false}),
+    )
+    .unwrap();
+    assert!(
+        pairing_nodes::uses_of(&rig.core.store, OTHER_NODE)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
 async fn a_paired_device_s_node_cannot_pair_another_over_either_family() {
     let (mut rig, app, window) = rig_with_window();
     let (token, _) = paired(&mut rig, &app, &window, 7).await;
@@ -326,13 +380,22 @@ async fn a_revoked_device_s_node_is_refused_for_a_day_and_allowed_after() {
 async fn a_device_hello_is_never_blocked_by_a_lookup_that_failed_and_records_no_node_then() {
     let (mut rig, app, window) = rig_with_window();
     let (token, _) = paired(&mut rig, &app, &window, 11).await;
+    // The node of its pairing was recorded at the approval; a failed lookup changes nothing.
     rig.peers.set_node(phone_address(), None);
     let hello = tailnet_peer(&mut rig, &phone_address().to_string());
     assert!(device_hello(&mut rig, &hello, 11, &token).is_ok());
-    assert!(
-        pairing_nodes::uses_of(&rig.core.store, FIXTURE_PHONE_NODE)
+    let uses = pairing_nodes::uses_of(&rig.core.store, FIXTURE_PHONE_NODE).unwrap();
+    assert_eq!(uses.len(), 1);
+    // A device's `hello` asks for its node and not for the interfaces of this machine.
+    rig.peers.set_node(ip(OTHER_ADDRESS), Some(OTHER_NODE));
+    rig.peers.set_local(None);
+    let hello = tailnet_peer(&mut rig, OTHER_ADDRESS);
+    assert!(device_hello(&mut rig, &hello, 11, &token).is_ok());
+    assert_eq!(
+        pairing_nodes::uses_of(&rig.core.store, OTHER_NODE)
             .unwrap()
-            .is_empty()
+            .len(),
+        1
     );
     // A hello that comes from this computer's own node records nothing either.
     rig.peers
@@ -459,7 +522,9 @@ async fn the_mode_hook_of_a_test_does_not_change_what_a_shipped_engine_asks() {
         &connection,
         Peer::new(ListenerKind::Tailnet, ip("100.64.0.9")),
     );
-    // A real lookup of a tailnet address that is not there: the daemon cannot say.
+    // A window of this engine, so that the call goes as far as the lookups, which are the real
+    // ones: a tailnet address that is not there, and a daemon that is not either.
+    core.pairing.windows.bind("x", "the-app");
     let outcome = core.dispatch(
         &connection,
         json!({"jsonrpc":"2.0","id":1,"method":"pair.begin","params":{

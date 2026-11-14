@@ -12,8 +12,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(target_os = "linux")]
-mod device;
 #[cfg(windows)]
 mod exclusive;
 
@@ -28,22 +26,6 @@ pub fn listen(address: SocketAddr) -> io::Result<TcpListener> {
     {
         TcpListener::bind(address)
     }
-}
-
-/// Like [`listen`], and on Linux the listener takes only the packets that come in through the
-/// network interface `device` (`SO_BINDTODEVICE`): another network's packets for the address, sent
-/// through another interface, are refused. A program of this computer that connects to the address
-/// is not: the connection arrives as through `device` from the address itself. Where the system has
-/// no such option (macOS, Windows) the listener is [`listen`]'s.
-#[cfg(target_os = "linux")]
-pub fn listen_on_device(address: SocketAddr, device: &str) -> io::Result<TcpListener> {
-    device::listen(address, device)
-}
-
-/// See the Linux form.
-#[cfg(not(target_os = "linux"))]
-pub fn listen_on_device(address: SocketAddr, _device: &str) -> io::Result<TcpListener> {
-    listen(address)
 }
 
 /// How long an accept loop waits after an error about one connection, so that a run of them

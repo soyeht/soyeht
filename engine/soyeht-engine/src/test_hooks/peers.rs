@@ -6,7 +6,10 @@ use std::{
     collections::BTreeMap,
     io,
     net::{IpAddr, Ipv4Addr},
-    sync::{Mutex, PoisonError},
+    sync::{
+        Mutex, PoisonError,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
 /// The address the phone of a test engine connects from, as the rules see it.
@@ -34,11 +37,13 @@ struct State {
 /// A machine and a daemon whose answers a test sets.
 pub struct FixturePeers {
     state: Mutex<State>,
+    asked: AtomicUsize,
 }
 
 impl FixturePeers {
     fn with(view: Option<Peer>, nodes: BTreeMap<IpAddr, String>) -> Self {
         Self {
+            asked: AtomicUsize::new(0),
             state: Mutex::new(State {
                 view,
                 local: Some(vec![IpAddr::from([127, 0, 0, 1])]),
@@ -62,6 +67,11 @@ impl FixturePeers {
         );
         peers.set_node(FIXTURE_PHONE_ADDRESS, Some(FIXTURE_PHONE_NODE));
         peers
+    }
+
+    /// How many times the machine or the daemon was asked anything.
+    pub fn asked(&self) -> usize {
+        self.asked.load(Ordering::SeqCst)
     }
 
     /// Says which node Tailscale names for `address`; `None` makes it unable to tell.
@@ -110,11 +120,13 @@ impl PairingPeers for FixturePeers {
     }
 
     fn local_addresses(&self) -> io::Result<Vec<IpAddr>> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.local.clone().ok_or_else(unavailable)
     }
 
     fn whois(&self, address: IpAddr) -> io::Result<Node> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state
             .nodes
@@ -124,6 +136,7 @@ impl PairingPeers for FixturePeers {
     }
 
     fn identity(&self) -> io::Result<Identity> {
+        self.asked.fetch_add(1, Ordering::SeqCst);
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.identity.clone().ok_or_else(unavailable)
     }

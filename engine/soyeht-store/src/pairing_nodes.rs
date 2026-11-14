@@ -41,7 +41,16 @@ pub fn uses_of(store: &Store, node: &str) -> Result<Vec<NodeUse>> {
 /// Records that `device` connected from `node` at `now`. A device that is revoked or unknown is
 /// not recorded: its revocation has already stamped the nodes it had.
 pub fn record(store: &Store, device: &str, node: &str, now: i64) -> Result<()> {
-    store.connection().execute(
+    record_on(store.connection(), device, node, now)
+}
+
+/// [`record`] inside the change that makes the device, for the node its pairing came from.
+pub fn record_in(change: &Change<'_>, device: &str, node: &str, now: i64) -> Result<()> {
+    record_on(change.connection(), device, node, now)
+}
+
+fn record_on(connection: &rusqlite::Connection, device: &str, node: &str, now: i64) -> Result<()> {
+    connection.execute(
         "INSERT INTO device_nodes(device_id,node_id,first_seen_unix,last_seen_unix) SELECT id, ?2, ?3, ?3 FROM devices WHERE id = ?1 AND revoked = 0 ON CONFLICT(device_id,node_id) DO UPDATE SET last_seen_unix = excluded.last_seen_unix",
         params![device, node, now],
     )?;
@@ -149,6 +158,28 @@ mod tests {
         // A revoked device is not recorded again.
         record(&store, "phone", "n3", 40).unwrap();
         assert!(uses_of(&store, "n3").unwrap().is_empty());
+        drop(store);
+        // ignored: the scratch folder of a test; the system clears the temporary folder.
+        let _ = std::fs::remove_dir_all(path);
+    }
+
+    #[test]
+    fn a_node_can_be_recorded_in_the_change_that_makes_the_device() {
+        let (mut store, path) = store();
+        store
+            .mutate("test", "pair", "pair", |change| {
+                change.connection().execute(
+                    "INSERT INTO devices(id,payload,public_key,token_hash) VALUES ('new','{}',x'01','new')",
+                    [],
+                )?;
+                record_in(change, "new", "n-new", 5)?;
+                // A change that records a node for a device it did not make records nothing.
+                record_in(change, "other", "n-other", 5)?;
+                Ok((json!({}), vec![]))
+            })
+            .unwrap();
+        assert_eq!(uses_of(&store, "n-new").unwrap().len(), 1);
+        assert!(uses_of(&store, "n-other").unwrap().is_empty());
         drop(store);
         // ignored: the scratch folder of a test; the system clears the temporary folder.
         let _ = std::fs::remove_dir_all(path);

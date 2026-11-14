@@ -51,17 +51,6 @@ pub fn local_addresses() -> io::Result<Vec<IpAddr>> {
         .collect())
 }
 
-/// The name of the tailnet interface that holds `address`, read now.
-fn tailnet_interface_of(address: IpAddr) -> Option<String> {
-    let Ok(addresses) = system::addresses(true) else {
-        return None;
-    };
-    addresses
-        .into_iter()
-        .find(|(name, found)| *found == address && is_tailnet_interface(name, *found))
-        .map(|(name, _)| name)
-}
-
 pub fn tailnet_addresses() -> io::Result<Vec<IpAddr>> {
     Ok(system::addresses(true)?
         .into_iter()
@@ -112,8 +101,6 @@ pub struct TailnetUpdate {
 }
 
 pub type Lookup = Box<dyn FnMut() -> io::Result<Vec<IpAddr>> + Send>;
-/// The interface that holds an address, which a listener on it is bound to (ADR 0164).
-pub type DeviceOf = Box<dyn Fn(IpAddr) -> Option<String> + Send>;
 pub type Serve = Box<dyn FnMut(TcpListener) -> JoinHandle<io::Result<()>> + Send>;
 pub type Log = Box<dyn FnMut(Line) + Send>;
 
@@ -124,8 +111,6 @@ pub struct TailnetListeners {
     lookup: Lookup,
     serve: Serve,
     log: Log,
-    /// Binds each listener to the interface of its address; `None` binds by address alone.
-    device_of: Option<DeviceOf>,
     active: BTreeMap<IpAddr, (SocketAddr, JoinHandle<io::Result<()>>)>,
     /// The addresses that could not be bound, and whether another program holds the port.
     refused: BTreeMap<IpAddr, bool>,
@@ -140,7 +125,6 @@ impl TailnetListeners {
             lookup,
             serve,
             log,
-            device_of: None,
             active: BTreeMap::new(),
             refused: BTreeMap::new(),
             lookup_failure: Streak::once(),
@@ -148,32 +132,13 @@ impl TailnetListeners {
         }
     }
 
-    /// Follows the system's tailnet. Each listener is bound to the interface that holds its
-    /// address, where the system can do that (ADR 0164), so a packet for the address that came in
-    /// through another interface is not accepted. A connection that a program of this computer
-    /// makes to the address is accepted, from the address itself: the pairing rules refuse it by
-    /// the peer's address. An address whose interface cannot be found is not bound.
     pub fn system(port: u16, serve: Serve) -> Self {
-        let mut listeners = Self::new(
+        Self::new(
             port,
             Box::new(tailnet_addresses),
             serve,
             Box::new(|line| line.emit()),
-        );
-        listeners.device_of = Some(Box::new(tailnet_interface_of));
-        listeners
-    }
-
-    fn bind(&self, ip: IpAddr) -> io::Result<TcpListener> {
-        let address = SocketAddr::new(ip, self.port);
-        let Some(device_of) = &self.device_of else {
-            return listen(address);
-        };
-        let device =
-            device_of(ip).ok_or_else(|| io::Error::from(io::ErrorKind::AddrNotAvailable))?;
-        let listener = soyeht_platform::net::listen_on_device(address, &device)?;
-        listener.set_nonblocking(true)?;
-        TcpListener::from_std(listener)
+        )
     }
 
     /// Looks the tailnet up once and starts or stops listeners to match. Returns an
@@ -259,7 +224,7 @@ impl TailnetListeners {
             if self.active.contains_key(&ip) {
                 continue;
             }
-            let bound = match self.bind(ip) {
+            let bound = match listen(SocketAddr::new(ip, self.port)) {
                 Ok(listener) => listener.local_addr().map(|address| (address, listener)),
                 Err(error) => Err(error),
             };
@@ -479,6 +444,33 @@ mod tests {
         assert_eq!(logged[3]["listeners"], "1");
         let text = serde_json::to_string(&*logged).unwrap();
         assert!(!text.contains("::1"), "logs never carry addresses: {text}");
+    }
+
+    /// An interface that is made again with the same name and address (the daemon restarted or was
+    /// upgraded) changes nothing the follower sees, and its listener, bound by address alone,
+    /// still takes the connections (ADR 0164).
+    #[tokio::test]
+    async fn an_interface_made_again_with_the_same_address_keeps_its_listener_taking_connections() {
+        let address: IpAddr = "127.0.0.1".parse().unwrap();
+        let script: Script = Arc::new(Mutex::new(VecDeque::from([
+            Ok(vec![address]),
+            // The interface is gone for a moment and back, as a lookup that fails and one that
+            // answers again with the same address.
+            Err(io::Error::from(io::ErrorKind::Interrupted)),
+            Ok(vec![address]),
+            Ok(vec![address]),
+        ])));
+        let (log, _events) = recorder();
+        let mut tailnet = TailnetListeners::new(0, scripted(&script), accepting(), log);
+        let found = tailnet.refresh().await.unwrap();
+        let bound = found.pair_address.unwrap();
+        for _ in 0..3 {
+            tailnet.refresh().await;
+            assert!(
+                tokio::net::TcpStream::connect(bound).await.is_ok(),
+                "the listener stopped taking connections"
+            );
+        }
     }
 
     #[tokio::test]

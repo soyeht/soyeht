@@ -139,7 +139,7 @@ impl Core {
         model::to_value(&requests)
     }
 
-    fn pending_pair(&self, id: &str) -> Result<Pending> {
+    pub(crate) fn pending_pair(&self, id: &str) -> Result<Pending> {
         active_pending(&self.store, self.clock.as_ref(), id)
     }
 
@@ -583,6 +583,7 @@ impl Core {
             request_id: decide.request_id.clone(),
             approved: approve,
         })?;
+        let now = self.now_unix();
         let paired = pending
             .device
             .as_ref()
@@ -607,6 +608,11 @@ impl Core {
                         public.as_bytes(),
                         &auth::token_hash(token),
                     )?;
+                    // The device's node is known from its `pair.begin`: it is the device's from
+                    // now on, so a phone that has not reconnected yet cannot pair another (ADR 0164).
+                    if let Some(node) = &pending.node {
+                        soyeht_store::pairing_nodes::record_in(tx, &device.device_id, node, now)?;
+                    }
                     events.extend(paired);
                 }
                 tx.update_pair_request(id, &pending)?;

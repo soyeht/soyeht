@@ -7,7 +7,7 @@
 //! must hold, and any doubt (a list that cannot be read, a daemon that cannot be asked) refuses.
 //!
 //! The system is asked only through [`PairingPeers`], so a test can say what the interfaces and
-//! the daemon answer. [`SystemPeers`] is the shipped answer: `getifaddrs` and the local API of
+//! the daemon answer. [`SystemPeers`] is the shipped answer (`system_peers`): `getifaddrs` and the local API of
 //! `tailscaled`.
 
 use serde::Deserialize;
@@ -19,7 +19,7 @@ use std::{io, net::IpAddr};
 pub enum ListenerKind {
     /// A listener at an address given on the command line.
     Fixed,
-    /// A listener that follows the tailnet interface, bound to it where the system can.
+    /// A listener that follows the tailnet interface.
     Tailnet,
 }
 
@@ -73,25 +73,6 @@ pub trait PairingPeers: Send + Sync {
     fn identity(&self) -> io::Result<Identity>;
 }
 
-/// The system's answers.
-pub struct SystemPeers;
-
-impl PairingPeers for SystemPeers {
-    fn local_addresses(&self) -> io::Result<Vec<IpAddr>> {
-        crate::network::local_addresses()
-    }
-
-    fn whois(&self, address: IpAddr) -> io::Result<Node> {
-        let body = soyeht_platform::tailscale::get(&format!("/localapi/v0/whois?addr={address}"))?;
-        parse_whois(&body, address)
-    }
-
-    fn identity(&self) -> io::Result<Identity> {
-        let body = soyeht_platform::tailscale::get("/localapi/v0/status?peers=false")?;
-        parse_status(&body)
-    }
-}
-
 fn invalid() -> io::Error {
     io::Error::from(io::ErrorKind::InvalidData)
 }
@@ -112,7 +93,7 @@ struct WhoisNode {
 
 /// The node of a `whois` answer. A node whose id is empty, or whose addresses do not include
 /// `address`, is not the answer to the question.
-fn parse_whois(body: &[u8], address: IpAddr) -> io::Result<Node> {
+pub(crate) fn parse_whois(body: &[u8], address: IpAddr) -> io::Result<Node> {
     let answer: WhoisAnswer = serde_json::from_slice(body).map_err(|_| invalid())?;
     let node = answer.node;
     let names_address = |entry: &String| {
@@ -152,7 +133,7 @@ struct StatusTailnet {
     name: String,
 }
 
-fn parse_status(body: &[u8]) -> io::Result<Identity> {
+pub(crate) fn parse_status(body: &[u8]) -> io::Result<Identity> {
     let status: StatusAnswer = serde_json::from_slice(body).map_err(|_| invalid())?;
     let identity = Identity {
         tailnet: status.tailnet.name,
@@ -246,6 +227,16 @@ pub(crate) struct Observed {
 pub(crate) fn observe(peers: &dyn PairingPeers, peer: IpAddr) -> Observed {
     Observed {
         local: told(peers.local_addresses()),
+        node: told(peers.whois(peer)),
+        identity: told(peers.identity()),
+    }
+}
+
+/// Asks only for the node of `peer` and this computer's own, which is all a device's `hello`
+/// needs: no list of interfaces.
+pub(crate) fn observe_node(peers: &dyn PairingPeers, peer: IpAddr) -> Observed {
+    Observed {
+        local: None,
         node: told(peers.whois(peer)),
         identity: told(peers.identity()),
     }

@@ -57,6 +57,7 @@ pub mod streams;
 pub mod supervisor_handle;
 mod supervisor_link;
 mod supervisor_watch;
+pub mod system_peers;
 pub mod tasks;
 mod terminal_capture;
 mod terminal_drain;

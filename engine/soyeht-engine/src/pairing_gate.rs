@@ -5,6 +5,7 @@
 //! has not changed, and the peer's node is not a device's. Asking the system and Tailscale blocks,
 //! so it runs off the Core lock (ADR 0079) and the rules are applied under the lock afterwards.
 
+use crate::system_peers::SystemPeers;
 use crate::{
     core::Core,
     dispatch::Outcome,
@@ -12,18 +13,23 @@ use crate::{
     model,
     offload::Offload,
     pairing_peers::{
-        Admitted, Identity, ListenerKind, Node, Observed, PairingPeers, Peer, Refusal, SystemPeers,
-        admit, in_tailscale_range, observe,
+        Admitted, Identity, ListenerKind, Node, Observed, PairingPeers, Peer, Refusal, admit,
+        in_tailscale_range, observe, observe_node,
     },
 };
 use serde_json::Value;
 use soyeht_platform::log;
-use soyeht_protocol::{HelloParams, method};
+use soyeht_protocol::{HelloParams, PairBeginParams, PairProveParams, method};
 use soyeht_store::pairing_nodes;
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
-/// How long the system and Tailscale may take to answer; a late answer refuses the call.
+/// How long the system and Tailscale may take to answer a pairing call; a late answer refuses it.
 const PEER_LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a device's `hello` waits to learn its node: far less than the client's greeting
+/// timeout, so a daemon that hangs delays no `hello` by more than this, and the `hello` goes on
+/// without the node.
+const HELLO_LOOKUP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// How long the node of a revoked device stays refused.
 const REVOKED_NODE_SECONDS: i64 = 24 * 60 * 60;
@@ -34,7 +40,7 @@ const LOOKUP_TIMEOUT_MESSAGE: &str = "Soyeht could not ask Tailscale who is conn
 pub(crate) fn peers(core: &Core) -> Arc<dyn PairingPeers> {
     core.hooks
         .pairing_peers()
-        .unwrap_or_else(|| Arc::new(SystemPeers))
+        .unwrap_or_else(|| SystemPeers::shared() as Arc<dyn PairingPeers>)
 }
 
 /// Records where a connection from the network came from, as the engine sees it.
@@ -82,6 +88,9 @@ pub(crate) fn pair_offload(
     params: &Value,
 ) -> Result<Outcome> {
     let peer = pair_peer_precheck(core, connection)?;
+    // What costs nothing is asked first: a call that names no window of this engine, or a request
+    // it does not hold, never makes the machine list its interfaces or ask Tailscale.
+    pair_call_precheck(core, connection, method, params)?;
     let peers = peers(core);
     let (connection, method, params) = (connection.to_owned(), method.to_owned(), params.clone());
     Ok(Outcome::Offload(Offload::new(
@@ -96,6 +105,31 @@ pub(crate) fn pair_offload(
                 .map(Outcome::Reply)
         },
     )))
+}
+
+/// The window code of `pair.begin`, or the request of `pair.prove`, is one this engine holds. The
+/// answers are the ones `pair_serve` gives, so a call that fails here fails the same way there.
+fn pair_call_precheck(core: &Core, connection: &str, method: &str, params: &Value) -> Result<()> {
+    let window = if method == method::PAIR_BEGIN {
+        model::typed_params::<PairBeginParams>(params)?.code
+    } else {
+        let prove: PairProveParams = model::typed_params(params)?;
+        let begun = core
+            .clients
+            .get(connection)
+            .and_then(|client| client.pair_request.as_deref());
+        if begun != Some(prove.request_id.as_str()) {
+            return Err(errors::unauthorized(
+                "Begin pairing on this connection first",
+            ));
+        }
+        core.pending_pair(&prove.request_id)?.code
+    };
+    if core.pairing.windows.is_bound(&window) {
+        Ok(())
+    } else {
+        Err(errors::unauthorized("Pairing code expired or invalid"))
+    }
 }
 
 /// The rules after the lookups: Tailscale's answer, the tailnet pin and, for `pair.begin`,
@@ -197,8 +231,8 @@ pub(crate) fn hello_request(
     let (connection, id) = (connection.to_owned(), id.clone());
     Ok(Outcome::Offload(Offload::new(
         LOOKUP_TIMEOUT_MESSAGE,
-        PEER_LOOKUP_TIMEOUT,
-        move || Ok(observe(peers.as_ref(), address)),
+        HELLO_LOOKUP_TIMEOUT,
+        move || Ok(observe_node(peers.as_ref(), address)),
         move |core, observed| {
             // A lookup that failed or came late leaves the node unknown, not the hello refused.
             let node = observed.map(Observed::other_node).unwrap_or_default();
