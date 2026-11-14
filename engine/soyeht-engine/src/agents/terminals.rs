@@ -159,7 +159,7 @@ impl Core {
         let releasing = releasing_terminals(&self.store, pane)?;
         let ids: Vec<_> = self
             .agents
-            .agent(pane)
+            .require(pane)?
             .state
             .terminals
             .keys()

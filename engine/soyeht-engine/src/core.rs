@@ -575,7 +575,7 @@ impl Core {
             return self.adopt(id, instance);
         }
         if self.agents.has(id) {
-            if self.agents.agent(id).state.phase == crate::agents::state::Phase::Faulted {
+            if self.agents.require(id)?.state.phase == crate::agents::state::Phase::Faulted {
                 return self.close_agent_processes(id);
             }
             return self.recover_missing_agent(id);

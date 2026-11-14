@@ -150,7 +150,9 @@ impl Core {
     /// with the watch heard, for the notice that marks it.
     pub(crate) fn agent_may_rest(&self, pane: &str) -> bool {
         let owner = crate::read_ahead::agent(pane);
-        self.agents.agent(pane).is_settled(self.now_ms())
+        self.agents
+            .get(pane)
+            .is_some_and(|agent| agent.is_settled(self.now_ms()))
             && !self.pane_marked(pane)
             && !self.read_ready(&owner)
             && (self.reads_paused(&owner) || self.watch.is_active())
