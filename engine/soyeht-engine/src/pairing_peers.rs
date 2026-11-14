@@ -63,7 +63,7 @@ pub trait PairingPeers: Send + Sync {
         peer
     }
 
-    /// Every address of every interface of this machine, read now.
+    /// Every address of every interface of this machine, read no more than two seconds ago.
     fn local_addresses(&self) -> io::Result<Vec<IpAddr>>;
 
     /// The node `address` belongs to, according to the Tailscale daemon.

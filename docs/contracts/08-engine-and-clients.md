@@ -156,7 +156,7 @@ message that says why and no address or name:
 2. the peer is the address the engine's `accept` saw, in its canonical form (`::ffff:127.0.0.1` is
    loopback), and never a header, a `Forwarded` field or a PROXY line;
 3. the peer is a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) that is not an
-   address of any interface of this machine, up or down, listed afresh for the call;
+   address of any interface of this machine, up or down, listed no more than two seconds before the call;
 4. the local Tailscale daemon (the `whois` of its local API, whose socket root must own) names a
    node for the peer that has a stable id and is not this computer's node. The lookup blocks, so it
    runs off the Core lock, after the cheap checks (the window code of `pair.begin`, the request of
