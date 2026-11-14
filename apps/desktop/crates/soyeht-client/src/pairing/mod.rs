@@ -119,6 +119,9 @@ pub struct Request {
     pub note: Option<String>,
     /// The request is over, so it offers nothing but to be dismissed.
     pub closed: bool,
+    /// The codes the engine refused for this request. The engine denies the request at the last
+    /// wrong one and tells the app nothing but the refusal, so the app counts them as it does.
+    wrong_codes: u8,
 }
 
 impl Request {
@@ -131,6 +134,7 @@ impl Request {
             deciding: false,
             note: None,
             closed: false,
+            wrong_codes: 0,
         }
     }
 }
@@ -465,6 +469,12 @@ impl Pairing {
             Some(ErrorKind::TransitionRefused | ErrorKind::NotFound | ErrorKind::Unauthorized) => {
                 request.closed = true;
                 request.note = Some(copy::REQUEST_GONE.to_owned());
+            }
+            Some(ErrorKind::PairingCodeInvalid) => {
+                request.note = Some(refusal.message);
+                request.wrong_codes += 1;
+                // The engine has denied it: pressing Allow again could only be refused.
+                request.closed = request.wrong_codes >= approval_code::WRONG_CODES_ALLOWED;
             }
             _ => request.note = Some(refusal.message),
         }

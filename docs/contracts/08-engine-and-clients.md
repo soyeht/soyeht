@@ -154,7 +154,9 @@ with the device's name and its comparison code, and where the engine offers `pai
 field for the six digits; the app sends `approvalCode` (the digits the vector reads, blanks
 dropped) with an approval only to such an engine, sends none with a denial, and refuses a text that
 is not six digits itself, with no call. The engine's own words for `pairing_code_invalid` (which
-say how many tries are left) are shown beside the request. The sheet keeps the one connection of
+say how many tries are left) are shown beside the request. The engine denies the request at the
+third wrong code and sends the app nothing but that refusal, so the app counts the refusals
+(`approval_code::WRONG_CODES_ALLOWED`) and closes the request, which then offers only Dismiss. The sheet keeps the one connection of
 the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
 new window on the next connection. An engine that refuses (Windows, and Linux until the peer rules
 of slice 3) is shown with the app's words, "This computer cannot pair a phone yet.", and its own

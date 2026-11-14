@@ -10,12 +10,13 @@
 //! of a receipt, of a log line or of an event, and it has no `Debug`, `Serialize` or `Clone`.
 
 use crate::errors::{self, Result};
-use soyeht_protocol::{approval_code, limits};
+use soyeht_protocol::{
+    approval_code::{self, WRONG_CODES_ALLOWED},
+    limits,
+};
 use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
-/// Wrong codes a request tolerates; the last one denies it.
-const WRONG_CODES_ALLOWED: u8 = 3;
 /// Pairing windows one local connection keeps open; a new one closes its oldest.
 const WINDOWS_PER_CONNECTION: usize = 4;
 

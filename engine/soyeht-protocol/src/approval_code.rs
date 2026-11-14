@@ -6,6 +6,10 @@
 /// How many digits a code has.
 pub const DIGITS: usize = 6;
 
+/// How many wrong codes a request tolerates: the last one denies it, and the engine says nothing
+/// else about the denial to the app that asked, so the app counts them as the engine does.
+pub const WRONG_CODES_ALLOWED: u8 = 3;
+
 /// The digits of `text` as ASCII bytes when it is a code, `None` otherwise. Only the ASCII digits
 /// and the ASCII space count and the blanks are ignored; any other character, and any count of
 /// digits but six, is not a code.

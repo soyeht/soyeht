@@ -150,6 +150,46 @@ fn a_wrong_code_says_how_many_tries_are_left_and_the_right_one_is_sent_and_allow
     assert!(!pairing.shown(), "the sheet has done its work");
 }
 
+/// The engine denies the request at the last wrong code and sends the app only the refusal, with
+/// no event: the request must not stay open for an Allow the engine can only refuse.
+#[test]
+fn the_third_wrong_code_ends_the_request_as_the_engine_denied_it() {
+    let mut pairing = adopted(true);
+    showing(&mut pairing, 1000.0);
+    requested(&mut pairing, "r1", FINGERPRINT);
+    for (left, code) in [(2, "111111"), (1, "222222")] {
+        pairing.decide("r1", true, code).unwrap();
+        pairing.apply(Event::DecideFailed {
+            request_id: "r1".to_owned(),
+            refusal: refusal(
+                ErrorKind::PairingCodeInvalid,
+                &format!("That code is not right. {left} tries left"),
+            ),
+        });
+        assert!(!pairing.requests()[0].closed, "{left} tries are left");
+    }
+    pairing.decide("r1", true, "333333").unwrap();
+    pairing.apply(Event::DecideFailed {
+        request_id: "r1".to_owned(),
+        refusal: refusal(
+            ErrorKind::PairingCodeInvalid,
+            "Too many wrong codes. The request was denied",
+        ),
+    });
+    let request = &pairing.requests()[0];
+    assert!(request.closed && !request.deciding);
+    assert_eq!(
+        request.note.as_deref(),
+        Some("Too many wrong codes. The request was denied")
+    );
+    assert_eq!(
+        pairing.decide("r1", true, "444444"),
+        Err(Rejected::Unavailable)
+    );
+    pairing.dismiss("r1");
+    assert!(pairing.requests().is_empty());
+}
+
 #[test]
 fn a_text_that_is_not_six_digits_is_refused_here_without_a_call() {
     let mut pairing = adopted(true);
