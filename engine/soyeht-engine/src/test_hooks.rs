@@ -15,8 +15,14 @@ use crate::{
     hooks::Hooks,
     model::RunningPane,
     pairing_approval::Approval,
+    pairing_peers::PairingPeers,
     ports::{PortScanError, PortScanObservation, PortScanPort, SupervisorPort},
     usage::FixtureHost,
+};
+mod peers;
+pub use peers::{
+    FIXTURE_COMPUTER_NODE, FIXTURE_NODE_KEY, FIXTURE_PHONE_ADDRESS, FIXTURE_PHONE_NODE,
+    FIXTURE_TAILNET, FixturePeers, fixture_identity,
 };
 use soyeht_ink::Recognizer;
 use soyeht_ptyd::wire::Request;
@@ -40,9 +46,13 @@ const FAIL_OLD_CLOSE: &str = "test-fail-harness-switch-old-close";
 const PAUSE_EDITOR_AUTOSAVE: &str = "test-pause-editor-autosave";
 /// While this marker exists every local client counts as the signed Mac app.
 const ATTEST_LOCAL_UI: &str = "test-attest-local-ui";
-/// Holds the way a pairing is approved (`signed-app`, `persons-code` or `refused`) in place of the
-/// system's.
+/// Holds the way a pairing is approved (`signed-app`, `persons-code`, `refused` or `system`) in place
+/// of the signed app's rule, which a test engine follows with no marker.
 const PAIRING_APPROVAL: &str = "test-pairing-approval";
+/// While this marker exists the pairing rules see every connection from the network as the
+/// fixture phone's (see [`FixturePeers::phone`]); its text may say `whois-down` (Tailscale cannot
+/// be asked) or `same-node` (Tailscale says the phone is this computer).
+const PAIRING_PEERS: &str = "test-pairing-peers";
 /// Names the directory of the usage fixtures (see [`FixtureHost`]).
 const USAGE_FIXTURES_VARIABLE: &str = "SOYEHT_TEST_USAGE_READER_DIR";
 /// Reads skill folders on the probe instead of by file events, which a loaded machine delivers
@@ -147,10 +157,25 @@ impl Hooks for FileHooks {
         self.marker(ATTEST_LOCAL_UI).exists()
     }
 
-    fn pairing_approval(&self) -> Option<Approval> {
-        // A missing marker is no choice: the system's rule stands.
-        let Ok(text) = std::fs::read_to_string(self.marker(PAIRING_APPROVAL)) else {
+    fn pairing_peers(&self) -> Option<Arc<dyn PairingPeers>> {
+        let Ok(text) = std::fs::read_to_string(self.marker(PAIRING_PEERS)) else {
             return None;
+        };
+        let peers = FixturePeers::phone();
+        match text.trim() {
+            "whois-down" => peers.set_node(FIXTURE_PHONE_ADDRESS, None),
+            "same-node" => peers.set_node(FIXTURE_PHONE_ADDRESS, Some(FIXTURE_COMPUTER_NODE)),
+            _ => {}
+        }
+        Some(Arc::new(peers))
+    }
+
+    fn pairing_approval(&self) -> Option<Approval> {
+        // The tests of pairing were written for the signed app's rule, which every system can
+        // run, while Linux asks for the person's code by itself (ADR 0164): with no marker this
+        // engine follows the signed app's, and `system` is the way to ask for the system's own.
+        let Ok(text) = std::fs::read_to_string(self.marker(PAIRING_APPROVAL)) else {
+            return Some(Approval::SignedApp);
         };
         match text.trim() {
             "signed-app" => Some(Approval::SignedApp),

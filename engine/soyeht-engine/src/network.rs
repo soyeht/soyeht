@@ -42,8 +42,17 @@ pub(crate) fn listen(address: SocketAddr) -> io::Result<TcpListener> {
     TcpListener::from_std(listener)
 }
 
+/// Every address of every interface of this machine, read now (ADR 0164): the addresses a program
+/// of this computer can bind as the source of a connection.
+pub fn local_addresses() -> io::Result<Vec<IpAddr>> {
+    Ok(system::addresses(false)?
+        .into_iter()
+        .map(|(_, address)| address.to_canonical())
+        .collect())
+}
+
 pub fn tailnet_addresses() -> io::Result<Vec<IpAddr>> {
-    Ok(system::interface_addresses()?
+    Ok(system::addresses(true)?
         .into_iter()
         .filter(|(name, address)| is_tailnet_interface(name, *address))
         .map(|(_, address)| address)
@@ -435,6 +444,33 @@ mod tests {
         assert_eq!(logged[3]["listeners"], "1");
         let text = serde_json::to_string(&*logged).unwrap();
         assert!(!text.contains("::1"), "logs never carry addresses: {text}");
+    }
+
+    /// An interface that is made again with the same name and address (the daemon restarted or was
+    /// upgraded) changes nothing the follower sees, and its listener, bound by address alone,
+    /// still takes the connections (ADR 0164).
+    #[tokio::test]
+    async fn an_interface_made_again_with_the_same_address_keeps_its_listener_taking_connections() {
+        let address: IpAddr = "127.0.0.1".parse().unwrap();
+        let script: Script = Arc::new(Mutex::new(VecDeque::from([
+            Ok(vec![address]),
+            // The interface is gone for a moment and back, as a lookup that fails and one that
+            // answers again with the same address.
+            Err(io::Error::from(io::ErrorKind::Interrupted)),
+            Ok(vec![address]),
+            Ok(vec![address]),
+        ])));
+        let (log, _events) = recorder();
+        let mut tailnet = TailnetListeners::new(0, scripted(&script), accepting(), log);
+        let found = tailnet.refresh().await.unwrap();
+        let bound = found.pair_address.unwrap();
+        for _ in 0..3 {
+            tailnet.refresh().await;
+            assert!(
+                tokio::net::TcpStream::connect(bound).await.is_ok(),
+                "the listener stopped taking connections"
+            );
+        }
     }
 
     #[tokio::test]

@@ -69,7 +69,7 @@ fn refused_handshake_record(connection: &str, params: &Value, error: &errors::Er
         .field("reason", error)
 }
 
-fn log_refused_handshake(connection: &str, params: &Value, error: &errors::Error) {
+pub(crate) fn log_refused_handshake(connection: &str, params: &Value, error: &errors::Error) {
     refused_handshake_record(connection, params, error).emit();
 }
 
@@ -95,6 +95,7 @@ impl Core {
                 actor: None,
                 scope: String::new(),
                 local,
+                peer: None,
                 signed_ui: local && (signed_ui || self.hooks.attests_local_ui()),
                 nonce,
                 events: false,
@@ -179,7 +180,7 @@ impl Core {
         Ok((id, engine_proof))
     }
 
-    fn hello(&mut self, connection: &str, params: &Value) -> Result<Value> {
+    pub(crate) fn hello(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let hello: HelloParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid hello parameters"))?;
         let client = errors::invariant(
@@ -569,15 +570,10 @@ impl Core {
         soyeht_protocol::validate::parameters(method, &params)
             .map_err(|error| errors::invalid(error.to_string()))?;
         if method == method::HELLO {
-            return self
-                .hello(connection, &params)
-                .and_then(|welcome| self.welcome(connection, &request["id"], welcome))
-                .inspect_err(|error| log_refused_handshake(connection, &params, error));
+            return crate::pairing_gate::hello_request(self, connection, &request["id"], params);
         }
         if method_family::PAIR.contains(&method) {
-            return self
-                .pair_request(connection, method, &params)
-                .map(Outcome::Reply);
+            return self.pair_request(connection, method, &params);
         }
         let scope = self.authenticated_scope(connection, method)?;
         // Before any stored result is looked up: a replay is matched by a scope with no signed-app bit.
