@@ -1,7 +1,7 @@
 # ADR 0165: A message reaches a harness that runs in a terminal pane, and agents talk to each other by name
 
-- Status: proposed (phase 1: the design only; nothing here is built; the owner decided on 2026-11-14 that
-  receiving and sending land before 0.1.0, and simplified the scope the same day, see "Scope")
+- Status: accepted (the owner's decisions of 2026-11-14, see "Scope"; phase 1 is this design only,
+  nothing here is built yet, and receiving and sending land before 0.1.0)
 - Date: 2026-11-14
 - Builds on ADR 0148 and contract 17 (agents message and delegate to agents), contract 04 R17 (the
   attributed queued prompt and the full-access refusal between agent panes, #169), contract 08
@@ -42,8 +42,18 @@ them.
   refuses a message because of it. What the owner does care about is not corrupting what the person is
   typing.
 - **Windows works at launch**, with the same pieces as the other systems.
-- Soyeht **connects the harnesses** with one consent screen (first run and Preferences), as the
-  Pencil design app does, instead of per-launch flags.
+- Soyeht **connects the harnesses** with one consent screen, as the Pencil design app does, instead of
+  per-launch flags: shown at install or the first time Soyeht offers it, and then it just runs.
+- **Build the plumbing, not the behaviour.** Agents are intelligent: anything an agent does correctly
+  when told in plain words ("send it and don't reply", "do three rounds together", "Claude plans,
+  Codex reviews at most twice", who plays which role) is **not** code here. There are no role or
+  orchestration presets, no policy layers, no round or hop counters and no human checkpoints. The only
+  limit is the one the engine already has: 6 messages a minute per sender and recipient.
+- A rare visible duplicate (a retry marked `repeat`) is accepted in exchange for never losing a
+  message.
+- The person consents **once** to connecting the harnesses (at install, or the first time Soyeht offers
+  it), including approving the Soyeht MCP server inside a harness that asks (Cursor), and after that it
+  just runs: no per-launch prompt.
 - Native channels other than Claude's hooks come after launch.
 
 ### What an end-to-end run found (origin/main 2dc4d381, 2026-11-14)
@@ -107,14 +117,12 @@ automation router and pane delivery coordinator, `docs/agent-messaging-delivery-
   descriptions teach the model the rule: for a communication request with names, call `list_agents`
   first, route matches to `message_agent`, never spawn an internal subagent as a substitute, report
   unmatched names instead of creating panes, and never claim a reply until a real one arrives.
-- **Who may send to whom.** A per-pane and per-workspace policy: incoming and outgoing enabled,
-  cross-workspace allowed, blocked pane and workspace lists; denial always wins; the default is open.
-  An agent can restrict its own pane (`set_agent_communication_policy`), never open it. A workspace may
-  also carry a role template per pane (planner, executor, reviewer, aggregator, or custom) and an
-  **orchestration graph** (presets: council, planner-executor-reviewer, executor-reviewer-loop) that
-  closes messaging to the graph's edges and delivers each pane's role instructions as messages from a
-  control-plane sender. There is no round counter anywhere: "two review rounds" is an instruction to
-  the agents.
+- **Who may send to whom.** A per-pane and per-workspace policy (incoming and outgoing, cross-workspace,
+  blocked lists; denial wins; open by default), role templates per pane (planner, executor, reviewer,
+  aggregator, custom) and **orchestration graph presets** that close messaging to a graph's edges and
+  send each pane's role as messages from a control-plane sender. There is no round counter anywhere:
+  "two review rounds" is an instruction to the agents. **None of this is reproduced here**: what an
+  agent does when told in words is not code (Scope).
 - **Storage.** A message is stored first, in the **recipient's durable inbox** (inside the workspace
   snapshot, with bounds of 1000 pending and 64 KiB a body), with separate read and acknowledgement
   marks (`list_agent_messages`, `ack_agent_messages`). The "semantic inbox" channel, which would wake a
@@ -230,7 +238,7 @@ Read from the code, the tests and the history of that branch (200 commits in two
 | Identity by environment, ancestors and terminal | A **pane-scoped binding** in the pane's environment, the same environment-first idea, with a measured fallback per harness (gating spike) and the controlling terminal as the last resort. |
 | Delivery only while the app runs | The **engine** owns the durable inbox and the delivery; the app is a client. |
 | Names: first match | **Names across workspaces**, matched without case or accents; two matches is an `ambiguous` error that lists the candidates, never a guess. |
-| Roles and orchestration graphs | **After launch** (below); the personality of a pane is plain text the person gives its harness. |
+| Policy layers, role templates, orchestration presets | **Not built.** A pane's personality and the shape of the collaboration are plain words the person gives its harness. |
 | Spool backlogs hiding failures | Every message has an observable state, a strip on the pane, an event, and a status call for the sender. |
 
 ## Decision
@@ -244,10 +252,11 @@ Read from the code, the tests and the history of that branch (200 commits in two
    quiet; for Claude a hook delivers it at a turn boundary with no typing. Delivery is confirmed by
    evidence, retried at least once idempotently, and observable: a wait always shows its reason to the
    person and to the sender, and has a way out.
-4. **Messaging is autonomous**: no person approves a message; caps stop a runaway loop, and a person
-   can close any pane or workspace to messages with a policy.
-5. **Soyeht connects the harnesses** it finds installed, on the person's consent, writing each one's
-   user-level MCP configuration; reversible.
+4. **Messaging is autonomous and unrestricted by design**: no person approves a message, any messageable
+   pane of any workspace can be named, and the only limit is the 6 a minute per sender and recipient that
+   the engine already enforces.
+5. **Soyeht connects the harnesses** it finds installed, on the person's one consent, writing each
+   one's user-level MCP configuration; reversible.
 6. **Additive protocol** (ADR 0161).
 
 ### 1. The sender
@@ -262,7 +271,7 @@ process is replaced** (a restart, a harness switch): it is tied to the pane's in
 generation, and a new process gets a new one. A stale binding gets `unauthorized`.
 
 A connection that presents it is granted the `agent` role for the messaging methods (list, message,
-status, inbox, policy of its own pane), for its own pane only. Task tools stay with the ACP agents in
+status, inbox of its own pane), for its own pane only. Task tools stay with the ACP agents in
 this phase. The sender's name and pane id travel in the same `AgentMessageSource`, with
 `kind: terminal`.
 
@@ -277,7 +286,7 @@ no error. The command line gets `soyeht message TARGET TEXT`, `soyeht inbox read
 pane runs, including the commands a harness's own shell tool starts, and a same-user process of
 another pane that reads this pane's environment (`ps eww`, `/proc/PID/environ`, and the Windows
 equivalent). This is the limit of the existing ACP binding too (contract 08). The sender's limits
-(attribution, the caps below) bound the harm: the person always sees who a message claims to come from.
+(attribution and the 6 a minute) bound the harm: the person always sees who a message claims to come from.
 
 #### Does the harness hand its environment to its MCP server? (gating spike, slice 0)
 
@@ -307,37 +316,30 @@ works for each harness that gets the variable or is attached to its pane**; one 
 answers "this harness is not attached to a Soyeht pane; start it from the pane's launcher", and the
 connection screen says so. The spike gates every promise to send.
 
-### 2. Names, workspaces, policy and caps
+### 2. Names and workspaces
 
 - **Names.** A pane's name is its address. `list_agents` returns every messageable pane **of every
   workspace**, grouped by workspace with the sender's own first, each with `name`, `paneId`,
-  `workspace`, `kind` (`agent` or `terminal`), the harness, whether it can receive now and the reason
-  if not, and whether it can reply (a connected `soyeht-mcp`). `message_agent` takes a `targetName`
-  (compared without case, accents or surrounding space) or the pane id (unambiguous, and what the
-  envelope's reply route uses). **Two matches answer `invalid_params` with the candidates** (workspace
-  and id), never the first. The tool descriptions teach the model the old app's rule: for a
-  communication request with names, call `list_agents` first; route matches to `message_agent`; never
-  stand in an internal subagent for a matched pane; report an unmatched name instead of creating a
-  pane; never claim a reply that has not arrived.
-- **Across workspaces.** The same-workspace restriction of `agent.list` and `agent.message` goes. What
-  keeps messaging deliberate is the policy below, open by default as in the old app because the owner
-  wants agents to work together unattended.
-- **Policy.** Per pane and per workspace: incoming and outgoing on or off, cross-workspace allowed or
-  not, blocked panes and workspaces. The four layers (source pane, source workspace, recipient pane,
-  recipient workspace) are intersected: **a denial anywhere wins**. A person sets any of them in the app;
-  an agent can only **restrict its own pane**. A refusal names the denial (`forbidden_role`). #169 is
-  evaluated after it and is unchanged.
-- **Web panes.** A web pane has no input line and no harness. It is listed as `kind: "web"`, not
-  messageable, so an agent can find "the dashboard page" by name and work on it with the web tools. A
-  message addressed to a web pane is open question 1.
-- **Caps** (new, for every message with a terminal at either end; autonomy is the point, so they are
-  safety nets and not rules of the workflow): the existing 6 a minute per sender and recipient; **12 a
-  minute per recipient in all**; **one undelivered message per sender and recipient pair** (a second
-  to the same recipient is refused with `pane_busy` until the first is delivered, ended or dismissed);
-  and a **hop counter**: a message a pane sends within 120 s of receiving one carries its hop plus
-  one. At hop 24 the engine **pauses the chain and asks the person** in the strip ("These agents have
-  exchanged 24 messages. Continue or stop"); it never drops the message. The owner's "two review
-  rounds" is an instruction to the agents and is not enforced here.
+  `workspace`, `kind` (`agent`, `terminal` or `web`), the harness, whether it can receive now and the
+  reason if not, and whether it can reply (a connected `soyeht-mcp`). `message_agent` takes a
+  `targetName` (compared without case, accents or surrounding space) or the pane id. **Two matches
+  answer `invalid_params` with the candidates** (workspace and id), never the first. The tool
+  descriptions teach the model the old app's rule: for a communication request with names, call
+  `list_agents` first; route matches to `message_agent`; never stand in an internal subagent for a
+  matched pane; report an unmatched name instead of creating a pane; never claim a reply that has not
+  arrived.
+- **Across workspaces.** The same-workspace restriction of `agent.list` and `agent.message` goes. There
+  is no policy to configure: any pane can message any messageable pane, because the owner wants agents
+  to work together unattended. #169 is unchanged and still refuses an agent's message into an agent
+  pane in full access.
+- **Web panes.** A web pane has no input line and no harness. It is listed as `kind: "web"`, so an agent
+  can find "the dashboard page" by name and work on it with the web tools. A message addressed to a
+  web pane goes to the **agent pane that created the page**, when the engine records one; otherwise it
+  answers `not_found` with the reason "this page has no recorded creator to receive messages". Nothing
+  more.
+- **The one limit** is the engine's existing 6 messages a minute per sender and recipient, unchanged.
+  Two harnesses answering each other are bounded by it and by their own instructions. This ADR adds no
+  other cap, counter or checkpoint.
 
 ### 3. The recipient
 
@@ -561,19 +563,20 @@ everything around the wait:
 #### What the person sees
 
 A **strip under the pane's header**: "Message from NAME (harness)", the time, its state, the first
-`terminalMessagePreviewChars` (160) characters, with Deliver now, Dismiss and, at a paused chain,
-Continue and Stop. It is flat, in palette roles and shared tokens, like every pane interior. It is
+`terminalMessagePreviewChars` (160) characters, with Deliver now and Dismiss. It is flat, in palette roles and shared tokens, like every pane interior. It is
 driven by a new event with the message's state and by the snapshot (open messages belong to the
 pane), so a client that reconnects shows it. In the harness the person sees the typed message, and the
 harness's own transcript.
 
 ### 4. Connecting the harnesses
 
-Like the Pencil design app: **on first run and in Preferences, Soyeht looks for the harnesses that are
-installed and shows one consent screen.** It lists each harness found (name, version, where it was
+Like the Pencil design app: **once, at install or the first time Soyeht offers it, Soyeht looks for the
+harnesses that are installed and shows one consent screen.** It lists each harness found (name, version, where it was
 found), the **exact file each connection writes** with a "Show change" view of the entry, and one
-switch per harness. Connect writes; Disconnect removes. Nothing is written before the person agrees,
-and no per-launch flag is needed once a harness is connected.
+switch per harness. Connect writes; Disconnect removes. Nothing is written before the person agrees; after that **it just runs**: no
+per-launch flag and no further prompt, and a harness installed later is offered once, the same way.
+The one consent covers everything Connect does for a harness, including **approving the Soyeht MCP
+server inside a harness that asks for it** (Cursor's `agent mcp enable`).
 
 - **Detection** looks in the `PATH` and in the places each harness installs to (per system: the user's
   `~/.local/bin`, Homebrew and npm global folders on macOS and Linux; `%LOCALAPPDATA%`,
@@ -589,7 +592,7 @@ and no per-launch flag is needed once a harness is connected.
 - **Where**, to be confirmed against each version in slice 7 (the screen shows the real path): Claude
   Code `~/.claude.json` (servers) and `~/.claude/settings.json` (hooks); Codex `~/.codex/config.toml` (or
   `CODEX_HOME`); OpenCode `~/.config/opencode/opencode.json`; Cursor `~/.cursor/mcp.json`, which Cursor
-  also asks the person to approve (the consent screen says Connect does that, `agent mcp enable`). On
+  also asks the person to approve (the one consent covers it, `agent mcp enable`). On
   **Windows** the same relative paths sit under `%USERPROFILE%` (OpenCode's and Codex's may follow
   `%APPDATA%` or their own home variables, and the engine reads the real one from the harness), the
   entry's command is the absolute path of `soyeht-mcp.exe`, a hook command is a launcher that exits 0
@@ -605,8 +608,8 @@ and no per-launch flag is needed once a harness is connected.
 - Mechanics: two new methods of the `harness` family (list the connections; connect or disconnect
   one), used by the apps and by `soyeht harness connect|disconnect|status`. The apps stay thin: the
   engine detects and writes, on the computer that runs the harness. A phone shows the state and asks
-  the computer to connect; it never writes. The first-run offer is shown once and remembered in a
-  setting; Preferences always has it.
+  the computer to connect; it never writes. The offer is shown once and remembered in a
+  setting; Preferences keeps the list, to disconnect or to connect a harness that was skipped.
 
 ### Per harness
 
@@ -678,26 +681,25 @@ same file.
   `AgentMessageResult`: optional `messageId` and `delivery`; `promptId` stays required and carries the
   message's id for a terminal recipient.
 - `Pane`: optional `terminalHarness {id, name, version}` and the open messages of its inbox (state,
-  sender source, queued time, preview, hop, attempts).
+  sender source, queued time, preview, attempts).
 - **New methods**: the inbox **pull** and **ack** (a binding for its own pane, and the person);
-  **message status** (the sender's view of its own messages); **policy** get and set (a person any,
-  an agent its own pane, restricting only); and two of the `harness` family for the connections (list;
+  **message status** (the sender's view of its own messages); and two of the `harness` family for the connections (list;
   connect or disconnect). Their dotted names are written out only when they land in the contract,
   because `check_doc_names.py` reads every dotted name.
 - **One new event** of the pane family for the state of a terminal message, with the sender source, the
   preview and the reason.
 - `welcome.capabilities`: `terminal-messages` and `agent-names`, offered on every system.
-- `x-limits`: `terminalMessagesPending`, `terminalMessageTtlSec`, `terminalMessagesPerWindow`,
+- `x-limits`: `terminalMessagesPending`, `terminalMessageTtlSec`,
   `terminalQuietMs`, `terminalSettleMs`, `terminalEchoMs`, `terminalConfirmMs`, `terminalEscalateSec`,
-  `terminalMessageAttempts`, `terminalMessagePreviewChars`, `terminalHopLimit`, `terminalLeaseSec`.
+  `terminalMessageAttempts`, `terminalMessagePreviewChars`, `terminalLeaseSec`.
   `agentMessageBytes` is reused.
 - No new error code: `not_found`, `invalid_params` (ambiguous name), `pane_busy`, `rate_limited`,
-  `forbidden_role` (a policy denial, #169), `unauthorized` (a stale binding).
+  `forbidden_role` (#169), `unauthorized` (a stale binding).
 - Supervisor protocol 7 (ADR 0122): `Foreground`, and a guarded input. The pane's environment uses
   `Spawn.env`, which exists.
 - CLI: `soyeht message`, `soyeht inbox read`, `soyeht harness connect|disconnect|status`. Contract 08
   (section 2's table: a terminal pane's binding; the known limitation), contract 04 R17, contract 17
-  (helpers) and a new contract 19 (names, policy, the inbox, delivery, the profiles, the connection
+  (helpers) and a new contract 19 (names, the inbox, delivery, the profiles, the connection
   screen) change with the code, in the same pull requests.
 
 ### Per system
@@ -718,10 +720,9 @@ the launch scope with the same slices, tested on the Windows VM.
 - **Unit.** The decision function is pure (observation, profile, clock in; wait, type or refuse with a
   reason out) and table-driven over `terminal-input-line.json`. The text reduction (controls, format,
   private-use and unassigned code points, the tag block, bidirectional controls, `\r`), the name rule,
-  `native_text` with hostile names. Name resolution (case, accents, ambiguity, cross-workspace) and the
-  four-layer policy. The inbox state machine: order, cap, 24 h deadline, claim and lease, retry only on
+  `native_text` with hostile names. Name resolution (case, accents, ambiguity, cross-workspace, a web pane's creator). The inbox state machine: order, cap, 24 h deadline, claim and lease, retry only on
   evidence and at most 3 times, a claim by one channel skipping the other, a restart in each state. The
-  caps (pair, aggregate, one in flight, hop pause). The binding: hash only, ends with the pane's
+  existing 6 a minute is untouched. The binding: hash only, ends with the pane's
   process. Foreground matching on recorded process tables, including the `cursor-agent` and `claude`
   shapes. Paste mode tracking across a reset, a reattach and an engine restart.
 - **Engine integration** (the runtime rig, `test-hooks`; never a production backdoor): a real supervisor
@@ -734,8 +735,8 @@ the launch scope with the same slices, tested on the Windows VM.
   range; mode unknown means nothing typed; a clipped attempt is detected and retried once with the same
   id; the harness exits between the check and the write (no text reaches the shell, no Enter); Enter
   withheld when the echo is wrong; two readers claim one message; a restart in each state; a
-  cross-workspace message, a denied one and an ambiguous name; an unbound `soyeht-mcp` (no tools, no
-  error); a message storm and a ping-pong to the hop pause.
+  cross-workspace message, an ambiguous name and a message to a web pane with and without a creator; an unbound `soyeht-mcp` (no tools, no
+  error); a message storm bounded by the 6 a minute.
 - **Real harness**, the `e2e` full tier, with `scripts/e2e_real_agent_messaging.py` as the model:
   `scripts/e2e_real_terminal_messaging.py` runs **each of Claude Code, Codex, OpenCode and Cursor** in a
   terminal pane, started by the test and typed into by the test, connected through the consent flow (and
@@ -764,38 +765,36 @@ Sizes are an agent's working days: S 1, M 2 to 3, L 4 to 6. The first two are sm
 |---|---|---|---|
 | 0 | **Spike**: the probe MCP server and shell-tool probe on Claude, Codex, OpenCode and Cursor started in a pane (environment, parents, controlling terminal), the ConPTY paste-marker probe, `--version` and foreground shapes of the real binaries. Gates every promise to send | M | |
 | 0b | **`native_text`, the short header and the text reduction**: the compact `[from → to · m:ID]` header with the name rule, the removal of invisible code points on every channel, the forged-route fix and its tests; SECURITY.md and contract 08 state the known limitation | S | |
-| 1 | **Sender, names and policy**: the pane binding at spawn on three systems (hash in the store, ended with the process), identity for terminal panes, `soyeht-mcp` terminal mode with a long-lived connection, `soyeht message`, names across workspaces with ambiguity, `kind`, the policy methods and their four-layer evaluation, the caps and the hop pause; the fallbacks the spike chose | L | 0 |
+| 1 | **Sender and names**: the pane binding at spawn on three systems (hash in the store, ended with the process), identity for terminal panes, `soyeht-mcp` terminal mode with a long-lived connection, `soyeht message`, names across workspaces with ambiguity, `kind`, the web-pane rule; the fallbacks the spike chose | M | 0 |
 | 2 | **Foreground and listing**: `Foreground` (supervisor 7), matching on path, `argv[0]` and script, the Windows job tree, `agent.list` with terminals and web panes, `Pane.terminalHarness`, version read and cache | M | 0 |
 | 3 | **Observation and decision**: the terminal model off the lock with its own paste-mode tracking, the profile type with Claude's profile, the pure decision function, the guarded input and the echo check, vectors from synthetic screens, ConPTY handling | L | 2 |
 | 4 | **Calibration**: the collection scenarios on four real harnesses on three systems, the 1000-screen vectors, the paste-size runs, the thresholds, the other three profiles, held to the bar | L | 3, the recorder |
 | 5 | **The inbox and delivery**: the store table, the states, the claim and lease, evidence-based retry, confirmation by screen, the watchdog and the notes to the sender, the waiting count on `soyeht-mcp` results, pull and ack, status, the event and the snapshot fields, the limits, generated outputs, contracts 04, 08, 17 and 19 | L | 1, 2, 3 |
 | 6 | **Claude's hooks**: the native channel, the exact-byte receiving check, `stop_hook_active`, the 1.5 s ceiling and the launcher that survives a moved binary | M | 5 |
-| 7 | **Connect**: detection and the writing and removal of each of the four harnesses' entries on three systems, the recorded entries, the two methods, `soyeht harness connect`, `soyeht uninstall` disconnecting | L | 1 |
-| 8 | **The apps**: the consent screen (first run and Preferences), the message strip with Deliver now, Dismiss and the paused chain's Continue and Stop, the policy controls, on the Mac and the desktop; the state and the strip on the iPhone, iPad and Android | L | 5, 7 |
+| 7 | **Connect** (one consent, then it runs): detection and the writing and removal of each of the four harnesses' entries on three systems, the recorded entries, the two methods, `soyeht harness connect`, `soyeht uninstall` disconnecting | L | 1 |
+| 8 | **The apps**: the consent screen (first run and Preferences), the message strip with Deliver now and Dismiss, on the Mac and the desktop; the state and the strip on the iPhone, iPad and Android | L | 5, 7 |
 | 9 | **End to end**: `e2e_real_terminal_messaging.py` for the four harnesses, the cross pairs, the owner's plan-review-implement workflow on three systems, the Windows and Linux VM runs, `docs/platforms.md` | L | 4, 5, 6, 7 |
 
-After launch: roles and orchestration graphs (the old app's planner, executor, reviewer, aggregator
-templates, custom templates, and presets that close messaging to a graph and send each pane its role in
-its messages), native channels for Codex, OpenCode and Cursor (each verified on its real binary), Pi, and
-a refusal of a binding used from outside its pane.
+After launch: native channels for Codex, OpenCode and Cursor (each verified on its real binary), Pi, and a
+refusal of a binding used from outside its pane. Roles, orchestration presets, policy layers and loop
+caps are not part of the design (Scope).
 
 Order: 0 and 0b first (0b needs nobody); then 1, 2 and 7 in parallel (7 needs only the binding's
 shape); 3 as soon as 2 lands, with the recorder running at once so that 4 never waits on collection; 5;
 then 6 and 8 in parallel; 9 last. The path that sets the date is 0, 2, 3, 4, 5, 9: calibration depends
 on real harness runs and cannot be shortened by adding people.
 
-**Estimate.** The earlier draft of this ADR (the doorbell and the pane-origin machinery) was reviewed at
-about 2.5 to 3 weeks with 2 or 3 implementers. Dropping pane origin takes about a week off. The doorbell
-version took another half week off again, and this version puts it back: full-message typing needs the
-paste-mode tracking, the confirmation and the retry, and the old app's names, cross-workspace policy and
-caps are now in scope. The result is **about 2.5 weeks with three implementers**, no shorter than the
-reviewed draft, with Windows at launch and the connection screen inside it. Calibration and the
-Windows VM runs decide the end, not the amount of code.
+**Estimate.** The previous revision was about 2.5 weeks with three implementers. Removing the policy
+layers, the four-layer evaluation, the new caps, the hop pause and their apps controls takes about
+four agent-days out of the build (slice 1 goes from L to M, slice 8 loses its policy and Continue and
+Stop parts) and a little out of the tests and review, so **about 2 to 2.5 weeks with three
+implementers**. The date does not move by the same amount: slice 1 is not on the path that sets it
+(0, 2, 3, 4, 5, 9). Calibration (4) and the Windows VM runs decide the end, not the amount of code.
 
 If the date presses, in this order: the apps beyond the Mac and the desktop (the iPhone, iPad and
 Android show nothing until later; the message still works), the Windows e2e depth (the unit and
-integration tests stay), the Preferences copy of the connection screen (first run stays), the policy
-controls in the apps (the defaults and the tool stay). Receiving for all four harnesses, Claude's
+integration tests stay), the Preferences copy of the connection screen (the first offer stays).
+Receiving for all four harnesses, Claude's
 sending and the retry and confirmation rules are not cut.
 
 ## Alternatives considered
@@ -830,23 +829,6 @@ sending and the retry and confirmation rules are not cut.
 - A harness started with its permissions off receives a message like any other: this ADR makes no
   distinction (Scope). A message is text another agent read somewhere; the harness's own approval
   prompts, if it has them on, are the protection, as for any prompt.
-- Agents talking to each other without a person is the point; the caps and the policy are the person's
-  brakes, and the pause at hop 24 is the last.
+- Agents talking to each other without a person is the point; the 6 a minute and the agents' own
+  instructions are the only brakes, by the owner's decision.
 - Consent to connect is not a security boundary (section 4).
-
-## Open questions
-
-1. **A message addressed to a web pane.** A web pane has no input and no harness. The proposal: it is
-   listed by name so agents can find and edit it, and a message to it goes to the agent pane that created
-   it, when the engine records one, else `not_found`. Is that what you mean by messaging reaching web
-   panes?
-2. **Roles and orchestration at launch?** The old app has role templates and graph presets. This ADR
-   leaves them for after launch: you give each pane its personality in plain words, as in your example.
-   Say if the planner/reviewer presets must ship now.
-3. **A rare duplicate instead of a loss.** When the engine cannot prove a message landed, it sends it again
-   marked `repeat`. Is that the trade you want?
-4. **Cursor asks its user to approve a new MCP server.** The consent screen says Connect does that for
-   the person. Acceptable, or should Soyeht only tell them to approve it in Cursor?
-
-Everything else that was open is decided above, or waits on the spike (what each harness hands to its
-MCP server) or on the recordings (the thresholds and the profiles).
