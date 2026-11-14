@@ -231,8 +231,9 @@ which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
 - **Linux only.** The engine and desktop compile, clippy and tests, and the e2e suites, run on the
   Linux host and nowhere else in this gate: there is no macOS `cfg` coverage in it, exactly as after
   the merge. The Mac half is the `always` checks, the Swift format and build, TypeScript and the Android
-  core. The Windows lint (`engine:clippy-windows`) is an engine step and runs on the host, which
-  skips it, with a passing step, when it lacks the Windows target; the output then carries
+  core. The Windows lints (`engine:clippy-windows` and `desktop:clippy-windows`, the desktop's
+  falling back to `cargo check` of the crates that need no C compiler) run on the host, which
+  skips them, with a passing step, when it lacks the Windows target; the output then carries
   `WARNING: HOST skipped the Windows lint` (`rustup target add x86_64-pc-windows-msvc` on the host fixes it).
 - **A gate that checked nothing is not a pass.** It refuses (exit 2) when the worktree has uncommitted
   changes to tracked files (the host gates the commit, this machine would gate the working tree);

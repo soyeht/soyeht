@@ -399,9 +399,14 @@ class SelectionByChangeTests(unittest.TestCase):
     def test_a_desktop_only_change_runs_the_whole_desktop_test_run_and_no_e2e(self):
         listed = listed_steps("fast", DESKTOP_ONLY)
         self.assertIn("desktop:test", listed)
+        self.assertIn("desktop:clippy-windows", listed)
         self.assertNotIn("desktop:test-fast", listed)
         for step_id in (*E2E_SET, *GATE_SCRIPT_UNITS, "engine:test-changed"):
             self.assertNotIn(step_id, listed)
+
+    def test_a_desktop_change_checks_the_desktop_for_windows(self):
+        steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
+        self.assertEqual(steps["desktop:clippy-windows"], ("desktop", "both"))
 
     def test_an_engine_core_change_runs_the_e2e_set_after_the_unit_tests(self):
         listed = listed_steps("fast", ENGINE_CORE)
