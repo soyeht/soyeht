@@ -10,6 +10,7 @@ use crate::{
     neo,
     theme::{Palette, elevation, radius, space, type_scale},
 };
+use gpui::MouseButton;
 
 /// The raised card of a sheet: its rows are spaced and padded as the Mac's sheets are, and it
 /// takes the pointer so nothing under it does.
@@ -22,6 +23,21 @@ pub(super) fn card(palette: &'static Palette, key: &'static str) -> gpui::Statef
         .px(px(space::X18 + space::X4))
         .py(px(space::X18))
         .occlude()
+}
+
+/// A sheet that holds what is asked of it: `card` of `width`, at most `height` tall, which scrolls
+/// when it holds more and keeps the clicks that land on it.
+pub(super) fn panel(
+    palette: &'static Palette,
+    key: &'static str,
+    (width, height): (f32, f32),
+) -> gpui::Stateful<Div> {
+    card(palette, key)
+        .w(px(width))
+        .max_h(px(height))
+        .overflow_y_scroll()
+        .text_color(rgb(palette.ink))
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
 }
 
 /// The title of a sheet with a line under it, and the close control on the right.

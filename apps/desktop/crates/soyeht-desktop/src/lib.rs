@@ -31,6 +31,7 @@ mod neo;
 mod notices;
 mod open_menu;
 mod os_notify;
+mod pairing_ui;
 mod pane_floors;
 mod pane_ui;
 mod pointer;

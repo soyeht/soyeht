@@ -6,7 +6,6 @@
 
 use super::{prelude::*, sheet};
 use crate::theme::{Palette, desktop, layout, pane_interior, space, type_scale};
-use gpui::MouseButton;
 use soyeht_client::Command;
 use soyeht_protocol::{
     ProjectTrustChoice,
@@ -62,12 +61,7 @@ impl Workbench {
                 cx,
                 |this, cx| this.answer_trust_prompt(ProjectTrustChoice::Restricted, cx),
             ));
-        let card = sheet::card(palette, "trust-prompt")
-            .w(px(width))
-            .max_h(px(height))
-            .overflow_y_scroll()
-            .text_color(rgb(palette.ink))
-            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        let card = sheet::panel(palette, "trust-prompt", (width, height))
             .child(header)
             .child(
                 chrome_text(FontWeight::NORMAL, type_scale::CONTROL)

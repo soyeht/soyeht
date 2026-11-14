@@ -581,7 +581,10 @@ impl Core {
         Ok(result)
     }
 
-    /// The third wrong code denies the request, as the person's own Deny would.
+    /// The third wrong code denies the request, as the person's own Deny would: it leaves the
+    /// pending list of every window, and the device is told with `pair.result`. The window that
+    /// opened the request is told the same way, since the call that made the third wrong code
+    /// is answered with a refusal, not with the denial a Deny gets as its result.
     pub(crate) fn deny_after_wrong_codes(&mut self, pending: &Pending) -> Result<()> {
         let mut denied = pending.clone();
         denied.approved = Some(false);
@@ -597,6 +600,9 @@ impl Core {
             .filter(|(_, c)| c.pair_request.as_deref() == Some(denied.id.as_str()))
         {
             self.send_pair_result(connection, &denied)?;
+        }
+        if let Some(window) = self.pairing.windows.owner(&denied.code) {
+            self.send_pair_result(window, &denied)?;
         }
         Ok(())
     }

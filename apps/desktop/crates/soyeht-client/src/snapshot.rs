@@ -4,7 +4,7 @@
 use crate::{Error, Result};
 use serde_json::Value;
 use soyeht_protocol::{
-    ClientFocus, FileDocument, Pane, ProjectTrustEntry, SnapshotSection, Workspace,
+    ClientFocus, Device, FileDocument, Pane, ProjectTrustEntry, SnapshotSection, Workspace,
     WritingDocument, snapshot,
 };
 
@@ -27,6 +27,10 @@ pub struct Snapshot {
     pub writing: Vec<WritingDocument>,
     /// Whether the person trusts the folder of each open workspace.
     pub trust: Vec<ProjectTrustEntry>,
+    /// The devices paired with this computer.
+    pub devices: Vec<Device>,
+    /// What the engine offers, by the names it gives (`pairing-code` among them).
+    pub capabilities: Vec<Value>,
     /// The event cursor to subscribe from.
     pub cursor: u64,
 }
@@ -48,6 +52,8 @@ impl Snapshot {
             files: decode(pages.take(&SnapshotSection::Files))?,
             writing: decode(pages.take(&SnapshotSection::Writing))?,
             trust: decode(pages.take(&SnapshotSection::Trust))?,
+            devices: decode(pages.take(&SnapshotSection::Devices))?,
+            capabilities: pages.take(&SnapshotSection::Capabilities),
             focus: pages.metadata.focus,
             cursor,
         })

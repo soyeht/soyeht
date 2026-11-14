@@ -115,6 +115,9 @@ impl Workbench {
     }
 
     pub(crate) fn new_terminal(&mut self, _: &NewTerminal, _: &mut Window, cx: &mut Context<Self>) {
+        if self.sheet_is_modal() {
+            return;
+        }
         self.open_pane(None, cx);
     }
 
