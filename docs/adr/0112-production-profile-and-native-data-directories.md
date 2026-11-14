@@ -37,8 +37,10 @@ one day equal a legacy one. The product name the person sees is still "Soyeht".
 - `appIds`: the Mac app's bundle identifier (`com.soyeht.next.mac`, Dev
   `com.soyeht.next.dev.mac`), which the engine checks when it decides whether a local peer is the
   signed UI, and the Linux application id (`com.soyeht.next`, Dev `com.soyeht.next.dev`), which
-  the desktop window sets as its `app_id` and which names the `.desktop` file. The iOS app does
-  not read the profile, so its identifier (`com.soyeht.next.ios`) is not declared here.
+  the desktop window sets as its `app_id` and which names the `.desktop` file. The iOS app's
+  identifier (`com.soyeht.next.ios`, Dev `com.soyeht.next.dev.ios`) is declared too: the app does
+  not read the profile, but `scripts/package_ios.py` takes the store identifier from it, as
+  `package_mac.py` does, and the Xcode project's Dev value is the same string.
 - `launchdLabels`: `com.soyeht.next.engine` and `com.soyeht.next.ptyd` (Dev
   `com.soyeht.next.dev.*`). The engine's signing identifier is its label.
 

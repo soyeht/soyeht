@@ -65,9 +65,13 @@ The steps, which are the manual ones of the earlier releases:
    archive by hand fails: a manual profile specifier reaches the Swift package targets, which
    take none (“does not support provisioning profiles”).
 2. Sign the archived app with the distribution identity and an entitlements file made from
-   `apps/ios/SoyehtPhone.entitlements` plus `application-identifier`,
-   `com.apple.developer.team-identifier` and `get-task-allow` false, with `aps-environment` set to
-   `production` when the file has it. An unsigned archive carries no entitlements, so without this
+   `apps/ios/SoyehtPhone.Release.entitlements` plus `application-identifier`,
+   `com.apple.developer.team-identifier` and `get-task-allow` false. That file declares no
+   capability, because push notifications are off in 0.1.0: the App ID needs no Push Notifications
+   capability, and the check below refuses an `aps-environment` in the exported app. (The Debug
+   build keeps `apps/ios/SoyehtPhone.entitlements`, which has the development push entitlement for
+   [push-notifications.md](push-notifications.md); when push ships, the Release file gets it too, and
+   the script sets it to `production`.) An unsigned archive carries no entitlements, so without this
    step the exported app has none of them.
 3. `xcodebuild -exportArchive` with `method` `app-store-connect` and manual signing.
 4. The check of the file: the identifier, version and build number of `contracts/release.json`, the
@@ -82,10 +86,11 @@ they are not set. The script never uploads: upload the file by hand with `xcrun 
 
 The app declares the answers the store asks for in the repository:
 
-- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app has no encryption of
-  its own. The wire to the Mac is `ws://` over the tailnet, which Tailscale encrypts; the app
+- `ITSAppUsesNonExemptEncryption` is `false` in `apps/ios/Info.plist`. The app encrypts no content
+  of its own. The wire to the Mac is `ws://` over the tailnet, which Tailscale encrypts; the app
   uses the system's TLS only for the `https` downloads of the optional dictation models, and
-  CryptoKit only for signatures and hashes that authenticate the device and the Mac.
+  CryptoKit only to authenticate the device and the Mac: Ed25519 signatures, SHA-256 hashes and an
+  HMAC in the pairing challenge. None of it protects the confidentiality of data.
 - `apps/ios/Resources/PrivacyInfo.xcprivacy` says the app does not track and collects no data. It
   declares the required-reason APIs the built app imports: `UserDefaults` (`CA92.1`, the app's own
   settings), file timestamps (`C617.1`: SwiftTerm's inline images call `stat()` and `fstat()` on a

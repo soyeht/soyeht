@@ -13,8 +13,10 @@ maintainers' key. Until then:
   these. The Android app never asks.
 - An engine that does not offer `push` answers `push.register` with `push_unavailable` and stores
   nothing. `push.unregister` still works, so a token stored by an earlier run can be removed.
-- The code and the tests below stay as they are. Someone who builds the app with their own team
-  and gives the engine their own key, as described here, gets push on that build.
+- The code and the tests below stay as they are. The store build declares no `aps-environment`
+  entitlement (`apps/ios/SoyehtPhone.Release.entitlements`, so its App ID needs no Push
+  Notifications capability). Someone who builds the Debug configuration with their own team and
+  gives the engine their own key, as described here, gets push on that build.
 
 The rest of this page describes that developer setup.
 
@@ -42,7 +44,7 @@ engine never logs them.
    sandbox-only and production-only keys; use one that covers the
    environment of the app build you install.
 2. Make sure the App ID `com.soyeht.next.dev.ios` has the Push Notifications
-   capability. The iOS target already declares `aps-environment` in
+   capability. The Debug configuration of the iOS target declares `aps-environment` in
    `apps/ios/SoyehtPhone.entitlements`; automatic signing adds the capability
    to the provisioning profile.
 3. Put the key and config in the engine's data directory, outside the
