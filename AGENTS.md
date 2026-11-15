@@ -467,13 +467,17 @@ inherit the main actor.
   or a `cfg` module with the same public shape on every system; where a feature
   cannot exist on a system it returns a typed `Unsupported` error.
   The merge gate lints `soyeht-platform`, `soyeht-process`, `soyeht-ptyd`, `soyeht-mcp` and
-  `soyeht-service` for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
+  `soyeht-service` for `x86_64-pc-windows-msvc` when `rustc` can build for that target (`rustup target add`,
+  or listed in `scripts/linux-gate.nix` on a host with no `rustup`), and
   `soyeht-engine` and `soyeht-cli` as well when the host also has a C compiler that targets
   Windows (their dependencies compile C); `scripts/check_engine_windows.ps1` checks all of
   it on Windows itself. The desktop's Windows build is checked too: `desktop:clippy-windows`
   clippy-checks the whole workspace for the same target when the host has a C compiler that
   targets Windows, and otherwise `cargo check`s the crates that build without one
-  (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`).
+  (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`). A step that checks
+  less than its name says (no target, no Windows C compiler) prints `check_all: SKIPPED STEP: REASON`,
+  records the reason in the timings and names the step in the run's summary: a skip is visible,
+  never a quiet pass.
 
 ## Repository hygiene
 
