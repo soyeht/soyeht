@@ -140,7 +140,7 @@ pub const AVATAR_NAME_CHARS: usize = 80;
 /// The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.
 pub const AVATAR_PICTURE_BYTES: usize = 10485760;
 /// The largest width or height, in pixels, the PNG header of a source picture may declare.
-pub const AVATAR_PICTURE_DIMENSION: usize = 8192;
+pub const AVATAR_PICTURE_DIMENSION: usize = 4096;
 /// The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.
 pub const AVATAR_PERSONA_CHARS: usize = 16000;
 /// The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.

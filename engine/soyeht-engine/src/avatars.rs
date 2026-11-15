@@ -69,6 +69,7 @@ fn changed(avatar: &Avatar) -> Result<(String, Value)> {
         avatar: Some(avatar.clone()),
         workspace_id: None,
         binding: None,
+        removed: None,
     })
 }
 
@@ -233,6 +234,7 @@ fn avatar_delete(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         avatar: None,
         workspace_id: None,
         binding: None,
+        removed: Some(true),
     })?;
     let result = core
         .mutate(connection, method::AVATAR_DELETE, params, |tx| {
@@ -283,6 +285,7 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         avatar: None,
         workspace_id: Some(binding.workspace_id.clone()),
         binding: Some(binding.clone()),
+        removed: None,
     })?;
     Ok(core
         .mutate(connection, method::AVATAR_ASSIGN, params, |tx| {

@@ -139,7 +139,7 @@ public enum ProtocolLimits {
     /// The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.
     public static let avatarPictureBytes = 10485760
     /// The largest width or height, in pixels, the PNG header of a source picture may declare.
-    public static let avatarPictureDimension = 8192
+    public static let avatarPictureDimension = 4096
     /// The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.
     public static let avatarPersonaChars = 16000
     /// The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.

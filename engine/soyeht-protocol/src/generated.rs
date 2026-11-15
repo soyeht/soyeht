@@ -6811,6 +6811,8 @@ pub struct AvatarChangedEvent {
     pub workspace_id: Option<Id>,
     #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
     pub binding: Option<AvatarBinding>,
+    #[serde(rename = "removed", skip_serializing_if = "Option::is_none")]
+    pub removed: Option<bool>,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
@@ -9312,6 +9314,8 @@ pub struct AvatarChangedDraft {
     pub workspace_id: Option<Id>,
     #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
     pub binding: Option<AvatarBinding>,
+    #[serde(rename = "removed", skip_serializing_if = "Option::is_none")]
+    pub removed: Option<bool>,
 }
 impl EventParams for AvatarChangedDraft {
     const NAME: EventName = EventName::AvatarChanged;
@@ -9523,6 +9527,11 @@ pub mod method_family {
         super::method::HARNESS_CUSTOM_CREATE,
         super::method::HARNESS_CUSTOM_UPDATE,
         super::method::HARNESS_CUSTOM_REMOVE,
+    ];
+    pub const ATTACHMENTS: &[&str] = &[
+        super::method::PANE_PROMPT,
+        super::method::WRITING_FORMAT,
+        super::method::AVATAR_CREATE,
     ];
 }
 pub mod event {

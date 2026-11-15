@@ -428,6 +428,12 @@ fn message(error: &Error) -> String {
         }
         Error::Storage(soyeht_store::Error::CursorTooOld) => "Request a new snapshot".into(),
         Error::Storage(soyeht_store::Error::DiskFull) => "Storage is full".into(),
+        Error::Storage(soyeht_store::Error::AvatarInUse) => {
+            "Give the workspaces that use this avatar another one first".into()
+        }
+        Error::Storage(soyeht_store::Error::StaleAvatarBinding) => {
+            "The workspace's avatar changed since it was read".into()
+        }
         Error::Storage(error) if ErrorKind::from(error) == ErrorKind::InvalidParams => {
             error.to_string()
         }

@@ -555,15 +555,12 @@ impl Core {
         }
     }
 
-    /// Answers one request. A request that is refused leaves no attachment frame pending on its
-    /// connection: bytes sent for a request that never committed them would fail every later one.
+    /// Answers one request. The frames it leaves on the connection are settled after it: see
+    /// `request_attachments::settle`.
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
+        let method = request["method"].as_str().map(str::to_owned);
         let outcome = self.dispatch_request(connection, request);
-        if outcome.is_err()
-            && let Some(client) = self.clients.get_mut(connection)
-        {
-            client.attachments.discard();
-        }
+        crate::request_attachments::settle(self, connection, method.as_deref(), outcome.is_err());
         outcome
     }
 

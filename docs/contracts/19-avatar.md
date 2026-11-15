@@ -77,8 +77,8 @@ any other durable one).
   nothing more: it decodes no image. A blank name, a `kind` that is not `uploaded` or `generated`, a picture
   that is not such a PNG or was never sent (or is not the size the request says) and a library that holds
   `avatarCount` avatars are `invalid_params`; a picture over `avatarPictureBytes`, or a transfer over what
-  the connection takes, is `attachment_limit_exceeded`. Nothing is made, and the frames are not left
-  pending. The request's identity names the picture by its content, so a retry with the same key that sends
+  the connection takes, is `attachment_limit_exceeded`. Nothing is made, and the frames of the refused request are dropped
+  (`method_family::ATTACHMENTS`, which the contract derives, names the methods whose frames are dropped when they are refused; a request that takes no attachment and finds frames pending is refused and leaves them for the request they belong to). The request's identity names the picture by its content, so a retry with the same key that sends
   the same bytes again repeats the call, and another picture under that key is `idempotency_conflict`.
 - `avatar.rename {avatarId, name, idempotencyKey}` → `{avatar}`; `not_found` for an unknown avatar.
 - `avatar.delete {avatarId, idempotencyKey}` → `{avatarId, removed}`. An avatar that an open workspace has
@@ -100,10 +100,10 @@ has one keeps one until it is closed.
 
 ## 3. Events
 
-`avatar.changed {avatarId, avatar?, workspaceId?, binding?}` is durable. After `avatar.create` and
+`avatar.changed {avatarId, avatar?, workspaceId?, binding?, removed?}` is durable. After `avatar.create` and
 `avatar.rename` it carries the new `avatar`. After `avatar.assign` it carries the `binding` and its
 `workspaceId`, and `avatarId` is the avatar now bound. After `avatar.delete` it names the `avatarId` and has
-neither `avatar` nor `binding`: the avatar is gone. A client that has a binding replaces it by the one of
+neither `avatar` nor `binding` and carries `removed: true`: the avatar is gone. A client that has a binding replaces it by the one of
 the event when the `revision` is higher.
 
 ## 4. Persistence

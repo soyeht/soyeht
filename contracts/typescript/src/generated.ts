@@ -3737,6 +3737,7 @@ export interface AvatarChangedEvent {
   "avatar"?: Avatar;
   "workspaceId"?: Id;
   "binding"?: AvatarBinding;
+  "removed"?: boolean;
 }
 
 export interface Methods {

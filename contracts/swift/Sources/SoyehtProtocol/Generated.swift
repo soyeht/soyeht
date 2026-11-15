@@ -8144,7 +8144,8 @@ public struct AvatarChangedEvent: Codable, Sendable {
     public var `avatar`: Avatar?
     public var `workspaceId`: Id?
     public var `binding`: AvatarBinding?
-    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `avatarId`: Id, `avatar`: Avatar? = nil, `workspaceId`: Id? = nil, `binding`: AvatarBinding? = nil) {
+    public var `removed`: Bool?
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `avatarId`: Id, `avatar`: Avatar? = nil, `workspaceId`: Id? = nil, `binding`: AvatarBinding? = nil, `removed`: Bool? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
         self.`actor` = `actor`
@@ -8152,6 +8153,7 @@ public struct AvatarChangedEvent: Codable, Sendable {
         self.`avatar` = `avatar`
         self.`workspaceId` = `workspaceId`
         self.`binding` = `binding`
+        self.`removed` = `removed`
     }
 }
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from design_tokens import render_tokens
 from generate import (
+    attachment_methods,
     lower_camel,
     render,
     render_profiles,
@@ -385,6 +386,12 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("at", required, name)
             self.assertNotIn("eventId", properties, name)
             self.assertNotIn("at", properties, name)
+
+    def test_the_methods_that_take_attachment_frames_are_derived_from_the_schema(self):
+        """The engine drops the frames of a refused request only for these methods."""
+        self.assertEqual(
+            attachment_methods(self.schema), ["pane.prompt", "writing.format", "avatar.create"]
+        )
 
     def assert_fields_bounded_by_limits(self, bounds):
         """Each `(definition, field)` has the `maxLength` of the limit it is listed under."""

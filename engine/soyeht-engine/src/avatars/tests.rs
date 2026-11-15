@@ -325,20 +325,81 @@ fn a_request_the_schema_refuses_after_its_frames_were_sent_leaves_nothing_pendin
         assert_eq!(kind(&refused), ErrorKind::InvalidParams, "{method}");
         assert!(rig.call("avatar.list", json!({})).is_ok(), "after {method}");
     }
-    // A role that may not call it gets the same treatment.
+}
+
+/// Sends one frame of an upload, as the client does before the request that names it.
+fn push_frame(rig: &mut Rig, connection: &str, id: &str, chunk: &[u8]) {
+    let header = attachment_header(id).unwrap();
+    let client = rig.core.clients.get_mut(connection).unwrap();
+    client.attachments.push(header, chunk).unwrap();
+}
+
+#[test]
+fn a_refused_request_drops_the_frames_only_when_they_are_its_own() {
+    let mut rig = Rig::new();
     let agent = rig.connect(Role::Agent, None);
     let id = Uuid::new_v4().to_string();
-    let header = attachment_header(&id).unwrap();
-    rig.core
-        .clients
-        .get_mut(&agent)
-        .unwrap()
-        .attachments
-        .push(header, b"bytes")
-        .unwrap();
-    let forbidden = rig.call_as(&agent, "avatar.list", json!({}));
+    // An agent may not make an avatar, and its frames go with the refusal.
+    push_frame(&mut rig, &agent, &id, b"bytes");
+    let picture = json!({"attachmentId": id, "mimeType": "image/png", "name": "face.png",
+                         "bytes": "5"});
+    let forbidden = rig.call_as(
+        &agent,
+        "avatar.create",
+        json!({"name": "X", "kind": "uploaded", "picture": picture}),
+    );
     assert_eq!(kind(&forbidden), ErrorKind::ForbiddenRole);
     assert!(!rig.core.clients[&agent].attachments.is_pending());
+    // A request that takes none is refused too, and it leaves the frames of the request still on
+    // its way as they are, as on main.
+    push_frame(&mut rig, &agent, &Uuid::new_v4().to_string(), b"bytes");
+    let forbidden = rig.call_as(&agent, "avatar.list", json!({}));
+    assert_eq!(kind(&forbidden), ErrorKind::ForbiddenRole);
+    assert!(rig.core.clients[&agent].attachments.is_pending());
+}
+
+#[test]
+fn frames_that_arrive_before_hello_or_a_pairing_request_are_strays() {
+    let mut rig = Rig::new();
+    let (outbox, receiver) = outbox::channel();
+    std::mem::forget(receiver);
+    let connection = rig.core.connect(true, true, outbox).unwrap();
+    push_frame(&mut rig, &connection, &Uuid::new_v4().to_string(), b"stray");
+    let hello = json!({"jsonrpc":"2.0","id":1,"method":"hello","params":{
+        "client":"avatar-test","clientVersion":"1","protocolVersion":1}});
+    rig.core.dispatch(&connection, hello).unwrap();
+    assert!(!rig.core.clients[&connection].attachments.is_pending());
+    // A pairing request, whatever its outcome.
+    push_frame(&mut rig, &connection, &Uuid::new_v4().to_string(), b"stray");
+    let refused = rig.outcome(&connection, "pair.begin", json!({}));
+    assert!(refused.is_err());
+    assert!(!rig.core.clients[&connection].attachments.is_pending());
+}
+
+#[test]
+fn an_unrelated_request_between_the_frames_of_an_upload_does_not_destroy_it() {
+    let mut rig = Rig::new();
+    let local = rig.local.clone();
+    let bytes = png(5);
+    let (first, second) = bytes.split_at(20);
+    let id = Uuid::new_v4().to_string();
+    push_frame(&mut rig, &local, &id, first);
+    // The interrupting request is refused, as it is on main, and the upload goes on.
+    let interrupted = rig.call("avatar.list", json!({}));
+    assert_eq!(kind(&interrupted), ErrorKind::InvalidParams);
+    push_frame(&mut rig, &local, &id, second);
+    let interrupted = rig.call("avatar.list", json!({}));
+    assert_eq!(kind(&interrupted), ErrorKind::InvalidParams);
+    let picture = json!({"attachmentId": id, "mimeType": "image/png", "name": "face.png",
+                         "bytes": bytes.len().to_string()});
+    let made = rig
+        .call(
+            "avatar.create",
+            json!({"name": "Sabio", "kind": "uploaded", "picture": picture}),
+        )
+        .unwrap();
+    assert_eq!(made["avatar"]["sourceHash"], hex_digest(&bytes));
+    assert!(rig.call("avatar.list", json!({})).is_ok());
 }
 
 #[test]
@@ -549,6 +610,12 @@ fn an_avatar_that_a_workspace_has_is_not_deleted_until_the_workspace_changes_or_
     .unwrap();
     let busy = rig.call("avatar.delete", json!({"avatarId": avatar.avatar_id}));
     assert_eq!(kind(&busy), ErrorKind::PaneBusy);
+    // It tells the person what to do, not that storage failed.
+    let message = errors::wire(busy.unwrap_err()).message;
+    assert!(
+        message.contains("another one") && message.contains("workspaces"),
+        "{message}"
+    );
     assert!(rig.folder(&avatar.avatar_id).exists());
     rig.assign(&workspace, &other.avatar_id, "1", json!({}))
         .unwrap();
@@ -560,6 +627,8 @@ fn an_avatar_that_a_workspace_has_is_not_deleted_until_the_workspace_changes_or_
     let last = rig.changes().pop().unwrap();
     assert_eq!(last["avatarId"], avatar.avatar_id);
     assert!(last.get("avatar").is_none());
+    assert_eq!(last["removed"], true);
+    assert!(last.get("binding").is_none());
     // Closing the workspace takes its binding, and the persona in it, with it.
     rig.call("workspace.close", json!({"workspaceId": workspace}))
         .unwrap();

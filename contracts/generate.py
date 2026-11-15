@@ -366,7 +366,46 @@ def method_families(schema):
         const = family.replace(".", "_").upper()
         names = ", ".join(f"super::method::{snake(variant(n)).upper()}" for n in members)
         rows.append(f"    pub const {const}: &[&str] = &[{names}];")
+    names = ", ".join(f"super::method::{snake(variant(n)).upper()}" for n in attachment_methods(schema))
+    rows.append(f"    pub const ATTACHMENTS: &[&str] = &[{names}];")
     return "pub mod method_family {\n" + "\n".join(rows) + "\n}"
+
+
+def attachment_methods(schema):
+    """The methods whose parameters name attachment frames sent before the request: the ones whose
+    parameter type reaches, through its references, an object with an `attachmentId`. The engine
+    drops the frames of one of these when it refuses it, and of no other method."""
+    defs = schema["$defs"]
+
+    def references(node, found):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "$ref":
+                    found.add(value.rsplit("/", 1)[-1])
+                else:
+                    references(value, found)
+        elif isinstance(node, list):
+            for value in node:
+                references(value, found)
+        return found
+
+    def carries(name):
+        seen, pending = set(), [name]
+        while pending:
+            current = pending.pop()
+            if current in seen or current not in defs:
+                continue
+            seen.add(current)
+            if "attachmentId" in defs[current].get("properties", {}):
+                return True
+            pending.extend(references(defs[current], set()))
+        return False
+
+    return [
+        name
+        for name, method in schema["x-methods"].items()
+        if carries(method["params"]["$ref"].rsplit("/", 1)[-1])
+    ]
 
 
 def method_registry_swift(schema):
