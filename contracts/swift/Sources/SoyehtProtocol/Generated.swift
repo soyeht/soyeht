@@ -6655,14 +6655,16 @@ public struct WebElementPackage: Codable, Sendable {
 }
 
 public struct WebOpenParams: Codable, Sendable {
-    public var `url`: String
+    public var `url`: String?
+    public var `path`: String?
     public var `workspaceId`: Id?
     public var `newPane`: Bool?
     public var `incognito`: Bool?
     public var `mode`: WebInteractionMode?
     public var `idempotencyKey`: Id
-    public init(`url`: String, `workspaceId`: Id? = nil, `newPane`: Bool? = nil, `incognito`: Bool? = nil, `mode`: WebInteractionMode? = nil, `idempotencyKey`: Id) {
+    public init(`url`: String? = nil, `path`: String? = nil, `workspaceId`: Id? = nil, `newPane`: Bool? = nil, `incognito`: Bool? = nil, `mode`: WebInteractionMode? = nil, `idempotencyKey`: Id) {
         self.`url` = `url`
+        self.`path` = `path`
         self.`workspaceId` = `workspaceId`
         self.`newPane` = `newPane`
         self.`incognito` = `incognito`

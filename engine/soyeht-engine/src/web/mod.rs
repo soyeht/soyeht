@@ -6,11 +6,13 @@ mod host_state;
 mod navigation;
 mod panes;
 mod permissions;
+mod project_page;
 mod system;
 #[cfg(test)]
 mod test_support;
 
 pub use host::WebWaiter;
+pub(crate) use project_page::ProjectPages;
 pub use system::SystemPortScan;
 #[cfg(unix)]
 pub(crate) use system::lsof_program;

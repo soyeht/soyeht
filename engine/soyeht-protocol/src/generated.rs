@@ -5592,8 +5592,10 @@ pub struct WebElementPackage {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WebOpenParams {
-    #[serde(rename = "url")]
-    pub url: String,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<Id>,
     #[serde(rename = "newPane", skip_serializing_if = "Option::is_none")]

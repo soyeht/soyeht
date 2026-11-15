@@ -3045,7 +3045,8 @@ export interface WebElementPackage {
 }
 
 export interface WebOpenParams {
-  "url": string;
+  "url"?: string;
+  "path"?: string;
   "workspaceId"?: Id;
   "newPane"?: boolean;
   "incognito"?: boolean;

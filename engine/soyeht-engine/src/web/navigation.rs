@@ -12,7 +12,12 @@ use soyeht_protocol::{
 use soyeht_web::NormalizedUrl;
 use uuid::Uuid;
 
-use super::panes::NewWebPane;
+use super::{
+    panes::NewWebPane,
+    permissions::WebPermission,
+    project_page::{ProjectFile, ProjectPage},
+};
+use std::path::Path;
 
 const NAVIGATION_TIMEOUT_MS: u32 = 30_000;
 
@@ -32,19 +37,50 @@ impl Core {
         if request.mode == Some(WebInteractionMode::Human) {
             return Err(soyeht_web::Error::HumanModeUnavailable.into());
         }
-        let url = NormalizedUrl::parse(&request.url)?;
+        let by_address = request
+            .url
+            .as_deref()
+            .map(NormalizedUrl::parse)
+            .transpose()?;
+        if by_address.is_some() == request.path.is_some() {
+            return Err(errors::invalid(
+                "Web open requires exactly one URL or project file path",
+            ));
+        }
         let (scope, workspace_id) = self.web_open_context(connection, request.workspace_id)?;
         let workspace = model::workspace(&self.store, &workspace_id)?;
         let incognito = request.incognito.unwrap_or(false);
+        let project_file = request
+            .path
+            .as_deref()
+            .map(|path| ProjectFile::resolve(Path::new(&workspace.path), path))
+            .transpose()?;
+        let shown = match (&by_address, &project_file) {
+            (Some(url), _) => self.matching_web_pane(&workspace_id, url.as_str(), incognito),
+            (None, Some(file)) => self
+                .project_pages
+                .pane_showing(&workspace_id, file)
+                .map(str::to_owned)
+                .filter(|pane_id| self.is_live_web_pane(pane_id)),
+            (None, None) => None,
+        };
         if !request.new_pane.unwrap_or(false)
-            && let Some(pane_id) = self.matching_web_pane(&workspace_id, url.as_str(), incognito)
+            && let Some(pane_id) = shown
         {
             return self
                 .focus_open_web_pane(connection, params, &scope, &workspace_id, &pane_id)
                 .map(Outcome::Reply);
         }
+        let page = project_file
+            .map(|file| self.project_pages.start(&workspace_id, file))
+            .transpose()?;
+        let url = match (by_address, &page) {
+            (Some(url), _) => url,
+            (None, Some(page)) => NormalizedUrl::parse(page.entry_url())?,
+            (None, None) => return Err(errors::internal("Web open has no address")),
+        };
         if !incognito && self.web_open_is_agent(connection) {
-            return self.web_open_routed(connection, request_id, params, &workspace, &url);
+            return self.web_open_routed(connection, request_id, params, &workspace, (&url, page));
         }
         let result = self.persist_web_pane(
             connection,
@@ -57,7 +93,21 @@ impl Core {
                 incognito,
             },
         )?;
+        self.attach_project_page(&result, page);
         Ok(Outcome::Reply(result))
+    }
+
+    /// Keeps the page a `web.open` of a project file started for the pane it opened.
+    fn attach_project_page(&mut self, result: &Value, page: Option<ProjectPage>) {
+        if let (Some(pane_id), Some(page)) = (result["paneId"].as_str(), page) {
+            self.project_pages.attach(pane_id, page);
+        }
+    }
+
+    fn is_live_web_pane(&self, pane_id: &str) -> bool {
+        self.panes.get(pane_id).is_some_and(|running| {
+            !running.stored.closed && running.stored.pane.mode == PaneMode::Web
+        })
     }
 
     /// An agent's open of a pane that is not private: the pane is made empty and the address is
@@ -71,7 +121,7 @@ impl Core {
         request_id: Value,
         params: &Value,
         workspace: &soyeht_protocol::Workspace,
-        url: &NormalizedUrl,
+        (url, page): (&NormalizedUrl, Option<ProjectPage>),
     ) -> Result<Outcome> {
         self.web_host_connection()?;
         let key = errors::param_str(params, "idempotencyKey")?;
@@ -97,6 +147,7 @@ impl Core {
             .as_str()
             .ok_or_else(|| errors::internal("Web open result has no pane"))?
             .to_owned();
+        self.attach_project_page(&result, page);
         let command = open_navigation(&pane_id, url, key);
         if let Err(error) =
             self.queue_web_command(connection, request_id, method::WEB_OPEN, params, command)
@@ -146,6 +197,50 @@ impl Core {
             command,
         )?;
         Ok(Outcome::Queued)
+    }
+
+    /// Tells the web host to reload each pane whose project page changed on disk, when the pane
+    /// still shows that page. No answer is awaited: the host's reply to a command the engine no
+    /// longer waits for is dropped (`web_host_response`), and a reload that fails leaves the page
+    /// as it was.
+    pub(crate) fn reload_project_pages(&mut self) -> Result<()> {
+        for (pane_id, base) in self.project_pages.take_changed() {
+            let showing = self.panes.get(&pane_id).is_some_and(|running| {
+                !running.stored.closed
+                    && running
+                        .stored
+                        .pane
+                        .url
+                        .as_deref()
+                        .is_some_and(|url| url.starts_with(&base))
+            });
+            // With no host connected nothing shows the page, and the next open loads it afresh.
+            let Ok(host) = self.web_host_connection() else {
+                continue;
+            };
+            if !showing {
+                continue;
+            }
+            let mut command = WebCommandParams {
+                pane_id,
+                command: WebCommandKind::Navigate,
+                args: json!({"action":"reload"}),
+                timeout_ms: NAVIGATION_TIMEOUT_MS,
+                operation_key: Uuid::new_v4().to_string(),
+            };
+            WebPermission::engine().apply_to(&mut command)?;
+            let payload = serde_json::to_value(&command)
+                .map_err(|_| errors::internal("Web command serialization failed"))?;
+            let frame = model::request(
+                json!(Uuid::new_v4().to_string()),
+                method::WEB_COMMAND,
+                payload,
+            )?;
+            if let Some(client) = self.clients.get(&host) {
+                client.outbox.send(frame);
+            }
+        }
+        Ok(())
     }
 
     fn web_open_context(

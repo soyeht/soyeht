@@ -242,12 +242,17 @@ pub(super) fn web_open_schema() -> Value {
                 "url",
                 json!({"type":"string","minLength":1,"maxLength":soyeht_protocol::limits::WEB_FIELD_BYTES}),
             ),
+            (
+                "path",
+                json!({"type":"string","minLength":1,"maxLength":soyeht_protocol::limits::WEB_FIELD_BYTES,
+                    "description":"A file of the workspace, relative to its folder, shown as a page; give this or url"}),
+            ),
             ("workspaceId", id()),
             ("newPane", boolean()),
             ("incognito", boolean()),
             ("mode", json!({"type":"string","enum":["structured"]})),
         ]),
-        &["url"],
+        &[],
     )
 }
 

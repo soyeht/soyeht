@@ -45,6 +45,20 @@ enum PermissionDecision {
 }
 
 impl WebPermission {
+    /// The engine's own command (a reload of a project page after its file changed): no agent, no
+    /// session to ask about.
+    pub(super) fn engine() -> Self {
+        Self {
+            agent: false,
+            domain: String::new(),
+            task_id: None,
+            session: SessionAccess::Human,
+            evaluation: false,
+            request_id: None,
+            expires_ms: None,
+        }
+    }
+
     pub(super) fn driving_domain(&self) -> Option<&str> {
         self.agent.then_some(self.domain.as_str())
     }

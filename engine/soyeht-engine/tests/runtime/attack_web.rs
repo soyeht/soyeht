@@ -111,3 +111,44 @@ fn a_workspace_holds_no_more_web_panes_than_the_contract_allows() {
     assert_eq!(over["error"]["message"], "Workspace web pane limit reached");
     assert_eq!(web_panes(&mut client), limits::WEB_PANES_PER_WORKSPACE);
 }
+
+#[test]
+fn a_project_file_path_that_leaves_the_workspace_makes_no_pane() {
+    let rig = Rig::new();
+    let mut client = rig.client();
+    let workspace = client.add_workspace(&rig.path, "web-project-page");
+    std::fs::write(rig.path.join(".secret.html"), "secret").unwrap();
+    std::fs::write(rig.path.join("page.html"), "page").unwrap();
+    let before = web_panes(&mut client);
+    for (index, path) in [
+        "/etc/passwd",
+        "../outside.html",
+        "a/../../outside.html",
+        ".secret.html",
+        ".git/config",
+        "missing.html",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let opened = client.request(
+            "web.open",
+            json!({"workspaceId":workspace,"path":path,"newPane":true,
+                "idempotencyKey":format!("path-{index}")}),
+        );
+        assert!(opened.get("error").is_some(), "web.open {path:?}: {opened}");
+    }
+    let both = client.request(
+        "web.open",
+        json!({"workspaceId":workspace,"path":"page.html","url":"https://example.com/",
+            "idempotencyKey":"both"}),
+    );
+    assert_eq!(kind(&both), "invalid_params", "{both}");
+    assert_eq!(web_panes(&mut client), before);
+    let shown = client.call(
+        "web.open",
+        json!({"workspaceId":workspace,"path":"page.html","idempotencyKey":"page"}),
+    );
+    assert!(shown["paneId"].as_str().is_some(), "{shown}");
+    assert_eq!(web_panes(&mut client), before + 1);
+}
