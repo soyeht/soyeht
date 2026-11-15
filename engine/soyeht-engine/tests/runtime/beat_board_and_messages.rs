@@ -287,18 +287,7 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
         "pane.draft",
         json!({"paneId":target,"active":true,"idempotencyKey":"hold-agent-messages"}),
     );
-    let store = Store::open(&rig.path).unwrap();
-    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
-        .unwrap()
-        .unwrap();
-    let binding = runtime["binding"].as_str().unwrap();
-    let (socket, hello) = binding_hello(&rig.path.join("engine.sock"), binding);
-    assert_eq!(hello["result"]["role"], "agent");
-    let mut agent = Client {
-        socket,
-        next: 1,
-        messages: vec![],
-    };
+    let mut agent = agent_client(&rig, &sender);
     let listed = agent.call("agent.list", json!({}));
     assert!(
         listed["items"]
@@ -359,17 +348,7 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
         }),
     );
     assert_eq!(forbidden["error"]["data"]["kind"], "not_found");
-    let target_runtime: Value = soyeht_store::agents::runtime(&store, &target)
-        .unwrap()
-        .unwrap();
-    let target_binding = target_runtime["binding"].as_str().unwrap();
-    let (reply_socket, reply_hello) = binding_hello(&rig.path.join("engine.sock"), target_binding);
-    assert_eq!(reply_hello["result"]["role"], "agent");
-    let mut recipient = Client {
-        socket: reply_socket,
-        next: 1,
-        messages: vec![],
-    };
+    let mut recipient = agent_client(&rig, &target);
     assert_eq!(
         recipient.call(
             "agent.message",

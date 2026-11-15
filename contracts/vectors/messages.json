@@ -1105,6 +1105,79 @@
     }
   },
   {
+    "name": "DeviceNoticeListParams",
+    "type": "DeviceNoticeListParams",
+    "value": {}
+  },
+  {
+    "name": "DeviceNoticeListResult",
+    "type": "DeviceNoticeListResult",
+    "value": {
+      "items": [
+        {
+          "deviceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "fingerprint": "example",
+          "revoked": false,
+          "addedAt": "2026-11-15T10:00:00Z",
+          "node": "example"
+        }
+      ]
+    }
+  },
+  {
+    "name": "DeviceNoticeDismissParams",
+    "type": "DeviceNoticeDismissParams",
+    "value": {
+      "through": "2026-11-15T10:00:00Z",
+      "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "DeviceNoticeDismissResult",
+    "type": "DeviceNoticeDismissResult",
+    "value": {
+      "through": "2026-11-15T10:00:00Z"
+    }
+  },
+  {
+    "name": "DevicePanesListParams",
+    "type": "DevicePanesListParams",
+    "value": {
+      "deviceId": "00000000-0000-4000-8000-000000000001"
+    }
+  },
+  {
+    "name": "DevicePanesListResult",
+    "type": "DevicePanesListResult",
+    "value": {
+      "items": [
+        {
+          "paneId": "00000000-0000-4000-8000-000000000001",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "name": "example",
+          "cwd": "/tmp/soyeht-test",
+          "mode": "terminal",
+          "state": "idle",
+          "source": "protocol",
+          "confidence": 0.5,
+          "phrase": "example",
+          "generation": 1,
+          "cols": 1,
+          "rows": 1,
+          "record": true
+        }
+      ]
+    }
+  },
+  {
+    "name": "DevicePairTailnetChangedEvent",
+    "type": "DevicePairTailnetChangedEvent",
+    "value": {
+      "tailnetChanged": true
+    }
+  },
+  {
     "name": "PushPlatform",
     "type": "PushPlatform",
     "value": "apns"
@@ -2350,6 +2423,99 @@
     }
   },
   {
+    "name": "request:device.notice.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.notice.list",
+      "params": {}
+    }
+  },
+  {
+    "name": "response:device.notice.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "deviceId": "00000000-0000-4000-8000-000000000001",
+            "name": "example",
+            "fingerprint": "example",
+            "revoked": false,
+            "addedAt": "2026-11-15T10:00:00Z",
+            "node": "example"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "request:device.notice.dismiss",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.notice.dismiss",
+      "params": {
+        "through": "2026-11-15T10:00:00Z",
+        "idempotencyKey": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:device.notice.dismiss",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "through": "2026-11-15T10:00:00Z"
+      }
+    }
+  },
+  {
+    "name": "request:device.panes.list",
+    "type": "RequestEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "method": "device.panes.list",
+      "params": {
+        "deviceId": "00000000-0000-4000-8000-000000000001"
+      }
+    }
+  },
+  {
+    "name": "response:device.panes.list",
+    "type": "SuccessEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": "request-1",
+      "result": {
+        "items": [
+          {
+            "paneId": "00000000-0000-4000-8000-000000000001",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "name": "example",
+            "cwd": "/tmp/soyeht-test",
+            "mode": "terminal",
+            "state": "idle",
+            "source": "protocol",
+            "confidence": 0.5,
+            "phrase": "example",
+            "generation": 1,
+            "cols": 1,
+            "rows": 1,
+            "record": true
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "request:push.register",
     "type": "RequestEnvelope",
     "value": {
@@ -2918,6 +3084,17 @@
           "fingerprint": "example",
           "revoked": true
         }
+      }
+    }
+  },
+  {
+    "name": "event:device.pair_tailnet_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "device.pair_tailnet_changed",
+      "params": {
+        "tailnetChanged": true
       }
     }
   },

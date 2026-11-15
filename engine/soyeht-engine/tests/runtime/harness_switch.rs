@@ -14,19 +14,7 @@ fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
         "pane.draft",
         json!({"paneId":target,"active":true,"idempotencyKey":"typing-in-target"}),
     );
-    let store = Store::open(&rig.path).unwrap();
-    let runtime: Value = soyeht_store::agents::runtime(&store, &sender)
-        .unwrap()
-        .unwrap();
-    let (socket, _) = binding_hello(
-        &rig.path.join("engine.sock"),
-        runtime["binding"].as_str().unwrap(),
-    );
-    let mut agent = Client {
-        socket,
-        next: 1,
-        messages: vec![],
-    };
+    let mut agent = agent_client(&rig, &sender);
     agent.call(
         "agent.message",
         json!({"targetPaneId":target,"text":"peer note","idempotencyKey":"held-peer-note"}),
@@ -88,8 +76,20 @@ fn held_agent_message_follows_the_sent_draft_as_its_own_attributed_turn() {
         thread::sleep(Duration::from_millis(20));
     };
     assert_eq!(prompts[0], "typed draft");
-    assert!(prompts[1].contains(&format!("targetPaneId={sender}")));
-    assert!(prompts[1].ends_with("\n\npeer note"));
+    let (header, words) = prompts[1].split_once('\n').unwrap();
+    assert!(
+        header.starts_with(&format!("[{sender_name} → ")),
+        "{header}"
+    );
+    assert!(
+        header.contains(" · m:") && header.ends_with(']'),
+        "{header}"
+    );
+    assert!(
+        !prompts[1].contains(&sender),
+        "the header carries no pane id"
+    );
+    assert_eq!(words, "peer note");
 
     // Native replay after supervisor loss restores the same attributed bubble.
     let live = transcript_items(&mut human, &target);

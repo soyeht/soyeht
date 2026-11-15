@@ -478,6 +478,14 @@
         },
         "revoked": {
           "type": "boolean"
+        },
+        "addedAt": {
+          "type": "string",
+          "description": "When the device was paired (RFC 3339, whole seconds). Written only by an engine that asks for the person's code (`pairing-code`; ADR 0164): a pairing with a Mac records none, and neither does a device paired before this field existed."
+        },
+        "node": {
+          "type": "string",
+          "description": "The name of the tailnet node the device paired from, as the local Tailscale daemon names it, shortened to what a person can read and held to the device name's length (ADR 0164). Written with `addedAt` and only where the engine could ask Tailscale."
         }
       },
       "required": [
@@ -1424,6 +1432,14 @@
       "properties": {
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
+        },
+        "confirmTailnet": {
+          "type": "boolean",
+          "description": "True when the person confirms the tailnet change that a pairing was refused for (ADR 0164): the engine pins the identity it saw. Only an engine that asks for the person's code (`pairing-code`) reads it, and only from the local human."
+        },
+        "confirmTailnetPin": {
+          "type": "string",
+          "description": "With `confirmTailnet`: the `tailnetPin` of the change the person was shown. The engine pins the identity it refused only when it is still the one this names, and otherwise refuses the call with `transition_refused` and pins nothing, so that a person never confirms a change they have not seen. Without it the engine pins whatever it refused last."
         }
       },
       "required": [
@@ -1449,6 +1465,18 @@
         },
         "reachability": {
           "$ref": "#/$defs/EngineReachability"
+        },
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True while a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (`confirmTailnet`; ADR 0164). Absent otherwise."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "With `tailnetChanged`: the name of the tailnet the refused pairing saw, as Tailscale names it, with what a person cannot read dropped and held to the device name's length. It is a name its owner chose, so it is shown for the person to compare and never trusted."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "With `tailnetChanged`: an opaque name for the identity (tailnet and node key) that a confirmation would pin; the app sends it back as `confirmTailnetPin`."
         }
       },
       "required": [
@@ -1545,6 +1573,86 @@
       },
       "required": [
         "deviceId"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceNoticeListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "DeviceNoticeListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Device"
+          },
+          "description": "The devices added since the caller last dismissed the notice, oldest first, each with its `addedAt` and `node` (ADR 0164). Never the caller itself, a revoked device or one that has no `addedAt`. Empty on a Mac."
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceNoticeDismissParams": {
+      "type": "object",
+      "properties": {
+        "through": {
+          "type": "string",
+          "description": "The `addedAt` of the newest device the person was shown: the notice is dismissed up to and including it, and a device added after it is noticed again. A time in the future dismisses up to now."
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "through",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "DeviceNoticeDismissResult": {
+      "type": "object",
+      "properties": {
+        "through": {
+          "type": "string",
+          "description": "The time the engine took `through` for: the one given, or now when it had not come yet."
+        }
+      },
+      "required": [
+        "through"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePanesListParams": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "deviceId"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePanesListResult": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Pane"
+          },
+          "description": "The open panes the device created, in the order they were made (ADR 0164). A pane another connection created, or an agent or a task made, is not the device's. The revoke dialog offers to close them with `pane.close`."
+        }
+      },
+      "required": [
+        "items"
       ],
       "additionalProperties": true
     },
@@ -2280,6 +2388,27 @@
       ],
       "additionalProperties": true
     },
+    "DevicePairTailnetChangedEvent": {
+      "type": "object",
+      "properties": {
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True: a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (ADR 0164). It is the same fact `tailnetChanged` of the answer to `device.pair.start` states, told to a window that is already open."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "The name of the tailnet the refused pairing saw (`tailnetName` of the answer to `device.pair.start`)."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "An opaque name for the identity a confirmation would pin (`tailnetPin` of the answer to `device.pair.start`)."
+        }
+      },
+      "required": [
+        "tailnetChanged"
+      ],
+      "additionalProperties": true
+    },
     "DeviceRevokedEvent": {
       "type": "object",
       "properties": {
@@ -2947,6 +3076,16 @@
         "targetPaneId": {
           "$ref": "#/$defs/Id"
         },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "inReplyTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
         "text": {
           "type": "string",
           "minLength": 1,
@@ -2957,7 +3096,6 @@
         }
       },
       "required": [
-        "targetPaneId",
         "text",
         "idempotencyKey"
       ],
@@ -2971,6 +3109,11 @@
         },
         "queued": {
           "type": "boolean"
+        },
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
         }
       },
       "required": [
@@ -13351,6 +13494,33 @@
       },
       "mutation": true
     },
+    "device.notice.list": {
+      "params": {
+        "$ref": "#/$defs/DeviceNoticeListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DeviceNoticeListResult"
+      },
+      "mutation": false
+    },
+    "device.notice.dismiss": {
+      "params": {
+        "$ref": "#/$defs/DeviceNoticeDismissParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DeviceNoticeDismissResult"
+      },
+      "mutation": true
+    },
+    "device.panes.list": {
+      "params": {
+        "$ref": "#/$defs/DevicePanesListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/DevicePanesListResult"
+      },
+      "mutation": false
+    },
     "push.register": {
       "params": {
         "$ref": "#/$defs/PushRegisterParams"
@@ -14558,6 +14728,12 @@
       },
       "durable": true
     },
+    "device.pair_tailnet_changed": {
+      "params": {
+        "$ref": "#/$defs/DevicePairTailnetChangedEvent"
+      },
+      "durable": false
+    },
     "pair.result": {
       "params": {
         "$ref": "#/$defs/PairResultEvent"
@@ -14960,6 +15136,7 @@
   "x-limitNotes": {
     "pairingCodeChars": "The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.",
     "pairingWindowSeconds": "How long a pairing code stays valid, and the longest a device waits for the person to allow access.",
+    "agentNameChars": "The longest name (in characters) the engine puts in the header of a message between agents, and the longest it compares when a message names its recipient. A longer name is cut.",
     "deviceNameBytes": "The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.",
     "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.",
     "inkStrokes": "The most strokes one `ink.recognize` request carries.",
@@ -14996,6 +15173,7 @@
     "agentMessagesPerWindow": 6,
     "agentMessageWindowSec": 60,
     "agentMessageBytes": 60000,
+    "agentNameChars": 40,
     "transcriptPageMessages": 200,
     "transcriptPageBytes": 524288,
     "transcriptMessageBytes": 262144,

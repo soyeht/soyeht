@@ -277,6 +277,12 @@ impl Phone {
             .unwrap();
         let (socket, _) =
             tokio_tungstenite::tungstenite::client(format!("ws://{address}/"), stream).unwrap();
+        Self::from_socket(socket)
+    }
+    /// A phone on a WebSocket that is already connected, past the engine's challenge.
+    pub(super) fn from_socket(
+        socket: tokio_tungstenite::tungstenite::WebSocket<std::net::TcpStream>,
+    ) -> Self {
         let mut phone = Self {
             socket,
             challenge: Value::Null,

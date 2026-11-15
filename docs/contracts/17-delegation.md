@@ -40,7 +40,7 @@ change of its own (`current_mode_update`); the engine reads the parent's confirm
 |---|---|---|
 | Start an agent in a worktree with a harness, model, effort and mode | `task.dispatch` (chief or person), worktree through worktrunk (ADR 0029), checkpointed steps | Needs a board task with required fields; only the chief or a person may call it; one owner per task; no notice to the dispatcher; no follow-up; no stop for an agent |
 | Review someone's change | contract-drift reviewer pane of a task (`tasks/review.rs`): plan mode, no MCP server at all | Fixed to the task flow |
-| Message another pane | `agent.message`, `agent.list`, attributed queued prompt with a reply route, 6 per minute per recipient | No lineage, no limit on how many panes an agent starts, no permission ceiling, no completion notice, no report type |
+| Message another pane | `agent.message`, `agent.list`, attributed queued prompt with a short header (contract 04 R17), 6 per minute per recipient | No lineage, no limit on how many panes an agent starts, no permission ceiling, no completion notice, no report type |
 | Subagents inside one pane | rows of kind `subagent` (contract 04 section 5, `agents/subagents.rs`) | One harness, die with the turn, share the parent's worktree, cannot be stepped into |
 | Named, reusable roles | skills (ADR 0075): `SKILL.md` folders, user and workspace scope | A skill teaches an agent; a helper type configures another agent. Same store code, different folder (section 6) |
 | Permission prompts | `pane.permission_requested`, answered by a person, `allow_always` grants are per pane (`permission_rules`) | Requests stay the person's; a grant the person gave the parent also covers its helpers (section 8) |

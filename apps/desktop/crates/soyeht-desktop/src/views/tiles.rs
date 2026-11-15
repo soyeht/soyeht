@@ -59,6 +59,12 @@ impl Workbench {
         {
             return form;
         }
+        // The phones are the engine's, not a workspace's: this place needs no workspace.
+        if self.destination == crate::destination::Destination::Phone
+            && super::connection_hint(&self.state.connection).is_none()
+        {
+            return super::pairing::phone_place(self, cx, palette);
+        }
         let Some(workspace) = self.state.selected_workspace() else {
             return match super::connection_hint(&self.state.connection) {
                 Some(hint) => {

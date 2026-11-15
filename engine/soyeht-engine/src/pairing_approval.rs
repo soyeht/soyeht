@@ -9,7 +9,11 @@
 //! The code lives only here: it is never a field of a pending request (which the store keeps),
 //! of a receipt, of a log line or of an event, and it has no `Debug`, `Serialize` or `Clone`.
 
-use crate::errors::{self, Result};
+use crate::{
+    errors::{self, Result},
+    pairing_peers::Identity,
+    streak::Streak,
+};
 use soyeht_protocol::{approval_code, limits};
 use std::collections::BTreeMap;
 use zeroize::Zeroize;
@@ -18,13 +22,6 @@ use zeroize::Zeroize;
 const WRONG_CODES_ALLOWED: u8 = 3;
 /// Pairing windows one local connection keeps open; a new one closes its oldest.
 const WINDOWS_PER_CONNECTION: usize = 4;
-
-/// Whether the engine's peer rules of ADR 0164 (slice 3) are in place. Until they are, a program
-/// of the same user could be the new device, so no system runs `PersonsCode` by itself: a test
-/// selects it through `Hooks::pairing_approval`. This may become true only in the change that
-/// brings slice 3 of the ADR (the listener, address, `whois` and node rules); a test below stops
-/// the build when it is flipped alone.
-const PEER_RULES_ENFORCED: bool = false;
 
 /// Who may approve a pairing on this system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,13 +37,16 @@ pub enum Approval {
 impl Approval {
     /// The rule of the system this engine runs on.
     pub fn for_this_system() -> Self {
-        Self::for_system(std::env::consts::OS, PEER_RULES_ENFORCED)
+        Self::for_system(std::env::consts::OS)
     }
 
-    fn for_system(os: &str, peer_rules_enforced: bool) -> Self {
+    /// The person's code is Linux's only together with the peer rules of `pairing_peers` and
+    /// `pairing_gate`, which serve `pair.begin` and `pair.prove` to another node of the tailnet
+    /// and to nothing on this computer (ADR 0164).
+    fn for_system(os: &str) -> Self {
         match os {
             "macos" => Self::SignedApp,
-            "linux" if peer_rules_enforced => Self::PersonsCode,
+            "linux" => Self::PersonsCode,
             _ => Self::Refused,
         }
     }
@@ -258,17 +258,28 @@ impl Windows {
             .is_some_and(|bound| bound.connection == connection)
     }
 
+    /// The connection that opened `window`, while it is held.
+    pub(crate) fn owner(&self, window: &str) -> Option<&str> {
+        self.bound
+            .get(window)
+            .map(|bound| bound.connection.as_str())
+    }
+
     pub(crate) fn release(&mut self, connection: &str) {
         self.bound.retain(|_, bound| bound.connection != connection);
     }
 }
 
 /// What pairing keeps in memory between calls: the address a link names, and for the person's code
-/// mode the codes and the windows' connections.
+/// mode the codes, the windows' connections and what the peer rules refused.
 pub(crate) struct Pairing {
     pub(crate) address: String,
     pub(crate) windows: Windows,
     pub(crate) codes: Codes,
+    /// The refusals of the peer rules, so a run of the same kind is logged once.
+    pub(crate) refusals: Streak,
+    /// The identity a pairing was refused for, for the person to confirm (ADR 0164).
+    pub(crate) unconfirmed: Option<Identity>,
 }
 
 impl Pairing {
@@ -277,6 +288,8 @@ impl Pairing {
             address,
             windows: Windows::default(),
             codes: Codes::default(),
+            refusals: Streak::once(),
+            unconfirmed: None,
         }
     }
 }
@@ -286,8 +299,17 @@ impl Pairing {
 /// controls, the line and paragraph separators, the zero-width characters and the tag
 /// characters), and is no longer than the contract allows.
 pub(crate) fn check_device_name(name: &str) -> Result<()> {
-    let disguising = |c: char| {
-        matches!(
+    if name.len() > limits::DEVICE_NAME_BYTES || name.chars().any(hides_text) {
+        return Err(errors::invalid("The device name is not allowed"));
+    }
+    Ok(())
+}
+
+/// A character that is not text a person reads: a control, or one that reorders, hides or breaks
+/// the text around it.
+fn hides_text(c: char) -> bool {
+    c.is_control()
+        || matches!(
             c,
             '\u{061C}'
                 | '\u{200E}'
@@ -301,13 +323,22 @@ pub(crate) fn check_device_name(name: &str) -> Result<()> {
                 | '\u{FEFF}'
                 | '\u{E0000}'..='\u{E007F}'
         )
-    };
-    if name.len() > limits::DEVICE_NAME_BYTES
-        || name.chars().any(|c| c.is_control() || disguising(c))
-    {
-        return Err(errors::invalid("The device name is not allowed"));
+}
+
+/// A tailnet's or a node's name as the person reads it, in the notice of a device added and in a
+/// tailnet change they are asked to confirm. The name is whatever its owner gave it, so it is shown under the device name's rules instead of being
+/// refused: what a person cannot read is dropped, and the rest is held to the device name's
+/// length. A name with nothing left is none.
+pub(crate) fn readable_name(name: &str) -> Option<String> {
+    let mut readable = String::new();
+    for c in name.chars().filter(|c| !hides_text(*c)) {
+        if readable.len() + c.len_utf8() > limits::DEVICE_NAME_BYTES {
+            break;
+        }
+        readable.push(c);
     }
-    Ok(())
+    let readable = readable.trim();
+    (!readable.is_empty()).then(|| readable.to_owned())
 }
 
 #[cfg(test)]
@@ -349,19 +380,21 @@ mod tests {
     }
 
     #[test]
-    fn the_rule_follows_the_platform_and_waits_for_the_peer_rules_on_linux() {
-        assert_eq!(Approval::for_system("macos", false), Approval::SignedApp);
-        assert_eq!(Approval::for_system("macos", true), Approval::SignedApp);
-        assert_eq!(Approval::for_system("windows", false), Approval::Refused);
-        assert_eq!(Approval::for_system("windows", true), Approval::Refused);
-        assert_eq!(Approval::for_system("linux", false), Approval::Refused);
-        assert_eq!(Approval::for_system("linux", true), Approval::PersonsCode);
-        // Until slice 3 lands, no system selects the person's code by itself.
-        assert!(!Approval::for_this_system().asks_for_code());
+    fn the_rule_follows_the_platform() {
+        assert_eq!(Approval::for_system("macos"), Approval::SignedApp);
+        assert_eq!(Approval::for_system("windows"), Approval::Refused);
+        assert_eq!(Approval::for_system("linux"), Approval::PersonsCode);
+        assert_eq!(Approval::for_system("freebsd"), Approval::Refused);
         #[cfg(target_os = "macos")]
         assert_eq!(Approval::for_this_system(), Approval::SignedApp);
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        assert_eq!(Approval::for_this_system(), Approval::PersonsCode);
+        #[cfg(windows)]
         assert_eq!(Approval::for_this_system(), Approval::Refused);
+        assert_eq!(
+            Approval::for_this_system().asks_for_code(),
+            cfg!(target_os = "linux")
+        );
     }
 
     #[test]
@@ -507,13 +540,4 @@ mod tests {
         // The neighbours of the ranges are ordinary characters.
         assert!(check_device_name("\u{2065}\u{206A}\u{200A}\u{2061}\u{E0080}").is_ok());
     }
-
-    /// Tripwire: the person's code is for Linux only together with the peer rules of slice 3. If
-    /// this stops compiling, the rules are in and this check (and the Linux case of
-    /// `the_rule_follows_the_platform_and_waits_for_the_peer_rules_on_linux`) is to be replaced by
-    /// the tests that prove them.
-    const _: () = assert!(
-        !PEER_RULES_ENFORCED,
-        "PEER_RULES_ENFORCED may become true only with the slice 3 peer rules of ADR 0164"
-    );
 }

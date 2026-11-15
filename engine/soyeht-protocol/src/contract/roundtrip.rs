@@ -89,6 +89,12 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "DeviceListResult" => decode_encode::<DeviceListResult>(name, value),
         "DeviceRevokeParams" => decode_encode::<DeviceRevokeParams>(name, value),
         "DeviceRevokeResult" => decode_encode::<DeviceRevokeResult>(name, value),
+        "DeviceNoticeListParams" => decode_encode::<DeviceNoticeListParams>(name, value),
+        "DeviceNoticeListResult" => decode_encode::<DeviceNoticeListResult>(name, value),
+        "DeviceNoticeDismissParams" => decode_encode::<DeviceNoticeDismissParams>(name, value),
+        "DeviceNoticeDismissResult" => decode_encode::<DeviceNoticeDismissResult>(name, value),
+        "DevicePanesListParams" => decode_encode::<DevicePanesListParams>(name, value),
+        "DevicePanesListResult" => decode_encode::<DevicePanesListResult>(name, value),
         "PushPlatform" => decode_encode::<PushPlatform>(name, value),
         "PushEnvironment" => decode_encode::<PushEnvironment>(name, value),
         "PushRegisterParams" => decode_encode::<PushRegisterParams>(name, value),
@@ -127,6 +133,9 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "StreamGapEvent" => decode_encode::<StreamGapEvent>(name, value),
         "DevicePairRequestedEvent" => decode_encode::<DevicePairRequestedEvent>(name, value),
         "DevicePairedEvent" => decode_encode::<DevicePairedEvent>(name, value),
+        "DevicePairTailnetChangedEvent" => {
+            decode_encode::<DevicePairTailnetChangedEvent>(name, value)
+        }
         "DeviceRevokedEvent" => decode_encode::<DeviceRevokedEvent>(name, value),
         "PairResultEvent" => decode_encode::<PairResultEvent>(name, value),
         "EngineUpdatingEvent" => decode_encode::<EngineUpdatingEvent>(name, value),

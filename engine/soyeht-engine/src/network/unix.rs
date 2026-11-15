@@ -12,8 +12,9 @@ impl Drop for Interfaces {
     }
 }
 
-/// The name and address of every address on an interface that is up.
-pub(super) fn interface_addresses() -> io::Result<Vec<(String, IpAddr)>> {
+/// The name and address of every address of every interface, or only of the ones that are up.
+/// An address of a downed interface can still be bound, so it is still this machine's.
+pub(super) fn addresses(up_only: bool) -> io::Result<Vec<(String, IpAddr)>> {
     let mut first = std::ptr::null_mut();
     // SAFETY: first points to writable storage for the allocated list pointer.
     if unsafe { libc::getifaddrs(&mut first) } != 0 {
@@ -28,7 +29,7 @@ pub(super) fn interface_addresses() -> io::Result<Vec<(String, IpAddr)>> {
         current = interface.ifa_next;
         if interface.ifa_addr.is_null()
             || interface.ifa_name.is_null()
-            || interface.ifa_flags & libc::IFF_UP as u32 == 0
+            || up_only && interface.ifa_flags & libc::IFF_UP as u32 == 0
         {
             continue;
         }

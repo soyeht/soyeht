@@ -5,13 +5,27 @@ use serde_json::{Map, Value, json};
 pub(super) fn agent_message_schema() -> Value {
     object(
         fields(&[
+            (
+                "targetName",
+                described(
+                    id(),
+                    "The recipient's name: the name before the arrow of a message you received.",
+                ),
+            ),
             ("targetPaneId", id()),
+            (
+                "inReplyTo",
+                described(
+                    json!({"type":"string","minLength":1,"maxLength":16}),
+                    "The ID after m: in the header of the message you answer.",
+                ),
+            ),
             (
                 "text",
                 bounded_string(soyeht_protocol::limits::AGENT_MESSAGE_BYTES),
             ),
         ]),
-        &["targetPaneId", "text"],
+        &["text"],
     )
 }
 
@@ -24,6 +38,11 @@ pub(super) fn fields(entries: &[(&str, Value)]) -> Map<String, Value> {
         .iter()
         .map(|(name, value)| ((*name).into(), value.clone()))
         .collect()
+}
+
+fn described(mut schema: Value, description: &str) -> Value {
+    schema["description"] = description.into();
+    schema
 }
 
 pub(super) fn string() -> Value {
