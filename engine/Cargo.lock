@@ -1341,6 +1341,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyeht-avatar"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "soyeht-cli"
 version = "0.1.0"
 dependencies = [
