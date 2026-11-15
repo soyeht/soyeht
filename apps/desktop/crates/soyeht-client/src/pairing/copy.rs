@@ -2,6 +2,7 @@
 //! client policy's (`soyeht_protocol::client_policy`); the rest are the desktop's own and are here
 //! and nowhere else, so a view never types one.
 
+use crate::timestamp;
 use soyeht_protocol::{EngineReachability, EngineReachabilityReason};
 
 /// The entry that starts a pairing, and the title of its sheet.
@@ -46,6 +47,62 @@ pub const MALFORMED_CODE: &str = "Type the six digits your phone shows.";
 pub const REQUEST_GONE: &str =
     "This request is not waiting any more: it was decided, denied or it expired.";
 pub const REVOKE_FAILED: &str = "Soyeht could not revoke this device.";
+/// The notice of a device added, which stays until the person dismisses it.
+pub const NOTICE_TITLE: &str = "A device was added";
+pub const NOTICE_NOTE: &str = "If you did not pair it, revoke it.";
+pub const NOTICE_FAILED: &str = "Soyeht could not read or dismiss the notice of added devices.";
+/// What the question before a revocation says of the panes the device made.
+pub const PANES_UNKNOWN: &str = "Soyeht could not list the panes this device opened.";
+pub const PANES_NOTE: &str = "Closing a pane ends its process group, not a process that detached itself from it. Revoking a device does not stop what its terminals started.";
+pub const REVOKE_AND_KEEP: &str = "Revoke, keep the panes";
+
+/// A device in the notice and in the list: when and from where it was added, in the words of the
+/// engine's own record. A device that has no date (it was paired before dating, or on a Mac) says
+/// nothing.
+pub fn added_line(added_at: Option<&str>, node: Option<&str>) -> Option<String> {
+    let when = added_at
+        .and_then(timestamp::seconds_since_epoch)
+        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds as i64, 0))
+        .map(|time| time.format("%Y-%m-%d %H:%M UTC").to_string());
+    match (when, node) {
+        (Some(when), Some(node)) => Some(format!("Added {when} from {node}")),
+        (Some(when), None) => Some(format!("Added {when}")),
+        (None, Some(node)) => Some(format!("Added from {node}")),
+        (None, None) => None,
+    }
+}
+
+/// What the question says of the panes a device opened.
+pub fn panes_opened(count: usize) -> String {
+    match count {
+        1 => "This device opened 1 pane that is still open:".to_owned(),
+        count => format!("This device opened {count} panes that are still open:"),
+    }
+}
+
+/// The button that revokes a device and closes the panes it opened.
+pub fn revoke_and_close(count: usize) -> String {
+    match count {
+        1 => "Revoke and close the pane".to_owned(),
+        count => format!("Revoke and close {count} panes"),
+    }
+}
+
+/// What the person is told when some of the panes they chose to close would not close; none when
+/// all did.
+pub fn panes_left_open(count: usize) -> Option<String> {
+    match count {
+        0 => None,
+        1 => Some("The device was revoked, but 1 of its panes could not be closed.".to_owned()),
+        count => Some(format!(
+            "The device was revoked, but {count} of its panes could not be closed."
+        )),
+    }
+}
+
+/// The device was revoked, and the panes the person chose to close could not be listed.
+pub const PANES_NOT_LISTED: &str =
+    "The device was revoked, but its panes could not be listed to close them.";
 
 /// The question a request puts to the person.
 pub fn allow_question(device_name: &str) -> String {

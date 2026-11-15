@@ -24,6 +24,7 @@ fn pending(expires: i64) -> Pending {
         device: None,
         expires,
         node: None,
+        node_name: None,
     }
 }
 

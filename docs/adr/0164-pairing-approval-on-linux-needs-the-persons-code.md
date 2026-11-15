@@ -429,6 +429,46 @@ local API of `tailscaled` does.
   owner's, and a daemon that refuses fails closed with a message that says Tailscale could not be
   asked.
 
+## What slice 4 found and changed
+
+Slice 4 (the detection and the revoke dialog's list, in the engine and the desktop client) changed
+the text above in these places.
+
+- **The notice is a mark per viewer, in the store.** A table `device_notice_marks` (schema version
+  37) holds, for each viewer (a paired device by its id, the person at the computer as `local`), the
+  `addedAt` of the newest device that viewer dismissed the notice for. The notice a viewer is shown
+  is every unrevoked, dated device added after its mark, never itself. A device that never dismissed
+  has been told about what was added before its own pairing, since it saw those devices pair or is
+  one of them. The person at the computer starts at the beginning of time, so on Linux their first
+  paired phone is news to them once: a notice that the person's own approval silenced would be
+  silenced as well by a program that approves through the local connection, which is the case the
+  notice is for. Two new calls carry it, `device.notice.list` and `device.notice.dismiss
+  {through}`; a dismissal names the time of the newest device shown, so a device added in between
+  is not lost. Both are open to the local human and to a paired device, as `device.list` is.
+- **`node` is the name Tailscale shows for the node**, from the `whois` the pairing already asks
+  (`ComputedName`, else the first label of `Name`), with what a person cannot read dropped and the
+  device name's length as its bound. It is written, with `addedAt`, only where the person's code is
+  asked for; the Mac writes neither, and a device with no `addedAt` is not in the notice.
+- **Pane attribution is a column, not the event log.** The events the engine already records carry
+  the actor, but they are pruned after a week, and a revoked device's panes outlive that.
+  `panes.created_by` (the same migration) is written by `Change::insert_pane` from the actor of
+  the `mutate` that makes the pane, which every call that makes a pane goes through: a terminal, an
+  agent, a web, editor or writing pane, the sign-in terminal of an agent, and the panes of a task and
+  of its review. A pane the engine opens on its own for a queued task, or the person makes, is
+  nobody's. The check is the `pane.create` of a paired device in the runtime test of the person's
+  code, and the store's own test of `insert_pane`. `device.panes.list {deviceId}` lists the open
+  ones, which the revoke dialog offers to close with the existing `pane.close`; no call closes
+  panes by device, so the person sees each pane named and the engine records each close as a
+  close.
+- **The desktop** shows `addedAt` and `node` in the device list, the notice with Dismiss, and the
+  revoke dialog's list of panes with the choice to close them (the dialog says that a process that
+  detached itself keeps running). A pane the device made that was already closed is not listed.
+  The question's list is what the person is shown: once the device is revoked, the app lists its
+  panes again and closes that set, since the device may have made some in between and its
+  connection is closed by then. A pane that is already gone counts as closed.
+- **The visible notice of a changed tailnet** is not part of this slice: the desktop's
+  confirmation of `tailnetChanged` follows it.
+
 ## Slices
 
 | # | Slice | Size |

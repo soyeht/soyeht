@@ -174,9 +174,8 @@ message that says why and no address or name:
    differs, `pair.begin` is refused until the person confirms the change: the app calls
    `device.pair.start {confirmTailnet: true}`, which pins the identity the refusal saw. While a
    refusal waits, the answer to `device.pair.start` carries `tailnetChanged: true`. The engine logs
-   the refusal and says why to the device; the app shows nothing more of it until the "device
-   added" notice of the detection slice (ADR 0164, slice 4). This raises a cost and no more: the
-   confirmation is a local call;
+   the refusal and says why to the device; the desktop app's confirmation of it is a later slice
+   (ADR 0164). This raises a cost and no more: the confirmation is a local call;
 6. the peer's node is not one a device's authenticated `hello` came from. In this mode the engine
    asks Tailscale for the node of each tailnet `hello` and keeps it, and keeps the node of a
    request's `pair.begin` when the request is approved (a lookup that fails or takes more than a
@@ -191,6 +190,34 @@ Each refusal writes one `engine.pair_refused` line with a `kind` only (`listener
 `tailnet_changed`); a run of one kind writes one line. The engine also marks itself non-dumpable on
 Linux (`prctl(PR_SET_DUMPABLE, 0)`) once it runs, so another program of the same user cannot read the
 codes it holds.
+
+**Detection of a device added, and what a revoked device left running (ADR 0164, slice 4).** A
+pairing cannot be made impossible for a program that has another node of the tailnet, so it is not
+silent. Where the engine asks for the person's code, `Device` carries two optional fields, written
+when the request is approved: `addedAt` (RFC 3339, whole seconds) and `node`, the name Tailscale
+gives the node the device paired from (what a person cannot read is dropped from it, and it is held to
+the device name's length). The Mac writes neither, and a device with none is not part of the notice.
+
+- `device.notice.list {}` answers `{items: Device[]}`: the devices added since the caller last
+  dismissed the notice, oldest first, never the caller itself nor a revoked device. A caller that
+  never dismissed it has been told about what was added before its own pairing, and the person at the
+  computer, who has no pairing of their own, about every dated device. A notice is durable: it
+  lists the same devices at every connection until it is dismissed.
+- `device.notice.dismiss {through, idempotencyKey}` dismisses it up to and including `through`, the
+  `addedAt` of the newest device that was shown; a device added after that is news again. A time
+  that has not come is taken as now, one that is not a time is `invalid_params`, and a mark never
+  moves back. Each viewer has its own mark: a paired device by its id, the person at the computer
+  on their own. A paired device or the local human may call both; an agent and a chief get
+  `forbidden_role`. The live signal is the `device.paired` event, which now carries the same fields.
+  The call is not the person's alone, so a program of the same user can dismiss the person's notice:
+  the notice raises a cost and no more.
+- `device.panes.list {deviceId}` answers `{items: Pane[]}`: the open panes the device's connection
+  created, in the order they were made, which is what the revoke dialog offers to close with
+  `pane.close`, since revoking a device does not stop what its terminals started. The engine
+  records the paired device whose connection made a pane in the same change that makes it, for every
+  call that makes one (a terminal, an agent, a web, editor or writing pane, a task's pane and its
+  reviewer's), so the list cannot miss one; a pane the person or an agent made, or that the engine
+  opened on its own for a queued task, is nobody's, and so is one made before this was recorded.
 
 **The desktop client's pairing view (ADR 0164, slice 5).** The Windows and Linux app draws the place
 "iPhone or iPad" of the rail: the paired devices, each with Revoke (after "Revoke this device's
@@ -275,7 +302,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
-| `device.list` | yes | yes | no | no |
+| `device.list`, `device.notice.list`, `device.notice.dismiss`, `device.panes.list` | yes | yes | no | no |
 | `device.pair.start` (ADR 0163, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human | no | no | no |
 | `device.pair.decide`, `device.revoke` (ADR 0162, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human, and a decision only from the connection that opened the window and with the person's code to approve | own device only (`device.revoke`) | no | no |
 | `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |

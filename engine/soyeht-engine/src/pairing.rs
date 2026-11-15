@@ -44,6 +44,18 @@ pub(crate) struct Pending {
     /// must come from the same one (ADR 0164).
     #[serde(default)]
     node: Option<String>,
+    /// That node's name, shown in the notice of a device added.
+    #[serde(default)]
+    node_name: Option<String>,
+}
+
+/// The calls `device_request` serves: who may control this computer, and what a person is told of
+/// devices being added to it.
+pub(crate) fn handles_device_method(method: &str) -> bool {
+    matches!(
+        method,
+        method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE
+    ) || crate::device_notices::handles(method)
 }
 
 fn active_pending<S: StorePort, C: Clock + ?Sized>(
@@ -237,6 +249,7 @@ impl Core {
             device: None,
             expires,
             node: admitted.map(|admitted| admitted.node.id.clone()),
+            node_name: admitted.and_then(|admitted| admitted.node.name.clone()),
         };
         let now = self.now_unix();
         // Signed here and kept in the receipt: a replay answers with the same proof.
@@ -443,6 +456,10 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
+        // What a viewer is told of devices is not a change of who may control this computer.
+        if crate::device_notices::handles(method) {
+            return crate::device_notices::request(self, connection, method, params);
+        }
         self.authorize_device_management(connection, method, params)?;
         match method {
             method::DEVICE_PAIR_START => self.device_pair_start(connection, method, params),
@@ -577,6 +594,12 @@ impl Core {
                 name: pending.name.clone(),
                 fingerprint: auth::fingerprint(&public),
                 revoked: false,
+                // Where the person's code is asked for, a device is dated and named for where it
+                // came from, so that adding one is not silent (ADR 0164). The Mac writes neither.
+                added_at: asks_for_code
+                    .then(|| crate::device_notices::time_text(self.now_unix()))
+                    .transpose()?,
+                node: asks_for_code.then(|| pending.node_name.clone()).flatten(),
             });
         }
         let decided = model::to_value(&DevicePairDecideResult {
@@ -727,6 +750,8 @@ impl Core {
 
 #[cfg(test)]
 mod code_tests;
+#[cfg(test)]
+mod notice_tests;
 #[cfg(test)]
 mod peer_tests;
 #[cfg(test)]

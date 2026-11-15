@@ -3,6 +3,7 @@
 pub mod adapter_acknowledgement;
 pub mod agents;
 pub mod database;
+pub mod device_notices;
 pub use database::{Error, Result};
 pub mod domain;
 mod due;

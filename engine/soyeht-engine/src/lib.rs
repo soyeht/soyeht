@@ -7,6 +7,7 @@ pub mod agents;
 pub mod auth;
 pub mod core;
 pub mod core_lock;
+mod device_notices;
 pub mod dispatch;
 pub mod editor;
 pub mod engine_build;

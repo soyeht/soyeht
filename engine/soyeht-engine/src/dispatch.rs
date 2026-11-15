@@ -503,7 +503,7 @@ impl Core {
             method::SETTINGS_GET => self.setting_get(params)?,
             method::SETTINGS_SET => self.setting_set(connection, params)?,
             method::DEVICE_LIST => json!({"items":self.snapshot_section("devices")?}),
-            method::DEVICE_PAIR_START | method::DEVICE_PAIR_DECIDE | method::DEVICE_REVOKE => {
+            method if crate::pairing::handles_device_method(method) => {
                 self.device_request(connection, method, params)?
             }
             method::PUSH_REGISTER | method::PUSH_UNREGISTER => {

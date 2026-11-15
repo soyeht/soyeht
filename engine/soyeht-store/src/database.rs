@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 mod migrations;
 
-pub const SCHEMA_VERSION: u32 = 36;
+pub const SCHEMA_VERSION: u32 = 37;
 
 #[derive(Debug)]
 pub enum Error {
@@ -321,6 +321,18 @@ pub struct Store {
 /// named operations to this type so callers cannot execute arbitrary SQL.
 pub struct Change<'connection> {
     pub(crate) transaction: Transaction<'connection>,
+    /// The paired device the change is made for, when its actor is one: a pane the change makes is
+    /// recorded as that device's (ADR 0164), so a revocation can offer to close it.
+    pub(crate) device: Option<String>,
+}
+
+impl<'connection> Change<'connection> {
+    pub(crate) fn new(transaction: Transaction<'connection>, device: Option<String>) -> Self {
+        Self {
+            transaction,
+            device,
+        }
+    }
 }
 
 impl Change<'_> {
@@ -531,7 +543,10 @@ impl Store {
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let change = Change { transaction };
+        let change = Change::new(
+            transaction,
+            actor.and_then(|actor| actor["deviceId"].as_str().map(str::to_owned)),
+        );
         let previous: Option<(String, String)> = change
             .transaction
             .query_row(

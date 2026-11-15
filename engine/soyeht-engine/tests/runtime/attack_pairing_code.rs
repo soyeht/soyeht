@@ -77,6 +77,8 @@ impl Local {
 
 struct Request {
     phone: Phone,
+    /// Where the engine's listener for devices is, for a phone that connects again.
+    address: String,
     id: Value,
     code: String,
 }
@@ -109,6 +111,7 @@ fn request_on_new_window(local: &mut Local, seed: u8) -> Request {
     assert!(code.bytes().all(|byte| byte.is_ascii_digit()), "{code}");
     Request {
         phone,
+        address: address_of(&window),
         id: started["requestId"].clone(),
         code,
     }
@@ -354,4 +357,60 @@ fn the_refused_rule_names_a_system_where_the_app_cannot_prove_itself_yet() {
             .contains("cannot yet prove itself"),
         "{refused}"
     );
+}
+
+#[test]
+fn the_panes_a_paired_device_made_are_listed_for_its_revocation_and_the_new_device_is_dated() {
+    let rig = persons_code_rig();
+    let mut local = Local::new(&rig);
+    let (workspace, own_pane) = local.client.create(&rig);
+    let mut request = request_on_new_window(&mut local, 38);
+    let code = request.code.clone();
+    let approved = decide(&mut local, &request, Some(&code), "approve-panes");
+    assert_eq!(approved["result"]["approved"], true, "{approved}");
+    let result = request.phone.read()["params"].clone();
+    let device = result["deviceId"].as_str().unwrap().to_owned();
+    // The phone connects again, now as the paired device, and opens a terminal of its own.
+    let key = SigningKey::from_bytes(&[38; 32]);
+    let mut phone = Phone::connect(&request.address);
+    let welcome = phone.hello(&key, result["deviceToken"].as_str().unwrap());
+    assert!(welcome.get("error").is_none(), "{welcome}");
+    let made = phone.request(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":"phone-pane"}),
+    );
+    let made = made["result"]["paneId"].as_str().unwrap().to_owned();
+
+    // The list is the device's own panes: not the person's, and not another device's.
+    let listed = local.request("device.panes.list", json!({"deviceId":device}));
+    let panes = listed["result"]["items"].as_array().unwrap();
+    assert_eq!(panes.len(), 1, "{listed}");
+    assert_eq!(panes[0]["paneId"], made);
+    assert!(panes.iter().all(|pane| pane["paneId"] != own_pane));
+    let other = local.request("device.panes.list", json!({"deviceId":"nobody"}));
+    assert_eq!(other["result"]["items"], json!([]), "{other}");
+
+    // The device is dated and names its node, and the person at the computer is told of it.
+    let notice = local.request("device.notice.list", json!({}));
+    let added = notice["result"]["items"].as_array().unwrap();
+    assert_eq!(added.len(), 1, "{notice}");
+    assert_eq!(added[0]["deviceId"], device);
+    assert!(added[0]["addedAt"].is_string() && added[0]["node"].is_string());
+    // The phone is not told of itself.
+    let own = phone.request("device.notice.list", json!({}));
+    assert_eq!(own["result"]["items"], json!([]), "{own}");
+
+    // Closing what the revoked device made is the person's, through the call a pane has.
+    let revoked = local.request(
+        "device.revoke",
+        json!({"deviceId":device,"idempotencyKey":"revoke-phone"}),
+    );
+    assert!(revoked.get("error").is_none(), "{revoked}");
+    let closed = local.request(
+        "pane.close",
+        json!({"paneId":made,"idempotencyKey":"close-phone-pane"}),
+    );
+    assert!(closed.get("error").is_none(), "{closed}");
+    let after = local.request("device.panes.list", json!({"deviceId":device}));
+    assert_eq!(after["result"]["items"], json!([]), "{after}");
 }
