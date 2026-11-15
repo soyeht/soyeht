@@ -10,10 +10,7 @@ use serde_json::Value;
 use soyeht_protocol::{
     PaneTranscriptResult, ProbeCapability, PromptItem, TranscriptMessage, Workspace,
 };
-use soyeht_ptyd::{
-    client::Client as SupervisorClient,
-    wire::{Request, Response, Spawn},
-};
+use soyeht_ptyd::wire::{Request, Response, Spawn};
 use soyeht_store::domain::FinishedInput;
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
@@ -117,24 +114,6 @@ pub trait PortScanPort: Send {
     }
 
     fn scan(&mut self) -> Result<PortScanObservation, PortScanError>;
-}
-
-impl SupervisorPort for SupervisorClient {
-    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
-        SupervisorClient::request(self, request)
-    }
-
-    fn supervisor_id(&self) -> &str {
-        &self.supervisor_id
-    }
-
-    fn supervisor_generation(&self) -> u32 {
-        self.supervisor_generation
-    }
-
-    fn supports(&self, feature: &str) -> bool {
-        self.features.iter().any(|listed| listed == feature)
-    }
 }
 
 pub fn call_supervisor(

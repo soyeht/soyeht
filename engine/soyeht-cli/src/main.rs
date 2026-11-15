@@ -13,7 +13,7 @@ use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
 use soyeht_protocol::{
-    ErrorKind, data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
+    data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
 };
 use std::path::PathBuf;
 
@@ -97,12 +97,7 @@ fn run() -> Result<Output> {
             Ok(binding) if !binding.is_empty() => binding,
             _ => return Err(Error::MissingPaneBinding),
         };
-        Client::connect_bound(&directory, &binding).map_err(|error| match error {
-            Error::Remote(refused) if refused.data.kind == ErrorKind::Unauthorized => {
-                Error::PaneBindingNotCurrent
-            }
-            other => other,
-        })
+        Client::connect_bound(&directory, &binding).map_err(Error::for_pane_binding)
     } else {
         Client::connect(&directory)
     };

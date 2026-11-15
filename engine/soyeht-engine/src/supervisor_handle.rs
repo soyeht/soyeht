@@ -26,7 +26,7 @@ use crate::{
     ports::{SupervisorPort, call_supervisor},
 };
 use soyeht_ptyd::{
-    client::IO_TIMEOUT,
+    client::{Client, IO_TIMEOUT},
     wire::{FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
@@ -53,6 +53,25 @@ struct Connection {
     /// Set, with the mutex held, by a call that left the stream in an unknown state. Read
     /// without the mutex, so the tick can drop the link while a call is still waiting on it.
     broken: AtomicBool,
+}
+
+/// The real link, which lists what its supervisor's welcome said it can do.
+impl SupervisorPort for Client {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        Client::request(self, request)
+    }
+
+    fn supervisor_id(&self) -> &str {
+        &self.supervisor_id
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        self.supervisor_generation
+    }
+
+    fn supports(&self, feature: &str) -> bool {
+        self.features.iter().any(|listed| listed == feature)
+    }
 }
 
 /// The connection to the supervisor. Clones share it.

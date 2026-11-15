@@ -1,4 +1,4 @@
-use soyeht_protocol::{RpcError, handshake::PANE_BINDING_NOT_CURRENT};
+use soyeht_protocol::{ErrorKind, RpcError, handshake::PANE_BINDING_NOT_CURRENT};
 use std::{fmt, io};
 
 #[derive(Debug)]
@@ -22,6 +22,17 @@ pub enum Error {
 }
 
 impl Error {
+    /// The error of a program in a terminal pane: a refusal of its binding by the engine means
+    /// the binding is not current (ADR 0165), and any other error is itself.
+    pub fn for_pane_binding(self) -> Self {
+        match self {
+            Self::Remote(refused) if refused.data.kind == ErrorKind::Unauthorized => {
+                Self::PaneBindingNotCurrent
+            }
+            other => other,
+        }
+    }
+
     pub fn io_kind(&self) -> Option<io::ErrorKind> {
         match self {
             Self::Io(error) => Some(error.kind()),

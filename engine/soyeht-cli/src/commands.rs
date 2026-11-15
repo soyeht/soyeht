@@ -70,12 +70,8 @@ fn message(
         }
     }
     // The engine refuses a binding of a process the pane no longer runs at the request, too.
-    rpc::<AgentMessageResult>(client, method::AGENT_MESSAGE, params).map_err(|error| match error {
-        Error::Remote(refused) if refused.data.kind == ErrorKind::Unauthorized => {
-            Error::PaneBindingNotCurrent
-        }
-        other => other,
-    })
+    rpc::<AgentMessageResult>(client, method::AGENT_MESSAGE, params)
+        .map_err(Error::for_pane_binding)
 }
 
 fn options(rest: &[&str], allowed: &[(&str, &str)]) -> Result<Value> {
