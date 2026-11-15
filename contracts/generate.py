@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 from client_policy import render_client_policy
+from compat import _reachable as reachable
 from compat import released_problems
 from design_tokens import TOKENS_PATH, render_tokens
 from generated_header import header_text, rustfmt
@@ -377,29 +378,8 @@ def attachment_methods(schema):
     drops the frames of one of these when it refuses it, and of no other method."""
     defs = schema["$defs"]
 
-    def references(node, found):
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if key == "$ref":
-                    found.add(value.rsplit("/", 1)[-1])
-                else:
-                    references(value, found)
-        elif isinstance(node, list):
-            for value in node:
-                references(value, found)
-        return found
-
     def carries(name):
-        seen, pending = set(), [name]
-        while pending:
-            current = pending.pop()
-            if current in seen or current not in defs:
-                continue
-            seen.add(current)
-            if "attachmentId" in defs[current].get("properties", {}):
-                return True
-            pending.extend(references(defs[current], set()))
-        return False
+        return any("attachmentId" in defs[found].get("properties", {}) for found in reachable(defs, [name]))
 
     return [
         name
