@@ -649,7 +649,7 @@ impl Service {
 }
 
 /// The file `requested` names inside `workspace_root`, canonical and contained in it.
-pub(super) fn resolve_in(
+pub(crate) fn resolve_in(
     files: &dyn FileSystemPort,
     workspace_root: &Path,
     requested: &str,

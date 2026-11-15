@@ -434,6 +434,10 @@
         "viewport": {
           "$ref": "#/$defs/WebViewport"
         },
+        "projectPath": {
+          "type": "string",
+          "maxLength": 4096
+        },
         "incognito": {
           "type": "boolean"
         },
@@ -11099,6 +11103,11 @@
           "minLength": 1,
           "maxLength": 4096
         },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
         "workspaceId": {
           "$ref": "#/$defs/Id"
         },
@@ -11116,7 +11125,6 @@
         }
       },
       "required": [
-        "url",
         "idempotencyKey"
       ],
       "additionalProperties": true
@@ -15247,6 +15255,8 @@
     "webReadLinks": 100,
     "webReadBytes": 524288,
     "webAgentImageBytes": 262144,
+    "webProjectFileBytes": 16777216,
+    "webProjectPageConnections": 32,
     "promptAttachments": 20,
     "promptAttachmentBytes": 10485760,
     "promptAttachmentTotalBytes": 20971520,

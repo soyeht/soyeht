@@ -149,6 +149,18 @@ pub struct Host {
     page_wait: Duration,
 }
 
+/// The engine's note in the arguments of a command: who asks, and whether it is a person's act.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Access {
+    session: Session,
+    /// The engine's own reload of a project page (contract 11, section 5b), and no other command:
+    /// no act of a person. This host does nothing for a person's command but skip the hand-off
+    /// check (it selects no pane, raises no window and moves no focus), so a background command
+    /// does that much and no more: it never marks the pane as the person's, and it goes even
+    /// while the person has the pane.
+    background: bool,
+}
+
 /// Who may do what in the session, from the engine's own note in the arguments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Session {
@@ -200,9 +212,13 @@ impl Host {
 
     fn run(&self, params: &WebCommandParams) -> Result<Outcome, HostError> {
         let page = self.page_of(&params.pane_id)?;
-        let session = session(&params.args, page.incognito())?;
-        // An agent drives only a pane the person has not taken.
-        if session != Session::Human {
+        let Access {
+            session,
+            background,
+        } = access(&params.command, &params.args, page.incognito())?;
+        // An agent drives only a pane the person has not taken; the engine's own command is no
+        // agent's and no person's, so it is not asked.
+        if session != Session::Human && !background {
             page.handoff().agent_may_drive()?;
         }
         if session == Session::Probe {
@@ -269,18 +285,34 @@ impl Host {
     }
 }
 
-fn session(args: &Value, incognito: bool) -> Result<Session, HostError> {
-    let mode = args
-        .get(ACCESS_KEY)
+fn access(command: &WebCommandKind, args: &Value, incognito: bool) -> Result<Access, HostError> {
+    let note = args.get(ACCESS_KEY);
+    let mode = note
         .and_then(|access| access.get("session"))
         .and_then(Value::as_str);
-    match mode {
-        Some("human") => Ok(Session::Human),
-        Some("incognito") if incognito => Ok(Session::Incognito),
-        Some("probe") if !incognito => Ok(Session::Probe),
-        Some("granted") if !incognito => Ok(Session::Granted),
-        _ => Err(HostError::Internal("The web command access is invalid.")),
+    let session = match mode {
+        Some("human") => Session::Human,
+        Some("incognito") if incognito => Session::Incognito,
+        Some("probe") if !incognito => Session::Probe,
+        Some("granted") if !incognito => Session::Granted,
+        _ => return Err(HostError::Internal("The web command access is invalid.")),
+    };
+    // The note counts for one command only: the engine's own reload of a project page. On any
+    // other command it is ignored, so the command is what its session says it is.
+    let background = note
+        .and_then(|access| access.get("background"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        && matches!(command, WebCommandKind::Navigate)
+        && matches!(target(args), Ok(Target::Reload));
+    // The engine sends its own command with the session of a person, with no agent to ask about.
+    if background && session != Session::Human {
+        return Err(HostError::Internal("The web command access is invalid."));
     }
+    Ok(Access {
+        session,
+        background,
+    })
 }
 
 /// The address whose cookies a probe asks about: the one a navigation goes to, else the page's.

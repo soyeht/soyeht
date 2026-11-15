@@ -1,10 +1,8 @@
 use super::*;
-use crate::web::test_support::{connect_local, next_json, reply, request, temp_root};
-use crate::{
-    dispatch::Outcome, model::RunningPane, outbox, ports::testing::FixedClock, screen::Screen,
-};
+use crate::web::test_support::{bind_agent, connect_local, next_json, reply, request, temp_root};
+use crate::{dispatch::Outcome, outbox, ports::testing::FixedClock};
 use serde_json::json;
-use soyeht_protocol::{Actor, ErrorKind, WebCommandKind};
+use soyeht_protocol::{ErrorKind, WebCommandKind};
 use std::{path::PathBuf, sync::Arc};
 
 async fn connect(core: &mut Core, host: bool) -> (String, outbox::Receiver) {
@@ -52,28 +50,7 @@ async fn setup() -> (
         .as_str()
         .unwrap()
         .to_owned();
-    let mut agent = core.panes[&pane].stored.clone();
-    agent.pane.pane_id = "agent-pane".into();
-    agent.pane.mode = PaneMode::Agent;
-    agent.pane.url = None;
-    agent.pane.title = None;
-    agent.pane.viewport = None;
-    agent.pane.incognito = None;
-    agent.pane.web_session = None;
-    let agent_screen = Screen::open(&root.join("sessions/agent-pane"), false).unwrap();
-    core.panes.insert(
-        agent.pane.pane_id.clone(),
-        RunningPane {
-            stored: agent,
-            screen: agent_screen,
-        },
-    );
-    core.clients.get_mut(&caller).unwrap().actor = Some(Actor {
-        role: Role::Agent,
-        client: "bound-agent".into(),
-        device_id: None,
-        pane_id: Some("agent-pane".into()),
-    });
+    bind_agent(&mut core, &caller, &pane, &root);
     (
         core,
         host,

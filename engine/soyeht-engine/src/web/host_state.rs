@@ -35,6 +35,17 @@ impl Core {
             .filter(|generation| *generation > 0)
             .ok_or_else(|| errors::invalid("Invalid web navigation generation"))?;
         let mut saved = self.live_web_pane(&request.pane_id)?.clone();
+        // A pane that holds a project page stays on its page's origin: a host that reports another
+        // address (the page navigated away where the host did not stop it) is not believed.
+        if saved.pane.project_path.is_some()
+            && !saved
+                .pane
+                .url
+                .as_deref()
+                .is_some_and(|page| soyeht_protocol::web::same_origin(page, url.as_str()))
+        {
+            return Err(soyeht_web::Error::ProjectPageOrigin.into());
+        }
         if generation < saved.pane.generation {
             return Err(errors::invalid("Web navigation generation moved backwards"));
         }

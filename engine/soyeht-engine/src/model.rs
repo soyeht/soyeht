@@ -169,6 +169,7 @@ pub(crate) fn new_pane(
         title: None,
         viewport: None,
         incognito: None,
+        project_path: None,
         web_session: None,
         writing_kind: None,
         writing_section: None,
