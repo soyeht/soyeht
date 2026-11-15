@@ -48,10 +48,16 @@ and Windows), CLI and agents' MCP server.
 |---|---|---|
 | Mac (Swift), Linux/Windows (Rust desktop), CLI | Unix socket at `<data>/engine.sock`; directory 0700, socket 0600; on Windows, the loopback endpoint described in §2.5 | same OS user + `hello` |
 | MCP server (one per agent pane) | same local socket | `hello` with `binding` issued by the engine when creating the pane (short secret + paneId); without a valid `binding`, becomes a “local human” client without a role |
+| A program in a terminal pane (`soyeht-mcp` for the harness the person runs there, `soyeht message`) | same local socket | `hello` with the `binding` in the `SOYEHT_PANE_BINDING` variable of the pane's environment (ADR 0165). It is `PANE.TAG`: the pane's id and a keyed hash, made with a key of this engine, of the pane's id, the instance key of its process and its generation. The engine derives it and puts none in its database; the supervisor records the environment of every process it holds, so the bindings of the running terminals are also in its registry file (owner only), and the engine adds the variable only to a start sent to a supervisor that lists the `pane-binding` feature in its welcome. It is granted `Role.agent` for `agent.list` and `agent.message` only, as that pane, and every other method is `forbidden_role`; it ends with the process, because a restart, a recovery or a harness switch gives the pane another instance key and generation, so a `hello` that presents it is `unauthorized`, and so is the next request of a connection that holds it |
 | iPhone | plaintext WebSocket on the Soyeht port at Tailscale addresses (contract 06); a handshake with an `Origin` header (a web page) is refused with 403 (ADR 0129) | `deviceToken` issued during pairing (§2.2) |
 
 Declared limit: arbitrary processes belonging to the same user can open the
 local socket; isolation is per OS user, not per process.
+
+Any process that has a terminal pane's environment can act for the pane, which is every process the
+pane runs, the commands a harness's shell tool starts included, and a process of the same user that
+reads the environment of another (`ps eww`, `/proc/PID/environ`). The limit is the sender's: the
+message names the pane it claims to come from, and the 6 a minute per sender and recipient applies.
 
 Known limitation (ADR 0165): a program of the same user, including one started in a terminal
 pane, connects as the person. `soyeht pane prompt`, or a raw `pane.prompt` or `pane.input`,
@@ -442,13 +448,19 @@ localId, generation, seq, complete`,
 `pane.stream.subscribe {paneId, from: "tail" | {streamId, offset}}` /
 `pane.stream.unsubscribe` (§6),
 `agent.message {targetPaneId | targetName, inReplyTo?, text, idempotencyKey}` →
-`{promptId, queued, messageId}` (an agent pane queues a prompt in another agent pane of its
-workspace, contract 04 R17; exactly one of `targetPaneId` and `targetName` names the
-recipient, a name is compared without case, accents or surrounding space, and a name two
-panes carry is `invalid_params` that lists them, unless `inReplyTo` names a message the sender
-has open, which routes to the pane that sent it; `inReplyTo` is the `m:ID` of the message being
-answered and is only a hint, so a stale or unknown one is ignored) and `agent.list` (the agent
-panes of the caller's workspace that it can message, by name),
+`{promptId, queued, messageId}` (an agent pane, or a terminal pane with its binding, queues a
+prompt in an agent pane of any workspace, contract 04 R17; exactly one of `targetPaneId` and `targetName` names the
+recipient, a name is compared without case, accents or surrounding space; `inReplyTo` is the `m:ID`
+of the message being answered, and when it names a message the sender has open, the reply goes to
+the pane that sent that message, whatever workspace that pane is in and whatever panes of that name
+the sender's own workspace holds; otherwise a name that exactly one agent pane of the sender's own
+workspace carries is that pane, and when the own workspace has none or several, the agent panes of
+every workspace count and several are `invalid_params` that lists them; `inReplyTo` is only a hint,
+so a stale or unknown one is ignored; a web page and a terminal pane are never candidates for a name, and a name or an id
+that is one is `not_found` with the reason: a page has no recorded creator to receive messages, and
+a terminal pane cannot receive messages yet) and `agent.list` (the agent panes of every workspace
+that the caller can message, its own workspace first, each as `{paneId, name, harness, kind,
+workspaceName}`),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
 `pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
 the slash commands the harness last advertised with ACP

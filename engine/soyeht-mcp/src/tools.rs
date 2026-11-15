@@ -1,4 +1,7 @@
-use crate::{Error, Result, engine::EnginePort};
+use crate::{
+    Error, Result,
+    engine::{Detached, EnginePort},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{Role, limits, method, method_family};
@@ -36,14 +39,14 @@ const TOOLS: [Tool; 36] = [
         name: "list_agents",
         method: method::AGENT_LIST,
         audience: Audience::Both,
-        description: "List the other ACP agent panes of this workspace by name, with their pane IDs.",
+        description: "List the agent panes of every Soyeht workspace by name, your own workspace first, with their workspace, harness and pane IDs. For a request that names who to talk to, call this first: a name it lists is a Soyeht pane to reach with message_agent, never a subagent for you to create in its place. A name it does not list is not a pane: say so instead of creating one.",
         schema: empty_schema,
     },
     Tool {
         name: "message_agent",
         method: method::AGENT_MESSAGE,
         audience: Audience::Both,
-        description: "Queue a message for another ACP agent pane, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for its clean input. A message you receive starts with [sender → you · m:ID]; to answer it, call this tool with targetName = the name before the arrow and inReplyTo = the ID after m:.",
+        description: "Queue a message for an agent pane of any workspace, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for its clean input, and an answer arrives later as a message of its own: never claim a reply that has not arrived. A message you receive starts with [sender → you · m:ID]; to answer it, call this tool with targetName = the name before the arrow and inReplyTo = the ID after m:.",
         schema: agent_message_schema,
     },
     Tool {
@@ -286,21 +289,77 @@ const TOOLS: [Tool; 36] = [
     },
 ];
 
+impl Service<Detached> {
+    /// The service of a program outside a Soyeht pane, which is told it has no tools.
+    pub fn outside() -> Self {
+        Self {
+            engine: Detached(Role::Agent),
+            scope: Scope::Outside,
+        }
+    }
+}
+
+/// What `message_agent` says in a terminal pane: that pane cannot receive yet, so an answer would
+/// have nowhere to arrive (ADR 0165, until the inbox of slice 5).
+const TERMINAL_MESSAGE_DESCRIPTION: &str = "Queue a message for an agent pane of any workspace, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for the recipient's clean input. This terminal pane cannot receive messages yet, so no answer will arrive here: send what is needed and do not wait for a reply.";
+
+/// Whose tools a server offers.
+enum Scope {
+    /// An agent pane of a workspace, with the tools of its role.
+    Pane(TaskContext),
+    /// A terminal pane (ADR 0165): the person started a harness in it. It can look up the agent
+    /// panes and message them, and nothing else, because the pane has no task and no session of
+    /// its own.
+    Terminal,
+    /// A program started outside a Soyeht pane, whose harness the person runs anywhere: no
+    /// tools, and no error either.
+    Outside,
+}
+
+impl Scope {
+    fn describe<'a>(&self, tool: &'a Tool) -> &'a str {
+        match self {
+            Self::Terminal if tool.method == method::AGENT_MESSAGE => TERMINAL_MESSAGE_DESCRIPTION,
+            _ => tool.description,
+        }
+    }
+
+    fn offers(&self, tool: &Tool) -> bool {
+        match self {
+            Self::Pane(_) => true,
+            Self::Terminal => matches!(tool.method, method::AGENT_LIST | method::AGENT_MESSAGE),
+            Self::Outside => false,
+        }
+    }
+}
+
 pub struct Service<P> {
     engine: P,
-    context: TaskContext,
+    scope: Scope,
 }
 
 impl<P: EnginePort> Service<P> {
     pub fn new(engine: P, context: TaskContext) -> Self {
-        Self { engine, context }
+        Self {
+            engine,
+            scope: Scope::Pane(context),
+        }
+    }
+
+    /// The service of a terminal pane, whose `engine` connection the binding in the pane's
+    /// environment opened.
+    pub fn terminal(engine: P) -> Self {
+        Self {
+            engine,
+            scope: Scope::Terminal,
+        }
     }
 
     pub fn list(&self) -> Value {
         let tools = TOOLS
             .iter()
-            .filter(|tool| allowed(self.engine.role(), tool.audience))
-            .map(|tool| json!({"name":tool.name,"description":tool.description,"inputSchema":schema_for(tool, self.engine.role())}))
+            .filter(|tool| self.scope.offers(tool) && allowed(self.engine.role(), tool.audience))
+            .map(|tool| json!({"name":tool.name,"description":self.scope.describe(tool),"inputSchema":schema_for(tool, self.engine.role())}))
             .collect::<Vec<_>>();
         json!({"tools":tools})
     }
@@ -310,7 +369,7 @@ impl<P: EnginePort> Service<P> {
             .iter()
             .find(|tool| tool.name == name)
             .ok_or(Error::UnknownTool)?;
-        if !allowed(self.engine.role(), tool.audience) {
+        if !self.scope.offers(tool) || !allowed(self.engine.role(), tool.audience) {
             return Err(Error::ToolForbidden);
         }
         let params = self.parameters(tool, arguments)?;
@@ -341,6 +400,15 @@ impl<P: EnginePort> Service<P> {
         }))
     }
 
+    /// The agent pane this server speaks for. A tool that needs it is never offered by another
+    /// scope, so the error is for a tool added without that being true.
+    fn context(&self) -> Result<&TaskContext> {
+        match &self.scope {
+            Scope::Pane(context) => Ok(context),
+            Scope::Terminal | Scope::Outside => Err(Error::TaskContextRequired),
+        }
+    }
+
     fn parameters(&self, tool: &Tool, arguments: Value) -> Result<Value> {
         let mut params = arguments
             .as_object()
@@ -355,22 +423,19 @@ impl<P: EnginePort> Service<P> {
         if params.keys().any(|name| !properties.contains_key(name)) {
             return Err(Error::InvalidArguments("unknown tool argument"));
         }
-        if method_family::TASK.contains(&tool.method) {
-            params.insert("workspaceId".into(), json!(self.context.workspace_id));
-        }
-        if tool.name == "web_open" {
-            params.insert("workspaceId".into(), json!(self.context.workspace_id));
+        if method_family::TASK.contains(&tool.method) || tool.name == "web_open" {
+            params.insert("workspaceId".into(), json!(self.context()?.workspace_id));
         }
         if mutating(tool.method) {
             params.insert("idempotencyKey".into(), json!(Uuid::new_v4().to_string()));
         }
         if tool.name == "loop_set" || tool.name == "task_next" {
-            params.insert("paneId".into(), json!(self.context.pane_id));
+            params.insert("paneId".into(), json!(self.context()?.pane_id));
         }
         if tool.name == "task_next" {
             params.insert(
                 "sessionGeneration".into(),
-                json!(self.context.session_generation),
+                json!(self.context()?.session_generation),
             );
         }
         if tool.name == "task_block"
@@ -379,17 +444,17 @@ impl<P: EnginePort> Service<P> {
             params.insert("kind".into(), kind);
         }
         if self.engine.role() == &Role::Agent && requires_task(tool.name) {
-            let (task_id, attempt) = self
-                .context
+            let context = self.context()?;
+            let (task_id, attempt) = context
                 .task_id
                 .as_ref()
-                .zip(self.context.attempt)
+                .zip(context.attempt)
                 .ok_or(Error::TaskContextRequired)?;
             params.insert("taskId".into(), json!(task_id));
-            params.insert("paneId".into(), json!(self.context.pane_id));
+            params.insert("paneId".into(), json!(context.pane_id));
             params.insert(
                 "sessionGeneration".into(),
-                json!(self.context.session_generation),
+                json!(context.session_generation),
             );
             params.insert("attempt".into(), json!(attempt));
         }
