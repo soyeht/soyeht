@@ -68,6 +68,14 @@ final class Wire {
   private var terminalFailure: Error?
   private var opened = false
   private var closed = false
+  /// A unit that fails on the transport leaves the engine with frames it never saw committed, so
+  /// the connection ends with it.
+  private lazy var sendQueue = SendQueue<[Outgoing]>(
+    transmit: { [weak self] unit in
+      guard let self else { throw ClientFailure.disconnected }
+      try await self.transmit(unit)
+    },
+    onFailure: { [weak self] _ in self?.close() })
 
   init(socket: String) {
     connection = NWConnection(to: .unix(path: socket), using: .tcp)
@@ -119,6 +127,7 @@ final class Wire {
   func close(_ reason: ClientFailure = .disconnected) {
     closed = true
     fail(reason)
+    sendQueue.fail(reason)
     connection?.cancel()
     webSocket?.cancel(with: .goingAway, reason: nil)
     session?.invalidateAndCancel()
@@ -134,15 +143,21 @@ final class Wire {
     try await write(response.frames())
   }
 
+  /// Queues the frames of one message as a unit and returns when the unit has left: another
+  /// message never lands between them (`SendQueue`).
   private func write(_ frames: [Frame]) async throws {
+    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
+    try await sendQueue.send(try Outgoing.unit(frames, singleWrite: webSocket == nil))
+  }
+
+  private func transmit(_ unit: [Outgoing]) async throws {
     guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
     if let webSocket {
       do {
-        for frame in frames {
-          if frame.kind == FrameKind.json {
-            try await webSocket.send(.string(String(decoding: frame.payload, as: UTF8.self)))
-          } else {
-            try await webSocket.send(.data(try frame.encode()))
+        for message in unit {
+          switch message {
+          case .text(let text): try await webSocket.send(.string(text))
+          case .binary(let data): try await webSocket.send(.data(data))
           }
         }
       } catch { throw transportFailure(error) }
@@ -150,7 +165,7 @@ final class Wire {
     }
     guard let connection else { throw ClientFailure.disconnected }
     var data = Data()
-    for frame in frames { data.append(try frame.encode()) }
+    for case .binary(let bytes) in unit { data.append(bytes) }
     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
       connection.send(
         content: data,
@@ -246,6 +261,25 @@ final class Wire {
       throw ClientFailure.invalidFrame
     }
     return try Frame.decode(prefix + (try await exact(size)))
+  }
+}
+
+/// What one unit puts on a transport: a WebSocket text message for the JSON frame and a binary
+/// message for each other frame, or, on the local socket, every frame in one write.
+enum Outgoing: Sendable, Equatable {
+  case text(String)
+  case binary(Data)
+
+  static func unit(_ frames: [Frame], singleWrite: Bool) throws -> [Outgoing] {
+    if singleWrite {
+      var data = Data()
+      for frame in frames { data.append(try frame.encode()) }
+      return [.binary(data)]
+    }
+    return try frames.map { frame in
+      frame.kind == FrameKind.json
+        ? .text(String(decoding: frame.payload, as: UTF8.self)) : .binary(try frame.encode())
+    }
   }
 }
 
