@@ -490,12 +490,12 @@ fn a_request_is_taken_for_the_device_when_it_is_paired_and_a_revoked_one_is_mark
         pairing.confirm_revoke(false),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     pairing.apply(Event::Revoked {
         device_id: "d1".to_owned(),
-        left_open: 0,
+        left_open: Some(0),
     });
     assert!(pairing.devices()[0].revoked);
     pairing.ask_to_revoke("d1");
@@ -688,14 +688,14 @@ fn the_question_before_a_revocation_asks_for_the_panes_and_closes_only_those_it_
         keep.confirm_revoke(false),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     assert_eq!(
         pairing.confirm_revoke(true),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec!["p1".to_owned(), "p2".to_owned()]
+            close_panes: true
         })
     );
     // A list the engine could not give leaves the person able to revoke, and closes nothing.
@@ -709,7 +709,7 @@ fn the_question_before_a_revocation_asks_for_the_panes_and_closes_only_those_it_
         pairing.confirm_revoke(true),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     // An engine that does not ask for the code does not list panes, and offers none to close.
@@ -731,11 +731,25 @@ fn panes_that_would_not_close_are_said_once_the_device_is_revoked() {
     );
     pairing.apply(Event::Revoked {
         device_id: "d1".to_owned(),
-        left_open: 2,
+        left_open: Some(2),
     });
     assert!(pairing.devices()[0].revoked);
     assert_eq!(
         pairing.revoke_failure(),
         Some("The device was revoked, but 2 of its panes could not be closed.")
+    );
+}
+
+#[test]
+fn panes_that_could_not_be_listed_after_the_revocation_are_said() {
+    let mut pairing = adopted(true);
+    pairing.adopt(&[json!("pairing-code")], vec![device("d1")], &[], true);
+    pairing.apply(Event::Revoked {
+        device_id: "d1".to_owned(),
+        left_open: None,
+    });
+    assert_eq!(
+        pairing.revoke_failure(),
+        Some("The device was revoked, but its panes could not be listed to close them.")
     );
 }

@@ -88,13 +88,21 @@ pub fn revoke_and_close(count: usize) -> String {
     }
 }
 
-/// What the person is told when some of the panes they chose to close would not close.
-pub fn panes_left_open(count: usize) -> String {
+/// What the person is told when some of the panes they chose to close would not close; none when
+/// all did.
+pub fn panes_left_open(count: usize) -> Option<String> {
     match count {
-        1 => "The device was revoked, but 1 of its panes could not be closed.".to_owned(),
-        count => format!("The device was revoked, but {count} of its panes could not be closed."),
+        0 => None,
+        1 => Some("The device was revoked, but 1 of its panes could not be closed.".to_owned()),
+        count => Some(format!(
+            "The device was revoked, but {count} of its panes could not be closed."
+        )),
     }
 }
+
+/// The device was revoked, and the panes the person chose to close could not be listed.
+pub const PANES_NOT_LISTED: &str =
+    "The device was revoked, but its panes could not be listed to close them.";
 
 /// The question a request puts to the person.
 pub fn allow_question(device_name: &str) -> String {

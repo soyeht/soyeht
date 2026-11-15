@@ -463,6 +463,9 @@ the text above in these places.
 - **The desktop** shows `addedAt` and `node` in the device list, the notice with Dismiss, and the
   revoke dialog's list of panes with the choice to close them (the dialog says that a process that
   detached itself keeps running). A pane the device made that was already closed is not listed.
+  The question's list is what the person is shown: once the device is revoked, the app lists its
+  panes again and closes that set, since the device may have made some in between and its
+  connection is closed by then. A pane that is already gone counts as closed.
 - **The visible notice of a changed tailnet** is not part of this slice: the desktop's
   confirmation of `tailnetChanged` follows it.
 

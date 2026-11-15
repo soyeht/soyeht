@@ -170,7 +170,8 @@ pub enum Event {
     /// The device is revoked; `left_open` of the panes the person chose to close could not be.
     Revoked {
         device_id: String,
-        left_open: usize,
+        /// How many of its panes would not close; `None` when they could not be listed.
+        left_open: Option<usize>,
     },
     RevokeFailed {
         device_id: String,
@@ -483,9 +484,11 @@ impl Pairing {
                 left_open,
             } => {
                 self.revoked(&device_id);
-                if left_open > 0 {
-                    self.revoke_failure = Some(copy::panes_left_open(left_open));
-                }
+                self.revoke_failure = left_open.and_then(copy::panes_left_open).or_else(|| {
+                    left_open
+                        .is_none()
+                        .then(|| copy::PANES_NOT_LISTED.to_owned())
+                });
             }
             Event::RevokeFailed { refusal, .. } => {
                 self.revoke_failure = Some(format!("{} {}", copy::REVOKE_FAILED, refusal.message));
