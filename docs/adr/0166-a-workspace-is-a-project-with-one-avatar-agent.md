@@ -2,7 +2,8 @@
 
 - Status: proposed (phase 1: this design and its estimate only; no product code. The owner decided on
   2026-11-14 that it is required for 0.1.0)
-- Date: 2026-11-14
+- Date: 2026-11-14; revised 2026-11-15 with the owner's decisions on the image model (see "Owner
+  decisions") and the lab's measurements. Slice 0 has not run yet.
 - Builds on ADR 0083 (dictation engines are a catalogue), ADR 0148 and contract 17 (an agent delegates
   to helper agents in panes), ADR 0137 (a pane runs the Claude Code the person has), ADR 0154 (a
   workspace is a folder), ADR 0161 (the protocol only grows), ADR 0149 (only permissive licenses
@@ -18,8 +19,8 @@ personal finances; an app; a work project; a school subject. Each workspace has 
 configured like the voice screen of the lab: the harness (the thinking engine: Claude Code, Codex,
 OpenCode, other models), the speech-to-text and the text-to-speech (cloud or local, light models, many
 providers pluggable). The avatar is a 2D photo-like picture: a suggested preset, an upload, or a
-candidate the chosen harness generates with an image model (the owner will rank the suggested image
-models later). An agent then generates every frame the animation needs from that picture. The person
+candidate generated with an image model that the person picks from a catalogue (see "Owner decisions").
+An agent then generates every frame the animation needs from that picture. The person
 talks to the avatar by voice or by text. Avatars are saved and reused across workspaces.
 
 Principles from the owner that bind this design: agents are smart, so Soyeht builds plumbing and not
@@ -28,6 +29,20 @@ Apache-2.0 for what we write and no GPL code linked.
 
 This is the largest feature left before 0.1.0 and it touches every client, so this ADR also gives the
 honest scope and the estimate the launch date has to be re-planned on.
+
+## Owner decisions (2026-11-15)
+
+1. **The project's own image model is Qwen-Image 2.1.** The project's presets, its tests and its build
+   path use Qwen-Image 2.1, the newest model, which is already installed on the project's GPU host. The
+   owner's reasons, as his: the project is open, each person generates and downloads their own avatar,
+   nobody earns from the images, and he has read the vendor's public explanation of the licence. The
+   model's licence file reads "research or evaluation". That is a known point, and the owner has decided
+   on it. This ADR does not argue it and does not recommend another model for the project's own use.
+2. **The person chooses the image model.** In the product, the app offers a catalogue of image providers
+   and models, local and cloud, in the style of the other catalogues (a descriptor, a registry, nothing
+   knows a model by name, ADR 0083). No model is hard-wired. A person who builds with a cloud provider
+   uses their own key. Qwen-Image 2.1 is one entry of that catalogue and the one the project's own
+   recipes name; the code names no model.
 
 ## What exists today
 
@@ -60,7 +75,7 @@ Pencil tool reads them, which needs the app). The concept screens are known from
 holds its apps, the harness is the engine), "Tela 26" (the avatar speaking) and "Tela 27" (choosing and
 creating the avatar). Nothing in this ADR contradicts them; the screens are to be rechecked in phase 2.
 
-### In the lab (`/Users/macstudio/Documents/soyeht-avatar-lab/`, not part of the repository)
+### In the lab (a local folder outside the repository)
 
 The lab is one local web page that imitates a Soyeht pane holding a talking avatar (`README.md`
 is the map). "The voice screen" is its **Laboratorio panel** (`static/index.html`, `static/app.js`):
@@ -70,19 +85,19 @@ is the map). "The voice screen" is its **Laboratorio panel** (`static/index.html
 | Pipeline | "Simple" (mic, STT, brain, TTS per sentence, avatar) and plug-ins for Pipecat, Hugging Face speech-to-speech and LiveKit (`static/pipelines/`, `frameworks/`) |
 | Avatar | Sabio 2D (whole-frame swapping plus acting), Sabio rig 2D, a mascot, a 3D VRM, voice only, NVIDIA 3D heads |
 | Lip sync | HeadAudio (MFCC visemes on the playing audio), volume, TTS timings, NVIDIA Audio2Face-3D |
-| STT | streaming: Nemotron 3.5 and Apple SpeechAnalyzer (Swift helpers in `stt-helper/`); batch: mlx-whisper, parakeet-mlx, and whisper-turbo and parakeet-v3 on bignix |
+| STT | streaming: Nemotron 3.5 and Apple SpeechAnalyzer (Swift helpers in `stt-helper/`); batch: mlx-whisper, parakeet-mlx, and whisper-turbo and parakeet-v3 on the project's GPU host |
 | Brain | Claude Code, Codex and OpenCode as headless CLIs (`llm_cli.py`), OpenCode Go API, ChatGPT sign-in (`api_brains.py`, `chatgpt_auth.py`), exposed to frameworks as an OpenAI-compatible endpoint |
-| Voice | Kokoro-82M on the Mac (MLX) and bignix, a Portuguese Chatterbox on bignix, Kokoro in the browser (English only) |
+| Voice | Kokoro-82M on the Mac (MLX) and on the project's GPU host, a Portuguese Chatterbox on the GPU host, Kokoro in the browser (English only) |
 
 It also holds the hands-free conversation (`static/conversation.js`: Silero VAD v5, Smart Turn v3.2 in
 `turn_model.py`, barge-in with continuer and echo rules, push to talk), vision (screen and camera
 frames with a per-model "can see" probe, `vision.py`), the Qwen frame jobs (`tools/sabio_*.py`,
-`tools/qwen_batch.py`, run on bignix through ComfyUI) and the rig (`rig/`, Apache-2.0).
+`tools/qwen_batch.py`, run on the project's GPU host through ComfyUI) and the rig (`rig/`, Apache-2.0).
 
 Measured by the lab, with the harness CLI as the brain: Pipecat round trip about 3.7 s for a short
 reply and 5.8 s typically, 12.9 s for a long one (`logs/pipecat-latency.jsonl`); the CLI's own
 3.0 to 5 s dominates. Server compute on the RTX 4090: Kokoro 80 to 150 ms for 4.8 s of audio, parakeet
-35 to 115 ms, Audio2Face 85 to 115 ms (`~/avatar-lab/README.md` on bignix).
+35 to 115 ms, Audio2Face 85 to 115 ms (the README of the lab's copy on the GPU host).
 
 ### Which animation is the validated one
 
@@ -145,7 +160,8 @@ Two records in `soyeht-store` (a new migration; only that crate has SQL), three 
 the protocol, no change to an existing method or type:
 
 - **Avatar** (the reusable library, global to the person): id, name, `kind` (`preset`, `uploaded`,
-  `generated`), the hash of the source picture, the build state (`none`, `building`, `ready`, `failed`
+  `generated`), the hash of the source picture, the catalogue ids of the image provider and model that
+  built it, the build state (`none`, `building`, `ready`, `failed`
   with a reason kind), the package hash, the default voice (TTS provider id, voice id), a created date.
   Files live in `<data>/avatars/<id>/`: `source.png`, `package/` (below), and the build log.
 - **Workspace binding** (one per workspace): workspace id, avatar id, the harness, model and effort
@@ -160,7 +176,8 @@ the protocol, no change to an existing method or type:
 - **Provider keys do not travel and are not stored by the engine.** Voice providers run in the client
   that has the microphone (section 5), so each client keeps its own provider keys in its own vault
   (`CredentialVault` on Apple; the desktop's own store). Image providers run where the avatar is built, on
-  the engine host, with keys in the engine host's vault. A phone that uses the avatar needs no image key.
+  the engine host, with keys in the engine host's vault; the person who builds with a cloud provider
+  uses their own key. A phone that uses the avatar needs no image key.
 - Settings are global today; per-workspace values live only in the binding. The generated clients
   (`contracts/generate.py`) carry the new types; every wire name comes from the generated forms.
 
@@ -182,15 +199,23 @@ preset avatar. Everything else is opt-in and says what leaves the device (sectio
 
 **The picture.**
 
-- Presets: 6 to 8 photo-like synthetic people generated by us, with their packages built, shipped as a
-  downloadable asset pack (not in the app binary). They depict no real person. The image model's terms for
-  commercial use of its outputs are checked before the pack ships (slice 9a), and the pack is made with a
-  model whose license allows commercial use, never with a research-only one.
+- Presets: 6 to 8 photo-like synthetic people generated by us with Qwen-Image 2.1 (the owner's decision
+  of 2026-11-15), with their packages built, shipped as a downloadable asset pack (not in the app
+  binary). They depict no real person.
 - Upload: any picture of a face. The person is responsible for the likeness of whoever it shows; the
   screen says the picture is sent to the image provider when one is used.
 - Generate: the avatar agent (the workspace's harness, or any chosen one) makes candidates with the image
-  tool it has or with an image provider of Soyeht's catalogue (below), and the person picks one. The
-  list of suggested image models is data (a small JSON in the app, ranked later by the owner), not code.
+  tool it has or with the image model the person picked in the catalogue (below), and the person picks
+  one.
+
+**The image catalogue** (the owner's decision of 2026-11-15). Image providers and models are a
+catalogue in the style of ADR 0083: a descriptor, a registry, and nothing that knows a model by name. A
+descriptor holds the id, the names, whether it is local or cloud, the adapter it uses (below), the model
+it names, whether it needs a key, its availability, its license name and its `commercialUse` flag
+(section 8). The catalogue holds local entries (a ComfyUI-style endpoint, on the person's own computer or
+a capable computer of theirs) and cloud entries (an OpenAI-compatible image-edit endpoint, with the
+person's own key). No model is hard-wired: the build path asks the catalogue for the person's choice. The
+project's own presets, tests and build path name Qwen-Image 2.1 as data (a recipe), not as code.
 
 **The frames.** "An agent generates every frame" is built as three pieces, the first two plumbing and
 the third plain instructions:
@@ -199,13 +224,19 @@ the third plain instructions:
   `tools/sabio_acting_spec.json`): the picture itself (rest) and 9 edited base frames (closed M/B/P, A, E, I,
   O, U, F/V, L/D/T, blink), 7 eye frames (half, left, right, up, down, up-left, soft) and 2 resting mouths
   (smile, "hm"): **18 images to generate**. Each has a prompt template and an acceptance rule (same identity,
-  same framing, only the named region changes).
+  same framing, only the named region changes). The 2 resting mouths are sources of lip shape for the
+  continuous mouth (section 6); the renderer never shows them as pictures.
 - **`soyeht avatar` commands** in `soyeht-cli` (it already depends on protocol, platform, ptyd, service
   and store, and the commands are a thin layer): `frame` (run one image edit through a provider adapter),
   `check` (a deterministic check: size, framing, the difference outside the named region, face landmarks
-  found), `build` (landmarks on each frame, the mouth mesh, the changed-rectangle diffs, the atlas, the
-  package, validation) and `status`. The adapters: an OpenAI-compatible image-edit endpoint, a ComfyUI-style
-  endpoint (what the lab used on bignix), and the harness's own image tool as a manual path.
+  found), `build` (landmarks on each frame, the regions derived from them, the mouth mesh, the
+  changed-rectangle diffs, the atlas, the package, validation) and `status`. The adapters: an
+  OpenAI-compatible image-edit endpoint, a ComfyUI-style endpoint (what the lab used on the project's GPU
+  host), and the harness's own image tool as a manual path. Each catalogue entry names one adapter.
+- **The build is per face.** The lab's build is specific to one face: the mouth box, the ellipses, the eye
+  regions and the warp regions are hard-coded for it. Slice 9b must derive them for each face from its
+  landmarks. The package carries the warp regions (the neck pivot, the brows, and the face, jaw, cheek and
+  chest regions), so that a pose applies to any face and a client does not guess them.
 - **A skill**, `avatar-builder` (a `SKILL.md` in `soyeht-skills`, so every harness has it): it tells the
   agent to take the picture, call `frame` for each pose, look at the results, redo the ones `check` or its
   own eyes reject, and then call `build`. The agent runs as a helper in its own pane (ADR 0148), so the
@@ -213,19 +244,17 @@ the third plain instructions:
 
 Time and cost per avatar (the lab's measurements, and what is not measured):
 
-- Local on an RTX 4090, what the lab ran: Qwen-Image 2.1 edit, int8, 25 steps, reported at **40 to 60 s per
-  image** (from the ComfyUI logs on bignix; not re-read in this phase, the machine was off), so one pass of 18
-  images is about 12 to 18 minutes, and 30 to 60 minutes with the rejected frames redone (the lab needed
-  several seeds per mouth). The model file is 7.3 GB int8. **That model's license is research-only (see
-  Licenses), so it cannot be the product's built-in path.** The Apache-2.0 `Qwen-Image-Edit` is the local
-  option that may ship; it is a larger model and **its speed and quality for these frames are not measured**
-  (slice 0 measures them).
+- Local on an RTX 4090, what the lab ran: Qwen-Image 2.1 edit, int8, 25 steps, at 1024 by 1024. Measured
+  in the lab's logs: **14 s per frame** when the server is warm, and about 40 s for the first job after a
+  server start. One avatar's 18 frames took **about 129 generations**, redos and prompt exploration
+  included (about 7 per frame), which is **about 35 GPU minutes**. A clean pass of 18 frames would be about
+  4 minutes; the 35 minutes is the planning value. The model file is 7.3 GB int8.
 - Cloud image provider: not measured. Expect seconds per image and a few cents per image, so a few dollars
-  per avatar including redos; the spike (slice 0) measures it on the providers we list.
+  per avatar including redos. It is measured when the first cloud adapter is built (slice 9a).
 - **A machine without an NVIDIA GPU** (a Windows laptop, the owner's Mac) does not run an image model locally in this
-  design: nothing in the lab runs it on a Mac or on a CPU. The answer is the cloud provider (the
-  person's key) or a preset. Local generation on a capable computer of the person's own (the lab's bignix
-  case) is the same ComfyUI adapter pointed at that computer.
+  design: nothing in the lab runs it on a Mac or on a CPU. The answer is a cloud entry of the catalogue (the
+  person's key) or a preset. Local generation on a capable computer of the person's own (the lab's
+  GPU-host case) is the same ComfyUI adapter pointed at that computer.
 - The build step after the frames (landmarks, mesh, atlas) is CPU work of seconds to a minute.
 
 ### 5. The voice loop runs in the client that has the microphone
@@ -289,9 +318,15 @@ the layout rules are):
 **Package** (`avatar package`, a folder of a manifest, PNG atlases and one JSON, about 0.5 to 1.5 MB, the
 lab's rig is 437 KB plus its atlas): the base picture, the mouth model (the shared vertex topology of the
 nine contours, the skin, inner-mouth and lip parts), the eye and blink frames with their rectangles, the
-warp lattice of the head, and the acting constants. Versioned (`format`), validated by `soyeht avatar build`
-and by the client on load. Apache-2.0, our own format (the owner's decision of 2026-11-04); Live2D, Spine
-and Inochi2D are references only.
+warp regions of the head (the neck pivot, the brows, and the face, jaw, cheek and chest regions, derived
+per face by the build, section 4), and the acting constants. Versioned (`format`), validated by
+`soyeht avatar build` and by the client on load. Apache-2.0, our own format (the owner's decision of
+2026-11-04); Live2D, Spine and Inochi2D are references only.
+
+**The format stays unstable (0.x)** until the renderers of slices 4 and 5 and the build of slice 9b have
+all consumed it. Until then the three may change it together, and no avatar package is promised to load
+in a later version. Once they have, the format gets its first stable number and the rule of ADR 0161
+(only grow) applies to it.
 
 **Runtime** (pure, no IO): the five mouth parameters, the phoneme-to-target table, the damped motion and
 slew limits, the morph weights (a convex combination, so the weights sum to 1), the acting layer (idle,
@@ -307,7 +342,13 @@ listening, thinking, speaking; blinks, saccades, breathing, head warp). It is a 
 
 **Continuous mouth is a hard requirement** (the owner, 2026-11-05): the mouth is parameters and geometry,
 never a step between pictures and never a cross-fade of two mouths. The runtime has no code path that swaps
-mouth drawings. The acceptance for any change to it is the lab's checker limits ported to a test (ghost
+mouth drawings. The same holds for a resting expression. The lab shows `smile` and `hm` by a 40 ms
+cross-fade of mouth pictures, and the owner forbids swapping or cross-fading drawings. So a resting
+expression is a shape of the continuous mouth, or parameters of it: the lip contours of the two resting
+frames are extra morph targets (or the extra parameters are a lip-corner lift and a closed-lip hold),
+chosen by the acting layer, blended in with the same damped motion as the five parameters, and never
+shown as a picture. Which of the two forms carries it is decided in slice 3 by the contact-sheet look. The
+acceptance for any change to it is the lab's checker limits ported to a test (ghost
 frames 0, largest one-frame change at most 0.65, M/B/P closed at least 90 %, silences closed) **and** a
 contact-sheet look by a person across the whole clip, because H1 passed the checker and was rejected.
 
@@ -355,11 +396,12 @@ the same `pane.prompt` that the composer writes to, with origin `human`.
 - Models are downloaded at runtime after the person presses Install, as ADR 0083 does for Nemotron: nothing
   is bundled, nothing downloads by itself, the install shows size and license. Every library that links
   must pass `scripts/third_party_notices.py` (ADR 0149).
-- A model whose license is not permissive is not offered as a built-in; it may be reachable only as a
-  user-added custom endpoint. **Every provider and model descriptor carries its license name and a
-  `commercialUse` flag**, and the configuration screen shows a plain label ("research use only") next to
-  any choice whose flag is false, before the first use, so a non-commercial or research-only model is never
-  picked by accident. The flag is data in the catalogue, not a rule the engine enforces.
+- Model weights are never bundled (ADR 0149 governs what ships and links). **Every provider and model
+  descriptor of every catalogue carries its license name and a `commercialUse` flag**, and the
+  configuration screen shows a plain label ("research use only") next to any choice whose flag is false,
+  before the first use, so the person always sees the terms of what they pick. The flag is data in the
+  catalogue, not a rule the engine enforces. The project's own use of Qwen-Image 2.1 is the owner's
+  decision (see "Owner decisions").
 
 ### 9. The gap for "shown on screen"
 
@@ -373,7 +415,7 @@ ability to design the exercises is not built.
 ## Minimum for launch, and what comes later
 
 **Launch (0.1.0), required**: workspace with an avatar agent as the chief pane; avatar library with presets
-and upload; generation by an image provider (cloud, the person's key) with the build agent; avatar A with
+and upload; generation through the image catalogue (local or cloud, the person's own key for a cloud entry) with the build agent; avatar A with
 the H0 continuous mouth on the Mac, iPad, iPhone and the Windows and Linux app; voice loop with Apple speech
 on Apple and a local or cloud STT on Windows and Linux; TTS with Apple voices, Kokoro English, and the
 OpenAI-compatible cloud adapter; text chat; saved and reusable avatars; the project-file page; half-duplex
@@ -404,9 +446,9 @@ unverified.
 | Parakeet TDT 0.6B v3 | CC-BY-4.0 (model card read 2026-11-14; attribution) | Ship as a download with the attribution. |
 | Nemotron 3.5 ASR Streaming | OpenMDW 1.1 (ADR 0083) | Already shipped as an optional download. |
 | Chatterbox and its Portuguese fine-tune | MIT (the lab's note); RTF about 1.0, no streaming | Not realtime; later. |
-| Qwen-Image-Edit and Qwen-Image-Edit-2509 | Apache-2.0 (model cards read 2026-11-14) | A local option that may ship as a supported provider. The weights are never bundled; they run on the person's or their provider's machine. |
-| **Qwen-Image 2.1 (what the lab used, `qwen_image_2.1_int8_convrot`)** | **Qwen Research License Agreement, release 2026-09-20 (model card and `LICENSE` read 2026-11-14): grants use, copying and modification "for non-commercial purposes only", defined as research or evaluation; commercial use needs a separate license from the vendor; recipients get a copy of the agreement and a notice; the agreement is under Chinese law** | **Flagged: research use only.** Not a built-in, not used to make the preset pack, not used for any avatar the product ships. Fine for the owner's own look test in the spike. Whether the licensed frames' outputs may be used commercially is the agreement's text to read with a lawyer; we do not rely on it. |
-| Image providers (cloud) | Their terms | The outputs' commercial use must be allowed before presets ship (slice 9a). |
+| Qwen-Image-Edit and Qwen-Image-Edit-2509 | Apache-2.0 (model cards read 2026-11-14) | A catalogue entry. The weights are never bundled; they run on the person's or their provider's machine. |
+| **Qwen-Image 2.1 (what the lab used, `qwen_image_2.1_int8_convrot`)** | Qwen Research License Agreement, release 2026-09-20 (model card and `LICENSE` read 2026-11-14): grants use, copying and modification "for non-commercial purposes only", defined as research or evaluation; commercial use needs a separate license from the vendor; recipients get a copy of the agreement and a notice; the agreement is under Chinese law | **A known point, decided by the owner on 2026-11-15**: the project's own presets, tests and build path use it (see "Owner decisions" for his reasons). Its catalogue descriptor carries the license name and flag like every other entry. The weights are never bundled. |
+| Image providers (cloud) | Their terms | Each catalogue entry shows its license name and flag; the person who builds with a cloud provider uses their own key and its terms. |
 | MediaPipe Face Landmarker and selfie multiclass models | MediaPipe code Apache-2.0 (`LICENSE` read 2026-11-14); the model files' license is from the lab notes, not re-read | Ship (the build tool, as ONNX or the original format, conversion to be confirmed). |
 | NVIDIA Audio2Face-3D | SDK MIT; weights NVIDIA Open Model License (commercial allowed, to be read); NVIDIA GPU only | Not in the plan. |
 | HeadAudio, HeadTTS, three.js, three-vrm | MIT | Not in the plan. |
@@ -432,15 +474,19 @@ unverified.
    engineering risk after the animation.
 6. **Local speech models on the desktop** (CPU-only laptops): a Whisper-class model streams slowly on weak
    CPUs; the catalogue marks engines that do not fit and the cloud is the fallback.
-7. **License traps**: Qwen-Image 2.1 is research-only (the lab's frame generation ran on it, so the lab's
-   look and timing do not transfer to a shipping model until slice 0 repeats them with an Apache-2.0 or cloud
-   model); espeak-ng (Portuguese local TTS); sherpa-onnx's build; provider output terms.
+7. **License traps**: espeak-ng (Portuguese local TTS); sherpa-onnx's build; provider output terms. The
+   research wording of Qwen-Image 2.1's license file is a known point the owner has decided on, not a
+   trap to resolve.
 8. **Two implementations of the runtime** (Swift and Rust) can drift. The vectors are written first and
-   both pass them in the gate.
+   both pass them in the gate. The package format is unstable (0.x) until slices 4, 5 and 9b have consumed
+   it (section 6), so a change to it is made in all three together.
 9. **App Store review**: a microphone, speech recognition and cloud audio need accurate strings and
    privacy answers; an avatar of a real person's upload needs the likeness statement.
 10. **Scope pull**: the lab holds much that is not in the launch tier (rig B, 3D, vision, frameworks).
     This ADR cuts it explicitly.
+11. **The lab's build is specific to one face** (mouth box, ellipses, eye regions and warp regions are
+    hard-coded). Until slice 9b derives them from landmarks, no second face builds without hand work.
+    Slice 0 sets them by hand for its three faces; 9b is the real test that the derivation works.
 
 ## Implementation slices
 
@@ -449,7 +495,7 @@ of each slice is included. A slice names its tests.
 
 | # | Slice | Size | Days | Depends on |
 | --- | --- | --- | --- | --- |
-| 0 | **Spike, gate for the whole feature**: three photo-like pictures through an Apache-2.0 image-edit model or a cloud provider (the lab's research-only 2.1 model only as a labelled look-test comparison) into the 18 frames, the lab's avatar A with the H0 mouth, a software-rasteriser frame cost on a Windows laptop and the Mac, an ACP-pane brain latency measure. The owner looks and decides. | M | 3 | none |
+| 0 | **Spike, gate for the whole feature. Not run yet** (the GPU host's driver was not loaded on 2026-11-15). Three photo-like faces through Qwen-Image 2.1 into the 18 frames each, built by hand into the lab's avatar A with the H0 mouth (the regions set by hand, since the lab's build is face-specific), and the owner's look test. Also the software-rasteriser frame cost on a Windows laptop and the Mac, and an ACP-pane brain latency measure, as before. The owner looks and decides. | M | 3 | none |
 | 1 | Contract 19 and the additive protocol (avatar library, binding, build events), store migration, engine methods, vectors, generated outputs | M | 3 | 0 |
 | 2 | Workspace as project: folder under the data directory, avatar pane start as chief, persona delivery per harness, per-harness measurement | M | 3 | 1 |
 | 3 | `soyeht-avatar` crate: package format, validator, mouth runtime, driver, aligner (tier 2), vectors `avatar-mouth.json` | L | 5 | 0 |
@@ -459,13 +505,13 @@ of each slice is included. A slice names its tests.
 | 7 | Voice loop (Swift): audio session with echo cancellation, Silero and Smart Turn through onnxruntime or CoreML, turn machine, barge-in, sentence chunker, speech text, vectors `voice-turns.json`; Mac and iOS | L | 6 | 6 |
 | 8a | Desktop audio I/O (cpal), Silero and Smart Turn through `ort`, turn machine in Rust, half-duplex, AEC attempt (WebRTC audio processing or speexdsp) | L | 5 | 7 vectors |
 | 8b | Desktop providers: local Whisper-class STT, Kokoro (English) TTS, cloud adapters, model install and notices | L | 5 | 8a |
-| 9a | Image providers, frame spec, `soyeht avatar frame` and `check`, the `avatar-builder` skill, preset pack generation | M | 3 | 0 |
-| 9b | `soyeht avatar build` in Rust: landmarks through `ort`, mouth mesh, diff rectangles, atlas, package; reproduces the lab's avatar A from its frames | L | 6 | 3, 9a |
-| 10 | Configuration screens: Mac and iOS (SwiftUI), desktop (GPUI); picker, upload, generate and progress, harness, STT, TTS, persona, test voice | L | 5 | 1, 4, 5, 6 |
+| 9a | The image catalogue (descriptor, registry, local and cloud entries, the person's own key for a cloud one, no model hard-wired), the adapters, frame spec, `soyeht avatar frame` and `check`, the `avatar-builder` skill, preset pack generation with Qwen-Image 2.1 | M | 3 | 0 |
+| 9b | `soyeht avatar build` in Rust: landmarks through `ort`, the per-face regions derived from them (mouth box, ellipses, eye regions, warp regions), mouth mesh, diff rectangles, atlas, package carrying the warp regions; reproduces the lab's avatar A from its frames and builds the spike's three faces | L | 6 | 3, 9a |
+| 10 | Configuration screens: Mac and iOS (SwiftUI), desktop (GPUI); picker, upload, generate (with the image model choice from the catalogue) and progress, harness, STT, TTS, persona, test voice | L | 5 | 1, 4, 5, 6, 9a |
 | 11 | The avatar pane: stage plus transcript plus composer on all clients, speak-replies toggle, voice on and off | M | 3 | 4, 5, 7 |
 | 12 | Library: rename, delete, export and import a package file, reuse across workspaces, phone fetches the package | M | 2 | 1, 4 |
 | 13 | A project file as a web page (section 9) | S | 1 | none |
-| 14 | QA and hardening: voice matrix on real devices and the VMs, App Store strings and privacy answers, license notices, docs, preset licensing check | M | 4 | all |
+| 14 | QA and hardening: voice matrix on real devices and the VMs, App Store strings and privacy answers, license notices, docs, the preset pack's notice | M | 4 | all |
 
 Total of the slices: **68 agent-days** (3 + 3 + 3 + 5 + 5 + 5 + 4 + 6 + 5 + 5 + 3 + 6 + 5 + 3 + 2 + 1 + 4).
 
@@ -488,19 +534,30 @@ Total of the slices: **68 agent-days** (3 + 3 + 3 + 5 + 5 + 5 + 4 + 6 + 5 + 5 + 
   an agent (about -6, but the owner asked for generation). Together (a) to (c) save about 6 agent-days, which
   is about one week of calendar. The date moves by more than a week only by dropping a requirement the owner
   made (generation, or Windows and Linux voice) or by the spike failing.
-- The slice-0 spike either confirms these numbers or replaces them within 3 working days. Do not announce a
-  launch date before it.
+- The slice-0 spike either confirms these numbers or replaces them within 3 working days. It has not run
+  yet, so nothing here has been confirmed by it. Do not announce a launch date before it.
 
 ## Questions for the owner
 
-1. Is a launch with illustrated avatars acceptable if the photo-like look fails the spike?
+Answered on 2026-11-15 (see "Owner decisions"):
+
+- Question 6, which model makes the presets and the build path: Qwen-Image 2.1.
+- The model part of question 4: the person chooses the image model from a catalogue of providers and
+  models, local and cloud; no model is hard-wired.
+
+Still open. Each one is **assumed until the owner answers**, with the recommendation of this ADR:
+
+1. Is a launch with illustrated avatars acceptable if the photo-like look fails the spike? Assumed: yes
+   (section 6 falls back to illustrated avatars; the estimate does not change).
 2. Is half-duplex voice (headphones, a key to interrupt) acceptable on Windows and Linux for 0.1.0?
-3. Is Portuguese local TTS on Windows and Linux required at launch? It needs a non-copyleft phonemizer
-   (a later slice) or a cloud voice.
-4. Which image providers go in the first list, and who pays for a build (the person's key)?
-5. Presets: how many, and in which styles (photo-like, illustrated)?
-6. The lab's frames were made with a research-only image model. Do we make the presets and the build path
-   with an Apache-2.0 or cloud model (recommended), or ask the vendor for a commercial license for the 2.1 model?
+   Assumed: yes, unless the AEC spike of slice 8 passes.
+3. Is Portuguese local TTS on Windows and Linux required at launch? Assumed: no. It needs a
+   non-copyleft phonemizer (a later slice); until then the system voice or a cloud voice.
+4. Who pays for a build? Assumed: the person, with their own key for a cloud provider (and their own
+   computer for a local one). Which providers fill the catalogue's first list is data and is decided in
+   slice 9a.
+5. Presets: how many, and in which styles (photo-like, illustrated)? Assumed: 6 to 8, photo-like (section
+   4); illustrated ones only if the look test fails (question 1).
 
 ## Consequences
 
