@@ -1,102 +1,17 @@
 import Foundation
 
-/// A cloud provider the person added: a base URL, a model and a key, over the audio endpoints
-/// that OpenAI, Groq and many others share (`/audio/transcriptions` and `/audio/speech`). The
-/// key is not part of it: it lives in a `ProviderKeyVault` under `id`.
-public struct CloudSpeechConfiguration: Codable, Equatable, Identifiable, Sendable {
-  /// Common languages offered when the person does not choose their own.
-  public static let defaultLanguages = [
-    "en-US", "pt-BR", "es-ES", "fr-FR", "de-DE", "it-IT", "ja-JP", "ko-KR", "zh-CN",
-  ]
-
-  /// Names the provider in the catalogue and the vault, for example `cloud.my-provider`.
-  public let id: String
-  public var name: String
-  /// The endpoint root, for example `https://api.example.com/v1`.
-  public var baseURL: URL
-  /// The model that transcribes, sent as `model` to `/audio/transcriptions`.
-  public var transcriptionModel: String
-  /// The model that speaks, sent as `model` to `/audio/speech`.
-  public var speechModel: String
-  /// The voices of the provider, first the default one.
-  public var voices: [String]
-  /// The languages offered for transcription, as BCP-47 tags.
-  public var languages: [String]
-  /// False for a server on the person's own network that takes no key.
-  public var requiresKey: Bool
-
-  public init(
-    id: String, name: String, baseURL: URL, transcriptionModel: String, speechModel: String,
-    voices: [String], languages: [String] = Self.defaultLanguages, requiresKey: Bool = true
-  ) {
-    self.id = id
-    self.name = name
-    self.baseURL = baseURL
-    self.transcriptionModel = transcriptionModel
-    self.speechModel = speechModel
-    self.voices = voices
-    self.languages = languages
-    self.requiresKey = requiresKey
-  }
-
-  /// Why this configuration cannot be used, or nil. A key only travels over HTTPS; plain HTTP is
-  /// for a server on this computer.
-  public var problem: String? {
-    guard let scheme = baseURL.scheme?.lowercased(), let host = baseURL.host, !host.isEmpty else {
-      return "The address must be a full URL such as https://api.example.com/v1."
-    }
-    switch scheme {
-    case "https": break
-    case "http" where Self.isLoopback(host): break
-    default: return "The address must use https unless the server runs on this computer."
-    }
-    if transcriptionModel.isEmpty || speechModel.isEmpty {
-      return "Name the models the provider uses."
-    }
-    return nil
-  }
-
-  var host: String { baseURL.host ?? "" }
-
-  func endpoint(_ name: String) -> URL { baseURL.appendingPathComponent(name) }
-
-  private static func isLoopback(_ host: String) -> Bool {
-    ["localhost", "127.0.0.1", "::1"].contains(host.lowercased())
-  }
-}
-
-/// How the cloud speech providers talk to the network, so a test can answer in place of a
-/// provider.
-public protocol SpeechHTTPTransport: Sendable {
-  func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse)
-}
-
-/// The real network: no cache, no cookies, no stored credentials.
-public struct URLSessionSpeechTransport: SpeechHTTPTransport {
-  private let session: URLSession
-
-  public init() {
-    let configuration = URLSessionConfiguration.ephemeral
-    configuration.urlCache = nil
-    configuration.httpCookieStorage = nil
-    configuration.timeoutIntervalForRequest = 60
-    session = URLSession(configuration: configuration)
-  }
-
-  public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-    let (data, response) = try await session.data(for: request)
-    guard let http = response as? HTTPURLResponse else { throw CloudSpeechError.badResponse }
-    return (data, http)
-  }
-}
-
 /// What went wrong with a provider, without the provider's own text: an error body can echo part
 /// of the key or the audio that was sent.
 public enum CloudSpeechError: Error, LocalizedError, Equatable, Sendable {
   case invalidConfiguration(String)
   case missingKey
   case rejected(Int)
+  /// The provider answered with a redirect, which is never followed.
+  case redirected
+  case responseTooLarge
   case badResponse
+  /// The provider does not offer what was asked: it has no model for it.
+  case notOffered
 
   public var errorDescription: String? {
     switch self {
@@ -105,7 +20,11 @@ public enum CloudSpeechError: Error, LocalizedError, Equatable, Sendable {
     case .rejected(401), .rejected(403): "The provider did not accept the key."
     case .rejected(429): "The provider is limiting requests. Try again in a moment."
     case .rejected(let status): "The provider answered with an error (HTTP \(status))."
+    case .redirected:
+      "The provider's address redirects to another one. Enter the address the provider gives for its API; a recording, a text or a key is never sent to a different one."
+    case .responseTooLarge: "The provider's answer is too large."
     case .badResponse: "The provider's answer could not be read."
+    case .notOffered: "This provider does not offer that."
     }
   }
 }
@@ -122,8 +41,11 @@ struct CloudSpeechRequests: Sendable {
   func transcribe(
     _ samples: [Float], language: String?, vocabulary: [String]
   ) async throws -> String {
+    guard let model = configuration.transcriptionModel, configuration.transcribes else {
+      throw CloudSpeechError.notOffered
+    }
     var form = MultipartForm()
-    form.add(name: "model", value: configuration.transcriptionModel)
+    form.add(name: "model", value: model)
     form.add(name: "response_format", value: "json")
     if let language = language.flatMap(Self.primaryLanguage) {
       form.add(name: "language", value: language)
@@ -147,13 +69,17 @@ struct CloudSpeechRequests: Sendable {
   }
 
   func speak(_ text: String, options: SpeechSynthesisOptions) async throws -> SynthesizedSpeech {
-    let voice = options.voice ?? configuration.voices.first
-    guard let voice else { throw SpeechSynthesisError.noVoice }
+    guard let model = configuration.speechModel, configuration.speaks else {
+      throw CloudSpeechError.notOffered
+    }
+    guard let voice = options.voice ?? configuration.voices.first else {
+      throw SpeechSynthesisError.noVoice
+    }
     var request = try request("audio/speech")
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     request.httpBody = try JSONEncoder().encode(
       SpeechBody(
-        model: configuration.speechModel, input: text, voice: voice, responseFormat: "wav",
+        model: model, input: text, voice: voice, responseFormat: "wav",
         speed: options.speed))
     return try WaveAudio.decode(try await send(request))
   }
@@ -161,22 +87,16 @@ struct CloudSpeechRequests: Sendable {
   /// A POST to `path` with the key, when the provider takes one. A configuration that cannot be
   /// used, or a missing key, fails before anything is sent.
   private func request(_ path: String) throws -> URLRequest {
-    if let problem = configuration.problem {
-      throw CloudSpeechError.invalidConfiguration(problem)
-    }
+    let key = try configuration.credential(in: vault)
     var request = URLRequest(url: configuration.endpoint(path))
     request.httpMethod = "POST"
-    if configuration.requiresKey {
-      guard let key = try vault.key(for: configuration.id), !key.isEmpty else {
-        throw CloudSpeechError.missingKey
-      }
-      request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
-    }
+    if let key { request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization") }
     return request
   }
 
   private func send(_ request: URLRequest) async throws -> Data {
     let (data, response) = try await transport.send(request)
+    if (300..<400).contains(response.statusCode) { throw CloudSpeechError.redirected }
     guard (200..<300).contains(response.statusCode) else {
       throw CloudSpeechError.rejected(response.statusCode)
     }

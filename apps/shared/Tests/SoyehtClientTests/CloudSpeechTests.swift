@@ -26,15 +26,69 @@ private func text(_ data: Data?) -> String { String(decoding: data ?? Data(), as
   #expect(cloudConfiguration().problem == nil)
   #expect(cloudConfiguration(base: "http://localhost:8880/v1").problem == nil)
   #expect(cloudConfiguration(base: "http://127.0.0.1:8880/v1").problem == nil)
+  // A server that wants a key is only reached over HTTPS, or on this computer.
   #expect(cloudConfiguration(base: "http://speech.example.com/v1").problem != nil)
+  #expect(cloudConfiguration(base: "http://192.168.1.20:8880/v1").problem != nil)
   #expect(cloudConfiguration(base: "ftp://speech.example.com").problem != nil)
   #expect(cloudConfiguration(base: "not a url").problem != nil)
 }
 
-@Test func theModelsMustBeNamed() {
+@Test func aServerThatTakesNoKeyMayBeReachedOverPlainHTTPOnTheOwnNetwork() {
+  #expect(
+    cloudConfiguration(requiresKey: false, base: "http://192.168.1.20:8880/v1").problem == nil)
+  #expect(
+    cloudConfiguration(requiresKey: false, base: "http://my-machine.tailnet.example:8880/v1")
+      .problem == nil)
+  #expect(cloudConfiguration(requiresKey: false, base: "ftp://192.168.1.20").problem != nil)
+}
+
+@Test func aProviderNeedsAModelForAtLeastOneOfTheTwoThings() {
   var configuration = cloudConfiguration()
+  configuration.transcriptionModel = nil
+  #expect(configuration.problem == nil)
+  #expect(!configuration.transcribes && configuration.speaks)
   configuration.speechModel = ""
-  #expect(configuration.problem == "Name the models the provider uses.")
+  #expect(configuration.problem == "Name a model the provider uses to transcribe or to speak.")
+}
+
+@Test func aProviderThatOnlyOneOfTheTwoIsOnlyOfferedAsThatOne() throws {
+  let vault = MemoryProviderKeyVault()
+  var speakOnly = cloudConfiguration()
+  speakOnly.transcriptionModel = nil
+  #expect(DictationEngine.cloud(speakOnly, vault: vault) == nil)
+  #expect(SpeechSynthesisProvider.cloud(speakOnly, vault: vault) != nil)
+  var listenOnly = cloudConfiguration()
+  listenOnly.speechModel = nil
+  #expect(SpeechSynthesisProvider.cloud(listenOnly, vault: vault) == nil)
+  #expect(DictationEngine.cloud(listenOnly, vault: vault) != nil)
+}
+
+@Test func aRequestForWhatTheProviderDoesNotOfferSendsNothing() async {
+  let transport = FakeSpeechTransport { _ in (200, Data()) }
+  var listenOnly = cloudConfiguration()
+  listenOnly.speechModel = nil
+  await #expect(throws: CloudSpeechError.notOffered) {
+    try await CloudSpeechSynthesizer(requests: requests(listenOnly, transport: transport))
+      .synthesize("Hi", options: SpeechSynthesisOptions())
+  }
+  #expect(transport.requests.isEmpty)
+}
+
+@Test func anEmptyKeyIsAMissingKey() async {
+  let transport = FakeSpeechTransport { _ in (200, Data()) }
+  await #expect(throws: CloudSpeechError.missingKey) {
+    try await requests(vault: MemoryProviderKeyVault(["cloud.example": ""]), transport: transport)
+      .transcribe([0], language: nil, vocabulary: [])
+  }
+  #expect(transport.requests.isEmpty)
+}
+
+@Test func aRedirectIsReportedAndNeverFollowed() async {
+  let transport = FakeSpeechTransport { _ in (302, Data()) }
+  await #expect(throws: CloudSpeechError.redirected) {
+    try await requests(transport: transport).transcribe([0], language: nil, vocabulary: [])
+  }
+  #expect(CloudSpeechError.redirected.localizedDescription.contains("another one"))
 }
 
 @Test func aConfigurationSurvivesTheStoreItIsSavedIn() throws {
@@ -207,13 +261,21 @@ private func text(_ data: Data?) -> String { String(decoding: data ?? Data(), as
 @MainActor @Test func theCloudProvidersTellWhatTheyReceiveAndWaitForAKey() throws {
   let vault = MemoryProviderKeyVault()
   let transport = FakeSpeechTransport { _ in (200, Data()) }
-  let speech = SpeechSynthesisProvider.cloud(
-    cloudConfiguration(), vault: vault, transport: transport)
-  let dictation = DictationEngine.cloud(cloudConfiguration(), vault: vault, transport: transport)
+  let configuration = cloudConfiguration(termsURL: URL(string: "https://speech.example.com/terms"))
+  let speech = try #require(
+    SpeechSynthesisProvider.cloud(configuration, vault: vault, transport: transport))
+  let dictation = try #require(
+    DictationEngine.cloud(configuration, vault: vault, transport: transport))
 
   #expect(speech.cloud?.host == "speech.example.com")
   #expect(speech.cloud?.sends == [.text])
-  #expect(dictation.cloud?.sends == [.audio])
+  // The recording, and the vocabulary that goes along as the prompt.
+  #expect(dictation.cloud?.sends == [.audio, .vocabulary])
+  #expect(dictation.summary.contains("vocabulary"))
+  #expect(speech.cloud?.termsURL?.absoluteString == "https://speech.example.com/terms")
+  #expect(dictation.cloud?.termsURL == speech.cloud?.termsURL)
+  #expect(speech.license.url == speech.cloud?.termsURL)
+  #expect(speech.license.commercialUse)
   #expect(speech.requiresInstall == false)
   #expect(speech.voices().map(\.id) == ["river", "stone"])
   #expect(dictation.usesVocabulary)
@@ -230,14 +292,15 @@ private func text(_ data: Data?) -> String { String(decoding: data ?? Data(), as
 
 @Test func noDescriptorTextCarriesTheKey() throws {
   let vault = MemoryProviderKeyVault(["cloud.example": secret])
-  let speech = SpeechSynthesisProvider.cloud(cloudConfiguration(), vault: vault)
+  let speech = try #require(SpeechSynthesisProvider.cloud(cloudConfiguration(), vault: vault))
   for field in [speech.id, speech.name, speech.summary, speech.cloud?.host ?? ""] {
     #expect(!field.contains(secret))
   }
 }
 
-@Test func aCloudProviderWithABadAddressIsUnavailableWithTheReason() {
-  let provider = SpeechSynthesisProvider.cloud(
-    cloudConfiguration(base: "http://speech.example.com/v1"), vault: MemoryProviderKeyVault())
+@Test func aCloudProviderWithABadAddressIsUnavailableWithTheReason() throws {
+  let provider = try #require(
+    SpeechSynthesisProvider.cloud(
+      cloudConfiguration(base: "http://speech.example.com/v1"), vault: MemoryProviderKeyVault()))
   #expect(provider.unavailableReason(on: .mac)?.contains("https") == true)
 }

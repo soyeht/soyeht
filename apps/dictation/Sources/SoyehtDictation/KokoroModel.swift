@@ -1,4 +1,5 @@
 import AudioCommon
+import CoreML
 import Foundation
 @preconcurrency import KokoroTTS
 import SoyehtClient
@@ -15,6 +16,17 @@ final class KokoroModelHolder: @unchecked Sendable {
   /// `fromPretrained` spends the first 70% of its progress on the download and the rest on
   /// loading the CoreML models.
   private static let downloadShare = 0.7
+
+  /// The library recommends the Neural Engine, and documents the GPU as the way around builds
+  /// where its compiler gives incorrect output for this model, "some iOS 26 builds". The Mac is
+  /// measured with the Neural Engine; a phone uses the GPU until one is measured.
+  private static let computeUnits: MLComputeUnits = {
+    #if os(iOS)
+      .cpuAndGPU
+    #else
+      .all
+    #endif
+  }()
 
   private let loaded = LoadedModel<KokoroTTSModel>()
   private let location: ModelCacheLocation
@@ -34,7 +46,7 @@ final class KokoroModelHolder: @unchecked Sendable {
   func install(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
     let installed = location.isInstalled
     let model = try await KokoroTTSModel.fromPretrained(
-      cacheDir: location.directory, offlineMode: installed, computeUnits: .all
+      cacheDir: location.directory, offlineMode: installed, computeUnits: Self.computeUnits
     ) { fraction, _ in
       report(
         installed || fraction >= Self.downloadShare

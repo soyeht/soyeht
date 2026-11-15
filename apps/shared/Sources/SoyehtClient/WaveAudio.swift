@@ -5,11 +5,14 @@ import Foundation
 enum WaveAudio {
   /// The rate a recording is sent at: what the Whisper-class models are trained on.
   static let recordingSampleRate = 16_000
+  /// The rates a provider's speech may have; anything else is not speech this client plays.
+  static let speechSampleRates = 8_000...192_000
 
   /// A 16-bit mono PCM file with `samples`, clamped to -1...1.
   static func encode(_ samples: [Float], sampleRate: Int) -> Data {
     var data = Data()
     let payload = samples.count * 2
+    data.reserveCapacity(44 + payload)
     data.append(contentsOf: Array("RIFF".utf8))
     data.append(littleEndian: UInt32(36 + payload))
     data.append(contentsOf: Array("WAVEfmt ".utf8))
@@ -23,40 +26,43 @@ enum WaveAudio {
     data.append(contentsOf: Array("data".utf8))
     data.append(littleEndian: UInt32(payload))
     for sample in samples {
-      data.append(
-        littleEndian: UInt16(bitPattern: Int16((max(-1, min(1, sample)) * 32_767).rounded())))
+      let level = sample.isFinite ? max(-1, min(1, sample)) : 0
+      data.append(littleEndian: UInt16(bitPattern: Int16((level * 32_767).rounded())))
     }
     return data
   }
 
   /// Mono float samples of a PCM (16-bit) or IEEE float (32-bit) file; the first channel of a
-  /// file with more. Throws `unsupportedAudio` for anything else, for example a compressed
-  /// format a provider returned although WAV was asked for.
+  /// file with more. A sample that is not a number becomes silence and one beyond full scale is
+  /// clamped. Throws `unsupportedAudio` for anything else, for example a compressed format a
+  /// provider returned although WAV was asked for, or a sample rate outside `speechSampleRates`.
+  /// The file is read in place: the only copy is the samples.
   static func decode(_ data: Data) throws -> SynthesizedSpeech {
-    let bytes = [UInt8](data)
-    guard bytes.count >= 12, bytes[0..<4].elementsEqual("RIFF".utf8),
-      bytes[8..<12].elementsEqual("WAVE".utf8)
-    else { throw SpeechSynthesisError.unsupportedAudio("not a WAV file") }
-    var format: Format?
-    var offset = 12
-    while offset + 8 <= bytes.count {
-      let name = bytes[offset..<offset + 4]
-      let declared = Int(Self.uint32(bytes, offset + 4))
-      let body = offset + 8
-      if name.elementsEqual("fmt ".utf8), body + 16 <= bytes.count {
-        format = Format(
-          tag: Int(Self.uint16(bytes, body)), channels: Int(Self.uint16(bytes, body + 2)),
-          sampleRate: Int(Self.uint32(bytes, body + 4)),
-          bits: Int(Self.uint16(bytes, body + 14)))
-      } else if name.elementsEqual("data".utf8) {
-        guard let format else { throw SpeechSynthesisError.unsupportedAudio("no format") }
-        // A streamed file declares a size it does not have: read to the end of the bytes.
-        let end = declared == Int(UInt32.max) ? bytes.count : min(body + declared, bytes.count)
-        return try format.speech(bytes[body..<max(body, end)])
+    try data.withUnsafeBytes { bytes in
+      guard bytes.count >= 12, bytes.starts(with: "RIFF".utf8),
+        bytes[8..<12].elementsEqual("WAVE".utf8)
+      else { throw SpeechSynthesisError.unsupportedAudio("not a WAV file") }
+      var format: Format?
+      var offset = 12
+      while offset + 8 <= bytes.count {
+        let name = bytes[offset..<offset + 4]
+        let declared = Int(Self.uint32(bytes, offset + 4))
+        let body = offset + 8
+        if name.elementsEqual("fmt ".utf8), body + 16 <= bytes.count {
+          format = Format(
+            tag: Int(Self.uint16(bytes, body)), channels: Int(Self.uint16(bytes, body + 2)),
+            sampleRate: Int(Self.uint32(bytes, body + 4)),
+            bits: Int(Self.uint16(bytes, body + 14)))
+        } else if name.elementsEqual("data".utf8) {
+          guard let format else { throw SpeechSynthesisError.unsupportedAudio("no format") }
+          // A streamed file declares a size it does not have: read to the end of the bytes.
+          let end = declared == Int(UInt32.max) ? bytes.count : min(body + declared, bytes.count)
+          return try format.speech(UnsafeRawBufferPointer(rebasing: bytes[body..<max(body, end)]))
+        }
+        offset = body + declared + (declared & 1)
       }
-      offset = body + declared + (declared & 1)
+      throw SpeechSynthesisError.unsupportedAudio("no audio data")
     }
-    throw SpeechSynthesisError.unsupportedAudio("no audio data")
   }
 
   private struct Format {
@@ -65,23 +71,22 @@ enum WaveAudio {
     let sampleRate: Int
     let bits: Int
 
-    func speech(_ body: ArraySlice<UInt8>) throws -> SynthesizedSpeech {
+    func speech(_ body: UnsafeRawBufferPointer) throws -> SynthesizedSpeech {
       let frame = channels * bits / 8
-      guard channels > 0, sampleRate > 0, frame > 0 else {
+      guard channels > 0, frame > 0, WaveAudio.speechSampleRates.contains(sampleRate) else {
         throw SpeechSynthesisError.unsupportedAudio("invalid format")
       }
-      let bytes = Array(body)
-      let count = bytes.count / frame
-      var samples = [Float](repeating: 0, count: count)
+      let count = body.count / frame
+      let samples: [Float]
       switch (tag, bits) {
       case (1, 16):
-        for index in 0..<count {
-          let raw = Int16(bitPattern: WaveAudio.uint16(bytes, index * frame))
-          samples[index] = Float(raw) / 32_768
+        samples = (0..<count).map { index in
+          Float(Int16(bitPattern: WaveAudio.uint16(body, index * frame))) / 32_768
         }
       case (3, 32):
-        for index in 0..<count {
-          samples[index] = Float(bitPattern: WaveAudio.uint32(bytes, index * frame))
+        samples = (0..<count).map { index in
+          let value = Float(bitPattern: WaveAudio.uint32(body, index * frame))
+          return value.isFinite ? max(-1, min(1, value)) : 0
         }
       default:
         throw SpeechSynthesisError.unsupportedAudio("format \(tag) with \(bits) bits")
@@ -91,15 +96,12 @@ enum WaveAudio {
     }
   }
 
-  private static func uint16<Bytes: RandomAccessCollection>(_ bytes: Bytes, _ at: Int) -> UInt16
-  where Bytes.Element == UInt8, Bytes.Index == Int {
-    UInt16(bytes[at]) | UInt16(bytes[at + 1]) << 8
+  private static func uint16(_ bytes: UnsafeRawBufferPointer, _ at: Int) -> UInt16 {
+    UInt16(littleEndian: bytes.loadUnaligned(fromByteOffset: at, as: UInt16.self))
   }
 
-  private static func uint32<Bytes: RandomAccessCollection>(_ bytes: Bytes, _ at: Int) -> UInt32
-  where Bytes.Element == UInt8, Bytes.Index == Int {
-    UInt32(bytes[at]) | UInt32(bytes[at + 1]) << 8 | UInt32(bytes[at + 2]) << 16
-      | UInt32(bytes[at + 3]) << 24
+  private static func uint32(_ bytes: UnsafeRawBufferPointer, _ at: Int) -> UInt32 {
+    UInt32(littleEndian: bytes.loadUnaligned(fromByteOffset: at, as: UInt32.self))
   }
 }
 

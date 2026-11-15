@@ -129,3 +129,31 @@ import Testing
   recording.append([4, 5, 6, 7])
   #expect(recording.samples == [1, 2, 3, 4, 5])
 }
+
+@MainActor @Test func aRecordingWithNothingInItIsNotSentAndTheTranscriptIsEmpty() async throws {
+  let rig = Rig()
+  var received: [SpeechEvent] = []
+  try rig.recognizer.start(SpeechSessionOptions()) { received.append($0) }
+  rig.recognizer.finish()
+  for _ in 0..<200 where received.isEmpty { await Task.yield() }
+  #expect(received == [.final("")])
+  #expect(rig.transport.requests.isEmpty)
+}
+
+@MainActor @Test func theCallerIsToldWhenTheTenMinuteLimitCutTheRecording() async throws {
+  let rig = Rig()
+  var received: [SpeechEvent] = []
+  try rig.recognizer.start(SpeechSessionOptions()) { received.append($0) }
+  #expect(!rig.recognizer.recordingWasCut)
+  rig.recognizer.finish()
+  #expect(!rig.recognizer.recordingWasCut)
+
+  // The limit is a number of samples, so the cut is proven on the recording itself.
+  let recording = CloudSpeechRecognizer.Recording(limit: 3)
+  recording.append([1, 2])
+  #expect(!recording.wasCut)
+  recording.append([3, 4])
+  #expect(recording.wasCut)
+  #expect(recording.samples == [1, 2, 3])
+  #expect(CloudSpeechRecognizer.maximumSeconds == 600)
+}

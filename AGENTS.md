@@ -58,8 +58,9 @@ Each layer depends only on the layers listed above it.
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
-   dictation engines that need third-party dependencies, and the catalogue of
-   engines (ADR 0083).
+   dictation engines and the text-to-speech providers that need third-party
+   dependencies (Nemotron, Kokoro), and the catalogues of both
+   (`DictationCatalogue`, `VoiceCatalogue`; ADR 0083, ADR 0166).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling. The Mac
    creates and injects every observable environment object once, in `SoyehtMacApp.swift`
@@ -308,8 +309,9 @@ Voice providers are a catalogue too (ADR 0166, in the style of ADR 0083). A new 
 file and one entry:
 
 1. Add one file with a `SpeechSynthesizing` implementation and its `SpeechSynthesisProvider`
-   descriptor (id, names, platforms, `voices`, `model` when it needs an install, `cloud` when it
-   is someone else's computer, `availability`, `make`). It goes in `apps/dictation/Sources/
+   descriptor (id, names, platforms, `license` with its `commercialUse` flag, `voices`, `model` when
+   it needs an install, `cloud` when it is someone else's computer and what it receives,
+   `availability`, `make`). It goes in `apps/dictation/Sources/
    SoyehtDictation/` when it needs a third-party package, else in `apps/shared`. A model uses
    `DictationModelInfo` (size, license name, `commercialUse`, installer) and so
    `DictationModelStore`; write no install state. An installed model loads from disk with no

@@ -50,12 +50,12 @@ final class FakeSpeechTransport: SpeechHTTPTransport, @unchecked Sendable {
 }
 
 func cloudConfiguration(
-  requiresKey: Bool = true, base: String = "https://speech.example.com/v1"
+  requiresKey: Bool = true, base: String = "https://speech.example.com/v1", termsURL: URL? = nil
 ) -> CloudSpeechConfiguration {
   CloudSpeechConfiguration(
     id: "cloud.example", name: "Example speech", baseURL: URL(string: base)!,
     transcriptionModel: "listen-1", speechModel: "speak-1", voices: ["river", "stone"],
-    requiresKey: requiresKey)
+    requiresKey: requiresKey, termsURL: termsURL)
 }
 
 /// A mono 16 kHz buffer of `count` frames of silence, as the microphone tap would deliver.

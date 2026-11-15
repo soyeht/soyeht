@@ -14,12 +14,14 @@ import Testing
   #expect(VoiceCatalogue.synthesis.fallback.cloud == nil)
 }
 
-@Test func aProviderTheAppAddsComesAfterTheBuiltInOnes() {
-  let cloud = SpeechSynthesisProvider.cloud(
-    CloudSpeechConfiguration(
-      id: "cloud.example", name: "Example", baseURL: URL(string: "https://speech.example.com/v1")!,
-      transcriptionModel: "listen-1", speechModel: "speak-1", voices: ["river"]),
-    vault: EmptyVault())
+@Test func aProviderTheAppAddsComesAfterTheBuiltInOnes() throws {
+  let cloud = try #require(
+    SpeechSynthesisProvider.cloud(
+      CloudSpeechConfiguration(
+        id: "cloud.example", name: "Example",
+        baseURL: URL(string: "https://speech.example.com/v1")!,
+        transcriptionModel: "listen-1", speechModel: "speak-1", voices: ["river"]),
+      vault: EmptyVault()))
   #expect(
     VoiceCatalogue.synthesis(adding: [cloud]).providers.map(\.id) == [
       "apple", "kokoro", "cloud.example",
@@ -42,6 +44,22 @@ private struct EmptyVault: ProviderKeyVault {
   #expect(model.licenseName == "Apache-2.0")
   #expect(model.commercialUse)
   #expect(model.sizeDescription == "about 333 MB")
+  // The descriptor and its model say the same about the license, from one value.
+  #expect(provider.license.name == model.licenseName)
+  #expect(provider.license.url == model.licenseURL)
+  #expect(provider.license.commercialUse == model.commercialUse)
+}
+
+@Test func theTwoLocalModelsShareOneMemoryRuleAndNeitherIsOfferedBelowIt() {
+  let rule = LocalModelAvailability.appleSiliconWithEnoughMemory()
+  #expect(KokoroEngine.availability() == rule)
+  #expect(NemotronEngine.availability() == rule)
+  #if os(iOS)
+    // Below 6 GB the device keeps the system's engine and voices; the reason names the floor.
+    if ProcessInfo.processInfo.physicalMemory < 6 << 30 {
+      #expect(rule == .unavailable("Needs a device with at least 6 GB of memory"))
+    }
+  #endif
 }
 
 @Test func kokoroOffersEnglishVoicesOnlyWithTheDefaultFirst() {
@@ -72,19 +90,19 @@ private struct EmptyVault: ProviderKeyVault {
 // MARK: The pieces a text is cut into
 
 @Test func aShortTextIsOnePiece() {
-  #expect(SpeechTextChunks.split("Hello there", maxCharacters: 60) == ["Hello there"])
-  #expect(SpeechTextChunks.split("  \n ", maxCharacters: 60).isEmpty)
+  #expect(KokoroTextWindow.split("Hello there", maxCharacters: 60) == ["Hello there"])
+  #expect(KokoroTextWindow.split("  \n ", maxCharacters: 60).isEmpty)
 }
 
 @Test func eachSentenceStartsANewPiece() {
   #expect(
-    SpeechTextChunks.split("Yes. I can do that! Can you?", maxCharacters: 60)
+    KokoroTextWindow.split("Yes. I can do that! Can you?", maxCharacters: 60)
       == ["Yes.", "I can do that!", "Can you?"])
 }
 
 @Test func aLongSentenceBreaksBetweenWordsAndNoPieceIsOverTheLimit() {
   let sentence = Array(repeating: "alpha beta gamma", count: 12).joined(separator: " ") + "."
-  let pieces = SpeechTextChunks.split(sentence, maxCharacters: 60)
+  let pieces = KokoroTextWindow.split(sentence, maxCharacters: 60)
   #expect(pieces.count > 1)
   #expect(pieces.allSatisfy { $0.count <= 60 })
   #expect(pieces.joined(separator: " ") == sentence)
@@ -92,13 +110,13 @@ private struct EmptyVault: ProviderKeyVault {
 
 @Test func aWordLongerThanAPieceIsCutRatherThanLost() {
   let word = String(repeating: "x", count: 150)
-  let pieces = SpeechTextChunks.split("start \(word) end", maxCharacters: 60)
+  let pieces = KokoroTextWindow.split("start \(word) end", maxCharacters: 60)
   #expect(pieces.allSatisfy { $0.count <= 60 })
   #expect(pieces.joined().replacingOccurrences(of: " ", with: "") == "start" + word + "end")
 }
 
 @Test func aSlowerVoiceGetsSmallerPiecesWithinBounds() {
-  #expect(SpeechTextChunks.limit(forSpeed: 1) == 60)
-  #expect(SpeechTextChunks.limit(forSpeed: 0.1) == 30)
-  #expect(SpeechTextChunks.limit(forSpeed: 10) == 100)
+  #expect(KokoroTextWindow.limit(forSpeed: 1) == 60)
+  #expect(KokoroTextWindow.limit(forSpeed: 0.1) == 30)
+  #expect(KokoroTextWindow.limit(forSpeed: 10) == 100)
 }

@@ -19,25 +19,64 @@ public struct SpeechSynthesisOptions: Equatable, Sendable {
   public var voice: String?
   /// A BCP-47 tag, used when no voice is named and the provider chooses a voice by language.
   public var language: String?
-  /// 1 is the provider's normal pace.
-  public var speed: Double
+  /// 1 is the provider's normal pace. Kept inside `speedRange`: a value outside it, or not a
+  /// number, becomes the nearest end or 1.
+  public var speed: Double {
+    didSet { speed = Self.clamped(speed) }
+  }
+
+  /// The pace the providers accept: the shared audio endpoints take 0.25 to 4.
+  public static let speedRange = 0.25...4.0
 
   public init(voice: String? = nil, language: String? = nil, speed: Double = 1) {
     self.voice = voice
     self.language = language
-    self.speed = speed
+    self.speed = Self.clamped(speed)
+  }
+
+  private static func clamped(_ speed: Double) -> Double {
+    speed.isNaN ? 1 : min(max(speed, speedRange.lowerBound), speedRange.upperBound)
+  }
+}
+
+/// When a word or a phoneme starts in rendered speech, as the provider reports it. The mouth
+/// runtime uses these when the provider has them (ADR 0166 section 6, tier 1) and finds the
+/// timings in the audio itself when it has not.
+public struct SpeechTiming: Equatable, Sendable {
+  public enum Kind: Sendable {
+    case word
+    case phoneme
+  }
+
+  public let kind: Kind
+  /// The word as the text writes it, or the phoneme the provider names.
+  public let text: String
+  /// Seconds from the start of the speech.
+  public let start: Double
+
+  public init(kind: Kind, text: String, start: Double) {
+    self.kind = kind
+    self.text = text
+    self.start = start
   }
 }
 
 /// Speech a provider rendered: mono float samples at the provider's own sample rate. Nothing is
 /// played here: the voice loop plays the samples and drives the avatar's mouth from them.
+///
+/// The whole utterance is rendered before it is returned. Whether a provider also streams
+/// partial audio is slice 7's decision, when the voice loop needs it; this type does not.
 public struct SynthesizedSpeech: Equatable, Sendable {
   public let samples: [Float]
   public let sampleRate: Int
+  /// The provider's own word or phoneme timings, in order, or nil when it reports none: the
+  /// system voices report them, the cloud and local models do not.
+  public let timings: [SpeechTiming]?
 
-  public init(samples: [Float], sampleRate: Int) {
+  public init(samples: [Float], sampleRate: Int, timings: [SpeechTiming]? = nil) {
     self.samples = samples
     self.sampleRate = sampleRate
+    self.timings = timings
   }
 
   public var duration: Duration {

@@ -8,12 +8,29 @@ import Testing
 // the system vault is only asked for the attributes it would use and for what it refuses
 // before it reaches the keychain.
 
-@Test func theKeychainItemIsPerProviderAndStaysOnThisDevice() {
+@Test func theKeychainItemIsPerProviderUnderTheServiceOfTheRewrite() {
   let query = KeychainProviderKeyVault.query(
     service: KeychainProviderKeyVault.service, provider: "cloud.example")
+  #expect(
+    Set(query.keys) == [
+      kSecClass as String, kSecAttrService as String, kSecAttrAccount as String,
+    ])
   #expect(query[kSecClass as String] as? String == kSecClassGenericPassword as String)
   #expect(query[kSecAttrAccount as String] as? String == "cloud.example")
-  #expect((query[kSecAttrService as String] as? String)?.contains(".next.") == true)
+  #expect(
+    query[kSecAttrService as String] as? String == "com.soyeht.next.voice-provider-keys")
+  let other = KeychainProviderKeyVault.query(
+    service: KeychainProviderKeyVault.service, provider: "cloud.other")
+  #expect(other[kSecAttrAccount as String] as? String == "cloud.other")
+}
+
+@Test func theKeyIsStoredOnlyWhileTheDeviceIsUnlockedAndNeverLeavesIt() {
+  let attributes = KeychainProviderKeyVault.attributes(of: "sk-test-1")
+  #expect(
+    attributes[kSecAttrAccessible as String] as? String
+      == kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String)
+  #expect(attributes[kSecValueData as String] as? Data == Data("sk-test-1".utf8))
+  #expect(attributes[kSecAttrSynchronizable as String] == nil)
 }
 
 @Test func theSystemVaultRefusesAKeyThatCannotBeOneBeforeTouchingTheKeychain() {

@@ -2,7 +2,8 @@
 import Foundation
 
 /// Text to speech with the system voices. It renders the speech to samples through
-/// `AVSpeechSynthesizer.write`: nothing is played here, and no permission is asked.
+/// `AVSpeechSynthesizer.write`: nothing is played here, and no permission is asked. The word and
+/// phoneme marks the system reports become the speech's timings.
 @MainActor public final class AppleSpeechSynthesizer: SpeechSynthesizing {
   nonisolated public init() {}
 
@@ -14,18 +15,33 @@ import Foundation
     let utterance = AVSpeechUtterance(string: trimmed)
     utterance.voice = voice
     utterance.rate = Self.rate(forSpeed: options.speed)
-    let render = Render()
+    let render = Render(text: trimmed)
     // Kept alive until the render ends: the synthesizer stops when it is released.
-    let synthesizer = AVSpeechSynthesizer()
+    nonisolated(unsafe) let synthesizer = AVSpeechSynthesizer()
     return try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { continuation in
         render.begin(continuation)
-        synthesizer.write(utterance) { buffer in render.receive(buffer) }
+        synthesizer.write(
+          utterance, toBufferCallback: Self.buffers(into: render),
+          toMarkerCallback: Self.marks(into: render))
       }
     } onCancel: {
       render.cancel()
       Task { @MainActor in synthesizer.stopSpeaking(at: .immediate) }
     }
+  }
+
+  /// The system calls these on a queue of its own: they are built outside the main actor and
+  /// never inherit it.
+  nonisolated private static func buffers(into render: Render) -> @Sendable (AVAudioBuffer) -> Void
+  {
+    { buffer in render.receive(buffer) }
+  }
+
+  nonisolated private static func marks(
+    into render: Render
+  ) -> @Sendable ([AVSpeechSynthesisMarker]) -> Void {
+    { marks in render.receive(marks) }
   }
 
   /// The voices of the device, the ones of the person's language first.
@@ -66,14 +82,19 @@ import Foundation
     return []
   }
 
-  /// Collects the buffers the system sends, on its own queue, and resumes the caller once with
-  /// the whole speech. An empty buffer is the system's end marker.
+  /// Collects the buffers and marks the system sends, on its own queue, and resumes the caller
+  /// once with the whole speech. An empty buffer is the system's end marker.
   private final class Render: @unchecked Sendable {
     private let lock = NSLock()
+    private let text: String
     private var continuation: CheckedContinuation<SynthesizedSpeech, any Error>?
     private var samples: [Float] = []
     private var sampleRate = 0
+    private var bytesPerFrame = 0
+    private var marks: [AVSpeechSynthesisMarker] = []
     private var cancelled = false
+
+    init(text: String) { self.text = text }
 
     func begin(_ continuation: CheckedContinuation<SynthesizedSpeech, any Error>) {
       let wasCancelled = lock.withLock {
@@ -83,6 +104,10 @@ import Foundation
       if wasCancelled { continuation.resume(throwing: CancellationError()) }
     }
 
+    func receive(_ marks: [AVSpeechSynthesisMarker]) {
+      lock.withLock { self.marks += marks }
+    }
+
     func receive(_ buffer: AVAudioBuffer) {
       guard let pcm = buffer as? AVAudioPCMBuffer else { return }
       if pcm.frameLength > 0 {
@@ -90,6 +115,7 @@ import Foundation
         lock.withLock {
           samples.append(contentsOf: heard)
           sampleRate = Int(pcm.format.sampleRate)
+          bytesPerFrame = Int(pcm.format.streamDescription.pointee.mBytesPerFrame)
         }
         return
       }
@@ -108,7 +134,7 @@ import Foundation
     private func finish() {
       let (pending, result) = lock.withLock {
         defer { continuation = nil }
-        return (continuation, SynthesizedSpeech(samples: samples, sampleRate: sampleRate))
+        return (continuation, speech())
       }
       guard let pending else { return }
       if result.samples.isEmpty {
@@ -117,6 +143,39 @@ import Foundation
         pending.resume(returning: result)
       }
     }
+
+    /// The speech so far. Call with the lock held.
+    private func speech() -> SynthesizedSpeech {
+      SynthesizedSpeech(
+        samples: samples, sampleRate: sampleRate,
+        timings: AppleSpeechSynthesizer.timings(
+          of: marks, in: text, sampleRate: sampleRate, bytesPerFrame: bytesPerFrame))
+    }
+  }
+
+  /// The word and phoneme marks as timings, in order, or nil when the system sent none.
+  /// `byteSampleOffset` counts bytes of the rendered audio from its start.
+  nonisolated static func timings(
+    of marks: [AVSpeechSynthesisMarker], in text: String, sampleRate: Int, bytesPerFrame: Int
+  ) -> [SpeechTiming]? {
+    guard sampleRate > 0, bytesPerFrame > 0 else { return nil }
+    let characters = text as NSString
+    let timings: [SpeechTiming] = marks.compactMap { mark in
+      let start = Double(mark.byteSampleOffset) / Double(bytesPerFrame * sampleRate)
+      switch mark.mark {
+      case .word:
+        let range = mark.textRange
+        guard range.location != NSNotFound, NSMaxRange(range) <= characters.length else {
+          return nil
+        }
+        return SpeechTiming(kind: .word, text: characters.substring(with: range), start: start)
+      case .phoneme:
+        return SpeechTiming(kind: .phoneme, text: mark.phoneme, start: start)
+      default:
+        return nil
+      }
+    }
+    return timings.isEmpty ? nil : timings.sorted { $0.start < $1.start }
   }
 }
 
@@ -126,6 +185,7 @@ extension SpeechSynthesisProvider {
     id: "apple", name: "Apple voices",
     summary: "The voices of this device. Nothing is downloaded or sent anywhere.",
     platforms: Set(DictationPlatform.allCases),
+    license: ProviderLicense(name: "Part of the operating system", commercialUse: true),
     voices: { AppleSpeechSynthesizer.voices() },
     make: { AppleSpeechSynthesizer() })
 }

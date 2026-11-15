@@ -51,11 +51,7 @@ public struct KeychainProviderKeyVault: ProviderKeyVault {
       throw ProviderKeyFailure.invalidKey
     }
     let status = KeychainItem.upsert(
-      Self.query(service: service, provider: provider),
-      [
-        kSecValueData as String: Data(trimmed.utf8),
-        kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-      ])
+      Self.query(service: service, provider: provider), Self.attributes(of: trimmed))
     guard status == errSecSuccess else { throw ProviderKeyFailure.keychain(status) }
   }
 
@@ -64,6 +60,15 @@ public struct KeychainProviderKeyVault: ProviderKeyVault {
     guard status == errSecSuccess || status == errSecItemNotFound else {
       throw ProviderKeyFailure.keychain(status)
     }
+  }
+
+  /// What is stored with the key. `WhenUnlockedThisDeviceOnly`: the item does not leave the
+  /// device in a backup, and cannot be read while the device is locked.
+  static func attributes(of key: String) -> [String: Any] {
+    [
+      kSecValueData as String: Data(key.utf8),
+      kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+    ]
   }
 
   static func query(service: String, provider: String) -> [String: Any] {

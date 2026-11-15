@@ -32,6 +32,7 @@ SWIFT_DATA = DATA / "swift.json"
 SWIFT_TEXTS = DATA / "swift"
 GRADLE_DATA = DATA / "gradle.json"
 ASSETS_DATA = DATA / "assets.json"
+MODELS_DATA = DATA / "models.json"
 METADATA_SECONDS = 600
 MIN_LICENSE_BYTES = 200
 
@@ -346,5 +347,24 @@ def asset_components(policy, root=ROOT):
         body = licenses.normal((Path(root) / asset["file"]).read_text())
         component = Component("Asset", asset["name"], asset["version"], asset["license"], asset["url"], elected=sorted(options[0]))
         add_text(component, asset["license"], body)
+        components.append(component)
+    return components
+
+
+# ---- models, dictionaries and tables ---------------------------------------------------------
+
+
+def model_components(policy):
+    """The speech models the app downloads and the pronunciation data it bundles or downloads
+    with them. They are not in a lock file, so `models.json` lists them, each with the license its
+    source states and a note that says where the claim comes from and where it stops."""
+    components = []
+    for model in json.loads(MODELS_DATA.read_text())["models"]:
+        options = licenses.usable_choices(model["license"], policy)
+        if not options:
+            raise SourceError(f"{model['name']}: {model['license']} is not on the allow-list")
+        component = Component("Model", model["name"], model["version"], model["license"], model["url"], elected=sorted(options[0]))
+        component.notes += model["notes"]
+        add_text(component, model["license"], licenses.spdx_text(model["license"]), standard=True)
         components.append(component)
     return components

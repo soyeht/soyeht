@@ -28,15 +28,21 @@ public enum KokoroEngine {
   /// The silence between two pieces of one text.
   private static let gap = 0.12
 
+  /// The model card states Apache-2.0 for the weights, the grapheme-to-phoneme models and the
+  /// English dictionaries.
+  static let license = ProviderLicense(
+    name: "Apache-2.0", url: URL(string: "https://www.apache.org/licenses/LICENSE-2.0"),
+    commercialUse: true)
+
   public static let provider = SpeechSynthesisProvider(
     id: "kokoro", name: "Kokoro (English)",
     summary: "Speaks English on this device, with no key and nothing sent anywhere.",
     platforms: Set(DictationPlatform.allCases),
+    license: license,
     voices: { voices },
     model: DictationModelInfo(
-      sizeDescription: "about 333 MB", licenseName: "Apache-2.0",
-      licenseURL: URL(string: "https://www.apache.org/licenses/LICENSE-2.0"),
-      commercialUse: true,
+      sizeDescription: "about 333 MB", licenseName: license.name, licenseURL: license.url,
+      commercialUse: license.commercialUse,
       install: { report in try await KokoroModelHolder.shared.install(report: report) },
       isInstalled: { KokoroModelHolder.shared.isInstalled },
       remove: { try KokoroModelHolder.shared.remove() }),
@@ -52,13 +58,9 @@ public enum KokoroEngine {
     id.split(separator: "_").last.map { $0.prefix(1).uppercased() + $0.dropFirst() } ?? id
   }
 
-  /// The CoreML bundle needs an arm64 chip.
+  /// The same rule as the other local model: an arm64 chip and, on iPhone and iPad, 6 GB.
   @Sendable static func availability() -> DictationAvailability {
-    #if arch(arm64)
-      return .available
-    #else
-      return .unavailable("Needs Apple silicon")
-    #endif
+    LocalModelAvailability.appleSiliconWithEnoughMemory()
   }
 
   /// The speech of the model for a text: one pass per piece, one after the other, with a short
@@ -76,8 +78,8 @@ public enum KokoroEngine {
       -> SynthesizedSpeech
     {
       guard let model = holder.current else { throw Failure.notReady }
-      let pieces = SpeechTextChunks.split(
-        text, maxCharacters: SpeechTextChunks.limit(forSpeed: options.speed))
+      let pieces = KokoroTextWindow.split(
+        text, maxCharacters: KokoroTextWindow.limit(forSpeed: options.speed))
       guard !pieces.isEmpty else { throw SpeechSynthesisError.emptyText }
       let voice = options.voice ?? voiceIDs[0].id
       guard options.language.map({ $0.lowercased().hasPrefix("en") }) ?? true,

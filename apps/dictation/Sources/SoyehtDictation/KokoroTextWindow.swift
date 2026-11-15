@@ -4,7 +4,7 @@ import Foundation
 /// phoneme tokens and renders at most five seconds of audio, and it cuts what is longer without
 /// a word, so a text is split before it gets there: at the end of a sentence first, then between
 /// words.
-enum SpeechTextChunks {
+enum KokoroTextWindow {
   /// What one pass holds at the normal pace: about five seconds of speech.
   static let charactersAtNormalPace = 60
   private static let minimum = 30

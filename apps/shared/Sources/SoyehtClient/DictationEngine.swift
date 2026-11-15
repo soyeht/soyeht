@@ -132,26 +132,3 @@ public struct DictationEngine: Identifiable, Sendable {
     }
   }
 }
-
-/// The catalogue of dictation engines, and the single place an engine is added.
-///
-/// The first engine is the fallback: it needs no download and runs everywhere the composer
-/// does, so dictation always works while another engine downloads or when it is unavailable.
-public struct DictationEngineRegistry: Sendable {
-  public let engines: [DictationEngine]
-
-  /// Engines with an id already in the list are ignored, so the first entry wins.
-  public init(fallback: DictationEngine, others: [DictationEngine] = []) {
-    var seen: Set<String> = [fallback.id]
-    engines = [fallback] + others.filter { seen.insert($0.id).inserted }
-  }
-
-  public var fallback: DictationEngine { engines[0] }
-
-  public func engine(id: String) -> DictationEngine? {
-    engines.first { $0.id == id }
-  }
-
-  /// Apple's engine alone: what the shared package ships before an app adds more.
-  public static let appleOnly = DictationEngineRegistry(fallback: .apple)
-}

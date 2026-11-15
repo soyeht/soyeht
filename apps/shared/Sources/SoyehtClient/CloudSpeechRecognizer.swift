@@ -25,6 +25,10 @@ extension MicrophoneCapture: AudioCapturing {}
   private var onEvent: (@MainActor (SpeechEvent) -> Void)?
   private var sending: Task<Void, Never>?
 
+  /// Whether the last recording was longer than `maximumSeconds` and so was cut. The caller
+  /// reads it once the final transcript arrives, to tell the person.
+  private(set) var recordingWasCut = false
+
   init(
     requests: CloudSpeechRequests, capture: any AudioCapturing = MicrophoneCapture(),
     microphone: @escaping @MainActor () async -> DictationAuthorization = {
@@ -52,6 +56,7 @@ extension MicrophoneCapture: AudioCapturing {}
     self.recording = recording
     self.options = options
     self.onEvent = onEvent
+    recordingWasCut = false
   }
 
   func finish() {
@@ -59,13 +64,19 @@ extension MicrophoneCapture: AudioCapturing {}
     guard let recording, let onEvent else { return }
     self.recording = nil
     self.onEvent = nil
+    recordingWasCut = recording.wasCut
     let requests = requests
     let options = options
     sending = Task {
       do {
         if let failure = recording.failure { throw failure }
-        let text = try await requests.transcribe(
-          recording.samples, language: options.language, vocabulary: options.vocabulary)
+        let samples = recording.samples
+        // Nothing was heard: there is nothing to send to the provider.
+        let text =
+          samples.isEmpty
+          ? ""
+          : try await requests.transcribe(
+            samples, language: options.language, vocabulary: options.vocabulary)
         if !Task.isCancelled { onEvent(.final(text)) }
       } catch {
         if !Task.isCancelled { onEvent(.failed(error.localizedDescription)) }
@@ -83,11 +94,9 @@ extension MicrophoneCapture: AudioCapturing {}
 
   /// Why the provider cannot be used now: a configuration that is wrong, or a key not saved.
   private func unavailableReason() -> String? {
-    if let problem = requests.configuration.problem { return problem }
-    guard requests.configuration.requiresKey else { return nil }
     do {
-      return try requests.vault.key(for: requests.configuration.id) == nil
-        ? CloudSpeechError.missingKey.localizedDescription : nil
+      _ = try requests.configuration.credential(in: requests.vault)
+      return nil
     } catch {
       return error.localizedDescription
     }
@@ -112,14 +121,21 @@ extension MicrophoneCapture: AudioCapturing {}
     private let limit: Int
     private var heard: [Float] = []
     private var error: (any Error)?
+    private var cut = false
 
     init(limit: Int) { self.limit = limit }
 
     var samples: [Float] { lock.withLock { heard } }
     var failure: (any Error)? { lock.withLock { error } }
+    /// Audio arrived after the limit and was dropped.
+    var wasCut: Bool { lock.withLock { cut } }
 
     func append(_ samples: [Float]) {
-      lock.withLock { heard.append(contentsOf: samples.prefix(max(0, limit - heard.count))) }
+      lock.withLock {
+        let room = max(0, limit - heard.count)
+        if samples.count > room { cut = true }
+        heard.append(contentsOf: samples.prefix(room))
+      }
     }
 
     func fail(_ failure: any Error) {

@@ -4,6 +4,8 @@ import Foundation
 public enum CloudPayload: String, CaseIterable, Sendable {
   /// The person's voice, recorded while they talk.
   case audio
+  /// The words the person added to help the recognizer spell their names and terms.
+  case vocabulary
   /// The words to speak or the words transcribed.
   case text
 }
@@ -29,6 +31,21 @@ public struct CloudProviderInfo: Sendable {
   }
 }
 
+/// The license a provider, or the service it reaches, is under: what the voice screen shows
+/// before the first use. `commercialUse` is false for research-only terms, and the screen then
+/// labels the choice plainly. It is data: nothing enforces it.
+public struct ProviderLicense: Equatable, Sendable {
+  public let name: String
+  public let url: URL?
+  public let commercialUse: Bool
+
+  public init(name: String, url: URL? = nil, commercialUse: Bool) {
+    self.name = name
+    self.url = url
+    self.commercialUse = commercialUse
+  }
+}
+
 /// One text-to-speech provider the person can choose. The catalogue
 /// (`SpeechSynthesisRegistry`) is the only list of them: the voice screen is generated from these
 /// descriptors, and nothing else knows a provider by name.
@@ -38,6 +55,8 @@ public struct SpeechSynthesisProvider: Identifiable, Sendable {
   public let name: String
   public let summary: String
   public let platforms: Set<DictationPlatform>
+  /// The license of the provider's code, voices or service, and whether it allows commercial use.
+  public let license: ProviderLicense
   /// The voices the provider speaks with, first the default one. Read when the screen opens.
   public let voices: @Sendable () -> [SpeechVoice]
   /// Set when the provider needs a model installed before it can speak; the install is
@@ -51,7 +70,8 @@ public struct SpeechSynthesisProvider: Identifiable, Sendable {
 
   public init(
     id: String, name: String, summary: String, platforms: Set<DictationPlatform>,
-    voices: @escaping @Sendable () -> [SpeechVoice], model: DictationModelInfo? = nil,
+    license: ProviderLicense, voices: @escaping @Sendable () -> [SpeechVoice],
+    model: DictationModelInfo? = nil,
     cloud: CloudProviderInfo? = nil,
     availability: @escaping @Sendable () -> DictationAvailability = { .available },
     make: @escaping @Sendable () -> any SpeechSynthesizing
@@ -60,6 +80,7 @@ public struct SpeechSynthesisProvider: Identifiable, Sendable {
     self.name = name
     self.summary = summary
     self.platforms = platforms
+    self.license = license
     self.voices = voices
     self.model = model
     self.cloud = cloud
@@ -73,25 +94,5 @@ public struct SpeechSynthesisProvider: Identifiable, Sendable {
   /// Why this provider cannot speak on `platform`, or nil when it can.
   public func unavailableReason(on platform: DictationPlatform) -> String? {
     availability().reason(on: platform, supportedBy: platforms)
-  }
-}
-
-/// The catalogue of text-to-speech providers, and the single place one is added.
-///
-/// The first provider is the fallback: it needs no download, no key and no network, so the
-/// avatar can always speak.
-public struct SpeechSynthesisRegistry: Sendable {
-  public let providers: [SpeechSynthesisProvider]
-
-  /// Providers with an id already in the list are ignored, so the first entry wins.
-  public init(fallback: SpeechSynthesisProvider, others: [SpeechSynthesisProvider] = []) {
-    var seen: Set<String> = [fallback.id]
-    providers = [fallback] + others.filter { seen.insert($0.id).inserted }
-  }
-
-  public var fallback: SpeechSynthesisProvider { providers[0] }
-
-  public func provider(id: String) -> SpeechSynthesisProvider? {
-    providers.first { $0.id == id }
   }
 }
