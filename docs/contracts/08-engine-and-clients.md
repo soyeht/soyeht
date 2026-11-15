@@ -159,6 +159,72 @@ An engine in `PersonsCode` mode lists `pairing-code` in its `capabilities`, and:
 - a client sends `approvalCode` only when the capability is offered; in `SignedApp` mode the field
   is ignored.
 
+**Where a new device may connect from (ADR 0164).** In `PersonsCode` mode `pair.begin` and
+`pair.prove` are served only when every one of these holds, checked before any stored answer is
+looked up (so a replay from a local program gets none); any doubt refuses with `unauthorized`, a
+message that says why and no address or name:
+
+1. the connection was accepted by a tailnet listener (the engine follows the addresses of the
+   tailnet interface and listens on each); the local endpoint and a listener at an address given with
+   `--listen` get no pairing, nor does a computer whose Tailscale runs in userspace mode, or a
+   connection that `tailscale serve` or Funnel delivers from loopback;
+2. the peer is the address the engine's `accept` saw, in its canonical form (`::ffff:127.0.0.1` is
+   loopback), and never a header, a `Forwarded` field or a PROXY line;
+3. the peer is a Tailscale address (`100.64.0.0/10` or `fd7a:115c:a1e0::/48`) that is not an
+   address of any interface of this machine, up or down, listed no more than two seconds before the call;
+4. the local Tailscale daemon (the `whois` of its local API, whose socket root must own) names a
+   node for the peer that has a stable id and is not this computer's node. The lookup blocks, so it
+   runs off the Core lock, after the cheap checks (the window code of `pair.begin`, the request of
+   `pair.prove`); a daemon that cannot be asked, or that answers late, refuses the call;
+5. the tailnet and this computer's node key are what the first pairing served pinned. Once either
+   differs, `pair.begin` is refused until the person confirms the change: the app calls
+   `device.pair.start {confirmTailnet: true}`, which pins the identity the refusal saw. While a
+   refusal waits, the answer to `device.pair.start` carries `tailnetChanged: true`. The engine logs
+   the refusal and says why to the device; the desktop app's confirmation of it is a later slice
+   (ADR 0164). This raises a cost and no more: the confirmation is a local call;
+6. the peer's node is not one a device's authenticated `hello` came from. In this mode the engine
+   asks Tailscale for the node of each tailnet `hello` and keeps it, and keeps the node of a
+   request's `pair.begin` when the request is approved (a lookup that fails or takes more than a
+   second never blocks the `hello`; the node is then not recorded). A paired device's node, over either address
+   family, cannot begin a pairing, and the node of a device revoked less than 24 hours ago cannot
+   either. Nothing unblocks it earlier;
+7. a request is proved from the node that began it: the node is kept with the pending request, and
+   a `pair.prove`, or a replayed `pair.begin`, from another node is refused.
+
+Each refusal writes one `engine.pair_refused` line with a `kind` only (`listener`, `address`,
+`local_address`, `whois_unavailable`, `same_node`, `node_changed`, `device_node`, `revoked_node`,
+`tailnet_changed`); a run of one kind writes one line. The engine also marks itself non-dumpable on
+Linux (`prctl(PR_SET_DUMPABLE, 0)`) once it runs, so another program of the same user cannot read the
+codes it holds.
+
+**Detection of a device added, and what a revoked device left running (ADR 0164, slice 4).** A
+pairing cannot be made impossible for a program that has another node of the tailnet, so it is not
+silent. Where the engine asks for the person's code, `Device` carries two optional fields, written
+when the request is approved: `addedAt` (RFC 3339, whole seconds) and `node`, the name Tailscale
+gives the node the device paired from (what a person cannot read is dropped from it, and it is held to
+the device name's length). The Mac writes neither, and a device with none is not part of the notice.
+
+- `device.notice.list {}` answers `{items: Device[]}`: the devices added since the caller last
+  dismissed the notice, oldest first, never the caller itself nor a revoked device. A caller that
+  never dismissed it has been told about what was added before its own pairing, and the person at the
+  computer, who has no pairing of their own, about every dated device. A notice is durable: it
+  lists the same devices at every connection until it is dismissed.
+- `device.notice.dismiss {through, idempotencyKey}` dismisses it up to and including `through`, the
+  `addedAt` of the newest device that was shown; a device added after that is news again. A time
+  that has not come is taken as now, one that is not a time is `invalid_params`, and a mark never
+  moves back. Each viewer has its own mark: a paired device by its id, the person at the computer
+  on their own. A paired device or the local human may call both; an agent and a chief get
+  `forbidden_role`. The live signal is the `device.paired` event, which now carries the same fields.
+  The call is not the person's alone, so a program of the same user can dismiss the person's notice:
+  the notice raises a cost and no more.
+- `device.panes.list {deviceId}` answers `{items: Pane[]}`: the open panes the device's connection
+  created, in the order they were made, which is what the revoke dialog offers to close with
+  `pane.close`, since revoking a device does not stop what its terminals started. The engine
+  records the paired device whose connection made a pane in the same change that makes it, for every
+  call that makes one (a terminal, an agent, a web, editor or writing pane, a task's pane and its
+  reviewer's), so the list cannot miss one; a pane the person or an agent made, or that the engine
+  opened on its own for a queued task, is nobody's, and so is one made before this was recorded.
+
 **The desktop client's pairing view (ADR 0164, slice 5).** The Windows and Linux app draws the place
 "iPhone or iPad" of the rail: the paired devices, each with Revoke (after "Revoke this device's
 access?"), the requests that wait while the sheet is closed with Deny, and the button "Pair a phone",
@@ -175,21 +241,16 @@ nothing itself (the engine's count spans reconnects and windows, and one error k
 missing code, no code and a wrong one), and closes the request, which then offers only Dismiss,
 with the refusal's words beside it. The sheet keeps the one connection of
 the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
-new window on the next connection. An engine that refuses (Windows, and Linux until the peer rules
-of slice 3) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
+new window on the next connection. An engine that refuses (Windows) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
 refusal under them, in place of a code. `contracts/vectors/pairing-approval.json` and
 `pairing-comparison.json` are passed by the client's tests.
-
-Until the rules about where a new device may connect from (ADR 0164, slice 3) are in the engine,
-no shipped engine selects `PersonsCode`: Linux refuses as the paragraph below says, and only a
-test hook runs the mode.
 
 Only the signed Soyeht app opens the window, decides a request or revokes a device, on every
 system where the engine attests it (ADR 0162, 0163): a shell, the command line, a script or a terminal a paired device opened on
 the local endpoint gets `forbidden_role` and no window opens, so it cannot put an approval prompt
 with a name of its own in front of the person. Neither the command line nor the MCP program has a
-command for any of the three. Where the engine cannot tell the app from another program, which today
-is Windows and Linux, no connection counts as the app, so a pairing is started or approved and a
+command for any of the three. Where the engine cannot tell the app from another program and has no other rule, which today
+is Windows, no connection counts as the app, so a pairing is started or approved and a
 device revoked nowhere on that system until its app can prove itself (ADR 0162, which holds the open
 question). A paired device may revoke only itself (ADR 0128). Attestation does not stop a program of
 the same operating-system user that writes the database or adds a LaunchAgent, such as a phone's
@@ -247,7 +308,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `task.next` | no | no | yes | no |
 | `task.dispatch`, `task.unblock`, `task.list` | yes | yes | no | yes |
 | `pane.role.set` (appoint lead) | yes | yes | no | no |
-| `device.list` | yes | yes | no | no |
+| `device.list`, `device.notice.list`, `device.notice.dismiss`, `device.panes.list` | yes | yes | no | no |
 | `device.pair.start` (ADR 0163, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human | no | no | no |
 | `device.pair.decide`, `device.revoke` (ADR 0162, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human, and a decision only from the connection that opened the window and with the person's code to approve | own device only (`device.revoke`) | no | no |
 | `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |

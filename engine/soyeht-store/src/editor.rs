@@ -198,7 +198,7 @@ impl Store {
         if busy {
             return Err(Error::FileReplacementBusy);
         }
-        let change = Change { transaction };
+        let change = Change::new(transaction, None);
         for file in files {
             change.stage_replacement_file(file)?;
         }

@@ -23,8 +23,12 @@ does nothing silently.
 
 - A local client is accepted when it runs as the engine's own user. Only macOS can
   also prove that the peer is the signed Soyeht app, so on Linux and Windows no local
-  client counts as a signed UI and the consent-changing methods stay refused: `pane.experiment.*`,
-  and starting or deciding a pairing or revoking a device (ADR 0162, 0163).
+  client counts as a signed UI and `pane.experiment.*` stays refused. Starting or deciding a
+  pairing and revoking a device stay refused on Windows (ADR 0162, 0163). On Linux they are the
+  local human's, and a pairing is approved only with the code the new device shows (ADR 0164): the
+  new device must connect through the tailnet interface from another node, the engine asks the
+  local `tailscaled` who it is (`/var/run/tailscale/tailscaled.sock`; with no daemon, or Tailscale
+  in userspace mode, nothing pairs), and the engine marks itself non-dumpable.
 - Moving a project entry to the trash is unsupported (the caller asks before deleting
   permanently). Reading the macOS keychain and browser cookies for usage sources is
   unsupported; those sources report it as such.

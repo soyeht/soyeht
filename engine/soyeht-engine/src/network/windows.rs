@@ -14,8 +14,9 @@ use windows_sys::Win32::{
     Networking::WinSock::{AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_IN, SOCKADDR_IN6},
 };
 
-/// The friendly name and address of every address on an adapter that is up.
-pub(super) fn interface_addresses() -> io::Result<Vec<(String, IpAddr)>> {
+/// The name and address of every address of every interface, or only of the ones that are up.
+/// An address of a downed interface can still be bound, so it is still this machine's.
+pub(super) fn addresses(up_only: bool) -> io::Result<Vec<(String, IpAddr)>> {
     let flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
     // 8-byte aligned storage for the linked structures the call writes.
     let mut buffer = vec![0_u64; 4 * 1024];
@@ -43,7 +44,7 @@ pub(super) fn interface_addresses() -> io::Result<Vec<(String, IpAddr)>> {
         // SAFETY: the list was written into `buffer`, which outlives this loop.
         let current = unsafe { &*adapter };
         adapter = current.Next;
-        if current.OperStatus != IfOperStatusUp || current.FriendlyName.is_null() {
+        if up_only && current.OperStatus != IfOperStatusUp || current.FriendlyName.is_null() {
             continue;
         }
         // SAFETY: the friendly name is a NUL-terminated wide string inside `buffer`.

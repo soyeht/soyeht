@@ -11,6 +11,7 @@ use crate::{
     offload::Offload,
     operation_log::{OperationTimer, connection_close_record, logged_method, operation_pane_id},
     outbox::{self, CloseReason, Outbox},
+    pairing_peers::{ListenerKind, Peer},
     transport,
 };
 use serde_json::Value;
@@ -128,12 +129,14 @@ pub async fn run(config: Config) -> crate::errors::Result<()> {
     for address in config.listen {
         let listener = network::listen(address)?;
         network::update_pair_address(&core, listener.local_addr()?).await?;
-        let serving = serve_tcp(listener, accept.clone());
+        let serving = serve_tcp(listener, accept.clone(), ListenerKind::Fixed);
         tasks.spawn(async move { Ok::<(), Error>(serving.await?) });
     }
     if let Some(port) = config.tailnet_port {
         let serve = accept.clone();
-        let serve = Box::new(move |listener| tokio::spawn(serve_tcp(listener, serve.clone())));
+        let serve = Box::new(move |listener| {
+            tokio::spawn(serve_tcp(listener, serve.clone(), ListenerKind::Tailnet))
+        });
         let tailnet = network::TailnetListeners::system(port, serve);
         tasks.spawn(network::follow_tailnet(tailnet, Arc::clone(&core)).await?);
     }
@@ -175,13 +178,18 @@ pub(crate) async fn connection(
     catalog_tx: mpsc::Sender<CatalogJob>,
     local: bool,
     signed_ui: bool,
+    peer: Option<Peer>,
     mut reader: transport::Reader,
     writer: transport::Writer,
 ) {
     let (outbox, receiver) = outbox::channel();
     let connected = outbox.clone();
     let id = match core_lock::with(&core, "connect", move |state| {
-        state.connect(local, signed_ui, connected)
+        let id = state.connect(local, signed_ui, connected)?;
+        if let Some(peer) = peer {
+            crate::pairing_gate::note_peer(state, &id, peer);
+        }
+        Ok(id)
     })
     .await
     {

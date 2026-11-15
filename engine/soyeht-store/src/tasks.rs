@@ -390,7 +390,7 @@ impl Store {
         let transaction = self
             .connection
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
-        let change = Change { transaction };
+        let change = Change::new(transaction, None);
         change.save_dispatch_checkpoint(workspace_id, task_id, checkpoint)?;
         change.transaction.commit()?;
         Ok(())

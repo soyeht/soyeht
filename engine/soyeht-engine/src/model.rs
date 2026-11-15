@@ -50,6 +50,9 @@ pub struct Connected {
     pub actor: Option<Actor>,
     pub scope: String,
     pub local: bool,
+    /// Where a connection from the network came from, as the listener saw it; `None` for the
+    /// local endpoint (ADR 0164).
+    pub peer: Option<crate::pairing_peers::Peer>,
     pub signed_ui: bool,
     pub nonce: [u8; 32],
     pub events: bool,

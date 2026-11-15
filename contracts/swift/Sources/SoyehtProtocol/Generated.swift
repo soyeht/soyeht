@@ -432,11 +432,15 @@ public struct Device: Codable, Sendable {
     public var `name`: String
     public var `fingerprint`: String
     public var `revoked`: Bool
-    public init(`deviceId`: Id, `name`: String, `fingerprint`: String, `revoked`: Bool) {
+    public var `addedAt`: String?
+    public var `node`: String?
+    public init(`deviceId`: Id, `name`: String, `fingerprint`: String, `revoked`: Bool, `addedAt`: String? = nil, `node`: String? = nil) {
         self.`deviceId` = `deviceId`
         self.`name` = `name`
         self.`fingerprint` = `fingerprint`
         self.`revoked` = `revoked`
+        self.`addedAt` = `addedAt`
+        self.`node` = `node`
     }
 }
 
@@ -957,8 +961,10 @@ public struct PaneExperimentExportResult: Codable, Sendable {
 
 public struct DevicePairStartParams: Codable, Sendable {
     public var `idempotencyKey`: Id
-    public init(`idempotencyKey`: Id) {
+    public var `confirmTailnet`: Bool?
+    public init(`idempotencyKey`: Id, `confirmTailnet`: Bool? = nil) {
         self.`idempotencyKey` = `idempotencyKey`
+        self.`confirmTailnet` = `confirmTailnet`
     }
 }
 
@@ -968,12 +974,14 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `uri`: String
     public var `qr`: String?
     public var `reachability`: EngineReachability?
-    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil) {
+    public var `tailnetChanged`: Bool?
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil, `tailnetChanged`: Bool? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
         self.`qr` = `qr`
         self.`reachability` = `reachability`
+        self.`tailnetChanged` = `tailnetChanged`
     }
 }
 
@@ -1026,6 +1034,50 @@ public struct DeviceRevokeResult: Codable, Sendable {
     public var `deviceId`: Id
     public init(`deviceId`: Id) {
         self.`deviceId` = `deviceId`
+    }
+}
+
+public struct DeviceNoticeListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct DeviceNoticeListResult: Codable, Sendable {
+    public var `items`: [Device]
+    public init(`items`: [Device]) {
+        self.`items` = `items`
+    }
+}
+
+public struct DeviceNoticeDismissParams: Codable, Sendable {
+    public var `through`: String
+    public var `idempotencyKey`: Id
+    public init(`through`: String, `idempotencyKey`: Id) {
+        self.`through` = `through`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct DeviceNoticeDismissResult: Codable, Sendable {
+    public var `through`: String
+    public init(`through`: String) {
+        self.`through` = `through`
+    }
+}
+
+public struct DevicePanesListParams: Codable, Sendable {
+    public var `deviceId`: Id
+    public init(`deviceId`: Id) {
+        self.`deviceId` = `deviceId`
+    }
+}
+
+public struct DevicePanesListResult: Codable, Sendable {
+    public var `items`: [Pane]
+    public init(`items`: [Pane]) {
+        self.`items` = `items`
     }
 }
 
@@ -7921,6 +7973,9 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case devicePairDecide = "device.pair.decide"
     case deviceList = "device.list"
     case deviceRevoke = "device.revoke"
+    case deviceNoticeList = "device.notice.list"
+    case deviceNoticeDismiss = "device.notice.dismiss"
+    case devicePanesList = "device.panes.list"
     case pushRegister = "push.register"
     case pushUnregister = "push.unregister"
     case pairBegin = "pair.begin"
