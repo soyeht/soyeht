@@ -61,6 +61,7 @@ struct WebPaneKey: Hashable {
   private func synchronize(_ pane: Pane) -> MacWebSession {
     if let existing = sessions[pane.paneId] {
       existing.advanceMinimumGeneration(pane.generation)
+      existing.followProjectPage(pane.projectPath == nil ? nil : pane.url)
       existing.loadIfNeeded(pane.url)
       return existing
     }
@@ -76,6 +77,7 @@ struct WebPaneKey: Hashable {
           paneId: pane.paneId, warnings: warnings, errors: errors)
       })
     sessions[pane.paneId] = session
+    session.followProjectPage(pane.projectPath == nil ? nil : pane.url)
     session.loadIfNeeded(pane.url)
     return session
   }
@@ -97,11 +99,15 @@ struct WebPaneKey: Hashable {
     return try await synchronize(pane).execute(command)
   }
 
+  /// Whether a person asked: the command of a human session, unless it is the engine's own
+  /// (`background: true`, as the reload of a project page), which selects, raises and focuses
+  /// nothing (contract 11, section 7).
   private func humanCommand(_ args: JsonValue) -> Bool {
     guard case .object(let values) = args,
       case .object(let access)? = values["_soyehtAccess"],
       case .string("human")? = access["session"]
     else { return false }
+    if case .bool(true)? = access["background"] { return false }
     return true
   }
 
@@ -138,6 +144,10 @@ struct WebPaneKey: Hashable {
   @ObservationIgnored
   private let onNavigated: (UInt64, String, String) async -> Void
   private var requestedURL: URL?
+  /// The address the engine holds for the pane while it shows a project file as a page: the
+  /// only origin the pane may go to (contract 11, section 5b).
+  @ObservationIgnored
+  private var projectPageAddress: String?
   private var navigationGeneration: UInt64 = 0
   private(set) var viewport: WebViewport?
   @ObservationIgnored
@@ -238,6 +248,20 @@ struct WebPaneKey: Hashable {
   func loadIfNeeded(_ rawURL: String?) {
     guard webView.url == nil, requestedURL == nil, let rawURL,
       let url = allowedURL(rawURL)
+    else { return }
+    requestedURL = url
+    webView.load(URLRequest(url: url))
+  }
+
+  /// Records the page address of a pane that shows a project file (nil for any other pane).
+  /// When the engine served the page again at another port and token, the session still shows
+  /// the old one, and it goes to the new one: the only navigation of such a pane that no page,
+  /// link or command asked for.
+  func followProjectPage(_ address: String?) {
+    projectPageAddress = address
+    guard let address, let url = allowedURL(address),
+      let showing = (requestedURL ?? webView.url)?.absoluteString,
+      !ProjectPageOrigin.sameOrigin(page: showing, target: address)
     else { return }
     requestedURL = url
     webView.load(URLRequest(url: url))
@@ -402,7 +426,17 @@ struct WebPaneKey: Hashable {
   func webView(
     _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction
   ) async -> WKNavigationActionPolicy {
-    guard let url = navigationAction.request.url, allowedURL(url.absoluteString) != nil else {
+    guard let url = navigationAction.request.url else { return .cancel }
+    if let page = projectPageAddress {
+      // A project page goes only where its own address does; a frame may also load what the
+      // page makes itself. A new window (no target frame) is never opened.
+      guard let target = navigationAction.targetFrame else { return .cancel }
+      let permitted =
+        target.isMainFrame
+        ? ProjectPageOrigin.sameOrigin(page: page, target: url.absoluteString)
+        : ProjectPageOrigin.allowsFrame(page: page, target: url.absoluteString)
+      guard permitted else { return .cancel }
+    } else if allowedURL(url.absoluteString) == nil {
       return .cancel
     }
     if navigationAction.targetFrame?.isMainFrame == true {
@@ -412,6 +446,18 @@ struct WebPaneKey: Hashable {
   }
 
   private func navigate(_ args: JsonValue) throws {
+    if let page = projectPageAddress, let rawURL = value(args, "url") {
+      guard ProjectPageOrigin.sameOrigin(page: page, target: rawURL),
+        let url = allowedURL(rawURL),
+        ProjectPageOrigin.sameOrigin(page: page, target: url.absoluteString)
+      else {
+        throw ClientFailure.webHost(
+          .navigation_refused, "A page of a project file stays on its own address.")
+      }
+      requestedURL = url
+      webView.load(URLRequest(url: url))
+      return
+    }
     if let rawURL = value(args, "url"), let url = allowedURL(rawURL) {
       requestedURL = url
       webView.load(URLRequest(url: url))

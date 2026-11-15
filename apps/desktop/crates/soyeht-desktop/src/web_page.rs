@@ -4,10 +4,10 @@
 //! here by pane (ADR 0110).
 
 use soyeht_client::web_host::{Handoff, HostError, Page, PageInfo, Pages, Picture, Target};
-use soyeht_protocol::Pane;
+use soyeht_protocol::{Pane, web::same_origin};
 use soyeht_webview::{
-    Backend, Error, Frame, Modifiers, Navigation, PageState, Placement, ScrollInput, ViewOptions,
-    ViewSink, ViewUpdate, WebView,
+    Backend, Error, Frame, Modifiers, Navigation, PageLimit, PageState, Placement, ScrollInput,
+    ViewOptions, ViewSink, ViewUpdate, WebView,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -47,6 +47,25 @@ pub(crate) struct WebPage {
     reported: Mutex<(String, String)>,
     /// Where the page was last placed over its pane, when the system's page is a window of its own.
     placed: Mutex<Option<Placement>>,
+    /// The address of the pane that the page was last sent to, or found to be at, while the pane
+    /// shows a project file: a sync that sees the same address does not send the page again.
+    sent: Mutex<Option<String>>,
+}
+
+/// The origin a pane that shows a project file as a page may not leave: the address the engine
+/// holds for it (contract 11, section 5b). An ordinary pane has none.
+fn limit_of(pane: &Pane) -> Option<PageLimit> {
+    pane.project_path.as_ref()?;
+    pane.url
+        .as_deref()
+        .map(|url| PageLimit::new(url, same_origin))
+}
+
+/// Whether the engine has served a project page again, at an address with another origin than the
+/// one the page is at: it did not already send the page there. A page that has not committed yet
+/// (`current` empty) is on its way to what it was sent.
+fn served_again(url: &str, current: &str, sent: Option<&str>) -> bool {
+    sent != Some(url) && !same_origin(url, current)
 }
 
 impl WebPage {
@@ -89,6 +108,38 @@ impl WebPage {
         }
     }
 
+    /// Sends the page to `url` and remembers that it went there.
+    fn go(&self, url: &str) {
+        *self.sent.lock().unwrap_or_else(PoisonError::into_inner) = Some(url.to_owned());
+        // A pane the engine already holds opens on the page it was on. An address the web view
+        // refuses leaves the pane empty.
+        if self.view.navigate(Navigation::Url(url)).is_err() {
+            soyeht_platform::log::event("desktop.web_pane_address_refused", &[]);
+        }
+    }
+
+    /// Keeps the page in step with its pane record, at every sync. A pane that shows a project
+    /// file holds the page to the origin of the address the engine holds; when the engine served
+    /// the file again (it restarted, at another port and token) the page goes to the new address,
+    /// which is the new limit.
+    pub(crate) fn align(&self, pane: &Pane) {
+        let limit = limit_of(pane);
+        let limited = limit.is_some();
+        self.view.limit_to_page(limit);
+        let Some(url) = pane.url.as_deref().filter(|_| limited) else {
+            return;
+        };
+        let moved = {
+            let mut sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
+            let moved = served_again(url, &self.view.state().url, sent.as_deref());
+            *sent = Some(url.to_owned());
+            moved
+        };
+        if moved {
+            self.go(url);
+        }
+    }
+
     pub(crate) fn control(&self) -> &Handoff {
         &self.handoff
     }
@@ -120,9 +171,12 @@ impl Page for WebPage {
             Target::Reload => Navigation::Reload,
             Target::ReloadIgnoringCache => Navigation::ReloadIgnoringCache,
         };
-        self.view
-            .navigate(navigation)
-            .map_err(|_| HostError::NavigationRefused("Only http and https addresses open."))
+        self.view.navigate(navigation).map_err(|error| match error {
+            Error::OutsidePage => {
+                HostError::NavigationRefused("This page does not leave its own address.")
+            }
+            _ => HostError::NavigationRefused("Only http and https addresses open."),
+        })
     }
 
     fn info(&self) -> PageInfo {
@@ -268,6 +322,10 @@ impl WebRegistry {
             return;
         }
         for pane in live {
+            if let Some(page) = self.get(&pane.pane_id) {
+                page.align(pane);
+                continue;
+            }
             let first_time = self
                 .making
                 .lock()
@@ -327,13 +385,13 @@ impl WebRegistry {
                     frame_ready,
                     reported: Mutex::new((String::new(), String::new())),
                     placed: Mutex::new(None),
+                    sent: Mutex::new(None),
                 });
+                // The limit is set before the page goes anywhere, so that its first address is
+                // already held to its own origin.
+                page.view.limit_to_page(limit_of(pane));
                 if let Some(url) = &pane.url {
-                    // A pane the engine already holds opens on the page it was on. An address
-                    // the web view refuses leaves the pane empty.
-                    if page.view.navigate(Navigation::Url(url)).is_err() {
-                        soyeht_platform::log::event("desktop.web_pane_address_refused", &[]);
-                    }
+                    page.go(url);
                 }
                 self.pages
                     .lock()
@@ -402,5 +460,90 @@ impl WebRegistry {
 impl Pages for WebRegistry {
     fn page(&self, pane_id: &str) -> Option<Arc<dyn Page>> {
         self.get(pane_id).map(|page| page as Arc<dyn Page>)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    /// The cases of `contracts/vectors/project-page-origin.json`, which every client passes.
+    const VECTOR: &str = include_str!("../../../../../contracts/vectors/project-page-origin.json");
+
+    fn pane(url: Option<&str>, project_path: Option<&str>) -> Pane {
+        let mut pane = json!({
+            "paneId": "p1", "workspaceId": "w", "name": "p1", "cwd": "/work", "mode": "web",
+            "state": "idle", "source": "none", "confidence": 0.0, "phrase": "", "generation": 1,
+            "cols": 80, "rows": 24, "record": false
+        });
+        pane["url"] = json!(url);
+        pane["projectPath"] = json!(project_path);
+        serde_json::from_value(pane).unwrap()
+    }
+
+    /// What a page the engine serves may do, case by case: the top level goes where the rule says,
+    /// and a frame also where the page made the address itself.
+    #[test]
+    fn a_limited_view_follows_the_shared_vector_for_the_page_and_its_frames() {
+        let vector: Value = serde_json::from_str(VECTOR).unwrap();
+        let cases = vector["cases"].as_array().unwrap();
+        assert!(cases.len() > 20);
+        for case in cases {
+            let (page, target) = (
+                case["page"].as_str().unwrap(),
+                case["target"].as_str().unwrap(),
+            );
+            let same = case["same"].as_bool().unwrap();
+            let limit = PageLimit::new(page, same_origin);
+            assert_eq!(limit.allows(target), same, "{}", case["name"]);
+            // A frame also holds what the page made, which the vector says is not the same origin.
+            let made = ["about:blank", "about:srcdoc", "data:", "blob:"]
+                .iter()
+                .any(|scheme| target.to_ascii_lowercase().starts_with(scheme))
+                && target.len() > "data:".len();
+            let made = made || target == "about:blank";
+            assert_eq!(limit.allows_frame(target), same || made, "{}", case["name"]);
+        }
+    }
+
+    #[test]
+    fn only_a_pane_that_shows_a_project_file_with_an_address_is_limited() {
+        let url = "http://127.0.0.1:5000/0123/index.html";
+        let limit = limit_of(&pane(Some(url), Some("site/index.html"))).unwrap();
+        assert!(limit.allows("http://127.0.0.1:5000/0123/other.html"));
+        assert!(!limit.allows("http://127.0.0.1:5001/0123/index.html"));
+        assert!(limit_of(&pane(Some(url), None)).is_none());
+        assert!(limit_of(&pane(None, Some("site/index.html"))).is_none());
+    }
+
+    #[test]
+    fn a_page_is_sent_again_only_when_the_engine_served_it_at_another_origin() {
+        let served = "http://127.0.0.1:5000/0123/index.html";
+        let again = "http://127.0.0.1:6000/4567/index.html";
+        // The first load has not committed yet: the page is on its way to what it was sent.
+        assert!(!served_again(served, "", Some(served)));
+        assert!(!served_again(served, "about:blank", Some(served)));
+        // The page is where the engine says, or elsewhere in the same origin.
+        assert!(!served_again(
+            served,
+            "http://127.0.0.1:5000/0123/other.html",
+            None
+        ));
+        // The engine restarted and served the file at a new port and token.
+        assert!(served_again(
+            again,
+            "http://127.0.0.1:5000/0123/other.html",
+            Some(served)
+        ));
+        assert!(served_again(again, "", Some(served)));
+        // It was sent there already: not again, whatever the page shows meanwhile.
+        assert!(!served_again(
+            again,
+            "http://127.0.0.1:5000/0123/index.html",
+            Some(again)
+        ));
+        // A pane that was not limited before and shows another origin is sent to its address.
+        assert!(served_again(served, "https://example.com/", None));
     }
 }

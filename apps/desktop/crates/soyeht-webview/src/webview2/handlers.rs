@@ -76,12 +76,12 @@ pub(super) fn connect(view: &Rc<ViewCtx>) -> Result<()> {
 /// goes only where the pane goes, a download is not saved and a program of the system is not
 /// started. A runtime that lacks one of these events is not used: a page there could do what
 /// is refused here.
-fn keep_to_the_web(view: &ViewCtx, token: &mut i64) -> Result<()> {
+fn keep_to_the_web(view: &Rc<ViewCtx>, token: &mut i64) -> Result<()> {
     let refused = || Error::Unavailable("the web view lacks what keeps a page in the pane");
     // SAFETY: the handlers own nothing of the context; the token is the call's own.
     unsafe {
         view.webview
-            .add_FrameNavigationStarting(&frame_navigation_starting(), token)
+            .add_FrameNavigationStarting(&frame_navigation_starting(Rc::downgrade(view)), token)
             .map_err(|_| refused())?;
         view.webview
             .cast::<ICoreWebView2_4>()
@@ -97,14 +97,18 @@ fn keep_to_the_web(view: &ViewCtx, token: &mut i64) -> Result<()> {
 
 /// A frame of the page goes where a frame may (`policy::allows_frame`: the pane's addresses and
 /// the `data:` and `about:srcdoc` a page embeds), and nowhere else.
-fn frame_navigation_starting() -> Win32::ICoreWebView2NavigationStartingEventHandler {
+fn frame_navigation_starting(
+    weak: Weak<ViewCtx>,
+) -> Win32::ICoreWebView2NavigationStartingEventHandler {
     NavigationStartingEventHandler::create(Box::new(move |_, args| {
-        if let Some(args) = args {
+        if let (Some(view), Some(args)) = (weak.upgrade(), args) {
             let mut uri = PWSTR::null();
             // SAFETY: the arguments are alive for the call of the handler.
             let address = address_of(unsafe { args.Uri(&raw mut uri) }, uri);
-            // SAFETY: as above.
-            if !policy::allows_frame(&address) && unsafe { args.SetCancel(true) }.is_err() {
+            if !policy::frame_may_load(view.shared.limit().as_ref(), &address)
+                // SAFETY: as above.
+                && unsafe { args.SetCancel(true) }.is_err()
+            {
                 // The frame went on its way before it could be stopped.
             }
         }
@@ -186,7 +190,7 @@ fn navigation_starting(weak: Weak<ViewCtx>) -> Win32::ICoreWebView2NavigationSta
         let mut uri = PWSTR::null();
         // SAFETY: the arguments are alive for the call of the handler.
         let address = address_of(unsafe { args.Uri(&raw mut uri) }, uri);
-        if !policy::allows(&address) {
+        if !policy::top_level_may_load(view.shared.limit().as_ref(), &address) {
             // SAFETY: as above.
             if unsafe { args.SetCancel(true) }.is_err() {
                 // The navigation went on its way before it could be stopped.
@@ -269,7 +273,7 @@ fn new_window(weak: Weak<ViewCtx>) -> Win32::ICoreWebView2NewWindowRequestedEven
             }
             let mut uri = PWSTR::null();
             let address = address_of(args.Uri(&raw mut uri), uri);
-            if policy::allows_request(&address)
+            if policy::request_may_open(view.shared.limit().as_ref(), &address)
                 && let Ok(target) = target(Navigation::Url(&address))
             {
                 view.navigate(&target);

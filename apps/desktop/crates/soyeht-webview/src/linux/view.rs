@@ -92,7 +92,7 @@ impl ViewCtx {
         };
         // SAFETY: the web view is alive; the address is a constant.
         unsafe {
-            match policy::top_level(&uri, can_go_back) {
+            match policy::top_level(self.shared.limit().as_ref(), &uri, can_go_back) {
                 policy::TopLevel::Keep => {}
                 policy::TopLevel::GoBack => (self.api.webkit_web_view_go_back)(self.webview),
                 policy::TopLevel::Blank => {
@@ -506,7 +506,8 @@ unsafe extern "C" fn on_decide_policy(_page: Ptr, decision: Ptr, kind: c_int, da
         // WebKitGTK reports a frame and the top level the same way, so this lets through what a
         // frame may load; the top level is held to its own rule once it has begun to load
         // (`keep_the_top_level_to_the_web`).
-        if policy::allows_frame(&uri) {
+        // With a limit, a frame goes to the page's origin or to what the page made itself.
+        if policy::frame_may_load(view.shared.limit().as_ref(), &uri) {
             return ffi::FALSE;
         }
         (api.webkit_policy_decision_ignore)(decision);
@@ -524,7 +525,7 @@ unsafe extern "C" fn on_create(_page: Ptr, action: Ptr, data: Ptr) -> Ptr {
         let request = (view.api.webkit_navigation_action_get_request)(action);
         copy_string((view.api.webkit_uri_request_get_uri)(request))
     };
-    if policy::allows_request(&uri)
+    if policy::request_may_open(view.shared.limit().as_ref(), &uri)
         && let Ok(target) = target(crate::Navigation::Url(&uri))
     {
         view.navigate(&target);

@@ -146,7 +146,6 @@ fn create(
         acknowledged_package: harness.and_then(|(_, package)| package.cloned()),
         url: None,
         incognito: None,
-        project_path: None,
         path: None,
         writing_kind: None,
         writing_section: None,

@@ -1,7 +1,10 @@
 //! What every back end does the same way: what a view shares with the threads that hold it, the
 //! waits for an answer that comes later, and the start of the thread that serves the views.
 
-use crate::{Error, Frame, Navigation, PageState, Result, ViewSink, ViewUpdate, policy};
+use crate::{
+    Error, Frame, Navigation, PageState, Result, ViewSink, ViewUpdate,
+    policy::{self, PageLimit},
+};
 use std::sync::{
     Arc, Mutex, PoisonError,
     atomic::{AtomicU64, Ordering},
@@ -24,6 +27,8 @@ pub(crate) struct Shared {
     frame: Mutex<Option<Frame>>,
     state: Mutex<PageState>,
     navigations: AtomicU64,
+    /// The origin the view may not leave, when it shows a page the engine serves.
+    limit: Mutex<Option<PageLimit>>,
     sink: ViewSink,
 }
 
@@ -33,7 +38,29 @@ impl Shared {
             frame: Mutex::new(None),
             state: Mutex::new(PageState::default()),
             navigations: AtomicU64::new(0),
+            limit: Mutex::new(None),
             sink,
+        }
+    }
+
+    /// Keeps the origin the view may not leave, or lifts it.
+    pub fn set_limit(&self, limit: Option<PageLimit>) {
+        *self.limit.lock().unwrap_or_else(PoisonError::into_inner) = limit;
+    }
+
+    pub fn limit(&self) -> Option<PageLimit> {
+        self.limit
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    /// Refuses an address the view's limit does not allow, before it is sent to the page. Back,
+    /// forward and reload stay allowed.
+    pub fn check_navigation(&self, navigation: &Navigation<'_>) -> Result<()> {
+        match (navigation, self.limit()) {
+            (Navigation::Url(url), Some(limit)) if !limit.allows(url) => Err(Error::OutsidePage),
+            _ => Ok(()),
         }
     }
 
@@ -117,6 +144,12 @@ macro_rules! shared_view_calls {
 
         pub fn state(&self) -> $crate::PageState {
             self.shared.state()
+        }
+
+        /// Limits the view to the origin of a page the engine serves (or lifts the limit): it
+        /// goes nowhere else, whoever asks.
+        pub fn limit_to_page(&self, limit: Option<$crate::PageLimit>) {
+            self.shared.set_limit(limit);
         }
 
         /// How many navigations the view has begun.
@@ -239,6 +272,29 @@ mod tests {
             Target::<String>::new(Navigation::Back, text),
             Ok(Target::Back)
         ));
+    }
+
+    #[test]
+    fn a_limited_view_refuses_an_address_of_another_origin_and_keeps_back_and_reload() {
+        fn same_scheme(page: &str, target: &str) -> bool {
+            page.split(':').next() == target.split(':').next()
+        }
+        let shared = Shared::new(Arc::new(|_| {}));
+        let elsewhere = Navigation::Url("ftp://example.com/");
+        assert!(shared.check_navigation(&elsewhere).is_ok());
+        shared.set_limit(Some(PageLimit::new("https://a/", same_scheme)));
+        assert!(shared.check_navigation(&elsewhere).is_err());
+        for fine in [
+            Navigation::Url("https://b/"),
+            Navigation::Back,
+            Navigation::Forward,
+            Navigation::Reload,
+            Navigation::ReloadIgnoringCache,
+        ] {
+            assert!(shared.check_navigation(&fine).is_ok());
+        }
+        shared.set_limit(None);
+        assert!(shared.check_navigation(&elsewhere).is_ok());
     }
 
     #[test]

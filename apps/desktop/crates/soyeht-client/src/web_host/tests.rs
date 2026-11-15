@@ -99,6 +99,13 @@ fn command(kind: WebCommandKind, session: &str, args: Value) -> WebCommandParams
     }
 }
 
+/// The engine's own command: the access note carries `"background": true`.
+fn background_command(kind: WebCommandKind, session: &str, args: Value) -> WebCommandParams {
+    let mut params = command(kind, session, args);
+    params.args["_soyehtAccess"]["background"] = json!(true);
+    params
+}
+
 fn host(page: &Arc<FakePage>) -> Host {
     Host::new(Arc::new(Registry(page.clone())))
 }
@@ -165,6 +172,50 @@ fn an_agent_is_refused_while_a_person_has_the_pane_and_a_person_is_not() {
     page.handoff.hand_back();
     let agent = host(&page).execute(&command(WebCommandKind::Snapshot, "granted", json!({})));
     assert!(agent.result.is_ok());
+}
+
+#[test]
+fn the_engines_own_reload_goes_while_a_person_has_the_pane_and_does_not_take_it_over() {
+    let page = FakePage::new();
+    page.handoff.note_person();
+    let reload = background_command(
+        WebCommandKind::Navigate,
+        "human",
+        json!({"action": "reload"}),
+    );
+    let outcome = host(&page).execute(&reload);
+    assert_eq!(value(&outcome)["accepted"], true);
+    assert_eq!(*page.navigated.lock().unwrap(), [Target::Reload]);
+    // It is no act of a person's, and no hand-back either: the pane stays as it was.
+    assert!(page.handoff.person_has_control());
+    page.handoff.hand_back();
+    host(&page).execute(&reload);
+    assert!(!page.handoff.person_has_control());
+}
+
+#[test]
+fn the_background_note_is_read_as_true_only_and_is_a_persons_session_only() {
+    let page = FakePage::new();
+    page.handoff.note_person();
+    let agent = host(&page).execute(&command(WebCommandKind::Snapshot, "granted", json!({})));
+    assert_eq!(error_kind(&agent), ErrorKind::HumanTookOver);
+    // A background note that is not `true` is not one: an agent's command is still refused.
+    for note in [json!(false), json!("true"), json!(1), Value::Null] {
+        let mut params = command(WebCommandKind::Snapshot, "granted", json!({}));
+        params.args["_soyehtAccess"]["background"] = note;
+        assert_eq!(
+            error_kind(&host(&page).execute(&params)),
+            ErrorKind::HumanTookOver
+        );
+    }
+    // The engine's own command has no agent's session: one that claims it is invalid.
+    let claimed = background_command(WebCommandKind::Snapshot, "granted", json!({}));
+    let outcome = host(&page).execute(&claimed);
+    assert_eq!(error_kind(&outcome), ErrorKind::InternalError);
+    assert_eq!(
+        outcome.result.unwrap_err().message,
+        "The web command access is invalid."
+    );
 }
 
 #[test]

@@ -1,8 +1,8 @@
 //! Systems with no system web view of ours: every call says so.
 
 use crate::{
-    Error, Frame, KeyInput, Modifiers, Navigation, PageState, Placement, Pointer, Result,
-    ScrollInput, ViewOptions, ViewSink,
+    Error, Frame, KeyInput, Modifiers, Navigation, PageLimit, PageState, Placement, Pointer,
+    Result, ScrollInput, ViewOptions, ViewSink,
 };
 
 pub struct Backend;
@@ -42,6 +42,7 @@ impl WebView {
     pub fn navigations(&self) -> u64 {
         0
     }
+    pub fn limit_to_page(&self, _: Option<PageLimit>) {}
     pub fn capture(&self) -> Result<Frame> {
         Err(Error::Unsupported)
     }

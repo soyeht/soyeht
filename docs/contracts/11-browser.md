@@ -173,12 +173,15 @@ carry `nosniff`.
 
 **The page cannot navigate away.** A pane that holds `projectPath` goes only to addresses with the
 scheme, host and port of the address the engine holds for it (`contracts/vectors/project-page-origin.json`,
-passed by `soyeht_protocol::web::same_origin` and the Swift client). Every host refuses any other
-navigation of that pane: a link, `location`, a redirect, a frame and a command; the Mac and the desktop
-client do, and the engine refuses `web_navigate` to another origin with `NAVIGATION_REFUSED`. Without
-this a script could carry a file it fetched out in an address. The sandbox refuses windows and forms. A
-client that does not implement the rule can be navigated away by the page; every client that renders a web
-page implements it.
+passed by `soyeht_protocol::web::same_origin` and the Swift client). Every host that renders a web
+page refuses any other navigation of that pane: a link, `location`, a redirect, a new window and a command;
+a frame of the page may also hold the addresses the page makes itself (`about:blank`, `about:srcdoc`,
+`data:` and `blob:`), which the sandbox and the policy above already govern. The engine refuses
+`web_navigate` to another origin with `NAVIGATION_REFUSED`. Without this a script could carry a file it
+fetched out of the page in an address. The Mac and the desktop client implement it; a client that did not
+could be navigated away by the page. Known limit: WebKitGTK reports a top-level and a frame navigation the
+same way, so a top-level `data:`, `blob:` or `about:srcdoc` navigation is decided as a frame's and is put
+back after it commits.
 
 **The page follows the files, and not the build.** The engine reloads the pane's page when a file that
 the page's server has served since the page last loaded changes, once a burst of changes has settled; a
@@ -245,7 +248,9 @@ record and routes agent calls to that client.
   background?}`. `background: true` marks a command the engine sends on its own, which is no act of a
   person (the reload of a project page, §5b): a host does it without selecting the pane, raising its window
   or moving focus, whatever the session says. A host that does not know the key reads the command as a
-  person's, which is why it is a key and not a new session. When no connected client hosts the pane (the Mac app is closed)
+  person's, which is why it is a key and not a new session. A host that holds the page of a pane whose
+  `projectPath` is set and whose `url` has a different origin than the page it shows (the engine served it
+  again after a restart, §5b) loads the pane's `url`. When no connected client hosts the pane (the Mac app is closed)
   tools fail with `WEB_HOST_UNAVAILABLE`.
 - `servers.local.list` → `[{port, pid, command, cwd, title?}]`; event
   `servers.local.changed`. The list leaves out the engine itself and any

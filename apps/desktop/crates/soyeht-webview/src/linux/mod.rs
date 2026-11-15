@@ -186,6 +186,7 @@ impl WebView {
 
     /// Loads an address, or goes back, forward or again.
     pub fn navigate(&self, navigation: Navigation<'_>) -> Result<()> {
+        self.shared.check_navigation(&navigation)?;
         let target = calls::target(navigation)?;
         self.with_view(move |_, view| view.navigate(&target));
         Ok(())

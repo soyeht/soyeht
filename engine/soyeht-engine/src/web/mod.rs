@@ -12,6 +12,8 @@ mod system;
 mod test_support;
 
 pub use host::WebWaiter;
+#[cfg(test)]
+pub(crate) use project_page::PageFile;
 pub(crate) use project_page::ProjectPages;
 pub use system::SystemPortScan;
 #[cfg(unix)]

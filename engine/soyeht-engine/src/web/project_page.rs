@@ -89,6 +89,14 @@ impl PageFile {
     }
 }
 
+#[cfg(test)]
+impl PageFile {
+    /// The file and the directory the page serves, for the containment fuzz test.
+    pub(crate) fn paths(&self) -> (&Path, &Path) {
+        (&self.file, &self.root)
+    }
+}
+
 /// The files a page's server gave since the page last loaded: the ones a change reloads it for.
 #[derive(Default)]
 pub(super) struct Served {
