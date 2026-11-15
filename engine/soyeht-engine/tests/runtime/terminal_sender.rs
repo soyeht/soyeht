@@ -4,7 +4,10 @@
 //! pane runs presents it in `hello` and speaks for the pane, for messaging only, for as long as
 //! the pane runs that process. The shell commands are Unix ones, so the module is Unix only.
 
-use super::{agent_message_names::rename, *};
+use super::{
+    agent_message_names::{queue, rename},
+    *,
+};
 
 fn kind(response: &Value) -> &str {
     response["error"]["data"]["kind"].as_str().unwrap()
@@ -15,13 +18,6 @@ fn hold(human: &mut Client, pane: &str) {
         "pane.draft",
         json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
     );
-}
-
-fn queue(human: &mut Client, pane: &str) -> Vec<Value> {
-    human.call("pane.queue.list", json!({"paneId":pane,"limit":64}))["items"]
-        .as_array()
-        .unwrap()
-        .clone()
 }
 
 /// A second workspace on its own folder.

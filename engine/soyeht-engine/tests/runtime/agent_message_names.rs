@@ -292,7 +292,8 @@ fn a_reply_goes_to_the_pane_that_wrote_even_when_the_own_workspace_has_one_of_th
     assert_eq!(queue(&mut human, &local_twin).len(), 1);
 }
 
-fn queue(human: &mut Client, pane: &str) -> Vec<Value> {
+/// The open messages in the queue of `pane`.
+pub(super) fn queue(human: &mut Client, pane: &str) -> Vec<Value> {
     human.call("pane.queue.list", json!({"paneId":pane,"limit":64}))["items"]
         .as_array()
         .unwrap()
