@@ -26,8 +26,8 @@ use crate::{
     ports::{SupervisorPort, call_supervisor},
 };
 use soyeht_ptyd::{
-    client::{Client as SupervisorClient, IO_TIMEOUT},
-    wire::{Request, Response},
+    client::{Client, IO_TIMEOUT},
+    wire::{FEATURE_FOREGROUND, FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
     sync::{
@@ -48,9 +48,17 @@ const LATER_FAILED: &str = "engine.supervisor_follow_up_failed";
 /// The log event of a follow-up job that could not be started.
 const LATER_NOT_STARTED: &str = "engine.supervisor_follow_up_not_started";
 
-impl SupervisorPort for SupervisorClient {
+struct Connection {
+    port: Mutex<Box<dyn SupervisorPort>>,
+    /// Set, with the mutex held, by a call that left the stream in an unknown state. Read
+    /// without the mutex, so the tick can drop the link while a call is still waiting on it.
+    broken: AtomicBool,
+}
+
+/// The real link, which lists what its supervisor's welcome said it can do.
+impl SupervisorPort for Client {
     fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
-        SupervisorClient::request(self, request)
+        Client::request(self, request)
     }
 
     fn supervisor_id(&self) -> &str {
@@ -61,16 +69,9 @@ impl SupervisorPort for SupervisorClient {
         self.supervisor_generation
     }
 
-    fn features(&self) -> Vec<String> {
-        self.features.clone()
+    fn supports(&self, feature: &str) -> bool {
+        self.features.iter().any(|listed| listed == feature)
     }
-}
-
-struct Connection {
-    port: Mutex<Box<dyn SupervisorPort>>,
-    /// Set, with the mutex held, by a call that left the stream in an unknown state. Read
-    /// without the mutex, so the tick can drop the link while a call is still waiting on it.
-    broken: AtomicBool,
 }
 
 /// The connection to the supervisor. Clones share it.
@@ -79,7 +80,10 @@ pub struct Supervisor {
     connection: Arc<Connection>,
     id: Arc<str>,
     generation: u32,
-    features: Arc<[String]>,
+    /// Whether the supervisor accepts the pane binding in a terminal's environment.
+    pane_binding: bool,
+    /// Whether the supervisor answers `Foreground`, the programs a terminal runs (ADR 0165).
+    foreground: bool,
 }
 
 impl Supervisor {
@@ -87,7 +91,8 @@ impl Supervisor {
         Self {
             id: Arc::from(port.supervisor_id()),
             generation: port.supervisor_generation(),
-            features: port.features().into(),
+            pane_binding: port.supports(FEATURE_PANE_BINDING),
+            foreground: port.supports(FEATURE_FOREGROUND),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -99,13 +104,18 @@ impl Supervisor {
         &self.id
     }
 
-    /// Whether the supervisor listed `feature` in its welcome.
-    pub(crate) fn has_feature(&self, feature: &str) -> bool {
-        self.features.iter().any(|listed| listed == feature)
-    }
-
     pub fn supervisor_generation(&self) -> u32 {
         self.generation
+    }
+
+    /// Whether a terminal started through this link may carry its pane binding (ADR 0165).
+    pub(crate) fn takes_pane_binding(&self) -> bool {
+        self.pane_binding
+    }
+
+    /// Whether this link may ask what a terminal runs in its foreground (ADR 0165).
+    pub(crate) fn reports_foreground(&self) -> bool {
+        self.foreground
     }
 
     /// Whether a call left the stream in an unknown state. Such a handle only fails.

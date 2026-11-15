@@ -40,7 +40,7 @@ change of its own (`current_mode_update`); the engine reads the parent's confirm
 |---|---|---|
 | Start an agent in a worktree with a harness, model, effort and mode | `task.dispatch` (chief or person), worktree through worktrunk (ADR 0029), checkpointed steps | Needs a board task with required fields; only the chief or a person may call it; one owner per task; no notice to the dispatcher; no follow-up; no stop for an agent |
 | Review someone's change | contract-drift reviewer pane of a task (`tasks/review.rs`): plan mode, no MCP server at all | Fixed to the task flow |
-| Message another pane | `agent.message`, `agent.list`, attributed queued prompt with a short header (contract 04 R17), 6 per minute per recipient | No lineage, no limit on how many panes an agent starts, no permission ceiling, no completion notice, no report type |
+| Message another pane | `agent.message`, `agent.list` across workspaces, from an agent pane or a terminal pane, attributed queued prompt with a short header (contract 04 R17), 6 per minute per recipient | No lineage, no limit on how many panes an agent starts, no permission ceiling, no completion notice, no report type |
 | Subagents inside one pane | rows of kind `subagent` (contract 04 section 5, `agents/subagents.rs`) | One harness, die with the turn, share the parent's worktree, cannot be stepped into |
 | Named, reusable roles | skills (ADR 0075): `SKILL.md` folders, user and workspace scope | A skill teaches an agent; a helper type configures another agent. Same store code, different folder (section 6) |
 | Permission prompts | `pane.permission_requested`, answered by a person, `allow_always` grants are per pane (`permission_rules`) | Requests stay the person's; a grant the person gave the parent also covers its helpers (section 8) |
@@ -282,14 +282,15 @@ directions. A helper reaches its parent only through its report. The web family 
 creates a pane); those are the workspace's ordinary web panes and count against `webPanesPerWorkspace`. A helper
 is a worker, never the chief. Delegated helpers are left out of every other pane's `agent.list`.
 
-**What `agent.list` lists.** The other agent panes of the sender's workspace, each with `kind` `agent`, and the terminal
-panes of that workspace whose foreground program is a known harness (Claude Code, Codex, OpenCode or Cursor Agent), each
-with `kind` `terminal` and the harness's name as `harness` (ADR 0165, contract 05 "The harness a terminal pane runs").
-A terminal that runs a shell or any other program is not listed. The terminals are as fresh as one second: a list asked
-after a longer quiet waits for a new scan of the workspace's terminals, which runs off the engine's lock. A supervisor
-that does not list the `foreground` feature leaves every terminal unlisted. A listed terminal is named, not yet
-addressable: `agent.message` to it answers `not_found` until a terminal can receive (ADR 0165, slice 5), so a sender
-must not be told it can be reached.
+**What `agent.list` lists.** The agent panes the caller can message, in every workspace with its own first, and the
+terminal panes whose foreground program is a known harness (Claude Code, Codex, OpenCode or Cursor Agent), each as
+`{paneId, name, harness, kind, workspaceName}` with `kind` `agent` or `terminal`, and for a terminal the harness's name
+as `harness` (contract 08, ADR 0165, contract 05 "The harness a terminal pane runs"). A terminal that runs a shell or
+any other program is not listed. The terminals are as fresh as one second: a list asked after a longer quiet waits for a
+new scan of the terminals, which runs off the engine's lock, and a supervisor that does not list the `foreground`
+feature leaves every terminal unlisted. A listed terminal is named, not yet addressable: `agent.message` to it answers
+`not_found` with "A terminal pane cannot receive messages yet" until a terminal can receive (ADR 0165, slice 5), so a
+sender must not be told it can be reached.
 
 ## 8. Delivery, the mode, permissions and what is data
 

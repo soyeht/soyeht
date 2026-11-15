@@ -46,10 +46,10 @@ pub trait SupervisorPort: Send {
     fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response>;
     fn supervisor_id(&self) -> &str;
     fn supervisor_generation(&self) -> u32;
-    /// What the supervisor listed in its welcome that it can do beyond the first protocol. A
-    /// request that is not in the first protocol is sent only when its feature is here.
-    fn features(&self) -> Vec<String> {
-        Vec::new()
+    /// Whether the supervisor listed `feature` in its welcome. A link that was not made by a
+    /// welcome (a test double) lists none.
+    fn supports(&self, _feature: &str) -> bool {
+        false
     }
 }
 

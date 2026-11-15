@@ -63,6 +63,77 @@ fn agent_tools_override_spoofed_identity_and_require_a_current_attempt() {
     ));
 }
 
+fn agent_engine() -> FakeEngine {
+    FakeEngine {
+        role: Role::Agent,
+        calls: VecDeque::new(),
+    }
+}
+
+fn names(service: &Service<FakeEngine>) -> Vec<String> {
+    service.list()["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tool| tool["name"].as_str().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_terminal_pane_can_look_up_and_message_agents_and_nothing_else() {
+    let mut service = Service::terminal(agent_engine());
+    assert_eq!(names(&service), ["list_agents", "message_agent"]);
+    // The pane cannot receive yet: the tool does not promise an answer, and the pane's own
+    // description (below) does.
+    let listed = service.list();
+    let description = listed["tools"][1]["description"].as_str().unwrap();
+    assert!(
+        description.contains("no answer will arrive"),
+        "{description}"
+    );
+    let pane = Service::new(agent_engine(), context(false)).list();
+    let pane_description = pane["tools"][1]["description"].as_str().unwrap();
+    assert!(!pane_description.contains("no answer will arrive"));
+
+    service.call("list_agents", json!({})).unwrap();
+    service
+        .call(
+            "message_agent",
+            json!({"targetName":"Livia","text":"hello","inReplyTo":"m:F8C1"}),
+        )
+        .unwrap();
+    let (method, params) = service.engine.calls.pop_front().unwrap();
+    assert_eq!(method, "agent.list");
+    assert_eq!(params, json!({}));
+    let (method, params) = service.engine.calls.pop_front().unwrap();
+    assert_eq!(method, "agent.message");
+    // The pane is the connection's: nothing of a workspace or a pane goes with the message.
+    assert_eq!(params["targetName"], "Livia");
+    assert!(params["idempotencyKey"].as_str().is_some());
+    assert!(params.get("paneId").is_none() && params.get("workspaceId").is_none());
+
+    // Every other tool is refused before it reaches the engine, a task or web tool included.
+    for tool in ["task_next", "task_list", "loop_set", "web_open", "web_read"] {
+        assert!(
+            matches!(service.call(tool, json!({})), Err(Error::ToolForbidden)),
+            "{tool}"
+        );
+    }
+    assert!(service.engine.calls.is_empty());
+}
+
+#[test]
+fn a_server_outside_a_soyeht_pane_has_no_tools_and_no_engine() {
+    let mut service = Service::outside();
+    assert_eq!(service.list(), json!({"tools":[]}));
+    for tool in ["list_agents", "message_agent", "task_next"] {
+        assert!(matches!(
+            service.call(tool, json!({"text":"x","targetName":"y"})),
+            Err(Error::ToolForbidden)
+        ));
+    }
+}
+
 #[test]
 fn peer_tools_use_binding_identity_and_validate_target() {
     let engine = FakeEngine {

@@ -116,6 +116,7 @@ fn parse(text: &str) -> Option<(AgentMessageSource, &str)> {
                 name: from.into(),
                 harness: String::new(),
                 kind: None,
+                workspace_name: None,
             },
             body,
         )
@@ -142,6 +143,7 @@ fn parse_legacy(text: &str) -> Option<(AgentMessageSource, &str)> {
             name: name.into(),
             harness: harness.into(),
             kind: None,
+            workspace_name: None,
         },
         body,
     ))
@@ -171,6 +173,7 @@ mod tests {
             name: name.into(),
             harness: "Claude Agent".into(),
             kind: None,
+            workspace_name: None,
         }
     }
 

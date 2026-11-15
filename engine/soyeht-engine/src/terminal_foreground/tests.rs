@@ -383,7 +383,7 @@ fn agent_list_names_the_terminals_that_run_a_harness_and_leaves_the_others_out()
 }
 
 #[test]
-fn agent_list_leaves_out_the_terminals_of_other_workspaces() {
+fn agent_list_names_the_terminals_of_every_workspace_with_the_workspace() {
     let mut rig = Rig::new();
     let sender = rig.agent_binding("chief");
     let (other, instance) = rig.terminal("elsewhere");
@@ -394,23 +394,14 @@ fn agent_list_leaves_out_the_terminals_of_other_workspaces() {
         &instance,
         vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
     );
-    rig.assert_nothing_listed(&sender);
-    rig.finish();
-}
-
-#[test]
-fn a_list_scan_remembers_the_workspace_it_was_limited_to() {
-    let mut rig = Rig::new();
-    let sender = rig.agent_binding("chief");
-    let (_pane, instance) = rig.terminal("shell");
-    rig.programs
-        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
-    rig.agent_list(&sender);
-    let scanned = rig.core.foreground().scanned.clone();
-    assert_eq!(
-        scanned.map(|(scope, _)| scope),
-        Some(Some(WORKSPACE.into()))
-    );
+    let listed = rig.agent_list(&sender);
+    let items = listed["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["paneId"], other);
+    assert_eq!(items[0]["kind"], "terminal");
+    assert_eq!(items[0]["harness"], "OpenCode");
+    assert!(items[0]["workspaceName"].is_string());
+    assert_eq!(rig.programs.asked(), 1);
     rig.finish();
 }
 

@@ -32,6 +32,12 @@ pub const FEATURE_WATCH: &str = "watch";
 /// supervisor of this protocol that does not list it keeps working after an engine update.
 pub const FEATURE_FOREGROUND: &str = "foreground";
 
+/// A supervisor that lists this accepts `SOYEHT_PANE_BINDING` in the environment of a terminal
+/// (ADR 0165). An older one refuses the variable as one the engine may not set, so the engine
+/// leaves it out of a start it sends to a supervisor that does not list the feature: the
+/// terminal runs, and is not attached to a Soyeht pane.
+pub const FEATURE_PANE_BINDING: &str = "pane-binding";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessKind {

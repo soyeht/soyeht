@@ -23,7 +23,7 @@ use crate::{
     tick_due::Next,
 };
 use soyeht_protocol::{Pane, PaneMode, PaneState, TerminalHarness};
-use soyeht_ptyd::wire::{FEATURE_FOREGROUND, MAX_FOREGROUND, Program, Request, Response};
+use soyeht_ptyd::wire::{MAX_FOREGROUND, Program, Request, Response};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -45,8 +45,8 @@ const SCAN_JOB: &str = "terminal.foreground";
 pub(crate) struct Service {
     /// When the next periodic scan is due, in the engine's clock.
     next_ms: i64,
-    /// When the last scan was applied, and the workspace it was limited to (`None`: every one).
-    scanned: Option<(Option<String>, i64)>,
+    /// When the last scan was applied.
+    scanned_ms: Option<i64>,
     /// Whether the last look found a terminal to scan and an app that watches.
     watching: bool,
     versions: Arc<Mutex<Versions>>,
@@ -118,18 +118,13 @@ fn harness_of(programs: &[Program], versions: &Mutex<Versions>) -> Option<Termin
 
 impl Core {
     /// The terminal panes a scan asks the supervisor about, and the panes that keep a harness
-    /// after their process ended, which are cleared with no question. `workspace` limits the
-    /// scan to one workspace.
-    fn foreground_targets(&mut self, workspace: Option<&str>) -> Result<Vec<Target>> {
+    /// after their process ended, which are cleared with no question.
+    fn foreground_targets(&mut self) -> Result<Vec<Target>> {
         let mut targets = Vec::new();
         let mut gone = Vec::new();
         for (id, running) in &self.panes {
             let stored = &running.stored;
-            if stored.closed
-                || stored.pane.mode != PaneMode::Terminal
-                || self.agents.has(id)
-                || workspace.is_some_and(|workspace| stored.pane.workspace_id != workspace)
-            {
+            if stored.closed || stored.pane.mode != PaneMode::Terminal || self.agents.has(id) {
                 continue;
             }
             match &stored.instance_id {
@@ -158,7 +153,7 @@ impl Core {
     /// harness, and the engine asks nothing it cannot answer.
     fn start_scan(&mut self, targets: Vec<Target>) -> Result<Option<Scan>> {
         let supervisor = self.supervisor()?;
-        if !supervisor.has_feature(FEATURE_FOREGROUND) {
+        if !supervisor.reports_foreground() {
             return Ok(None);
         }
         Ok(Some(Scan {
@@ -176,7 +171,7 @@ impl Core {
         }
         let watched = self.clients.values().any(|client| client.events);
         let targets = if watched {
-            self.foreground_targets(None)?
+            self.foreground_targets()?
         } else {
             Vec::new()
         };
@@ -193,7 +188,7 @@ impl Core {
         self.spawn_background(
             SCAN_JOB.into(),
             move || scan.run(),
-            move |core, scanned| core.finish_foreground(&used, None, scanned),
+            move |core, scanned| core.finish_foreground(&used, scanned),
         )
     }
 
@@ -206,16 +201,11 @@ impl Core {
 
     /// Puts a scan's findings into the panes, for each that is still the process it read. A scan
     /// that failed on a link that was replaced meanwhile says nothing about the new one.
-    fn finish_foreground(
-        &mut self,
-        used: &Supervisor,
-        workspace: Option<String>,
-        scanned: Result<Vec<Found>>,
-    ) -> Result<()> {
+    fn finish_foreground(&mut self, used: &Supervisor, scanned: Result<Vec<Found>>) -> Result<()> {
         let Some(found) = self.settle_if_current(used, scanned)? else {
             return Ok(());
         };
-        self.foreground_mut().scanned = Some((workspace, self.now_ms()));
+        self.foreground_mut().scanned_ms = Some(self.now_ms());
         for Found {
             pane_id,
             instance_id,
@@ -243,22 +233,17 @@ impl Core {
         self.save_pane(id, saved, "terminal-harness", Vec::new())
     }
 
-    /// `agent.list`: the agent panes of the sender's workspace, and its terminal panes that run a
-    /// known harness. The terminals are as fresh as [`FRESH_MS`], by a scan the reply waits for.
+    /// `agent.list`: the agent panes and the terminal panes that run a known harness (see
+    /// `peer_listing`). The terminals are as fresh as [`FRESH_MS`], by a scan the reply waits for.
     pub(crate) fn agent_list(&mut self, sender: Pane) -> Result<Outcome> {
-        let workspace_id = sender.workspace_id.clone();
         let fresh = self
             .foreground()
-            .scanned
-            .as_ref()
-            .is_some_and(|(scope, at)| {
-                scope.as_deref().is_none_or(|scope| scope == workspace_id)
-                    && self.now_ms().saturating_sub(*at) < FRESH_MS
-            });
+            .scanned_ms
+            .is_some_and(|at| self.now_ms().saturating_sub(at) < FRESH_MS);
         let targets = if fresh {
             Vec::new()
         } else {
-            self.foreground_targets(Some(&workspace_id))?
+            self.foreground_targets()?
         };
         if targets.is_empty() {
             return Ok(Outcome::Reply(self.peer_listing(&sender)));
@@ -273,7 +258,7 @@ impl Core {
                 SCAN_TIMEOUT,
                 move || scan.run(),
                 move |core, scanned| {
-                    core.finish_foreground(&used, Some(workspace_id), scanned)?;
+                    core.finish_foreground(&used, scanned)?;
                     Ok(Outcome::Reply(core.peer_listing(&sender)))
                 },
             )

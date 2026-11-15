@@ -38,6 +38,7 @@ pub mod pairing;
 pub mod pairing_approval;
 mod pairing_gate;
 pub mod pairing_peers;
+mod pane_binding;
 pub mod pane_observations;
 mod pane_restore;
 pub mod panes;

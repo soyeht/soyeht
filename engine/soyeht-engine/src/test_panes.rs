@@ -206,8 +206,8 @@ impl SupervisorPort for Featured {
         self.0.supervisor_generation()
     }
 
-    fn features(&self) -> Vec<String> {
-        self.1.clone()
+    fn supports(&self, feature: &str) -> bool {
+        self.1.iter().any(|listed| listed == feature)
     }
 }
 

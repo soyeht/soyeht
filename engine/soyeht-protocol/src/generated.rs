@@ -1697,6 +1697,8 @@ pub struct AgentMessageSource {
     pub harness: String,
     #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
     pub kind: Option<AgentMessageKind>,
+    #[serde(rename = "workspaceName", skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentListParams {}

@@ -2151,11 +2151,13 @@ public struct AgentMessageSource: Codable, Sendable {
     public var `name`: String
     public var `harness`: String
     public var `kind`: AgentMessageKind?
-    public init(`paneId`: Id, `name`: String, `harness`: String, `kind`: AgentMessageKind? = nil) {
+    public var `workspaceName`: String?
+    public init(`paneId`: Id, `name`: String, `harness`: String, `kind`: AgentMessageKind? = nil, `workspaceName`: String? = nil) {
         self.`paneId` = `paneId`
         self.`name` = `name`
         self.`harness` = `harness`
         self.`kind` = `kind`
+        self.`workspaceName` = `workspaceName`
     }
 }
 

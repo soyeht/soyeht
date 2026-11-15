@@ -1,4 +1,4 @@
-use soyeht_protocol::RpcError;
+use soyeht_protocol::{ErrorKind, RpcError, handshake::PANE_BINDING_NOT_CURRENT};
 use std::{fmt, io};
 
 #[derive(Debug)]
@@ -15,11 +15,24 @@ pub enum Error {
     MissingArgument,
     MissingDataDirectory,
     MissingBinding,
+    MissingPaneBinding,
+    PaneBindingNotCurrent,
     Service(soyeht_service::Error),
     EngineUnavailable(Box<Error>),
 }
 
 impl Error {
+    /// The error of a program in a terminal pane: a refusal of its binding by the engine means
+    /// the binding is not current (ADR 0165), and any other error is itself.
+    pub fn for_pane_binding(self) -> Self {
+        match self {
+            Self::Remote(refused) if refused.data.kind == ErrorKind::Unauthorized => {
+                Self::PaneBindingNotCurrent
+            }
+            other => other,
+        }
+    }
+
     pub fn io_kind(&self) -> Option<io::ErrorKind> {
         match self {
             Self::Io(error) => Some(error.kind()),
@@ -51,6 +64,11 @@ impl fmt::Display for Error {
             Self::MissingBinding => {
                 formatter.write_str("SOYEHT_MCP_BINDING is required with --bound")
             }
+            Self::MissingPaneBinding => formatter.write_str(
+                "this program is not attached to a Soyeht pane: SOYEHT_PANE_BINDING is not set; \
+start it from a Soyeht terminal pane",
+            ),
+            Self::PaneBindingNotCurrent => formatter.write_str(PANE_BINDING_NOT_CURRENT),
             Self::Service(error) => write!(formatter, "service: {error}"),
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the engine: {error}")

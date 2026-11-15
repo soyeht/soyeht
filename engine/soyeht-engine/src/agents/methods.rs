@@ -15,6 +15,7 @@ use soyeht_protocol::{
     event, limits, method,
 };
 use soyeht_store::agents;
+use std::collections::BTreeMap;
 
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
@@ -32,6 +33,13 @@ pub(crate) fn handles(method: &str) -> bool {
 
 /// How many of the panes a name matches an error lists.
 const LISTED: usize = 8;
+
+/// Why a message to a web page is refused. A page has no input line and no harness; a message
+/// for it would go to the agent pane that created it, and the engine does not record one (ADR 0165).
+const WEB_PANE_REASON: &str = "This page has no recorded creator to receive messages";
+
+/// Why a message to a terminal pane is refused: delivery into a terminal is not built yet.
+const TERMINAL_PANE_REASON: &str = "A terminal pane cannot receive messages yet";
 
 pub(crate) fn queued(
     pane: &str,
@@ -155,26 +163,30 @@ pub(crate) fn cancel(
 }
 
 impl Core {
-    /// The agent pane a connection is bound to.
+    /// The pane a connection is bound to: an agent pane, or a terminal pane whose process the
+    /// connection presented the binding of (checked at every request, `authenticated_scope`).
     fn agent_sender(&self, connection: &str) -> Result<Pane> {
         let sender_id = self
             .clients
             .get(connection)
             .and_then(|client| client.actor.as_ref())
             .and_then(|actor| actor.pane_id.as_deref())
-            .ok_or_else(|| errors::forbidden_role("Agent binding required"))?
-            .to_owned();
+            .ok_or_else(|| errors::forbidden_role("Agent binding required"))?;
         Ok(self
             .panes
-            .get(&sender_id)
-            .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Agent)
-            .ok_or_else(|| errors::not_found("Sender agent pane not found"))?
+            .get(sender_id)
+            .filter(|pane| {
+                !pane.stored.closed
+                    && matches!(pane.stored.pane.mode, PaneMode::Agent | PaneMode::Terminal)
+            })
+            .ok_or_else(|| errors::not_found("Sender pane not found"))?
             .stored
             .pane
             .clone())
     }
 
-    /// `agent.list` and `agent.message`, which an agent binding may call.
+    /// `agent.list` and `agent.message`, which an agent binding may call. A list may wait for a
+    /// scan of the terminals (`terminal_foreground`), so it can be an offloaded request.
     pub(crate) fn agent_peer(
         &mut self,
         connection: &str,
@@ -199,18 +211,7 @@ impl Core {
         let sender_id = sender.pane_id.clone();
         let target_id = self.peer_target(&sender, params)?;
         let target_id = target_id.as_str();
-        let target = self
-            .panes
-            .get(target_id)
-            .filter(|pane| {
-                !pane.stored.closed
-                    && pane.stored.pane.workspace_id == sender.workspace_id
-                    && pane.stored.pane.mode == PaneMode::Agent
-                    && pane.stored.pane.pane_id != sender_id
-            })
-            .ok_or_else(|| errors::not_found("Target agent pane not found in this workspace"))?
-            .stored
-            .clone();
+        let target = self.peer_pane(&sender_id, target_id)?;
         let mut state = self.agent_state(target_id)?;
         if state.harness_switch.is_some() {
             return Err(errors::pane_busy("Target agent is switching harness"));
@@ -273,6 +274,26 @@ impl Core {
             )?
             .result)
     }
+    /// The open agent pane `target_id`, which a message from `sender_id` may be queued in. A web
+    /// page and a terminal pane are panes a name or an id can reach, and the reason they cannot
+    /// take a message is the answer, not "not found".
+    fn peer_pane(&self, sender_id: &str, target_id: &str) -> Result<crate::model::StoredPane> {
+        let pane = self
+            .panes
+            .get(target_id)
+            .filter(|pane| !pane.stored.closed && pane.stored.pane.pane_id != sender_id)
+            .map(|pane| &pane.stored)
+            .ok_or_else(|| errors::not_found("Target pane not found"))?;
+        match pane.pane.mode {
+            PaneMode::Agent => Ok(pane.clone()),
+            PaneMode::Web => Err(errors::not_found(WEB_PANE_REASON)),
+            PaneMode::Terminal => Err(errors::not_found(TERMINAL_PANE_REASON)),
+            PaneMode::Editor | PaneMode::Writing => {
+                Err(errors::not_found("Target pane is not an agent pane"))
+            }
+        }
+    }
+
     /// The pane `params` addresses with exactly one of `targetPaneId` and `targetName`.
     pub(crate) fn peer_target(&self, sender: &Pane, params: &Value) -> Result<String> {
         let text = |key: &str| params.get(key).and_then(Value::as_str);
@@ -285,24 +306,35 @@ impl Core {
         }
     }
 
-    /// The pane `name` names. When two panes carry the name, a reply (`in_reply_to`, the id of a
-    /// message `sender` has open) goes to the pane that sent that message; the id is only a hint
-    /// and a stale or unknown one decides nothing.
+    /// The pane `name` names. A reply (`in_reply_to`, the id of a message `sender` has open) goes
+    /// first to the pane that sent that message, among every pane of that name in every workspace;
+    /// the id is only a hint and a stale or unknown one decides nothing. Otherwise a name that
+    /// exactly one agent pane of the sender's own workspace carries is that pane, as it was before
+    /// names reached other workspaces; when the own workspace has none or several, the agent panes
+    /// of every workspace count, and several are an error that lists them. A name no agent pane
+    /// carries may still be a terminal pane or a web page, which says why it takes no message.
     fn peer_by_name(&self, sender: &Pane, name: &str, in_reply_to: Option<&str>) -> Result<String> {
         let wanted = text_reduction::folded(name);
-        let matches: Vec<&Pane> = self
-            .peers_of(sender)
-            .filter(|pane| text_reduction::folded(&pane.name) == wanted)
+        let carries = |pane: &&Pane| text_reduction::folded(&pane.name) == wanted;
+        let matches: Vec<&Pane> = self.peers_of(sender).filter(carries).collect();
+        if let Some(replied) = self.reply_sender(sender, in_reply_to, &matches) {
+            return Ok(replied);
+        }
+        let own: Vec<&Pane> = matches
+            .iter()
+            .copied()
+            .filter(|pane| pane.workspace_id == sender.workspace_id)
             .collect();
-        match matches.as_slice() {
-            [] => Err(errors::not_found(format!(
-                "No agent pane is named {} in this workspace",
-                text_reduction::name(name)
-            ))),
-            [pane] => Ok(pane.pane_id.clone()),
-            several => self
-                .reply_sender(sender, in_reply_to, several)
-                .ok_or_else(|| errors::invalid(self.ambiguous_name(name, several))),
+        match (own.as_slice(), matches.as_slice()) {
+            ([pane], _) | ([], [pane]) => Ok(pane.pane_id.clone()),
+            (_, []) => Err(errors::not_found(
+                match self.unreceiving_panes(sender).find(carries) {
+                    Some(pane) if pane.mode == PaneMode::Web => WEB_PANE_REASON.to_owned(),
+                    Some(_) => TERMINAL_PANE_REASON.to_owned(),
+                    None => format!("No agent pane is named {}", text_reduction::name(name)),
+                },
+            )),
+            (_, several) => Err(errors::invalid(self.ambiguous_name(name, several))),
         }
     }
 
@@ -327,65 +359,101 @@ impl Core {
             .map(|pane| pane.pane_id.clone())
     }
 
-    /// The panes `sender` may address by name: the other open agent panes of its workspace.
+    /// The panes `sender` may address by name: the other open agent panes of every workspace.
     pub(crate) fn peers_of<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
+        self.open_panes_of(sender)
+            .filter(|pane| pane.mode == PaneMode::Agent)
+    }
+
+    /// The other open panes a name can reach but that take no message: terminals and web pages.
+    fn unreceiving_panes<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
+        self.open_panes_of(sender)
+            .filter(|pane| matches!(pane.mode, PaneMode::Terminal | PaneMode::Web))
+    }
+
+    fn open_panes_of<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
         self.panes
             .values()
             .filter(|pane| !pane.stored.closed)
             .map(|pane| &pane.stored.pane)
-            .filter(move |pane| {
-                pane.workspace_id == sender.workspace_id
-                    && pane.mode == PaneMode::Agent
-                    && pane.pane_id != sender.pane_id
-            })
+            .filter(move |pane| pane.pane_id != sender.pane_id)
     }
 
-    /// What `agent.list` answers `sender`: the panes it may address, by name, with their harness.
-    /// They are the other agent panes of its workspace and its terminal panes that run a known
-    /// harness (see `terminal_foreground`).
+    /// The name of a workspace as a message shows it.
+    fn workspace_label(&self, workspace_id: &str) -> String {
+        model::workspace(&self.store, workspace_id)
+            .map(|workspace| text_reduction::name(&workspace.name))
+            .unwrap_or_else(|_| workspace_id.to_owned())
+    }
+
+    /// What `agent.list` answers `sender`: the agent panes it may message and the terminal panes
+    /// that run a known harness (`terminal_foreground`), in every workspace, its own workspace
+    /// first, each with its harness and the workspace it is in. A listed terminal is named and
+    /// takes no message yet (`TERMINAL_PANE_REASON`).
     pub(crate) fn peer_listing(&self, sender: &Pane) -> Value {
-        let items: Vec<AgentMessageSource> = self
-            .panes
-            .values()
-            .filter(|pane| !pane.stored.closed)
-            .map(|pane| &pane.stored.pane)
-            .filter(|pane| {
-                pane.workspace_id == sender.workspace_id && pane.pane_id != sender.pane_id
-            })
+        // One read of the store per workspace, not per pane: this runs under the Core lock.
+        let mut labels: BTreeMap<&str, String> = BTreeMap::new();
+        let mut items: Vec<(bool, String, String, AgentMessageSource)> = Vec::new();
+        let agents = self.peers_of(sender).filter_map(|pane| {
+            let running = self.agents.get(&pane.pane_id)?;
+            Some((
+                pane,
+                running.state.launch.name.as_str(),
+                AgentMessageKind::Agent,
+            ))
+        });
+        let terminals = self
+            .unreceiving_panes(sender)
+            .filter(|pane| pane.mode == PaneMode::Terminal)
             .filter_map(|pane| {
-                let (harness, kind) = match pane.mode {
-                    PaneMode::Agent => (
-                        self.agents.get(&pane.pane_id)?.state.launch.name.clone(),
-                        AgentMessageKind::Agent,
-                    ),
-                    PaneMode::Terminal => (
-                        pane.terminal_harness.as_ref()?.name.clone(),
-                        AgentMessageKind::Terminal,
-                    ),
-                    _ => return None,
-                };
-                Some(AgentMessageSource {
+                let harness = pane.terminal_harness.as_ref()?;
+                Some((pane, harness.name.as_str(), AgentMessageKind::Terminal))
+            });
+        for (pane, harness, kind) in agents.chain(terminals) {
+            let workspace = labels
+                .entry(pane.workspace_id.as_str())
+                .or_insert_with(|| self.workspace_label(&pane.workspace_id))
+                .clone();
+            items.push((
+                pane.workspace_id != sender.workspace_id,
+                text_reduction::folded(&workspace),
+                pane.workspace_id.clone(),
+                AgentMessageSource {
                     pane_id: pane.pane_id.clone(),
                     name: text_reduction::name(&pane.name),
-                    harness: text_reduction::name(&harness),
+                    harness: text_reduction::name(harness),
                     kind: Some(kind),
-                })
-            })
-            .collect();
+                    workspace_name: Some(workspace),
+                },
+            ));
+        }
+        // Stable: the panes of one workspace keep their order.
+        items.sort_by(|left, right| (left.0, &left.1, &left.2).cmp(&(right.0, &right.1, &right.2)));
+        let items: Vec<AgentMessageSource> = items.into_iter().map(|item| item.3).collect();
         json!({"items":items})
     }
 
     /// The sender of a message as the recipient's queue and transcript record it.
     pub(crate) fn peer_source(&self, sender: &Pane) -> Result<AgentMessageSource> {
-        let running = self
-            .agents
-            .get(&sender.pane_id)
-            .ok_or_else(|| errors::invalid("Sender ACP session required"))?;
+        let (harness, kind) = match sender.mode {
+            PaneMode::Terminal => ("Terminal".to_owned(), AgentMessageKind::Terminal),
+            _ => {
+                let running = self
+                    .agents
+                    .get(&sender.pane_id)
+                    .ok_or_else(|| errors::invalid("Sender ACP session required"))?;
+                (
+                    text_reduction::name(&running.state.launch.name),
+                    AgentMessageKind::Agent,
+                )
+            }
+        };
         Ok(AgentMessageSource {
             pane_id: sender.pane_id.clone(),
             name: text_reduction::name(&sender.name),
-            harness: text_reduction::name(&running.state.launch.name),
-            kind: None,
+            harness,
+            kind: Some(kind),
+            workspace_name: Some(self.workspace_label(&sender.workspace_id)),
         })
     }
 
@@ -394,12 +462,10 @@ impl Core {
             .iter()
             .take(LISTED)
             .map(|pane| {
-                let workspace = model::workspace(&self.store, &pane.workspace_id)
-                    .map(|workspace| text_reduction::name(&workspace.name))
-                    .unwrap_or_else(|_| pane.workspace_id.clone());
                 format!(
-                    "{} (workspace {workspace}, pane {})",
+                    "{} (workspace {}, pane {})",
                     text_reduction::name(&pane.name),
+                    self.workspace_label(&pane.workspace_id),
                     pane.pane_id
                 )
             })
@@ -411,7 +477,7 @@ impl Core {
             String::new()
         };
         format!(
-            "Several agent panes are named {}: {}{rest}. Message one of them with targetPaneId",
+            "Several panes are named {}: {}{rest}. Message one of them with targetPaneId",
             text_reduction::name(name),
             listed.join("; ")
         )

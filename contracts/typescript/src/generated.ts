@@ -877,6 +877,7 @@ export interface AgentMessageSource {
   "name": string;
   "harness": string;
   "kind"?: AgentMessageKind;
+  "workspaceName"?: string;
 }
 
 export interface AgentListParams {
