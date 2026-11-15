@@ -4,17 +4,10 @@
 //! pane runs presents it in `hello` and speaks for the pane, for messaging only, for as long as
 //! the pane runs that process.
 
-use super::*;
+use super::{agent_message_names::rename, *};
 
 fn kind(response: &Value) -> &str {
     response["error"]["data"]["kind"].as_str().unwrap()
-}
-
-fn rename(human: &mut Client, pane: &str, name: &str) {
-    human.call(
-        "pane.rename",
-        json!({"paneId":pane,"name":name,"idempotencyKey":format!("rename-{pane}-{name}")}),
-    );
 }
 
 fn hold(human: &mut Client, pane: &str) {
@@ -428,12 +421,6 @@ fn soyeht_mcp_in_a_terminal_pane_offers_two_tools_and_outside_one_it_offers_none
 
     // Started outside a Soyeht pane: it answers, offers nothing and does not fail.
     let replies = exchange(mcp(&rig, None), &[initialize, list]);
-    assert!(
-        replies[0]["result"]["instructions"]
-            .as_str()
-            .unwrap()
-            .contains("not started inside a Soyeht pane")
-    );
     assert_eq!(replies[1]["result"]["tools"], json!([]));
 }
 

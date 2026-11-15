@@ -16,12 +16,17 @@
 //! The binding names its pane in the clear (`PANE.TAG`), so a check is one keyed hash and not one
 //! per pane.
 
-use crate::{core::Core, model::StoredPane};
+use crate::{
+    agents::roster::Agents,
+    errors::{self, Result},
+    model::{RunningPane, StoredPane, TerminalInstance},
+};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::SigningKey;
 use ring::hmac;
 use sha2::{Digest, Sha256};
-use soyeht_protocol::PaneMode;
+use soyeht_protocol::{PaneMode, Role};
+use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
 /// Separates this use of the engine's key from every other.
@@ -85,19 +90,82 @@ fn instance(pane: &StoredPane) -> Instance<'_> {
     }
 }
 
-impl Core {
-    /// The binding in the environment of the process the terminal pane `pane` runs.
-    pub(crate) fn terminal_binding(&self, pane: &StoredPane) -> String {
-        issue(&self.engine_key, &instance(pane))
-    }
+/// The binding in the environment of the process the terminal pane `pane` runs.
+pub(crate) fn binding_of(engine: &SigningKey, pane: &StoredPane) -> String {
+    issue(engine, &instance(pane))
+}
 
-    /// The open terminal pane `candidate` is the current binding of.
-    pub(crate) fn terminal_pane_of_binding(&self, candidate: &str) -> Option<&StoredPane> {
-        let pane = &self.panes.get(claimed_pane(candidate)?)?.stored;
-        (!pane.closed
-            && pane.pane.mode == PaneMode::Terminal
-            && verify(&self.engine_key, candidate, &instance(pane)))
-        .then_some(pane)
+/// The pane and process a presented binding speaks for.
+pub(crate) struct Bound {
+    pub(crate) role: Role,
+    pub(crate) pane: String,
+    /// For a terminal pane, the process the binding belongs to.
+    pub(crate) terminal: Option<TerminalInstance>,
+}
+
+/// Who `candidate` is the binding of: an agent pane (its checkpoint holds the binding), or the
+/// open terminal pane whose current process it was made for.
+pub(crate) fn identify(
+    engine: &SigningKey,
+    agents: &Agents,
+    panes: &BTreeMap<String, RunningPane>,
+    candidate: &str,
+) -> Result<Bound> {
+    let mut found = None;
+    for (pane, running) in agents.iter() {
+        let active = panes.get(pane).is_some_and(|saved| !saved.stored.closed);
+        if active && running.state.binding.matches(candidate) {
+            if found.is_some() {
+                return Err(errors::internal("Agent binding is not unique"));
+            }
+            let role = match running.state.mcp_role {
+                Role::Agent => Role::Agent,
+                Role::Chief => Role::Chief,
+                _ => return Err(errors::internal("Agent checkpoint has an invalid role")),
+            };
+            found = Some(Bound {
+                role,
+                pane: pane.clone(),
+                terminal: None,
+            });
+        }
+    }
+    if found.is_none()
+        && let Some(running) = claimed_pane(candidate).and_then(|pane| panes.get(pane))
+        && let pane = &running.stored
+        && !pane.closed
+        && pane.pane.mode == PaneMode::Terminal
+        && verify(engine, candidate, &instance(pane))
+    {
+        found = Some(Bound {
+            role: Role::Agent,
+            pane: pane.pane.pane_id.clone(),
+            terminal: Some(TerminalInstance {
+                pane_id: pane.pane.pane_id.clone(),
+                instance_key: pane.instance_key.clone(),
+                generation: pane.pane.generation,
+            }),
+        });
+    }
+    found.ok_or_else(|| errors::unauthorized("Unknown agent binding"))
+}
+
+/// A connection that presented a terminal pane's binding speaks only while the pane is open and
+/// runs the process the binding was made for.
+pub(crate) fn require_current(
+    panes: &BTreeMap<String, RunningPane>,
+    bound: &TerminalInstance,
+) -> Result<()> {
+    let current = panes.get(&bound.pane_id).is_some_and(|running| {
+        let pane = &running.stored;
+        !pane.closed
+            && pane.instance_key == bound.instance_key
+            && pane.pane.generation == bound.generation
+    });
+    if current {
+        Ok(())
+    } else {
+        Err(errors::unauthorized("Stale agent binding"))
     }
 }
 

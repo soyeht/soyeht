@@ -232,7 +232,7 @@ mod tests {
             "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n",
         );
         let mut output = Vec::new();
-        let service = Service::outside(crate::engine::Detached);
+        let service = Service::outside();
         serve(
             Cursor::new(input),
             &mut output,

@@ -67,6 +67,7 @@ pub struct Connected {
 /// The process of a terminal pane, as the store knows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TerminalInstance {
+    pub pane_id: String,
     pub instance_key: String,
     pub generation: u32,
 }

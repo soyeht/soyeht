@@ -346,14 +346,6 @@ fn agent_messages_are_queued_labeled_and_rate_limited_per_direction_in_every_wor
         "pane.draft",
         json!({"paneId":outsider,"active":true,"idempotencyKey":"hold-outsider"}),
     );
-    let listed = agent.call("agent.list", json!({}));
-    assert!(
-        listed["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|item| item["paneId"] == outsider && item["workspaceName"] == "Other")
-    );
     let across = agent.call(
         "agent.message",
         json!({

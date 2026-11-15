@@ -63,6 +63,13 @@ fn agent_tools_override_spoofed_identity_and_require_a_current_attempt() {
     ));
 }
 
+fn agent_engine() -> FakeEngine {
+    FakeEngine {
+        role: Role::Agent,
+        calls: VecDeque::new(),
+    }
+}
+
 fn names(service: &Service<FakeEngine>) -> Vec<String> {
     service.list()["tools"]
         .as_array()
@@ -74,11 +81,7 @@ fn names(service: &Service<FakeEngine>) -> Vec<String> {
 
 #[test]
 fn a_terminal_pane_can_look_up_and_message_agents_and_nothing_else() {
-    let engine = FakeEngine {
-        role: Role::Agent,
-        calls: VecDeque::new(),
-    };
-    let mut service = Service::terminal(engine);
+    let mut service = Service::terminal(agent_engine());
     assert_eq!(names(&service), ["list_agents", "message_agent"]);
 
     service.call("list_agents", json!({})).unwrap();
@@ -110,7 +113,7 @@ fn a_terminal_pane_can_look_up_and_message_agents_and_nothing_else() {
 
 #[test]
 fn a_server_outside_a_soyeht_pane_has_no_tools_and_no_engine() {
-    let mut service = Service::outside(crate::engine::Detached);
+    let mut service = Service::outside();
     assert_eq!(service.list(), json!({"tools":[]}));
     for tool in ["list_agents", "message_agent", "task_next"] {
         assert!(matches!(

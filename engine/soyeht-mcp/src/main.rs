@@ -2,7 +2,7 @@
 
 use soyeht_mcp::{
     Error, Result,
-    engine::{Client, Detached},
+    engine::Client,
     server,
     tools::{Service, TaskContext},
 };
@@ -141,7 +141,7 @@ fn run_terminal(data_dir: Option<PathBuf>) -> Result<()> {
             return server::serve(
                 io::stdin().lock(),
                 io::stdout().lock(),
-                Service::outside(Detached),
+                Service::outside(),
                 &server::outside_instructions(),
             );
         }

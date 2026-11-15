@@ -185,7 +185,10 @@ impl Core {
             .unwrap_or_default();
         if pane.pane.mode == PaneMode::Terminal {
             // The pane's binding, for `soyeht-mcp` and `soyeht message` started in it (ADR 0165).
-            env.insert(PANE_BINDING_ENV.into(), self.terminal_binding(pane));
+            env.insert(
+                PANE_BINDING_ENV.into(),
+                crate::pane_binding::binding_of(&self.engine_key, pane),
+            );
         }
         Ok(Spawn {
             instance_key: pane.instance_key.clone(),

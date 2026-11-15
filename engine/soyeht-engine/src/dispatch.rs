@@ -2,8 +2,9 @@ use crate::{
     auth,
     core::Core,
     errors::{self, Result},
-    model::{self, Connected, TerminalInstance},
+    model::{self, Connected},
     outbox::Outbox,
+    pane_binding::{Bound, identify, require_current},
     ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -78,14 +79,6 @@ fn uses_native_rpc_result(method: &str) -> bool {
         method,
         method::PANE_CONFIG_SET | method::PANE_HARNESS_SWITCH
     )
-}
-
-/// The pane a binding speaks for.
-struct BoundPane {
-    role: Role,
-    pane: String,
-    /// For a terminal pane, the process the binding belongs to.
-    terminal: Option<TerminalInstance>,
 }
 
 impl Core {
@@ -226,15 +219,13 @@ impl Core {
                     "Agent bindings are accepted only on the local socket",
                 ));
             }
-            let identity = self.agent_identity(binding)?;
-            terminal_instance = identity.terminal;
-            let pane = identity.pane;
-            (
-                identity.role,
-                None,
-                Some(pane.clone()),
-                format!("agent:{pane}"),
-            )
+            let Bound {
+                role,
+                pane,
+                terminal,
+            } = identify(&self.engine_key, &self.agents, &self.panes, binding)?;
+            terminal_instance = terminal;
+            (role, None, Some(pane.clone()), format!("agent:{pane}"))
         } else if local {
             // The listener has already verified the connecting operating-system uid.
             let uid = soyeht_platform::user::id()?;
@@ -302,46 +293,6 @@ impl Core {
         Ok(())
     }
 
-    /// Who a binding is for: an agent pane, or a terminal pane and the process of it the binding
-    /// belongs to.
-    fn agent_identity(&self, candidate: &str) -> Result<BoundPane> {
-        let mut found = None;
-        for (pane, running) in self.agents.iter() {
-            let active = self
-                .panes
-                .get(pane)
-                .is_some_and(|saved| !saved.stored.closed);
-            if active && running.state.binding.matches(candidate) {
-                if found.is_some() {
-                    return Err(errors::internal("Agent binding is not unique"));
-                }
-                let role = match running.state.mcp_role {
-                    Role::Agent => Role::Agent,
-                    Role::Chief => Role::Chief,
-                    _ => return Err(errors::internal("Agent checkpoint has an invalid role")),
-                };
-                found = Some(BoundPane {
-                    role,
-                    pane: pane.clone(),
-                    terminal: None,
-                });
-            }
-        }
-        if found.is_none()
-            && let Some(pane) = self.terminal_pane_of_binding(candidate)
-        {
-            found = Some(BoundPane {
-                role: Role::Agent,
-                pane: pane.pane.pane_id.clone(),
-                terminal: Some(TerminalInstance {
-                    instance_key: pane.instance_key.clone(),
-                    generation: pane.pane.generation,
-                }),
-            });
-        }
-        found.ok_or_else(|| errors::unauthorized("Unknown agent binding"))
-    }
-
     fn subscribe_events(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let since = params["since"]
             .as_str()
@@ -375,19 +326,9 @@ impl Core {
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
         requires_signed_ui(method, client.signed_ui)?;
         if let Some(bound) = &client.terminal_instance {
-            // A terminal pane's binding speaks only for the process it was made for, and only
-            // for messaging (ADR 0165); the task and web families stay with the agent panes.
-            let current = actor
-                .pane_id
-                .as_deref()
-                .and_then(|pane| self.panes.get(pane));
-            if !current.is_some_and(|pane| {
-                !pane.stored.closed
-                    && pane.stored.instance_key == bound.instance_key
-                    && pane.stored.pane.generation == bound.generation
-            }) {
-                return Err(errors::unauthorized("Stale agent binding"));
-            }
+            // A terminal pane's binding speaks for the process it was made for, and for
+            // messaging only (ADR 0165); the task and web families stay with the agent panes.
+            require_current(&self.panes, bound)?;
             if !matches!(method, method::AGENT_LIST | method::AGENT_MESSAGE) {
                 return Err(errors::forbidden_role(
                     "Agent binding method is not allowed",

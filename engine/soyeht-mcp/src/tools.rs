@@ -1,4 +1,7 @@
-use crate::{Error, Result, engine::EnginePort};
+use crate::{
+    Error, Result,
+    engine::{Detached, EnginePort},
+};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
 use soyeht_protocol::{Role, limits, method, method_family};
@@ -286,6 +289,16 @@ const TOOLS: [Tool; 36] = [
     },
 ];
 
+impl Service<Detached> {
+    /// The service of a program outside a Soyeht pane, which is told it has no tools.
+    pub fn outside() -> Self {
+        Self {
+            engine: Detached(Role::Agent),
+            scope: Scope::Outside,
+        }
+    }
+}
+
 /// Whose tools a server offers.
 enum Scope {
     /// An agent pane of a workspace, with the tools of its role.
@@ -328,14 +341,6 @@ impl<P: EnginePort> Service<P> {
         Self {
             engine,
             scope: Scope::Terminal,
-        }
-    }
-
-    /// The service of a program outside a Soyeht pane, which is told it has no tools.
-    pub fn outside(engine: P) -> Self {
-        Self {
-            engine,
-            scope: Scope::Outside,
         }
     }
 

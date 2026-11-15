@@ -3,7 +3,7 @@
 
 use super::*;
 
-fn rename(human: &mut Client, pane: &str, name: &str) {
+pub(super) fn rename(human: &mut Client, pane: &str, name: &str) {
     human.call(
         "pane.rename",
         json!({"paneId":pane,"name":name,"idempotencyKey":format!("rename-{pane}-{name}")}),
