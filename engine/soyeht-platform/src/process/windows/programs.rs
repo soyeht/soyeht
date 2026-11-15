@@ -3,13 +3,16 @@
 
 use super::{Spawned, check, owned};
 use crate::process::inspect::{
-    Listed, MAX_PROGRAMS, Program, bounded, split_command_line, tree_order,
+    Listed, Program, bounded, bounded_executable, split_command_line, tree_order,
 };
 use std::{io, os::windows::io::AsRawHandle, ptr};
 use windows_sys::{
     Wdk::System::Threading::NtQueryInformationProcess,
     Win32::{
-        Foundation::{ERROR_MORE_DATA, FILETIME, HANDLE, STATUS_INFO_LENGTH_MISMATCH},
+        Foundation::{
+            ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA, FILETIME, HANDLE,
+            STATUS_INFO_LENGTH_MISMATCH,
+        },
         System::{
             JobObjects::{
                 JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList,
@@ -27,10 +30,12 @@ use windows_sys::{
 const BASIC_INFORMATION: i32 = 0;
 /// `ProcessCommandLineInformation`: the command line, from Windows 8.1.
 const COMMAND_LINE_INFORMATION: i32 = 60;
-/// How many process ids the first read of a job has room for.
-const FIRST_ROOM: usize = 128;
-/// The most room a read of a job asks for: a job with more is read partially.
-const MOST_ROOM: usize = 4 * MAX_PROGRAMS * FIRST_ROOM;
+/// The most process ids of a job that are read at all: a job with more (a large parallel build)
+/// is read in part, so the cost of a read never grows with the job. Each id is a handle opened
+/// and three questions asked.
+const MAX_READ: usize = 256;
+/// The first room for a file name, in UTF-16 units; a longer name is asked again with more.
+const FIRST_PATH: usize = 1024;
 /// The longest path the long-path form of a Windows file can have, in UTF-16 units.
 const LONGEST_PATH: usize = 32_768;
 
@@ -64,53 +69,47 @@ impl Spawned {
 }
 
 impl super::Job {
-    /// The ids of the processes the job holds, possibly cut when the job holds very many.
+    /// The ids of the processes the job holds, at most [`MAX_READ`] of them.
     fn process_ids(&self) -> io::Result<Vec<u32>> {
-        let mut room = FIRST_ROOM;
-        loop {
-            // The header is two counts; the room is in pointer-sized words, which also aligns it.
-            let words = room + 2;
-            let mut buffer = vec![0usize; words];
-            // SAFETY: the job handle is open, and the buffer is `words` pointer-sized words,
-            // which the call fills with the structure the class names.
-            let queried = unsafe {
-                QueryInformationJobObject(
-                    self.0.as_raw_handle(),
-                    JobObjectBasicProcessIdList,
-                    buffer.as_mut_ptr().cast(),
-                    u32::try_from(words * size_of::<usize>()).unwrap_or(u32::MAX),
-                    ptr::null_mut(),
-                )
-            };
-            let too_small = match check(queried) {
-                Ok(()) => false,
-                Err(error) if error.raw_os_error() == Some(ERROR_MORE_DATA.cast_signed()) => true,
-                Err(error) => return Err(error),
-            };
-            if too_small && room < MOST_ROOM {
-                room *= 4;
-                continue;
-            }
-            let list = buffer.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
-            // SAFETY: the buffer holds the header the call wrote, and the ids it counts follow
-            // it within the buffer.
-            let (count, first) = unsafe {
-                (
-                    (*list).NumberOfProcessIdsInList as usize,
-                    ptr::addr_of!((*list).ProcessIdList).cast::<usize>(),
-                )
-            };
-            let count = count.min(room);
-            let mut ids = Vec::with_capacity(count);
-            for index in 0..count {
-                // SAFETY: `index` is below the count of ids the call wrote into the buffer.
-                let id = unsafe { *first.add(index) };
-                if let Ok(id) = u32::try_from(id) {
-                    ids.push(id);
-                }
-            }
-            return Ok(ids);
+        // The header is two counts; the room is in pointer-sized words, which also aligns it.
+        let words = MAX_READ + 2;
+        let mut buffer = vec![0usize; words];
+        // SAFETY: the job handle is open, and the buffer is `words` pointer-sized words,
+        // which the call fills with the structure the class names.
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.0.as_raw_handle(),
+                JobObjectBasicProcessIdList,
+                buffer.as_mut_ptr().cast(),
+                u32::try_from(words * size_of::<usize>()).unwrap_or(u32::MAX),
+                ptr::null_mut(),
+            )
+        };
+        // A job with more ids than the room answers `ERROR_MORE_DATA` with the ones that fit.
+        match check(queried) {
+            Ok(()) => {}
+            Err(error) if error.raw_os_error() == Some(ERROR_MORE_DATA.cast_signed()) => {}
+            Err(error) => return Err(error),
         }
+        let list = buffer.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
+        // SAFETY: the buffer holds the header the call wrote, and the ids it counts follow it
+        // within the buffer.
+        let (count, first) = unsafe {
+            (
+                (*list).NumberOfProcessIdsInList as usize,
+                ptr::addr_of!((*list).ProcessIdList).cast::<usize>(),
+            )
+        };
+        let count = count.min(MAX_READ);
+        let mut ids = Vec::with_capacity(count);
+        for index in 0..count {
+            // SAFETY: `index` is below the count of ids the call wrote into the buffer.
+            let id = unsafe { *first.add(index) };
+            if let Ok(id) = u32::try_from(id) {
+                ids.push(id);
+            }
+        }
+        Ok(ids)
     }
 }
 
@@ -127,7 +126,7 @@ fn read_process(pid: u32) -> Option<Listed> {
         program: Program {
             pid,
             parent: None,
-            executable: image_path(handle),
+            executable: bounded_executable(image_path(handle)),
             arguments: bounded(command_line(handle).unwrap_or_default()),
         },
         parent_pid: parent_of(handle).unwrap_or(0),
@@ -152,15 +151,28 @@ fn creation_time(handle: HANDLE) -> Option<u64> {
 }
 
 fn image_path(handle: HANDLE) -> Option<String> {
-    let mut path = vec![0u16; LONGEST_PATH];
-    let mut length = u32::try_from(path.len()).ok()?;
-    // SAFETY: the buffer is `length` units, which the call updates to the units it wrote.
-    let read = check(unsafe {
-        QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, path.as_mut_ptr(), &mut length)
-    });
-    // ignored: a process whose file the system does not name still has its arguments to go by
-    read.ok()?;
-    Some(String::from_utf16_lossy(path.get(..length as usize)?))
+    let mut room = FIRST_PATH;
+    loop {
+        let mut path = vec![0u16; room];
+        let mut length = u32::try_from(path.len()).ok()?;
+        // SAFETY: the buffer is `length` units, which the call updates to the units it wrote.
+        let read = check(unsafe {
+            QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, path.as_mut_ptr(), &mut length)
+        });
+        match read {
+            Ok(()) => return Some(String::from_utf16_lossy(path.get(..length as usize)?)),
+            // A name longer than the room: ask again with more, up to the longest there is.
+            Err(error)
+                if error.raw_os_error() == Some(ERROR_INSUFFICIENT_BUFFER.cast_signed())
+                    && room < LONGEST_PATH =>
+            {
+                room = (room * 4).min(LONGEST_PATH);
+            }
+            // ignored: a process whose file the system does not name still has its arguments
+            // to go by
+            Err(_) => return None,
+        }
+    }
 }
 
 fn parent_of(handle: HANDLE) -> Option<u32> {

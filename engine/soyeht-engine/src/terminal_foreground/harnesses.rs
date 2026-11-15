@@ -1,11 +1,24 @@
 //! The terminal harnesses the engine knows by the program a terminal runs (ADR 0165).
 //!
-//! A harness is told by data, not by a branch per product: the table lists, for each one, the
-//! command names it runs under and the folders its files live in. The shapes were measured on the real binaries: Claude Code runs a file named
-//! after its version with `argv[0]` `claude`, Codex and OpenCode run a native file under the
-//! package manager's folder with their own name as `argv[0]`, and Cursor Agent runs its bundled
-//! `node` with `argv[0]` the path it was started by and its own script as the first argument.
+//! A harness is told by data, not by a branch per product. The table lists, for each one, the
+//! command names it runs under and the install layouts its files live in; the rules below read
+//! the program's executable path, `argv[0]` and, for a host program such as `node`, its script.
+//! The shapes were measured on the real binaries (the spike): Claude Code runs a file named after
+//! its version with `argv[0]` `claude`, Codex and OpenCode run a native file under the package
+//! manager's folder with their own name as `argv[0]`, and Cursor Agent runs its bundled `node`
+//! with `argv[0]` the path it was started by and its own script as the first argument.
+//!
+//! A program is a harness when one of these holds, and only these:
+//!
+//! 1. a file it runs (executable, or the script of a host program) sits in an install layout of
+//!    the harness (`.local/share/cursor-agent/versions/`, `node_modules/@openai/codex/`, ...);
+//! 2. `argv[0]` is the bare command name (the shell found it on the person's `PATH`);
+//! 3. the file is named like the command and the folder it is in is on the person's `PATH`.
+//!
+//! A binary named like a harness in a project folder is none of them. A wrong match only
+//! mislabels an `agent.list` entry; it grants nothing.
 
+use soyeht_protocol::readiness::HARNESSES;
 use soyeht_ptyd::wire::Program;
 
 /// What a terminal harness is called, and how the engine tells that a program is it.
@@ -13,46 +26,59 @@ pub(super) struct Known {
     /// The harness id of the registry, which the apps already know it by.
     pub(super) id: &'static str,
     pub(super) name: &'static str,
-    /// The command names, lowercase and with no extension, that are this harness whether they
-    /// are `argv[0]` or the name of the file it runs.
+    /// The command names, lowercase and with no extension, that are this harness.
     commands: &'static [&'static str],
-    /// Folder names, lowercase and joined by `/`, that the path of this harness's file or script
-    /// holds. They tell a name another program also has (Cursor's short name `agent`) and a
-    /// file that is not named after the harness (Cursor's bundled `node`, Claude's versions).
-    markers: &'static [&'static str],
-    /// Whether `--version` is asked of the program as the person started it (`argv[0]`) before
-    /// the file it runs: Cursor's file is the `node` that hosts it.
-    pub(super) version_from_launch: bool,
+    /// The install layouts: runs of folder names, lowercase and joined by `/`, that the path of
+    /// this harness's file or script holds whole and in order.
+    layouts: &'static [&'static str],
+}
+
+/// The registry's own id of the harness at `position` (the order of `readiness::HARNESSES`).
+const fn registry_id(position: usize) -> &'static str {
+    HARNESSES[position].id
 }
 
 pub(super) const KNOWN: [Known; 4] = [
     Known {
-        id: "registry.claude-acp",
+        id: registry_id(0),
         name: "Claude Code",
         commands: &["claude"],
-        markers: &["claude/versions", "@anthropic-ai/claude-code"],
-        version_from_launch: false,
+        layouts: &[
+            ".local/share/claude/versions",
+            "node_modules/@anthropic-ai/claude-code",
+            "caskroom/claude-code",
+        ],
     },
     Known {
-        id: "registry.codex-acp",
+        id: registry_id(1),
         name: "Codex",
         commands: &["codex"],
-        markers: &["@openai/codex"],
-        version_from_launch: false,
+        layouts: &[
+            "caskroom/codex",
+            "cellar/codex",
+            "node_modules/@openai/codex",
+        ],
     },
     Known {
-        id: "registry.opencode",
-        name: "OpenCode",
-        commands: &["opencode"],
-        markers: &["opencode-ai"],
-        version_from_launch: false,
-    },
-    Known {
-        id: "registry.cursor",
+        id: registry_id(2),
         name: "Cursor Agent",
         commands: &["cursor-agent"],
-        markers: &["cursor-agent"],
-        version_from_launch: true,
+        layouts: &[
+            ".local/share/cursor-agent/versions",
+            "appdata/local/cursor-agent",
+        ],
+    },
+    Known {
+        id: registry_id(3),
+        name: "OpenCode",
+        commands: &["opencode"],
+        layouts: &[
+            ".opencode/bin",
+            "cellar/opencode",
+            "cellar/opencode-v2",
+            "caskroom/opencode",
+            "node_modules/opencode-ai",
+        ],
     },
 ];
 
@@ -74,11 +100,6 @@ const LAUNCHERS: &[&str] = &[
     "cmd",
     "env",
     "sudo",
-    "npx",
-    "npm",
-    "pnpm",
-    "yarn",
-    "bunx",
     "winpty",
     "conhost",
     "openconsole",
@@ -87,20 +108,24 @@ const LAUNCHERS: &[&str] = &[
 /// Programs that run a script file, whose first argument is then what is running.
 const INTERPRETERS: &[&str] = &["node", "bun", "deno"];
 
-/// How a program was told to be a harness, which decides what `--version` is asked of.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum Via<'a> {
-    /// By its own command name or its own folder: the file it runs is the harness.
-    Program,
-    /// By the script a host program (`node`) runs.
-    Script(&'a str),
-}
-
 /// A program that is a known harness.
 pub(super) struct Matched<'a> {
     pub(super) known: &'static Known,
     pub(super) program: &'a Program,
-    pub(super) via: Via<'a>,
+    /// The file that is the harness: the script a host program runs, or the executable.
+    file: &'a str,
+}
+
+impl Matched<'_> {
+    /// The version the install path carries (`.../versions/2.1.325`, `Caskroom/codex/0.169.0/`),
+    /// read from the path alone: no program is run to ask.
+    pub(super) fn version(&self) -> Option<String> {
+        let launched = self.program.arguments.first().map(String::as_str);
+        [Some(self.file), launched]
+            .into_iter()
+            .flatten()
+            .find_map(version_in_path)
+    }
 }
 
 /// `C:\a\Codex.EXE` and `/a/codex` both read `codex`: the file name, in lowercase, without the
@@ -120,19 +145,29 @@ fn command_name(path: &str) -> String {
 }
 
 /// The folder names of a path in lowercase, joined by `/` and with a `/` at each end, so that a
-/// marker is found whole and never inside a longer name.
-fn folders(path: &str) -> String {
+/// layout is found whole and never inside a longer name.
+pub(super) fn folders(path: &str) -> String {
     let normal = path.replace('\\', "/").to_lowercase();
     let names: Vec<&str> = normal.split('/').filter(|name| !name.is_empty()).collect();
     format!("/{}/", names.join("/"))
 }
 
-fn has_marker(known: &Known, path: &str) -> bool {
+/// The folder a file is in, as `folders` writes it, or `None` for a bare name.
+fn folder_of(path: &str) -> Option<String> {
+    let (folder, _) = path.rsplit_once(['/', '\\'])?;
+    Some(folders(folder))
+}
+
+fn is_bare(path: &str) -> bool {
+    !path.contains(['/', '\\'])
+}
+
+fn in_layout(known: &Known, path: &str) -> bool {
     let folders = folders(path);
     known
-        .markers
+        .layouts
         .iter()
-        .any(|marker| folders.contains(&format!("/{marker}/")))
+        .any(|layout| folders.contains(&format!("/{layout}/")))
 }
 
 /// The first argument that is not an option: the script an interpreter runs.
@@ -145,43 +180,59 @@ fn script_of(program: &Program) -> Option<&str> {
         .find(|argument| !argument.starts_with('-'))
 }
 
-/// The known harness that `program` is, if it is one.
-pub(super) fn identify(program: &Program) -> Option<Matched<'_>> {
+/// The known harness that `program` is, if it is one. `on_path` says whether a folder (as
+/// `folders` writes it) is on the person's `PATH`; it is asked only when the other rules did
+/// not decide.
+pub(super) fn identify<'a>(
+    program: &'a Program,
+    on_path: &dyn Fn(&str) -> bool,
+) -> Option<Matched<'a>> {
     let launch = program.arguments.first().map(String::as_str);
-    let places: Vec<&str> = [launch, program.executable.as_deref()]
-        .into_iter()
-        .flatten()
-        .collect();
-    let by_program = KNOWN.iter().find(|known| {
+    let executable = program.executable.as_deref();
+    let places: Vec<&str> = [launch, executable].into_iter().flatten().collect();
+    let matched = |known: &'static Known, file: &'a str| Matched {
+        known,
+        program,
+        file,
+    };
+    let file = executable.or(launch)?;
+    if let Some(known) = KNOWN
+        .iter()
+        .find(|known| places.iter().any(|place| in_layout(known, place)))
+    {
+        return Some(matched(known, file));
+    }
+    let named = |known: &Known, place: &str| known.commands.contains(&command_name(place).as_str());
+    // The shell found the command on the person's `PATH` and ran it under its bare name.
+    if let Some(known) = launch.and_then(|launch| {
+        KNOWN
+            .iter()
+            .find(|known| is_bare(launch) && named(known, launch))
+    }) {
+        return Some(matched(known, file));
+    }
+    // A file named like the command, in a folder of the person's `PATH`.
+    if let Some(known) = KNOWN.iter().find(|known| {
         places.iter().any(|place| {
-            known.commands.contains(&command_name(place).as_str()) || has_marker(known, place)
+            named(known, place) && folder_of(place).is_some_and(|folder| on_path(&folder))
         })
-    });
-    if let Some(known) = by_program {
-        return Some(Matched {
-            known,
-            program,
-            via: Via::Program,
-        });
+    }) {
+        return Some(matched(known, file));
     }
     // A host program runs the harness's script: `node` and the first argument that is a file.
-    let host = program.executable.as_deref().map(command_name)?;
+    let host = command_name(executable?);
     if !INTERPRETERS.contains(&host.as_str()) {
         return None;
     }
     let script = script_of(program)?;
     KNOWN
         .iter()
-        .find(|known| has_marker(known, script))
-        .map(|known| Matched {
-            known,
-            program,
-            via: Via::Script(script),
-        })
+        .find(|known| in_layout(known, script))
+        .map(|known| matched(known, script))
 }
 
-/// Whether `program` only starts other programs or hosts them (a shell, a package runner, a
-/// console host), so the harness may be among what it started.
+/// Whether `program` only starts other programs or hosts them (a shell, a console host), so the
+/// harness may be among what it started.
 fn is_launcher(program: &Program) -> bool {
     [
         program.executable.as_deref(),
@@ -197,7 +248,10 @@ fn is_launcher(program: &Program) -> bool {
 /// started). It is the shallowest known harness reached from the first program only through
 /// launchers: a harness's own children (its tool servers, its shell commands) are deeper and are
 /// never taken, and a program that is neither a launcher nor a harness hides what it started.
-pub(super) fn pick(programs: &[Program]) -> Option<Matched<'_>> {
+pub(super) fn pick<'a>(
+    programs: &'a [Program],
+    on_path: &dyn Fn(&str) -> bool,
+) -> Option<Matched<'a>> {
     let mut open: Vec<u32> = Vec::new();
     for program in programs {
         let reachable = program
@@ -206,7 +260,7 @@ pub(super) fn pick(programs: &[Program]) -> Option<Matched<'_>> {
         if !reachable {
             continue;
         }
-        if let Some(matched) = identify(program) {
+        if let Some(matched) = identify(program, on_path) {
             return Some(matched);
         }
         if is_launcher(program) {
@@ -214,6 +268,27 @@ pub(super) fn pick(programs: &[Program]) -> Option<Matched<'_>> {
         }
     }
     None
+}
+
+/// The longest a version is, as the contract says (`TerminalHarness.version`).
+const LONGEST_VERSION: usize = 64;
+
+/// The version a path carries: the last folder or file name that reads `1.2.3`, `0.169.0` or
+/// `2026.09.02-c22c1a3` (three numbers joined by dots, then an optional suffix after `-` or `+`).
+fn version_in_path(path: &str) -> Option<String> {
+    path.rsplit(['/', '\\']).find_map(|part| {
+        let number = part.split(['-', '+']).next()?;
+        let numbers: Vec<&str> = number.split('.').collect();
+        let is_version = numbers.len() == 3
+            && numbers
+                .iter()
+                .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+            && part.len() <= LONGEST_VERSION
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+' | '_'));
+        is_version.then(|| part.to_owned())
+    })
 }
 
 /// A program as the tests of this module and of its users spell one.
@@ -229,12 +304,18 @@ pub(super) fn sample(pid: u32, parent: Option<u32>, exe: &str, args: &[&str]) ->
 
 #[cfg(test)]
 mod tests {
+    use super::sample as program;
     use super::*;
 
-    use super::sample as program;
+    /// A `PATH` of this person: the folders `which` would search.
+    fn on_path(folder: &str) -> bool {
+        ["/users/x/.local/bin/", "/opt/homebrew/bin/", "/c/tools/"]
+            .iter()
+            .any(|path| folder.ends_with(path) || folder == *path)
+    }
 
     fn named(programs: &[Program]) -> Option<&'static str> {
-        pick(programs).map(|matched| matched.known.name)
+        pick(programs, &on_path).map(|matched| matched.known.name)
     }
 
     const CURSOR_NODE: &str = "/Users/x/.local/share/cursor-agent/versions/2026.09.02-c22c1a3/node";
@@ -242,10 +323,11 @@ mod tests {
         "/Users/x/.local/share/cursor-agent/versions/2026.09.02-c22c1a3/index.js";
 
     /// The foreground programs of the four harnesses as `ps` showed them on the real binaries.
-    fn measured() -> Vec<(&'static str, Program)> {
+    fn measured() -> Vec<(&'static str, &'static str, Program)> {
         vec![
             (
                 "Claude Code",
+                "2.1.325",
                 program(
                     10,
                     None,
@@ -255,6 +337,7 @@ mod tests {
             ),
             (
                 "Codex",
+                "0.169.0",
                 program(
                     11,
                     None,
@@ -264,6 +347,7 @@ mod tests {
             ),
             (
                 "OpenCode",
+                "2.2.5",
                 program(
                     12,
                     None,
@@ -273,6 +357,7 @@ mod tests {
             ),
             (
                 "Cursor Agent",
+                "2026.09.02-c22c1a3",
                 program(
                     13,
                     None,
@@ -290,22 +375,75 @@ mod tests {
     }
 
     #[test]
-    fn each_harness_is_known_by_the_shape_its_real_binary_has() {
-        for (name, program) in measured() {
-            assert_eq!(named(&[program]), Some(name), "{name}");
+    fn each_harness_is_known_by_the_shape_its_real_binary_has_and_its_version_by_the_path() {
+        for (name, version, program) in measured() {
+            let programs = [program];
+            let matched = pick(&programs, &on_path).unwrap();
+            assert_eq!(matched.known.name, name);
+            assert_eq!(matched.version().as_deref(), Some(version), "{name}");
         }
     }
 
     #[test]
-    fn cursor_is_known_under_its_short_name_and_by_its_script_alone() {
-        let short = program(
+    fn the_registry_ids_are_the_registrys_own() {
+        assert_eq!(KNOWN.len(), HARNESSES.len());
+        for known in &KNOWN {
+            let stem = known.commands[0].split('-').next().unwrap();
+            assert!(known.id.contains(stem), "{} / {stem}", known.id);
+        }
+    }
+
+    #[test]
+    fn a_harness_found_through_the_path_is_known_by_its_bare_name_or_its_folder() {
+        let bare = program(1, None, "/somewhere/odd/opencode", &["opencode"]);
+        assert_eq!(named(&[bare]), Some("OpenCode"));
+        let in_a_path_folder = program(
             1,
             None,
-            CURSOR_NODE,
-            &["agent", "--use-system-ca", CURSOR_SCRIPT],
+            "/Users/x/.local/bin/codex",
+            &["/Users/x/.local/bin/codex"],
         );
-        assert_eq!(named(&[short]), Some("Cursor Agent"));
-        // Started by a launcher that rewrote `argv[0]`, the bundled file and script still say it.
+        assert_eq!(named(&[in_a_path_folder]), Some("Codex"));
+    }
+
+    #[test]
+    fn a_program_named_like_a_harness_in_a_project_folder_is_not_one() {
+        for (exe, args) in [
+            // A binary of a project, run by path: not an install layout, not on the `PATH`.
+            ("/work/repo/bin/opencode", &["/work/repo/bin/opencode"][..]),
+            ("/work/repo/claude", &["./claude", "--serve"]),
+            ("/work/codex", &["/work/codex"]),
+            // A folder that only carries the product's name, away from an install layout.
+            ("/Users/x/code/opencode-ai/node_modules/.bin/tsc", &["tsc"]),
+            (
+                "/usr/local/bin/node",
+                &["node", "/Users/x/code/opencode-ai/scripts/dev.js"],
+            ),
+            (
+                "/usr/local/bin/node",
+                &["node", "/Users/x/code/cursor-agent/index.js"],
+            ),
+        ] {
+            assert_eq!(
+                named(&[program(1, None, exe, args)]),
+                None,
+                "{exe} {args:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_program_runs_a_harness_only_through_an_install_layout() {
+        let installed = program(
+            1,
+            None,
+            "/usr/local/bin/node",
+            &[
+                "node",
+                "/usr/local/lib/node_modules/@openai/codex/bin/codex.js",
+            ],
+        );
+        assert_eq!(named(&[installed]), Some("Codex"));
         let rewritten = program(1, None, CURSOR_NODE, &["node", CURSOR_SCRIPT]);
         assert_eq!(named(&[rewritten]), Some("Cursor Agent"));
     }
@@ -343,12 +481,12 @@ mod tests {
     }
 
     #[test]
-    fn windows_programs_are_known_by_their_files_and_by_the_script_node_runs() {
+    fn windows_programs_are_known_by_their_layouts_and_by_the_script_node_runs() {
         let native = program(
             1,
             None,
-            r"C:\Users\x\AppData\Local\Programs\opencode\OpenCode.EXE",
-            &[r"C:\Users\x\AppData\Local\Programs\opencode\opencode.exe"],
+            r"C:\Users\x\.opencode\bin\opencode.exe",
+            &[r"C:\Users\x\.opencode\bin\opencode.exe"],
         );
         assert_eq!(named(&[native]), Some("OpenCode"));
         let shim = program(
@@ -362,9 +500,10 @@ mod tests {
                 "x",
             ],
         );
-        let matched = pick(std::slice::from_ref(&shim)).unwrap();
+        let programs = [shim];
+        let matched = pick(&programs, &on_path).unwrap();
         assert_eq!(matched.known.name, "Codex");
-        assert!(matches!(matched.via, Via::Script(script) if script.ends_with("codex.js")));
+        assert!(matched.file.ends_with("codex.js"));
     }
 
     #[test]
@@ -399,7 +538,7 @@ mod tests {
                 ],
             ),
         ];
-        let matched = pick(&tree).unwrap();
+        let matched = pick(&tree, &on_path).unwrap();
         assert_eq!((matched.known.name, matched.program.pid), ("Codex", 3));
     }
 
@@ -410,28 +549,42 @@ mod tests {
             program(2, Some(1), "/usr/bin/make", &["make", "serve"]),
             program(3, Some(2), "/x/bin/claude", &["claude"]),
         ];
-        assert!(pick(&tree).is_none());
+        assert!(pick(&tree, &on_path).is_none());
     }
 
     #[test]
     fn a_launcher_that_starts_a_harness_is_looked_through() {
         let tree = [
             program(1, None, "/bin/bash", &["bash"]),
-            program(
-                2,
-                Some(1),
-                "/usr/local/bin/node",
-                &["node", "/usr/local/bin/npx", "opencode"],
-            ),
-            program(3, Some(1), "/usr/bin/env", &["env", "opencode"]),
-            program(4, Some(3), "/opt/x/bin/opencode", &["opencode"]),
+            program(2, Some(1), "/usr/bin/env", &["env", "opencode"]),
+            program(3, Some(2), "/opt/x/bin/opencode", &["opencode"]),
         ];
-        let matched = pick(&tree).unwrap();
-        assert_eq!((matched.known.name, matched.program.pid), ("OpenCode", 4));
+        let matched = pick(&tree, &on_path).unwrap();
+        assert_eq!((matched.known.name, matched.program.pid), ("OpenCode", 3));
     }
 
     #[test]
     fn nothing_in_a_terminal_is_no_harness() {
-        assert!(pick(&[]).is_none());
+        assert!(pick(&[], &on_path).is_none());
+    }
+
+    #[test]
+    fn a_version_is_read_from_the_path_and_nothing_else_is() {
+        for (path, version) in [
+            ("/h/.local/share/claude/versions/2.1.325", Some("2.1.325")),
+            (
+                "/opt/homebrew/Caskroom/codex/0.169.0/bin/codex",
+                Some("0.169.0"),
+            ),
+            (
+                "C:\\x\\codex\\1.2.3-beta.1\\codex.exe",
+                Some("1.2.3-beta.1"),
+            ),
+            ("/h/opencode-v2/bin/opencode", None),
+            ("/h/v1.2/bin/x", None),
+            ("/h/1.2.3.4/bin/x", None),
+        ] {
+            assert_eq!(version_in_path(path).as_deref(), version, "{path}");
+        }
     }
 }

@@ -287,8 +287,8 @@ terminal panes whose foreground program is a known harness (Claude Code, Codex, 
 `{paneId, name, harness, kind, workspaceName}` with `kind` `agent` or `terminal`, and for a terminal the harness's name
 as `harness` (contract 08, ADR 0165, contract 05 "The harness a terminal pane runs"). A terminal that runs a shell or
 any other program is not listed. The terminals are as fresh as one second: a list asked after a longer quiet waits for a
-new scan of the terminals, which runs off the engine's lock, and a supervisor that does not list the `foreground`
-feature leaves every terminal unlisted. A listed terminal is named, not yet addressable: `agent.message` to it answers
+new read of the terminals, which runs off the engine's lock; it answers with what is known when the supervisor is away,
+does not list the `foreground` feature, or fails (contract 05). A listed terminal is named, not yet addressable: `agent.message` to it answers
 `not_found` with "A terminal pane cannot receive messages yet" until a terminal can receive (ADR 0165, slice 5), so a
 sender must not be told it can be reached.
 

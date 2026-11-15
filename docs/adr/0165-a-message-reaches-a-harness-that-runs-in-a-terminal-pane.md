@@ -381,10 +381,14 @@ reports it (one request, `Foreground`, for a list of instances):
 
 Matching reads the **executable path, `argv[0]` and the script argument**: `cursor-agent` is a shell
 script that runs `node` under its own name with a script file, and `claude` is a symlink to a
-versioned binary. A table in the engine maps the four harnesses (and `agent`, the short name of
-Cursor's program) to a harness id and a profile; slice 2 tests it against the real binaries on each
-system, not fixtures. The engine asks on a slow tick (2 s, for panes of a workspace with a waiting
-message or a sender that listed) and on demand, never in a loop that costs a pane that runs a shell.
+versioned binary. A table in the engine maps the four harnesses to the registry's harness id (and, later, a
+profile): the command names each runs under and the install layouts its files live in (contract 05
+states the rule, which keeps a binary that is merely named like a harness in a project folder out).
+Slice 2 tests it against the shapes measured on the real binaries. The engine never reads every
+terminal on a period. It reads a pane **on demand** (`agent.list`, and a waiting message for it from
+slice 5) and otherwise only **when the pane has printed since its last read** (a change of the
+foreground program always prints), those reads coalesced on a slow tick (2 s) and only while an app
+watches, so a pane that runs an idle shell costs nothing.
 
 A terminal pane is **listed** when its foreground is a known harness. It can receive whether or not its
 `soyeht-mcp` is connected (the old app refused such a pane and lost the message; here the message is
@@ -545,9 +549,11 @@ and a version that stops honouring them closes the channel and the typed channel
 
 #### Profiles are tied to the harness version
 
-A profile lists the versions it was verified for. The engine reads the version once with
-`<harness> --version` through `soyeht_process::run` (a deadline, never under the Core lock), cached by
-the executable's path and modification time, and shows it in `terminalHarness`. Outside the range the
+A profile lists the versions it was verified for. The engine reads the version **from the install
+path, never by running the program** (`.../versions/2.1.325`, `Caskroom/codex/0.169.0/`,
+`Cellar/opencode-v2/2.2.5/`): running a program a second time because it looks like a harness would
+start whatever it really is, and the person's own repository may hold a script of that name. A path
+that carries no version gives none, and shows in `terminalHarness` when it does. With no version, or outside the range, the
 automatic typing is **off** (rule 1) and the message waits, visibly, with **Deliver now** for the
 person; a profile for a new version is a data change with its vectors, not an engine release.
 
@@ -788,7 +794,7 @@ Sizes are an agent's working days: S 1, M 2 to 3, L 4 to 6. The first two are sm
 | 0 | **Spike**: the probe MCP server and shell-tool probe on Claude, Codex, OpenCode and Cursor started in a pane (environment, parents, controlling terminal), the ConPTY paste-marker probe, `--version` and foreground shapes of the real binaries. Gates every promise to send | M | |
 | 0b | **`native_text`, the short header and the text reduction**: the compact `[from → to · m:ID]` header with the name rule, the removal of invisible code points on every channel, the forged-route fix and its tests; SECURITY.md and contract 08 state the known limitation | S | |
 | 1 | **Sender and names** (built): the pane binding at spawn on three systems (derived, ended with the process), identity for terminal panes, `soyeht-mcp` terminal mode with a long-lived connection, `soyeht message`, names across workspaces with ambiguity, `kind`, the web-pane rule; the fallbacks the spike chose | M | 0 |
-| 2 | **Foreground and listing** (built for terminals): `Foreground` (the `foreground` feature of the supervisor's welcome), matching on path, `argv[0]` and script, the Windows job tree, `agent.list` with terminals (web panes stay out: they are not candidates), `Pane.terminalHarness`, version read and cache | M | 0 |
+| 2 | **Foreground and listing** (built for terminals): `Foreground` (the `foreground` feature of the supervisor's welcome), matching on path, `argv[0]` and script, the Windows job tree, `agent.list` with terminals (web panes stay out: they are not candidates), `Pane.terminalHarness`, version from the install path | M | 0 |
 | 3 | **Observation and decision**: the terminal model off the lock with its own paste-mode tracking, the profile type with Claude's profile, the pure decision function, the guarded input and the echo check, vectors from synthetic screens, ConPTY handling | L | 2 |
 | 4 | **Calibration**: the collection scenarios on four real harnesses on three systems, the 1000-screen vectors, the paste-size runs, the thresholds, the other three profiles, held to the bar | L | 3, the recorder |
 | 5 | **The inbox and delivery**: the store table, the states, the claim and lease, evidence-based retry, confirmation by screen, the watchdog and the notes to the sender, the waiting count on `soyeht-mcp` results, pull and ack, status, the event and the snapshot fields, the limits, generated outputs, contracts 04, 08, 17 and 19 | L | 1, 2, 3 |

@@ -18,7 +18,8 @@ name and inReplyTo to the m:ID.";
 const TERMINAL_TOOLS: &str = "These tools act for this Soyeht terminal pane. To find an agent \
 pane of any Soyeht workspace, use list_agents; to message one, use message_agent with its name. \
 For a request that names who to talk to, call list_agents first and reach a name it lists with \
-message_agent, never with a subagent of your own.";
+message_agent, never with a subagent of your own. An item of kind \"terminal\" cannot receive \
+messages yet.";
 
 /// What a harness shows its model about this server when the person started it outside a Soyeht
 /// pane, so the harness shows no error and the model knows why there is nothing to call.

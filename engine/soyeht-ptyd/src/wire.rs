@@ -169,6 +169,12 @@ pub enum Response {
 /// How many terminals one `Foreground` may ask about.
 pub const MAX_FOREGROUND: usize = 256;
 
+/// The most bytes of file names and arguments one `Foregrounds` answer holds. An eighth of the
+/// largest JSON frame: a string can grow to six times its length when it is escaped, so the
+/// answer stays inside the frame whatever the terminals run. A terminal that does not fit is
+/// left out of the answer, and one that fits in part is marked `truncated`.
+pub const MAX_FOREGROUND_BYTES: usize = soyeht_protocol::limits::JSON_BYTES / 8;
+
 /// What one terminal runs in its foreground: on Unix the leader of the foreground process group,
 /// on Windows the processes of the terminal's job, a process before what it started. No programs
 /// when the terminal has none left to read (it ended, or the group's leader did).
@@ -176,6 +182,9 @@ pub const MAX_FOREGROUND: usize = 256;
 pub struct Foreground {
     pub instance_id: String,
     pub programs: Vec<Program>,
+    /// Whether programs were left out for want of room in the answer ([`MAX_FOREGROUND_BYTES`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
 }
 
 /// A process in a terminal's foreground.

@@ -1,6 +1,6 @@
 //! The foreground program of a terminal on macOS and Linux.
 
-use super::{Program, bounded};
+use super::{Program, bounded, bounded_executable};
 use std::{io, os::fd::AsRawFd};
 
 /// The program that leads the foreground process group of the terminal whose master side is
@@ -18,6 +18,12 @@ pub fn foreground_of_terminal(terminal: &impl AsRawFd) -> io::Result<Vec<Program
     let Ok(leader) = u32::try_from(group) else {
         return Ok(Vec::new());
     };
+    // The group may have ended and the number been given to another process since it was read:
+    // the pid is the leader only while it still leads that group.
+    // SAFETY: `getpgid` only reads the process table.
+    if unsafe { libc::getpgid(group) } != group {
+        return Ok(Vec::new());
+    }
     Ok(program_of(leader).into_iter().collect())
 }
 
@@ -27,7 +33,7 @@ fn program_of(pid: u32) -> Option<Program> {
     Some(Program {
         pid,
         parent: None,
-        executable,
+        executable: bounded_executable(executable),
         arguments: bounded(arguments),
     })
 }

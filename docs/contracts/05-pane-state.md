@@ -72,7 +72,7 @@ that ended without a status (a negative value) warns too. `terminalNotices` of
 A terminal pane has a harness when the foreground program of its terminal is one the engine knows: Claude Code,
 Codex, OpenCode or Cursor Agent (not any other program, and not a harness in WSL, `tmux`, `ssh` or a container, whose
 processes are not the pane's). The pane then carries `terminalHarness` with `id` (the registry id the apps know it by),
-`name` and, when `--version` could be read, `version`. It is absent while the foreground is a shell or anything else,
+`name` and, when its install path carries one, `version`. It is absent while the foreground is a shell or anything else,
 and `pane.updated` carries every change of it.
 
 **What the supervisor reports.** `Foreground` (the `foreground` feature of the supervisor's welcome; an engine sends it only to a supervisor that lists it, and a supervisor that does not leaves every terminal without a harness) lists, for terminals the engine names, the programs
@@ -82,17 +82,33 @@ processes of the pane's job in tree order (a parent before its children, a paren
 no younger than its child, since ids are reused), and the engine takes the shallowest known harness reached from the
 shell only through shells and launchers, never one of a harness's own children.
 
-**How the engine tells a harness.** By a table of data (`terminal_foreground/harnesses.rs`), on the executable path,
-`argv[0]` and the script argument of a host program: Claude Code runs a file named after its version with `argv[0]`
-`claude`; Codex and OpenCode run a native file under the package manager's folder with their own name as `argv[0]`;
-Cursor Agent runs its bundled `node` with `argv[0]` the path it was started by (or its short name `agent`) and its own
-script as the first argument; on Windows an npm install runs the harness's script under `node`. The matcher is tested
-on those shapes as they were measured.
+**How the engine tells a harness.** By a table of data (`terminal_foreground/harnesses.rs`) over the executable path,
+`argv[0]` and the script argument of a host program such as `node`. A program is a harness when, and only when:
+(1) a file it runs (the executable, or the script of a host program) sits in an install layout of that harness
+(`.local/share/claude/versions/`, `.local/share/cursor-agent/versions/`, `Caskroom/codex/`, `Cellar/opencode-v2/`,
+`node_modules/@openai/codex/`, `node_modules/opencode-ai/`, and so on, as the spike measured them); or (2) `argv[0]`
+is the bare command name, so the shell found it on the person's `PATH`; or (3) a file named like the command sits in a
+folder of the person's `PATH`. A binary or script merely named like a harness in a project folder is none of these and
+is not matched. The rule is a heuristic, and a wrong match only mislabels an entry of `agent.list`: it grants nothing,
+and slice 3's check of the terminal's screen decides whether anything may be typed. For the same reason a run that is
+not the interactive program (`-p`, `exec`, `--help`) is listed as the harness while it runs; the screen check decides
+whether it can receive. Sign-in terminals of an agent pane are never read or listed. The matcher is tested on the shapes
+as they were measured, and on look-alikes.
 
-**The version.** `<harness> --version`, through `soyeht_process::run` with a deadline and never under the engine's lock,
-asked of the file the harness is (Cursor's bundled `node` is asked through the program it was started as), cached by the
-file's path and modification time. A harness that did not answer is asked again after a minute. The engine never starts
-a harness's interface to read it.
+**What is reported.** A program is reported with its executable path (at most 1000 bytes), at most 8 arguments of at
+most 400 bytes (`argv[0]` and the script argument are what the matcher needs), and at most 64 programs of a job; a job
+read on Windows is read for at most 256 process ids. The whole answer is held to an eighth of the largest JSON frame:
+a terminal whose programs do not all fit is marked `truncated`, and terminals past the budget are left out of the
+answer, so a pane keeps what the engine knew of it.
 
-**When it is read.** On a period of 2 seconds while an app subscribed to events watches and a terminal is open, and on
-demand for `agent.list`.
+**The version.** Read from the install path (`2.1.325`, `0.169.0`, `2026.09.02-c22c1a3`): the last path part that is
+three numbers joined by dots, with an optional suffix. No program is ever run to ask. A path that carries none gives
+no version.
+
+**When it is read.** Never on a period for every terminal. A pane is read on demand (`agent.list` reads every terminal
+unless the last read is younger than a second) and otherwise only when it has printed since its last read, a change of
+the foreground program always printing, those reads coalesced to one per 2 seconds and only while an app subscribed to
+events watches. An idle shell costs nothing. A pane restored after an engine restart keeps the harness it had until it
+prints; one whose process ended loses it at once. `agent.list` never fails or waits for the sake of a terminal: with
+no supervisor, a supervisor that does not list the `foreground` feature, or a read that fails, it answers with what is
+known.

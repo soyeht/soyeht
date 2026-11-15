@@ -38,7 +38,6 @@ use uuid::Uuid;
 mod foreground;
 mod watch;
 
-use foreground::execute_foreground;
 use watch::{Watchers, hello_refusal, welcome};
 
 struct Live {
@@ -53,6 +52,9 @@ struct Live {
     watchers: Arc<Watchers>,
     /// Whether the exit has been announced to the watches: once, after both of the flags above.
     exit_announced: AtomicBool,
+    /// Whether the last read of what the terminal runs failed, so a failure that repeats is logged
+    /// once and its end is noticed (AGENTS.md, logging).
+    foreground_unreadable: AtomicBool,
 }
 
 struct OutputState {
@@ -247,9 +249,21 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             if state.active.as_ref().map(|(id, _)| id.as_str()) != Some(connection_id.as_str()) {
                 return Err(Error::ConnectionSuperseded);
             }
-            let response = execute(&mut state, &shared, request)
-                .unwrap_or_else(|e| error(wire_kind::OPERATION_FAILED, &e.to_string()));
-            drop(state);
+            let response = match request {
+                // What the terminals run is read with the state released: on Windows it opens a
+                // handle per process of a job, which must not stall the terminals' input and output.
+                Request::Foreground { instance_ids } => {
+                    let asked = foreground::collect(&state, &instance_ids);
+                    drop(state);
+                    foreground::answer(asked)
+                }
+                request => {
+                    let response = execute(&mut state, &shared, request)
+                        .unwrap_or_else(|e| error(wire_kind::OPERATION_FAILED, &e.to_string()));
+                    drop(state);
+                    response
+                }
+            };
             send(&mut stream, &response)?;
         }
         Ok(())
@@ -269,7 +283,10 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
         Request::Kill { instance_id } => execute_kill(state, &instance_id),
         Request::Close { instance_id } => execute_close(state, &instance_id),
         Request::PendingInputs => execute_pending_inputs(state),
-        Request::Foreground { instance_ids } => execute_foreground(state, &instance_ids),
+        Request::Foreground { .. } => Ok(error(
+            wire_kind::OPERATION_FAILED,
+            "a foreground question is answered outside the state",
+        )),
         Request::PendingRequests { instance_id } => execute_pending_requests(state, &instance_id),
         Request::PendingRequestChunk {
             instance_id,
@@ -375,6 +392,7 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         instance_id: instance.instance_id.clone(),
         watchers: Arc::clone(&state.watchers),
         exit_announced: AtomicBool::new(false),
+        foreground_unreadable: AtomicBool::new(false),
     });
     state
         .registry

@@ -7,16 +7,23 @@
 //! the pane's processes lists them instead (`windows::Spawned::programs`), in tree order. Both
 //! give [`Program`]s, so everything above reads one shape.
 
+#[cfg(any(windows, test))]
+use std::collections::{HashMap, HashSet};
+
 #[cfg(unix)]
 mod unix;
 
 #[cfg(unix)]
 pub use unix::foreground_of_terminal;
 
-/// The most arguments of a program that are kept: a harness is told by its first few.
-pub const MAX_ARGUMENTS: usize = 32;
+/// The most arguments of a program that are kept. The matcher needs `argv[0]` and the first
+/// argument that is not an option (the script a host program runs), which stands within the
+/// first few.
+pub const MAX_ARGUMENTS: usize = 8;
 /// The most bytes of one argument that are kept. A longer one is cut at a character boundary.
-pub const MAX_ARGUMENT_BYTES: usize = 1000;
+pub const MAX_ARGUMENT_BYTES: usize = 400;
+/// The most bytes of a program's file name that are kept.
+pub const MAX_EXECUTABLE_BYTES: usize = 1000;
 /// The most processes one report holds. A job with more is cut, shallowest first.
 pub const MAX_PROGRAMS: usize = 64;
 
@@ -33,22 +40,30 @@ pub struct Program {
     pub arguments: Vec<String>,
 }
 
+/// Cuts `text` to at most `most` bytes, at a character boundary.
+fn cut(mut text: String, most: usize) -> String {
+    if text.len() > most {
+        let mut end = most;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
+}
+
 /// Keeps at most [`MAX_ARGUMENTS`] arguments of at most [`MAX_ARGUMENT_BYTES`] bytes each.
 pub fn bounded(arguments: impl IntoIterator<Item = String>) -> Vec<String> {
     arguments
         .into_iter()
         .take(MAX_ARGUMENTS)
-        .map(|mut argument| {
-            if argument.len() > MAX_ARGUMENT_BYTES {
-                let mut end = MAX_ARGUMENT_BYTES;
-                while !argument.is_char_boundary(end) {
-                    end -= 1;
-                }
-                argument.truncate(end);
-            }
-            argument
-        })
+        .map(|argument| cut(argument, MAX_ARGUMENT_BYTES))
         .collect()
+}
+
+/// Keeps at most [`MAX_EXECUTABLE_BYTES`] bytes of a program's file name.
+pub fn bounded_executable(executable: Option<String>) -> Option<String> {
+    executable.map(|path| cut(path, MAX_EXECUTABLE_BYTES))
 }
 
 /// A process as the system lists a job's members, before the tree is built.
@@ -68,38 +83,36 @@ pub(crate) struct Listed {
 #[cfg(any(windows, test))]
 pub(crate) fn tree_order(mut listed: Vec<Listed>) -> Vec<Program> {
     listed.sort_by_key(|member| (member.created, member.program.pid));
-    let created_of = |pid: u32| {
-        listed
-            .iter()
-            .find(|member| member.program.pid == pid)
-            .map(|member| member.created)
-    };
+    let created: HashMap<u32, u64> = listed
+        .iter()
+        .map(|member| (member.program.pid, member.created))
+        .collect();
     let parents: Vec<Option<u32>> = listed
         .iter()
         .map(|member| {
-            created_of(member.parent_pid)
-                .filter(|parent_created| *parent_created <= member.created)
+            created
+                .get(&member.parent_pid)
+                .filter(|parent_created| **parent_created <= member.created)
                 .map(|_| member.parent_pid)
                 .filter(|parent| *parent != member.program.pid)
         })
         .collect();
-    let mut ordered: Vec<Program> = Vec::with_capacity(listed.len());
+    let mut ordered: Vec<Program> = Vec::with_capacity(listed.len().min(MAX_PROGRAMS));
+    let mut done: HashSet<u32> = HashSet::new();
     let mut placed = vec![false; listed.len()];
     // Level by level: the roots, then everything whose parent is placed, and so on. A cycle
     // cannot form (a parent is never younger), so the loop ends when a level adds nothing.
     loop {
         let level: Vec<usize> = (0..listed.len())
             .filter(|index| !placed[*index])
-            .filter(|index| match parents[*index] {
-                None => true,
-                Some(parent) => ordered.iter().any(|done| done.pid == parent),
-            })
+            .filter(|index| parents[*index].is_none_or(|parent| done.contains(&parent)))
             .collect();
         if level.is_empty() {
             break;
         }
         for index in level {
             placed[index] = true;
+            done.insert(listed[index].program.pid);
             let mut program = listed[index].program.clone();
             program.parent = parents[index];
             ordered.push(program);
@@ -177,6 +190,25 @@ pub(crate) fn split_command_line(line: &[u16]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn what_a_program_reports_is_cut_to_what_the_matcher_needs() {
+        let many = (0..MAX_ARGUMENTS * 4).map(|number| "é".repeat(MAX_ARGUMENT_BYTES + number));
+        let kept = bounded(many);
+        assert_eq!(kept.len(), MAX_ARGUMENTS);
+        // Cut at a character boundary: never in the middle of a two-byte letter.
+        assert!(
+            kept.iter()
+                .all(|argument| argument.len() <= MAX_ARGUMENT_BYTES)
+        );
+        assert!(
+            kept.iter()
+                .all(|argument| argument.chars().all(|c| c == 'é'))
+        );
+        let path = bounded_executable(Some("p".repeat(MAX_EXECUTABLE_BYTES * 3))).unwrap();
+        assert_eq!(path.len(), MAX_EXECUTABLE_BYTES);
+        assert_eq!(bounded_executable(None), None);
+    }
 
     fn listed(pid: u32, parent_pid: u32, created: u64, name: &str) -> Listed {
         Listed {

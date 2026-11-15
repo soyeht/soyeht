@@ -436,7 +436,16 @@ impl Core {
     /// The sender of a message as the recipient's queue and transcript record it.
     pub(crate) fn peer_source(&self, sender: &Pane) -> Result<AgentMessageSource> {
         let (harness, kind) = match sender.mode {
-            PaneMode::Terminal => ("Terminal".to_owned(), AgentMessageKind::Terminal),
+            // The name `agent.list` gives the pane, so a message and the list agree.
+            PaneMode::Terminal => (
+                text_reduction::name(
+                    sender
+                        .terminal_harness
+                        .as_ref()
+                        .map_or("Terminal", |harness| harness.name.as_str()),
+                ),
+                AgentMessageKind::Terminal,
+            ),
             _ => {
                 let running = self
                     .agents

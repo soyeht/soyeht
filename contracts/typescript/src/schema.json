@@ -3043,7 +3043,7 @@
     },
     "TerminalHarness": {
       "type": "object",
-      "description": "The harness a terminal pane runs in its foreground (ADR 0165): which known harness it is and, when the engine could read it, its version. Absent while the foreground is a shell or any other program.",
+      "description": "The harness a terminal pane runs in its foreground (ADR 0165): which known harness it is and, when its install path carries one, its version (read from the path; no program is run). Absent while the foreground is a shell or any other program.",
       "properties": {
         "id": {
           "type": "string",
@@ -3056,7 +3056,7 @@
         "version": {
           "type": "string",
           "maxLength": 64,
-          "description": "What `--version` printed; absent when it could not be read."
+          "description": "The version the install path carries, such as `2.1.325`; absent when the path carries none."
         }
       },
       "required": [
