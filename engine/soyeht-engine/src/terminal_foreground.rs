@@ -22,7 +22,7 @@ use crate::{
     supervisor_handle::Supervisor,
     tick_due::Next,
 };
-use soyeht_protocol::{PaneMode, PaneState, TerminalHarness};
+use soyeht_protocol::{Pane, PaneMode, PaneState, TerminalHarness};
 use soyeht_ptyd::wire::{MAX_FOREGROUND, Program, Request, Response};
 use std::{
     sync::{Arc, Mutex},
@@ -235,11 +235,8 @@ impl Core {
 
     /// `agent.list`: the agent panes of the sender's workspace, and its terminal panes that run a
     /// known harness. The terminals are as fresh as [`FRESH_MS`], by a scan the reply waits for.
-    pub(crate) fn agent_list(
-        &mut self,
-        sender_id: String,
-        workspace_id: String,
-    ) -> Result<Outcome> {
+    pub(crate) fn agent_list(&mut self, sender: Pane) -> Result<Outcome> {
+        let workspace_id = sender.workspace_id.clone();
         let fresh = self
             .foreground()
             .scanned
@@ -254,22 +251,18 @@ impl Core {
             self.foreground_targets(Some(&workspace_id))?
         };
         if targets.is_empty() {
-            return self
-                .agent_list_reply(&sender_id, &workspace_id)
-                .map(Outcome::Reply);
+            return Ok(Outcome::Reply(self.peer_listing(&sender)));
         }
         let scan = self.start_scan(targets)?;
         let used = scan.supervisor.clone();
-        let scanned_workspace = workspace_id.clone();
         Ok(Outcome::Offload(
             Offload::new(
                 "Terminal scan timed out",
                 SCAN_TIMEOUT,
                 move || scan.run(),
                 move |core, scanned| {
-                    core.finish_foreground(&used, Some(scanned_workspace), scanned)?;
-                    core.agent_list_reply(&sender_id, &workspace_id)
-                        .map(Outcome::Reply)
+                    core.finish_foreground(&used, Some(workspace_id), scanned)?;
+                    Ok(Outcome::Reply(core.peer_listing(&sender)))
                 },
             )
             .concurrent(),

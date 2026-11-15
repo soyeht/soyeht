@@ -31,10 +31,40 @@ impl State {
         Ok(vec![send(command)])
     }
 
-    /// The person confirmed revoking the device they were asked about.
-    pub fn confirm_revoke(&mut self) -> Vec<Effect> {
+    /// The person confirmed the tailnet change a pairing was refused for.
+    pub fn confirm_tailnet(&mut self) -> Vec<Effect> {
+        let connected = self.connection == Connection::Connected;
         self.pairing
-            .confirm_revoke()
+            .confirm_tailnet(connected)
+            .map(send)
+            .into_iter()
+            .collect()
+    }
+
+    /// The person chose to revoke a device: the question comes first, and the engine is asked what
+    /// the device made, so that the question can offer to close it.
+    pub fn ask_to_revoke(&mut self, device_id: &str) -> Vec<Effect> {
+        self.pairing
+            .ask_to_revoke(device_id)
+            .map(send)
+            .into_iter()
+            .collect()
+    }
+
+    /// The person confirmed revoking the device they were asked about, and whether to close the
+    /// panes it made.
+    pub fn confirm_revoke(&mut self, close_panes: bool) -> Vec<Effect> {
+        self.pairing
+            .confirm_revoke(close_panes)
+            .map(send)
+            .into_iter()
+            .collect()
+    }
+
+    /// The person dismissed the notice of devices added.
+    pub fn dismiss_notice(&mut self) -> Vec<Effect> {
+        self.pairing
+            .dismiss_notice()
             .map(send)
             .into_iter()
             .collect()
@@ -46,10 +76,15 @@ impl State {
         devices: &[Device],
         requests: &[Value],
     ) -> Vec<Effect> {
-        self.pairing
-            .adopt(capabilities, devices.to_vec(), requests, true)
-            .map(send)
+        let started = self
+            .pairing
+            .adopt(capabilities, devices.to_vec(), requests, true);
+        // What the engine says of the devices added is read on each connection: the notice is the
+        // engine's, and stays until it is dismissed.
+        started
             .into_iter()
+            .chain(self.pairing.load_notice())
+            .map(send)
             .collect()
     }
 }

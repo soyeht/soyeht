@@ -1,16 +1,18 @@
-use super::Changes;
-use crate::model::turn_ended;
+use super::{Changes, peer};
+use crate::model::{self, turn_ended};
 use crate::{
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
     ports::StorePort,
+    text_reduction,
 };
 use serde_json::{Value, json};
 use soyeht_acp::client;
 use soyeht_protocol::TurnStopReason;
 use soyeht_protocol::{
-    AgentMessageKind, AgentMessageSource, PaneMode, PaneState, PromptOrigin, event, limits, method,
+    AgentMessageKind, AgentMessageSource, Pane, PaneMode, PaneState, PromptItem, PromptOrigin,
+    event, limits, method,
 };
 use soyeht_store::agents;
 
@@ -27,6 +29,9 @@ pub(crate) fn handles(method: &str) -> bool {
             | method::PANE_DRAFT
     )
 }
+
+/// How many of the panes a name matches an error lists.
+const LISTED: usize = 8;
 
 pub(crate) fn queued(
     pane: &str,
@@ -150,8 +155,8 @@ pub(crate) fn cancel(
 }
 
 impl Core {
-    /// The agent pane a connection is bound to: its id and the pane.
-    fn agent_sender(&self, connection: &str) -> Result<(String, soyeht_protocol::Pane)> {
+    /// The agent pane a connection is bound to.
+    fn agent_sender(&self, connection: &str) -> Result<Pane> {
         let sender_id = self
             .clients
             .get(connection)
@@ -159,15 +164,14 @@ impl Core {
             .and_then(|actor| actor.pane_id.as_deref())
             .ok_or_else(|| errors::forbidden_role("Agent binding required"))?
             .to_owned();
-        let sender = self
+        Ok(self
             .panes
             .get(&sender_id)
             .filter(|pane| !pane.stored.closed && pane.stored.pane.mode == PaneMode::Agent)
             .ok_or_else(|| errors::not_found("Sender agent pane not found"))?
             .stored
             .pane
-            .clone();
-        Ok((sender_id, sender))
+            .clone())
     }
 
     /// `agent.list` and `agent.message`, which an agent binding may call.
@@ -178,47 +182,11 @@ impl Core {
         params: &Value,
     ) -> Result<Outcome> {
         if method == method::AGENT_LIST {
-            let (sender_id, sender) = self.agent_sender(connection)?;
-            return self.agent_list(sender_id, sender.workspace_id);
+            let sender = self.agent_sender(connection)?;
+            return self.agent_list(sender);
         }
         self.agent_peer_method(connection, method, params)
             .map(Outcome::Reply)
-    }
-
-    /// The reply of `agent.list`: the other agent panes of the sender's workspace, and the
-    /// terminal panes of it that run a known harness (see `terminal_foreground`).
-    pub(crate) fn agent_list_reply(&self, sender_id: &str, workspace_id: &str) -> Result<Value> {
-        let in_workspace = |pane: &&crate::model::RunningPane| {
-            !pane.stored.closed
-                && pane.stored.pane.workspace_id == workspace_id
-                && pane.stored.pane.pane_id != sender_id
-        };
-        let items: Vec<AgentMessageSource> = self
-            .panes
-            .values()
-            .filter(in_workspace)
-            .filter_map(|pane| {
-                let listed = &pane.stored.pane;
-                let (harness, kind) = match listed.mode {
-                    PaneMode::Agent => (
-                        self.agents.get(&listed.pane_id)?.state.launch.name.clone(),
-                        AgentMessageKind::Agent,
-                    ),
-                    PaneMode::Terminal => (
-                        listed.terminal_harness.as_ref()?.name.clone(),
-                        AgentMessageKind::Terminal,
-                    ),
-                    _ => return None,
-                };
-                Some(AgentMessageSource {
-                    pane_id: listed.pane_id.clone(),
-                    name: listed.name.clone(),
-                    harness,
-                    kind: Some(kind),
-                })
-            })
-            .collect();
-        Ok(json!({"items":items}))
     }
 
     pub fn agent_peer_method(
@@ -227,8 +195,10 @@ impl Core {
         method: &str,
         params: &Value,
     ) -> Result<Value> {
-        let (sender_id, sender) = self.agent_sender(connection)?;
-        let target_id = errors::param_str(params, "targetPaneId")?;
+        let sender = self.agent_sender(connection)?;
+        let sender_id = sender.pane_id.clone();
+        let target_id = self.peer_target(&sender, params)?;
+        let target_id = target_id.as_str();
         let target = self
             .panes
             .get(target_id)
@@ -263,19 +233,20 @@ impl Core {
                 retry_after_sec,
             ));
         }
-        let text = errors::param_str(params, "text")?;
-        let harness = self
-            .agents
-            .get(&sender_id)
-            .map(|running| running.state.launch.name.clone())
-            .ok_or_else(|| errors::invalid("Sender ACP session required"))?;
-        let source = AgentMessageSource {
-            pane_id: sender_id.clone(),
-            name: sender.name,
-            harness,
-            kind: None,
+        // The engine builds the bytes the recipient receives: the text is reduced here, once, and
+        // the queue, the transcript and the harness all hold the reduced form.
+        let text = text_reduction::reduce(errors::param_str(params, "text")?);
+        if text.trim().is_empty() {
+            return Err(errors::invalid("The message has no printable text"));
+        }
+        let source = self.peer_source(&sender)?;
+        let prompt_id = {
+            let open: Vec<&PromptItem> = state.queue.iter().chain(&state.active).collect();
+            peer::fresh_prompt_id(&open)
+                .ok_or_else(|| errors::pane_busy("Too many open messages to number another"))?
         };
-        let prompt = state.enqueue(text.into(), PromptOrigin::Automatic, self.timestamp())?;
+        let prompt =
+            state.enqueue_identified(prompt_id, text, PromptOrigin::Automatic, self.timestamp())?;
         let item = state
             .queue
             .iter_mut()
@@ -287,7 +258,11 @@ impl Core {
             ..Changes::default()
         };
         changes.events.push(queued(target_id, &state, now_ms)?);
-        let result = json!({"promptId":prompt.prompt_id,"queued":true});
+        let result = json!({
+            "promptId":prompt.prompt_id,
+            "queued":true,
+            "messageId":peer::message_label(&prompt.prompt_id),
+        });
         Ok(self
             .commit_agent(
                 target,
@@ -297,6 +272,149 @@ impl Core {
                 result,
             )?
             .result)
+    }
+    /// The pane `params` addresses with exactly one of `targetPaneId` and `targetName`.
+    pub(crate) fn peer_target(&self, sender: &Pane, params: &Value) -> Result<String> {
+        let text = |key: &str| params.get(key).and_then(Value::as_str);
+        match (text("targetPaneId"), text("targetName")) {
+            (Some(pane), None) => Ok(pane.to_owned()),
+            (None, Some(name)) => self.peer_by_name(sender, name, text("inReplyTo")),
+            _ => Err(errors::invalid(
+                "Give exactly one of targetPaneId and targetName",
+            )),
+        }
+    }
+
+    /// The pane `name` names. When two panes carry the name, a reply (`in_reply_to`, the id of a
+    /// message `sender` has open) goes to the pane that sent that message; the id is only a hint
+    /// and a stale or unknown one decides nothing.
+    fn peer_by_name(&self, sender: &Pane, name: &str, in_reply_to: Option<&str>) -> Result<String> {
+        let wanted = text_reduction::folded(name);
+        let matches: Vec<&Pane> = self
+            .peers_of(sender)
+            .filter(|pane| text_reduction::folded(&pane.name) == wanted)
+            .collect();
+        match matches.as_slice() {
+            [] => Err(errors::not_found(format!(
+                "No agent pane is named {} in this workspace",
+                text_reduction::name(name)
+            ))),
+            [pane] => Ok(pane.pane_id.clone()),
+            several => self
+                .reply_sender(sender, in_reply_to, several)
+                .ok_or_else(|| errors::invalid(self.ambiguous_name(name, several))),
+        }
+    }
+
+    /// The pane that sent the open message `id` of `sender`, when it is one of `candidates`.
+    fn reply_sender(
+        &self,
+        sender: &Pane,
+        id: Option<&str>,
+        candidates: &[&Pane],
+    ) -> Option<String> {
+        let Ok(state) = self.agent_state(&sender.pane_id) else {
+            return None;
+        };
+        let open: Vec<&PromptItem> = state.queue.iter().chain(&state.active).collect();
+        let from = &peer::open_message(&open, id?)?
+            .agent_message
+            .as_ref()?
+            .pane_id;
+        candidates
+            .iter()
+            .find(|pane| &pane.pane_id == from)
+            .map(|pane| pane.pane_id.clone())
+    }
+
+    /// The panes `sender` may address by name: the other open agent panes of its workspace.
+    pub(crate) fn peers_of<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
+        self.panes
+            .values()
+            .filter(|pane| !pane.stored.closed)
+            .map(|pane| &pane.stored.pane)
+            .filter(move |pane| {
+                pane.workspace_id == sender.workspace_id
+                    && pane.mode == PaneMode::Agent
+                    && pane.pane_id != sender.pane_id
+            })
+    }
+
+    /// What `agent.list` answers `sender`: the panes it may address, by name, with their harness.
+    /// They are the other agent panes of its workspace and its terminal panes that run a known
+    /// harness (see `terminal_foreground`).
+    pub(crate) fn peer_listing(&self, sender: &Pane) -> Value {
+        let items: Vec<AgentMessageSource> = self
+            .panes
+            .values()
+            .filter(|pane| !pane.stored.closed)
+            .map(|pane| &pane.stored.pane)
+            .filter(|pane| {
+                pane.workspace_id == sender.workspace_id && pane.pane_id != sender.pane_id
+            })
+            .filter_map(|pane| {
+                let (harness, kind) = match pane.mode {
+                    PaneMode::Agent => (
+                        self.agents.get(&pane.pane_id)?.state.launch.name.clone(),
+                        AgentMessageKind::Agent,
+                    ),
+                    PaneMode::Terminal => (
+                        pane.terminal_harness.as_ref()?.name.clone(),
+                        AgentMessageKind::Terminal,
+                    ),
+                    _ => return None,
+                };
+                Some(AgentMessageSource {
+                    pane_id: pane.pane_id.clone(),
+                    name: text_reduction::name(&pane.name),
+                    harness: text_reduction::name(&harness),
+                    kind: Some(kind),
+                })
+            })
+            .collect();
+        json!({"items":items})
+    }
+
+    /// The sender of a message as the recipient's queue and transcript record it.
+    pub(crate) fn peer_source(&self, sender: &Pane) -> Result<AgentMessageSource> {
+        let running = self
+            .agents
+            .get(&sender.pane_id)
+            .ok_or_else(|| errors::invalid("Sender ACP session required"))?;
+        Ok(AgentMessageSource {
+            pane_id: sender.pane_id.clone(),
+            name: text_reduction::name(&sender.name),
+            harness: text_reduction::name(&running.state.launch.name),
+            kind: None,
+        })
+    }
+
+    fn ambiguous_name(&self, name: &str, matches: &[&Pane]) -> String {
+        let listed: Vec<String> = matches
+            .iter()
+            .take(LISTED)
+            .map(|pane| {
+                let workspace = model::workspace(&self.store, &pane.workspace_id)
+                    .map(|workspace| text_reduction::name(&workspace.name))
+                    .unwrap_or_else(|_| pane.workspace_id.clone());
+                format!(
+                    "{} (workspace {workspace}, pane {})",
+                    text_reduction::name(&pane.name),
+                    pane.pane_id
+                )
+            })
+            .collect();
+        let more = matches.len().saturating_sub(LISTED);
+        let rest = if more > 0 {
+            format!(" and {more} more")
+        } else {
+            String::new()
+        };
+        format!(
+            "Several agent panes are named {}: {}{rest}. Message one of them with targetPaneId",
+            text_reduction::name(name),
+            listed.join("; ")
+        )
     }
     pub fn close_agent(&mut self, connection: &str, params: &Value) -> Result<Value> {
         let pane = errors::param_str(params, "paneId")?;

@@ -10,19 +10,21 @@
 
 mod commands;
 pub mod copy;
+mod notice;
 mod qr;
 #[cfg(test)]
 mod tests;
 
 pub use commands::{Command, TypedCode, run};
+pub use notice::DevicePanes;
 pub use qr::{Matrix, QUIET_ZONE};
 
 use crate::{Error, timestamp};
 use serde_json::Value;
 use soyeht_protocol::{
-    Device, DevicePairPending, DevicePairRequestedEvent, DevicePairStartResult, DevicePairedEvent,
-    DeviceRevokedEvent, EngineCapability, ErrorKind, PairResultEvent, approval_code, limits,
-    pairing_link,
+    Device, DevicePairPending, DevicePairRequestedEvent, DevicePairStartResult,
+    DevicePairTailnetChangedEvent, DevicePairedEvent, DeviceRevokedEvent, EngineCapability,
+    ErrorKind, PairResultEvent, Pane, approval_code, limits, pairing_link,
 };
 
 /// The window the engine opened for a phone to scan.
@@ -36,6 +38,19 @@ pub struct Offer {
     pub expires_at: f64,
     /// Why a phone cannot reach this computer, when it cannot.
     pub problem: Option<String>,
+    /// The engine refused a pairing because the tailnet or this computer's node is not what the
+    /// first pairing pinned, and waits for the person to confirm it.
+    pub tailnet: Option<TailnetChange>,
+}
+
+/// A tailnet change the engine waits for the person to confirm, as it was shown to them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailnetChange {
+    /// The tailnet the refused pairing saw, for the person to compare; never trusted.
+    pub name: Option<String>,
+    /// The engine's name for that identity, which the confirmation sends back so that it pins what
+    /// was shown. An engine that sends none confirms whatever it refused last.
+    pub pin: Option<String>,
 }
 
 /// The window's code is the secret of the link: nothing prints it.
@@ -62,6 +77,10 @@ impl Offer {
                 .reachability
                 .as_ref()
                 .and_then(copy::reachability_problem),
+            tailnet: (started.tailnet_changed == Some(true)).then_some(TailnetChange {
+                name: started.tailnet_name,
+                pin: started.tailnet_pin,
+            }),
         }
     }
 }
@@ -165,10 +184,32 @@ pub enum Event {
         request_id: String,
         refusal: Refusal,
     },
+    /// The device is revoked; `left_open` of the panes the person chose to close could not be.
     Revoked {
         device_id: String,
+        /// How many of its panes would not close; `None` when they could not be listed.
+        left_open: Option<usize>,
     },
     RevokeFailed {
+        device_id: String,
+        refusal: Refusal,
+    },
+    /// The devices added since the notice was last dismissed.
+    Noticed {
+        devices: Vec<Device>,
+    },
+    NoticeDismissed {
+        through: String,
+    },
+    NoticeFailed {
+        refusal: Refusal,
+    },
+    /// The panes `device_id` made, for the question before it is revoked.
+    PanesListed {
+        device_id: String,
+        panes: Vec<Pane>,
+    },
+    PanesFailed {
         device_id: String,
         refusal: Refusal,
     },
@@ -185,6 +226,14 @@ pub struct Pairing {
     revoking: Option<String>,
     /// Why the last revocation failed.
     revoke_failure: Option<String>,
+    /// A pairing was refused because the tailnet changed, and the person has not confirmed it.
+    tailnet: Option<TailnetChange>,
+    /// What is known of the panes the device being revoked made.
+    revoking_panes: DevicePanes,
+    /// The devices added since the person last dismissed the notice.
+    notice: Vec<Device>,
+    /// Why the notice could not be read or dismissed.
+    notice_failure: Option<String>,
     tickets: u64,
 }
 
@@ -225,6 +274,36 @@ impl Pairing {
             self.phase = Phase::Interrupted;
             None
         }
+    }
+
+    /// The engine refused a pairing because the tailnet changed, and waits for the person.
+    pub fn tailnet_changed(&self) -> bool {
+        self.tailnet.is_some()
+    }
+
+    /// The change the person is asked to confirm, as it was shown to them.
+    pub fn tailnet_change(&self) -> Option<&TailnetChange> {
+        self.tailnet.as_ref()
+    }
+
+    /// The person confirms the tailnet change: a new window is asked for with the confirmation,
+    /// and the sheet shows its code. Only an engine that asks for the person's code reads it, and
+    /// only when it said a change waits.
+    pub fn confirm_tailnet(&mut self, connected: bool) -> Option<Command> {
+        // One press is one window: while a window is being asked for, a second is not.
+        if !(connected && self.offers_code) || matches!(self.phase, Phase::Starting { .. }) {
+            return None;
+        }
+        let shown = self.tailnet.as_ref()?;
+        let pin = shown.pin.clone();
+        self.tickets += 1;
+        self.phase = Phase::Starting {
+            ticket: self.tickets,
+        };
+        Some(Command::ConfirmTailnet {
+            ticket: self.tickets,
+            pin,
+        })
     }
 
     /// Closes the sheet. A request that came in stays, and waits in the list of devices.
@@ -318,11 +397,20 @@ impl Pairing {
                     .retain(|r| r.fingerprint != paired.device.fingerprint);
                 self.devices
                     .retain(|device| device.device_id != paired.device.device_id);
+                self.added(&paired.device);
                 self.devices.push(paired.device);
             }
             EventName::DeviceRevoked => {
                 let revoked: DeviceRevokedEvent = serde_json::from_value(params)?;
                 self.revoked(&revoked.device_id);
+            }
+            EventName::DevicePairTailnetChanged => {
+                let told: DevicePairTailnetChangedEvent = serde_json::from_value(params)?;
+                self.tailnet =
+                    (self.offers_code && told.tailnet_changed).then_some(TailnetChange {
+                        name: told.tailnet_name,
+                        pin: told.tailnet_pin,
+                    });
             }
             EventName::PairResult => {
                 let result: PairResultEvent = serde_json::from_value(params)?;
@@ -360,6 +448,8 @@ impl Pairing {
         if self.revoking.as_deref() == Some(device_id) {
             self.revoking = None;
         }
+        // A revoked device is no longer news.
+        self.notice.retain(|device| device.device_id != device_id);
     }
 
     /// What the person did with a request: the command that decides it, or why none is sent.
@@ -417,35 +507,23 @@ impl Pairing {
         self.revoke_failure.as_deref()
     }
 
-    /// The person asks to revoke a device: the question comes first.
-    pub fn ask_to_revoke(&mut self, device_id: &str) {
-        self.revoke_failure = None;
-        if self
-            .devices
-            .iter()
-            .any(|device| device.device_id == device_id && !device.revoked)
-        {
-            self.revoking = Some(device_id.to_owned());
-        }
-    }
-
     pub fn cancel_revoke(&mut self) {
         self.revoking = None;
-    }
-
-    /// The person confirmed.
-    pub fn confirm_revoke(&mut self) -> Option<Command> {
-        let device_id = self.revoking.take()?;
-        Some(Command::Revoke { device_id })
     }
 
     /// Takes in what the engine answered to a command, or why it did not.
     pub fn apply(&mut self, event: Event) {
         match event {
             Event::Started { ticket, offer } if self.starting(ticket) => {
+                self.tailnet = offer.tailnet.clone();
                 self.phase = Phase::Showing(offer);
             }
             Event::StartFailed { ticket, refusal } if self.starting(ticket) => {
+                // The engine refused to confirm a change that is not the one that was shown: what
+                // is shown is stale, and the next window says what waits now.
+                if refusal.kind == Some(ErrorKind::TransitionRefused) {
+                    self.tailnet = None;
+                }
                 self.phase = Phase::Refused(refusal);
             }
             // The answer of an attempt a newer one replaced, or of a sheet since closed.
@@ -464,10 +542,25 @@ impl Pairing {
                 request_id,
                 refusal,
             } => self.decision_failed(&request_id, refusal),
-            Event::Revoked { device_id } => self.revoked(&device_id),
+            Event::Revoked {
+                device_id,
+                left_open,
+            } => {
+                self.revoked(&device_id);
+                self.revoke_failure = left_open.and_then(copy::panes_left_open).or_else(|| {
+                    left_open
+                        .is_none()
+                        .then(|| copy::PANES_NOT_LISTED.to_owned())
+                });
+            }
             Event::RevokeFailed { refusal, .. } => {
                 self.revoke_failure = Some(format!("{} {}", copy::REVOKE_FAILED, refusal.message));
             }
+            Event::Noticed { devices } => self.notice_listed(devices),
+            Event::NoticeDismissed { through } => self.notice_dismissed(&through),
+            Event::NoticeFailed { refusal } => self.notice_failed(&refusal),
+            Event::PanesListed { device_id, panes } => self.panes_listed(&device_id, panes),
+            Event::PanesFailed { device_id, .. } => self.panes_failed(&device_id),
         }
     }
 

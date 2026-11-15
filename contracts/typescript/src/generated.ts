@@ -116,6 +116,8 @@ export interface Device {
   "name": string;
   "fingerprint": string;
   "revoked": boolean;
+  "addedAt"?: string;
+  "node"?: string;
 }
 
 export interface StreamInfo {
@@ -394,6 +396,8 @@ export interface PaneExperimentExportResult {
 
 export interface DevicePairStartParams {
   "idempotencyKey": Id;
+  "confirmTailnet"?: boolean;
+  "confirmTailnetPin"?: string;
 }
 
 export interface DevicePairStartResult {
@@ -402,6 +406,9 @@ export interface DevicePairStartResult {
   "uri": string;
   "qr"?: string;
   "reachability"?: EngineReachability;
+  "tailnetChanged"?: boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DevicePairDecideParams {
@@ -431,6 +438,31 @@ export interface DeviceRevokeParams {
 
 export interface DeviceRevokeResult {
   "deviceId": Id;
+}
+
+export interface DeviceNoticeListParams {
+
+}
+
+export interface DeviceNoticeListResult {
+  "items": Array<Device>;
+}
+
+export interface DeviceNoticeDismissParams {
+  "through": string;
+  "idempotencyKey": Id;
+}
+
+export interface DeviceNoticeDismissResult {
+  "through": string;
+}
+
+export interface DevicePanesListParams {
+  "deviceId": Id;
+}
+
+export interface DevicePanesListResult {
+  "items": Array<Pane>;
 }
 
 export type PushPlatform = "apns";
@@ -653,6 +685,12 @@ export interface DevicePairedEvent {
   "device": Device;
 }
 
+export interface DevicePairTailnetChangedEvent {
+  "tailnetChanged": boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
+}
+
 export interface DeviceRevokedEvent {
   "eventId": Decimal;
   "at": string;
@@ -850,7 +888,9 @@ export interface AgentListResult {
 }
 
 export interface AgentMessageParams {
-  "targetPaneId": Id;
+  "targetPaneId"?: Id;
+  "targetName"?: string;
+  "inReplyTo"?: string;
   "text": string;
   "idempotencyKey": Id;
 }
@@ -858,6 +898,7 @@ export interface AgentMessageParams {
 export interface AgentMessageResult {
   "promptId": Id;
   "queued": boolean;
+  "messageId"?: string;
 }
 
 export interface PermissionOption {
@@ -3628,6 +3669,9 @@ export interface Methods {
   "device.pair.decide": { params: DevicePairDecideParams; result: DevicePairDecideResult };
   "device.list": { params: DeviceListParams; result: DeviceListResult };
   "device.revoke": { params: DeviceRevokeParams; result: DeviceRevokeResult };
+  "device.notice.list": { params: DeviceNoticeListParams; result: DeviceNoticeListResult };
+  "device.notice.dismiss": { params: DeviceNoticeDismissParams; result: DeviceNoticeDismissResult };
+  "device.panes.list": { params: DevicePanesListParams; result: DevicePanesListResult };
   "push.register": { params: PushRegisterParams; result: PushRegisterResult };
   "push.unregister": { params: PushUnregisterParams; result: PushUnregisterResult };
   "pair.begin": { params: PairBeginParams; result: PairBeginResult };
@@ -3770,6 +3814,7 @@ export interface Events {
   "device.pair_requested": DevicePairRequestedEvent;
   "device.paired": DevicePairedEvent;
   "device.revoked": DeviceRevokedEvent;
+  "device.pair_tailnet_changed": DevicePairTailnetChangedEvent;
   "pair.result": PairResultEvent;
   "engine.updating": EngineUpdatingEvent;
   "engine.restarted": EngineRestartedEvent;
@@ -3853,6 +3898,7 @@ export const eventRegistry = {
   "device.pair_requested": { paramsType: "DevicePairRequestedEvent", durable: true },
   "device.paired": { paramsType: "DevicePairedEvent", durable: true },
   "device.revoked": { paramsType: "DeviceRevokedEvent", durable: true },
+  "device.pair_tailnet_changed": { paramsType: "DevicePairTailnetChangedEvent", durable: false },
   "pair.result": { paramsType: "PairResultEvent", durable: false },
   "engine.updating": { paramsType: "EngineUpdatingEvent", durable: true },
   "engine.restarted": { paramsType: "EngineRestartedEvent", durable: true },

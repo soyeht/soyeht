@@ -5,6 +5,7 @@ use crate::{
     accept_loop::Failures,
     admission::Admission,
     core_lock::Shared,
+    pairing_peers::{ListenerKind, Peer},
     server::{CatalogJob, connection},
     transport, ui_attestation,
 };
@@ -55,14 +56,18 @@ pub(crate) async fn serve_local(mut local: Listener, accept: Accept) -> crate::e
             .await
             .unwrap_or(false);
             let (reader, writer) = transport::local(stream);
-            connection(core, catalog_tx, true, signed_ui, reader, writer).await;
+            connection(core, catalog_tx, true, signed_ui, None, reader, writer).await;
         });
     }
 }
 
 /// Accepts the connections of a TCP listener for as long as the engine runs. A failed `accept` is
 /// logged and waited out; a listener that cannot recover ends with its error (`accept_loop`).
-pub(crate) async fn serve_tcp(mut listener: TcpListener, accept: Accept) -> io::Result<()> {
+pub(crate) async fn serve_tcp(
+    mut listener: TcpListener,
+    accept: Accept,
+    kind: ListenerKind,
+) -> io::Result<()> {
     let mut failures = Failures::new(
         listener
             .local_addr()
@@ -74,13 +79,15 @@ pub(crate) async fn serve_tcp(mut listener: TcpListener, accept: Accept) -> io::
             continue;
         };
         let (core, catalog_tx) = (Arc::clone(&accept.core), accept.catalog_tx.clone());
+        // What `peer_addr` says, and nothing a client sends: no header or protocol line names it.
+        let peer = Peer::new(kind, peer.ip());
         tokio::spawn(async move {
             let _slot = slot;
             let websocket = transport::websocket(stream);
             if let Ok(Ok((reader, writer))) =
                 tokio::time::timeout(Duration::from_secs(5), websocket).await
             {
-                connection(core, catalog_tx, false, false, reader, writer).await;
+                connection(core, catalog_tx, false, false, Some(peer), reader, writer).await;
             }
         });
     }

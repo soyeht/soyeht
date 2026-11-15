@@ -195,14 +195,20 @@ pub fn task_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<
 /// A peer exchange through the pane's own MCP server, like a harness calling its tools.
 ///
 /// `list-peers` lists the other agent panes. `peer-send:<paneId>:<text>` queues `<text>` for that
-/// pane. A queued message that arrives with the reply route and whose text starts with `ask:` is
-/// answered with `answer: <rest>` to the route's pane. Any other peer message is only reported,
+/// pane. A queued message that arrives with the header and whose text starts with `ask:` is
+/// answered with `answer: <rest>` to the sender's name. Any other peer message is only reported,
 /// so two fake agents never loop.
 pub fn peer_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<String> {
     let mut clients = runtime.mcp_clients.lock().ok()?;
     let client = clients.get_mut(session)?;
     let message = |client: &mut Client, pane: &str, text: &str| {
         client.call_tool("message_agent", json!({"targetPaneId":pane,"text":text}))
+    };
+    let reply = |client: &mut Client, name: &str, id: &str, text: &str| {
+        client.call_tool(
+            "message_agent",
+            json!({"targetName":name,"inReplyTo":id,"text":text}),
+        )
     };
     let outcome = if instruction == "list-peers" {
         client.call_tool("list_agents", json!({})).map(|peers| {
@@ -220,9 +226,9 @@ pub fn peer_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<
         .and_then(|rest| rest.split_once(':'))
     {
         message(client, pane, text).map(|_| format!("Sent to {pane}: {text}"))
-    } else if let Some((sender, route, body)) = incoming_peer(instruction) {
+    } else if let Some((sender, id, body)) = incoming_peer(instruction) {
         match body.strip_prefix("ask:") {
-            Some(question) => message(client, route, &format!("answer:{question}"))
+            Some(question) => reply(client, sender, id, &format!("answer:{question}"))
                 .map(|_| format!("Answered {sender}:{question}")),
             None => Ok(format!("Received from {sender}: {body}")),
         }
@@ -235,12 +241,13 @@ pub fn peer_turn(runtime: &Runtime, session: &str, instruction: &str) -> Option<
     })
 }
 
-/// The sender, the reply pane and the text of a prompt the engine built for a peer message.
+/// The sender, the message id and the text of a prompt the engine built for a peer message:
+/// `[sender → recipient · m:ID]`, a newline and the text.
 fn incoming_peer(prompt: &str) -> Option<(&str, &str, &str)> {
-    let rest = prompt.strip_prefix("Message from the Soyeht agent ")?;
-    let (header, body) = rest.split_once(".\n\n")?;
-    let (sender, route) = header.rsplit_once(" MCP server using targetPaneId=")?;
-    Some((sender.split(" (").next()?, route, body))
+    let (header, body) = prompt.strip_prefix('[')?.split_once("]\n")?;
+    let (names, id) = header.rsplit_once(" · ")?;
+    let (sender, _) = names.split_once(" → ")?;
+    Some((sender, id, body))
 }
 
 fn execute(client: &mut Client) -> Result<Value> {

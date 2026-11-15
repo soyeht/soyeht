@@ -383,6 +383,10 @@ pub struct Device {
     pub fingerprint: String,
     #[serde(rename = "revoked")]
     pub revoked: bool,
+    #[serde(rename = "addedAt", skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<String>,
+    #[serde(rename = "node", skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StreamInfo {
@@ -800,6 +804,10 @@ pub struct PaneExperimentExportResult {
 pub struct DevicePairStartParams {
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
+    #[serde(rename = "confirmTailnet", skip_serializing_if = "Option::is_none")]
+    pub confirm_tailnet: Option<bool>,
+    #[serde(rename = "confirmTailnetPin", skip_serializing_if = "Option::is_none")]
+    pub confirm_tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartResult {
@@ -813,6 +821,12 @@ pub struct DevicePairStartResult {
     pub qr: Option<String>,
     #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
     pub reachability: Option<EngineReachability>,
+    #[serde(rename = "tailnetChanged", skip_serializing_if = "Option::is_none")]
+    pub tailnet_changed: Option<bool>,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairDecideParams {
@@ -850,6 +864,35 @@ pub struct DeviceRevokeParams {
 pub struct DeviceRevokeResult {
     #[serde(rename = "deviceId")]
     pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Device>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeDismissParams {
+    #[serde(rename = "through")]
+    pub through: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeDismissResult {
+    #[serde(rename = "through")]
+    pub through: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePanesListParams {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePanesListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Pane>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PushPlatform {
@@ -1218,6 +1261,15 @@ pub struct DevicePairedEvent {
     pub actor: Option<Actor>,
     #[serde(rename = "device")]
     pub device: Device,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePairTailnetChangedEvent {
+    #[serde(rename = "tailnetChanged")]
+    pub tailnet_changed: bool,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokedEvent {
@@ -1655,8 +1707,12 @@ pub struct AgentListResult {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageParams {
-    #[serde(rename = "targetPaneId")]
-    pub target_pane_id: Id,
+    #[serde(rename = "targetPaneId", skip_serializing_if = "Option::is_none")]
+    pub target_pane_id: Option<Id>,
+    #[serde(rename = "targetName", skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
+    #[serde(rename = "inReplyTo", skip_serializing_if = "Option::is_none")]
+    pub in_reply_to: Option<String>,
     #[serde(rename = "text")]
     pub text: String,
     #[serde(rename = "idempotencyKey")]
@@ -1668,6 +1724,8 @@ pub struct AgentMessageResult {
     pub prompt_id: Id,
     #[serde(rename = "queued")]
     pub queued: bool,
+    #[serde(rename = "messageId", skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionOption {
@@ -6658,6 +6716,12 @@ pub enum Request {
     DeviceList(DeviceListParams),
     #[serde(rename = "device.revoke")]
     DeviceRevoke(DeviceRevokeParams),
+    #[serde(rename = "device.notice.list")]
+    DeviceNoticeList(DeviceNoticeListParams),
+    #[serde(rename = "device.notice.dismiss")]
+    DeviceNoticeDismiss(DeviceNoticeDismissParams),
+    #[serde(rename = "device.panes.list")]
+    DevicePanesList(DevicePanesListParams),
     #[serde(rename = "push.register")]
     PushRegister(PushRegisterParams),
     #[serde(rename = "push.unregister")]
@@ -7021,6 +7085,24 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "DeviceRevokeParams",
         "DeviceRevokeResult",
         true,
+    ),
+    (
+        "device.notice.list",
+        "DeviceNoticeListParams",
+        "DeviceNoticeListResult",
+        false,
+    ),
+    (
+        "device.notice.dismiss",
+        "DeviceNoticeDismissParams",
+        "DeviceNoticeDismissResult",
+        true,
+    ),
+    (
+        "device.panes.list",
+        "DevicePanesListParams",
+        "DevicePanesListResult",
+        false,
     ),
     (
         "push.register",
@@ -7630,6 +7712,8 @@ pub enum EventName {
     DevicePaired,
     #[serde(rename = "device.revoked")]
     DeviceRevoked,
+    #[serde(rename = "device.pair_tailnet_changed")]
+    DevicePairTailnetChanged,
     #[serde(rename = "pair.result")]
     PairResult,
     #[serde(rename = "engine.updating")]
@@ -7770,6 +7854,7 @@ impl EventName {
             Self::DevicePairRequested => "device.pair_requested",
             Self::DevicePaired => "device.paired",
             Self::DeviceRevoked => "device.revoked",
+            Self::DevicePairTailnetChanged => "device.pair_tailnet_changed",
             Self::PairResult => "pair.result",
             Self::EngineUpdating => "engine.updating",
             Self::EngineRestarted => "engine.restarted",
@@ -7919,6 +8004,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::DeviceRevoked,
         params_type: "DeviceRevokedEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::DevicePairTailnetChanged,
+        params_type: "DevicePairTailnetChangedEvent",
+        durable: false,
     },
     EventDescriptor {
         name: EventName::PairResult,
@@ -8352,6 +8442,9 @@ pub struct DeviceRevokedDraft {
 }
 impl EventParams for DeviceRevokedDraft {
     const NAME: EventName = EventName::DeviceRevoked;
+}
+impl EventParams for DevicePairTailnetChangedEvent {
+    const NAME: EventName = EventName::DevicePairTailnetChanged;
 }
 impl EventParams for PairResultEvent {
     const NAME: EventName = EventName::PairResult;
@@ -9042,6 +9135,9 @@ pub mod method {
     pub const DEVICE_PAIR_DECIDE: &str = "device.pair.decide";
     pub const DEVICE_LIST: &str = "device.list";
     pub const DEVICE_REVOKE: &str = "device.revoke";
+    pub const DEVICE_NOTICE_LIST: &str = "device.notice.list";
+    pub const DEVICE_NOTICE_DISMISS: &str = "device.notice.dismiss";
+    pub const DEVICE_PANES_LIST: &str = "device.panes.list";
     pub const PUSH_REGISTER: &str = "push.register";
     pub const PUSH_UNREGISTER: &str = "push.unregister";
     pub const PAIR_BEGIN: &str = "pair.begin";
@@ -9233,6 +9329,7 @@ pub mod event {
     pub const DEVICE_PAIR_REQUESTED: &str = "device.pair_requested";
     pub const DEVICE_PAIRED: &str = "device.paired";
     pub const DEVICE_REVOKED: &str = "device.revoked";
+    pub const DEVICE_PAIR_TAILNET_CHANGED: &str = "device.pair_tailnet_changed";
     pub const PAIR_RESULT: &str = "pair.result";
     pub const ENGINE_UPDATING: &str = "engine.updating";
     pub const ENGINE_RESTARTED: &str = "engine.restarted";

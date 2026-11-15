@@ -7,7 +7,7 @@
 use serde_json::{Value, json};
 use soyeht_client::{
     Command, Effect, Engine, Event, State,
-    pairing::{Phase, Rejected},
+    pairing::{DevicePanes, Event as PairingEvent, Phase, Rejected},
     timestamp,
 };
 use soyeht_platform::local::Listener;
@@ -34,6 +34,16 @@ struct Rig {
 impl Rig {
     /// A connected window, to an engine that offers `capabilities` and has paired `devices`.
     fn connected(name: &str, capabilities: &[&str], devices: Value) -> Self {
+        Self::connected_noticing(name, capabilities, devices, json!([]))
+    }
+
+    /// [`connected`](Self::connected), to an engine that says `notice` of the devices added.
+    fn connected_noticing(
+        name: &str,
+        capabilities: &[&str],
+        devices: Value,
+        notice: Value,
+    ) -> Self {
         let (listener, path) = listen(name);
         let (engine, inbox) = Engine::start(path.clone());
         let mut remote = FakeEngine::accept(&listener);
@@ -47,7 +57,22 @@ impl Rig {
             path,
         };
         rig.settle(|state| state.connection == soyeht_client::Connection::Connected);
+        // An engine that asks for the person's code is asked which devices were added.
+        if capabilities.contains(&"pairing-code") {
+            rig.answer_notice(notice);
+        }
         rig
+    }
+
+    /// The engine tells the window which devices were added since the notice was dismissed.
+    fn answer_notice(&mut self, devices: Value) {
+        let call = self.remote.expect("device.notice.list");
+        self.remote.reply(&call, json!({"items": devices}));
+        let event = wait_for(&self.inbox, |event| {
+            matches!(event, Event::Pairing(PairingEvent::Noticed { .. }))
+        });
+        let effects = self.state.apply(event);
+        self.dispatch(effects);
     }
 
     /// Sends the pairing commands the replica asks for; everything else it asks is not this
@@ -331,13 +356,221 @@ fn a_device_is_revoked_after_the_person_confirms() {
         "revoked": false});
     let mut rig = Rig::connected("pair-revoke", &["pairing-code"], json!([device]));
     assert_eq!(rig.state.pairing.devices().len(), 1);
-    rig.state.pairing.ask_to_revoke("d1");
-    let effects = rig.state.confirm_revoke();
+    let effects = rig.state.ask_to_revoke("d1");
+    rig.dispatch(effects);
+    // What the device made is asked first, so that the question can offer to close it.
+    let panes = rig.remote.expect("device.panes.list");
+    assert_eq!(panes["params"]["deviceId"], "d1");
+    rig.remote.reply(&panes, json!({"items": []}));
+    rig.settle(|state| state.pairing.revoking_panes() != &DevicePanes::Loading);
+    let effects = rig.state.confirm_revoke(true);
     rig.dispatch(effects);
     let call = rig.remote.expect("device.revoke");
     assert_eq!(call["params"]["deviceId"], "d1");
     rig.remote.reply(&call, json!({"deviceId": "d1"}));
     rig.settle(|state| state.pairing.devices()[0].revoked);
+    rig.finish();
+}
+
+/// A window of an engine that has paired `d1`, whose question before a revocation lists `panes`.
+fn asked_to_revoke(name: &str, panes: Value) -> Rig {
+    let device = json!({"deviceId": "d1", "name": "Phone", "fingerprint": FINGERPRINT,
+        "revoked": false});
+    let mut rig = Rig::connected(name, &["pairing-code"], json!([device]));
+    let effects = rig.state.ask_to_revoke("d1");
+    rig.dispatch(effects);
+    let listing = rig.remote.expect("device.panes.list");
+    rig.remote.reply(&listing, json!({"items": panes}));
+    rig.settle(|state| matches!(state.pairing.revoking_panes(), DevicePanes::Listed(_)));
+    rig
+}
+
+/// The person revokes `d1` and chooses to close its panes; the engine revokes it.
+fn revoke_and_close(rig: &mut Rig) {
+    let effects = rig.state.confirm_revoke(true);
+    rig.dispatch(effects);
+    let revoke = rig.remote.expect("device.revoke");
+    rig.remote.reply(&revoke, json!({"deviceId": "d1"}));
+}
+
+fn pane(id: &str, name: &str) -> Value {
+    json!({"paneId": id, "workspaceId": "w1", "name": name, "cwd": "/work", "mode": "terminal",
+        "state": "idle", "source": "none", "confidence": 0.0, "phrase": "", "generation": 1,
+        "cols": 80, "rows": 24, "record": false})
+}
+
+#[test]
+fn the_panes_a_device_has_when_it_is_revoked_are_closed_and_not_the_ones_the_question_listed() {
+    // The question listed p1 and p2; by the time the device is revoked it has made p3 and p2 is gone.
+    let panes = json!([pane("p1", "shell"), pane("p2", "logs")]);
+    let mut rig = asked_to_revoke("pair-revoke-panes", panes);
+    let effects = rig.state.confirm_revoke(true);
+    rig.dispatch(effects);
+    // The device first: what it made is closed only once it can make no more.
+    let revoke = rig.remote.expect("device.revoke");
+    rig.remote.reply(&revoke, json!({"deviceId": "d1"}));
+    // Its panes are listed again, since it may have made some after the question listed them.
+    let again = rig.remote.expect("device.panes.list");
+    assert_eq!(again["params"]["deviceId"], "d1");
+    rig.remote.reply(
+        &again,
+        json!({"items": [pane("p1", "shell"), pane("p3", "new")]}),
+    );
+    for id in ["p1", "p3"] {
+        let close = rig.remote.expect("pane.close");
+        assert_eq!(close["params"]["paneId"], id);
+        if id == "p1" {
+            rig.remote.reply(&close, json!({"paneId": id}));
+        } else {
+            answer_error(&mut rig.remote, &close, &ErrorKind::PaneBusy, "busy");
+        }
+    }
+    rig.settle(|state| state.pairing.revoke_failure().is_some());
+    // The one pane that would not close is said, and the device is revoked all the same.
+    let failure = rig.state.pairing.revoke_failure().unwrap();
+    assert!(failure.contains("1 of its panes"), "{failure}");
+    assert!(rig.state.pairing.devices()[0].revoked);
+    rig.finish();
+}
+
+#[test]
+fn a_pane_that_is_gone_when_it_is_closed_is_closed_and_a_list_that_fails_is_said() {
+    let mut rig = asked_to_revoke("pair-revoke-gone", json!([pane("p1", "shell")]));
+    revoke_and_close(&mut rig);
+    let again = rig.remote.expect("device.panes.list");
+    rig.remote
+        .reply(&again, json!({"items": [pane("p1", "shell")]}));
+    // The pane closed by itself in the meantime: the close says it is not found, which is done.
+    let close = rig.remote.expect("pane.close");
+    answer_error(&mut rig.remote, &close, &ErrorKind::NotFound, "gone");
+    rig.settle(|state| state.pairing.devices()[0].revoked);
+    assert!(rig.state.pairing.revoke_failure().is_none());
+    rig.finish();
+
+    // The panes of a revoked device that cannot be listed are not closed, and the person is told.
+    let mut rig = asked_to_revoke("pair-revoke-nolist", json!([pane("p1", "shell")]));
+    revoke_and_close(&mut rig);
+    let again = rig.remote.expect("device.panes.list");
+    answer_error(&mut rig.remote, &again, &ErrorKind::DiskFull, "no");
+    rig.settle(|state| state.pairing.revoke_failure().is_some());
+    assert!(
+        rig.state
+            .pairing
+            .revoke_failure()
+            .unwrap()
+            .contains("could not be listed")
+    );
+    rig.finish();
+}
+
+#[test]
+fn a_revocation_that_keeps_the_panes_closes_none() {
+    let mut rig = asked_to_revoke("pair-revoke-keep", json!([pane("p1", "shell")]));
+    let effects = rig.state.confirm_revoke(false);
+    rig.dispatch(effects);
+    let revoke = rig.remote.expect("device.revoke");
+    rig.remote.reply(&revoke, json!({"deviceId": "d1"}));
+    rig.settle(|state| state.pairing.devices()[0].revoked);
+    assert!(rig.state.pairing.revoke_failure().is_none());
+    rig.finish();
+}
+
+#[test]
+fn the_notice_of_devices_added_is_read_on_connecting_and_stays_until_dismissed() {
+    let rig = Rig::connected("pair-notice", &[], json!([]));
+    // An engine that does not ask for the person's code dates no device: it is not asked.
+    assert!(rig.state.pairing.notice().is_empty());
+    rig.finish();
+
+    let device = |id: &str, at: &str| {
+        json!({"deviceId": id, "name": id, "fingerprint": FINGERPRINT, "revoked": false,
+            "addedAt": at, "node": "phone-node"})
+    };
+    let notice = json!([
+        device("d1", "2026-11-15T10:00:00Z"),
+        device("d2", "2026-11-15T10:05:00Z")
+    ]);
+    let mut rig =
+        Rig::connected_noticing("pair-notice-dismiss", &["pairing-code"], json!([]), notice);
+    assert_eq!(rig.state.pairing.notice().len(), 2);
+    // The person dismisses it: the engine is told through the newest device that was shown.
+    let effects = rig.state.dismiss_notice();
+    rig.dispatch(effects);
+    let call = rig.remote.expect("device.notice.dismiss");
+    assert_eq!(call["params"]["through"], "2026-11-15T10:05:00Z");
+    rig.remote
+        .reply(&call, json!({"through": "2026-11-15T10:05:00Z"}));
+    rig.settle(|state| state.pairing.notice().is_empty());
+    assert!(rig.state.pairing.notice_failure().is_none());
+    rig.finish();
+}
+
+#[test]
+fn an_engine_older_than_the_notice_is_not_blamed_and_another_failure_is_said() {
+    let mut rig = Rig::connected("pair-notice-old", &["pairing-code"], json!([]));
+    for (kind, said) in [
+        (ErrorKind::InvalidParams, false),
+        (ErrorKind::DiskFull, true),
+    ] {
+        let load = rig.state.pairing.load_notice().unwrap();
+        rig.engine.send(Command::Pairing(load)).unwrap();
+        let call = rig.remote.expect("device.notice.list");
+        answer_error(&mut rig.remote, &call, &kind, "refused");
+        let event = wait_for(&rig.inbox, |event| {
+            matches!(event, Event::Pairing(PairingEvent::NoticeFailed { .. }))
+        });
+        rig.state.apply(event);
+        assert_eq!(
+            rig.state.pairing.notice_failure().is_some(),
+            said,
+            "{kind:?}"
+        );
+    }
+    rig.finish();
+}
+
+#[test]
+fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent_only_then() {
+    let mut rig = Rig::connected("pair-tailnet", &["pairing-code"], json!([]));
+    let effects = rig.state.open_pairing();
+    rig.dispatch(effects);
+    let start = rig.remote.expect("device.pair.start");
+    // A window opened without the confirmation, which the engine says is blocked by a change.
+    assert!(start["params"].get("confirmTailnet").is_none(), "{start}");
+    rig.remote.reply(
+        &start,
+        json!({"code": "CODE", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK,
+            "tailnetChanged": true, "tailnetName": "other.example", "tailnetPin": "pin-1"}),
+    );
+    rig.settle(|state| state.pairing.tailnet_changed());
+    // The person confirms: a new window is asked for with `confirmTailnet`.
+    let effects = rig.state.confirm_tailnet();
+    rig.dispatch(effects);
+    let confirm = rig.remote.expect("device.pair.start");
+    assert_eq!(confirm["params"]["confirmTailnet"], true);
+    // It names the change the person was shown, and a second press while it is awaited sends nothing.
+    assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-1");
+    assert!(rig.state.confirm_tailnet().is_empty());
+    rig.remote.reply(
+        &confirm,
+        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
+    );
+    rig.settle(|state| !state.pairing.tailnet_changed());
+    assert!(matches!(rig.state.pairing.phase(), Phase::Showing(_)));
+    // Nothing waits any more, so a second press sends nothing.
+    assert!(rig.state.confirm_tailnet().is_empty());
+    rig.finish();
+}
+
+#[test]
+fn an_open_sheet_hears_of_a_changed_tailnet_from_the_engine() {
+    let mut rig = Rig::connected("pair-tailnet-event", &["pairing-code"], json!([]));
+    rig.open("2999-01-01T00:00:00Z");
+    rig.remote.send(&notification(
+        "device.pair_tailnet_changed",
+        json!({"tailnetChanged": true}),
+    ));
+    rig.settle(|state| state.pairing.tailnet_changed());
     rig.finish();
 }
 

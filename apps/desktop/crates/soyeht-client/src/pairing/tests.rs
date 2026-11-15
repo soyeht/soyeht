@@ -12,6 +12,7 @@ fn offer(expires_at: f64) -> Offer {
         link: "soyeht-next://pair?engineId=x".to_owned(),
         expires_at,
         problem: None,
+        tailnet: None,
     }
 }
 
@@ -67,7 +68,27 @@ fn device(id: &str) -> Device {
         name: "Phone".to_owned(),
         fingerprint: FINGERPRINT.to_owned(),
         revoked: false,
+        added_at: None,
+        node: None,
     }
+}
+
+/// A device the engine dated and named a node for.
+fn added(id: &str, at: &str) -> Device {
+    Device {
+        added_at: Some(at.to_owned()),
+        node: Some("phone-node".to_owned()),
+        ..device(id)
+    }
+}
+
+fn pane(id: &str) -> Pane {
+    serde_json::from_value(
+        json!({"paneId": id, "workspaceId": "w", "name": id, "cwd": "/",
+        "mode": "terminal", "state": "idle", "source": "none", "confidence": 0.0, "phrase": "",
+        "generation": 1, "cols": 80, "rows": 24, "record": false}),
+    )
+    .unwrap()
 }
 
 fn typed(command: Command) -> Option<String> {
@@ -463,17 +484,19 @@ fn a_request_is_taken_for_the_device_when_it_is_paired_and_a_revoked_one_is_mark
     assert_eq!(pairing.revoking().map(|d| d.device_id.as_str()), Some("d1"));
     pairing.cancel_revoke();
     assert!(pairing.revoking().is_none());
-    assert_eq!(pairing.confirm_revoke(), None, "nothing was asked");
+    assert_eq!(pairing.confirm_revoke(false), None, "nothing was asked");
 
     pairing.ask_to_revoke("d1");
     assert_eq!(
-        pairing.confirm_revoke(),
+        pairing.confirm_revoke(false),
         Some(Command::Revoke {
-            device_id: "d1".to_owned()
+            device_id: "d1".to_owned(),
+            close_panes: false
         })
     );
     pairing.apply(Event::Revoked {
         device_id: "d1".to_owned(),
+        left_open: Some(0),
     });
     assert!(pairing.devices()[0].revoked);
     pairing.ask_to_revoke("d1");
@@ -558,3 +581,5 @@ fn an_offer_reads_the_engines_answer_and_names_why_a_phone_cannot_reach_the_comp
     );
     assert_eq!(offer.problem, None);
 }
+
+mod notice;

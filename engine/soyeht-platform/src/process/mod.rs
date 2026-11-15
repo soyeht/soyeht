@@ -9,6 +9,7 @@
 //! process runs and which program is in a terminal's foreground.
 
 pub mod detached;
+mod dump;
 mod end;
 pub mod inspect;
 #[cfg(unix)]
@@ -18,6 +19,7 @@ pub mod windows;
 
 use std::io;
 
+pub use dump::non_dumpable;
 pub use end::end_child;
 #[cfg(unix)]
 pub use unix::{GroupSignal, kill_tree, signal_group};

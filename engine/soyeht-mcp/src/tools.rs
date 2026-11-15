@@ -36,14 +36,14 @@ const TOOLS: [Tool; 36] = [
         name: "list_agents",
         method: method::AGENT_LIST,
         audience: Audience::Both,
-        description: "List other ACP agent panes in this workspace, including IDs for messaging.",
+        description: "List the other ACP agent panes of this workspace by name, with their pane IDs.",
         schema: empty_schema,
     },
     Tool {
         name: "message_agent",
         method: method::AGENT_MESSAGE,
         audience: Audience::Both,
-        description: "Queue a message for another ACP agent; delivery waits for its clean input.",
+        description: "Queue a message for another ACP agent pane, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for its clean input. A message you receive starts with [sender → you · m:ID]; to answer it, call this tool with targetName = the name before the arrow and inReplyTo = the ID after m:.",
         schema: agent_message_schema,
     },
     Tool {
