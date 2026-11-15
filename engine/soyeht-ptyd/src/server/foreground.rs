@@ -17,14 +17,17 @@ const UNREADABLE: &str = "ptyd.foreground_unreadable";
 /// What each program of an answer costs besides its strings, for the budget.
 const PROGRAM_OVERHEAD: usize = 64;
 
+/// The terminals a question names, or the refusal of it.
+pub(super) type Asked = std::result::Result<Vec<(String, Arc<Live>)>, Box<Response>>;
+
 /// The live terminals among `instance_ids`, or the refusal of a question that names too many. An
 /// id the supervisor does not know, or that is not a terminal, is left out.
-pub(super) fn collect(
-    state: &State,
-    instance_ids: &[String],
-) -> std::result::Result<Vec<(String, Arc<Live>)>, Response> {
+pub(super) fn collect(state: &State, instance_ids: &[String]) -> Asked {
     if instance_ids.len() > MAX_FOREGROUND {
-        return Err(error(wire_kind::INVALID_PARAMS, "too many terminals"));
+        return Err(Box::new(error(
+            wire_kind::INVALID_PARAMS,
+            "too many terminals",
+        )));
     }
     Ok(instance_ids
         .iter()
@@ -61,10 +64,10 @@ fn fit(programs: Vec<Program>, room: &mut usize) -> (Vec<Program>, bool) {
 /// programs do not all fit comes with those that do and `truncated`, and once the budget is spent
 /// the terminals after it are left out (the engine keeps what it knew of them). A terminal whose
 /// process ended answers with no programs.
-pub(super) fn answer(asked: std::result::Result<Vec<(String, Arc<Live>)>, Response>) -> Response {
+pub(super) fn answer(asked: Asked) -> Response {
     let asked = match asked {
         Ok(asked) => asked,
-        Err(refusal) => return refusal,
+        Err(refusal) => return *refusal,
     };
     let mut answers = Vec::with_capacity(asked.len());
     let mut room = MAX_FOREGROUND_BYTES;
