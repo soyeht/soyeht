@@ -3,7 +3,8 @@ import Testing
 
 @testable import SoyehtClient
 
-/// The cases of `contracts/vectors/project-page-origin.json`, which the engine passes as well.
+/// The cases of `contracts/vectors/project-page-origin.json`, which the engine passes as well: the
+/// origin rule, and the navigation decision of a main frame, which is the same rule.
 @Test func projectPageOriginPassesTheSharedVectorCases() throws {
   let cases = ContractVector.cases(try ContractVector.load("project-page-origin"), "cases")
   #expect(cases.count > 20)
@@ -11,23 +12,13 @@ import Testing
     let page = try #require(item["page"].string)
     let target = try #require(item["target"].string)
     let expected = try #require(item["same"].bool)
-    #expect(
-      ProjectPageOrigin.sameOrigin(page: page, target: target) == expected,
-      "\(item["name"].string ?? "")")
-  }
-}
-
-@Test func theNavigationDecisionPassesTheSharedVectorForTheMainFrame() throws {
-  let cases = ContractVector.cases(try ContractVector.load("project-page-origin"), "cases")
-  for item in cases {
-    let page = try #require(item["page"].string)
-    let target = try #require(item["target"].string)
-    let expected = try #require(item["same"].bool)
+    let name = "\(item["name"].string ?? "")"
+    #expect(ProjectPageOrigin.sameOrigin(page: page, target: target) == expected, "\(name)")
     #expect(
       ProjectPageNavigation.allows(
         isProjectPage: true, pageAddress: page, target: target, isMainFrame: true,
         hasTargetFrame: true) == expected,
-      "\(item["name"].string ?? "")")
+      "\(name)")
   }
 }
 
