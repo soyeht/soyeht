@@ -26,7 +26,7 @@ use crate::{
     ports::{SupervisorPort, call_supervisor},
 };
 use soyeht_ptyd::{
-    client::IO_TIMEOUT,
+    client::{Client as SupervisorClient, IO_TIMEOUT},
     wire::{Request, Response},
 };
 use std::{
@@ -47,6 +47,24 @@ const LATER_JOB: &str = "supervisor.later";
 const LATER_FAILED: &str = "engine.supervisor_follow_up_failed";
 /// The log event of a follow-up job that could not be started.
 const LATER_NOT_STARTED: &str = "engine.supervisor_follow_up_not_started";
+
+impl SupervisorPort for SupervisorClient {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        SupervisorClient::request(self, request)
+    }
+
+    fn supervisor_id(&self) -> &str {
+        &self.supervisor_id
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        self.supervisor_generation
+    }
+
+    fn features(&self) -> Vec<String> {
+        self.features.clone()
+    }
+}
 
 struct Connection {
     port: Mutex<Box<dyn SupervisorPort>>,
