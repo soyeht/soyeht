@@ -104,6 +104,7 @@ export interface Pane {
   "url"?: string;
   "title"?: string;
   "viewport"?: WebViewport;
+  "projectPath"?: string;
   "incognito"?: boolean;
   "webSession"?: WebSessionState;
   "writingKind"?: WritingKind;
@@ -3058,7 +3059,8 @@ export interface WebElementPackage {
 }
 
 export interface WebOpenParams {
-  "url": string;
+  "url"?: string;
+  "path"?: string;
   "workspaceId"?: Id;
   "newPane"?: boolean;
   "incognito"?: boolean;

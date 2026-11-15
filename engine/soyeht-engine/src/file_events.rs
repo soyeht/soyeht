@@ -88,6 +88,12 @@ impl EventStream {
         })
     }
 
+    /// The events and what keeps the stream going: a reader that blocks on the events ends when
+    /// the hold is dropped, which disconnects them.
+    pub(crate) fn split(self) -> (Receiver<notify::Result<Event>>, Hold) {
+        (self.receiver, Hold(self._watcher))
+    }
+
     /// A stream the test feeds, so event handling runs without the operating system.
     #[cfg(test)]
     pub(crate) fn fed(receiver: Receiver<notify::Result<Event>>) -> Self {
@@ -97,6 +103,9 @@ impl EventStream {
         }
     }
 }
+
+/// What keeps an event stream going once its events were taken (`EventStream::split`).
+pub(crate) struct Hold(#[allow(dead_code)] Option<RecommendedWatcher>);
 
 /// When the events seen so far are ready to be read.
 #[derive(Default)]

@@ -1,0 +1,44 @@
+{
+  "models": [
+    {
+      "name": "Kokoro-82M CoreML (aufklarer/Kokoro-82M-CoreML)",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/aufklarer/Kokoro-82M-CoreML",
+      "notes": [
+        "the text-to-speech model and its two grapheme-to-phoneme models, downloaded after the person presses Install and never bundled",
+        "license: the model card metadata (license: apache-2.0), read on 2026-11-15; base model hexgrad/Kokoro-82M, also apache-2.0 in its card"
+      ]
+    },
+    {
+      "name": "Kokoro English pronunciation dictionaries (us_gold, us_silver)",
+      "version": "",
+      "license": "Apache-2.0",
+      "url": "https://huggingface.co/aufklarer/Kokoro-82M-CoreML",
+      "notes": [
+        "downloaded with the model; the model card states Apache-2.0 for the dictionaries and gives no upstream source for their data",
+        "provenance is not stated upstream: the misaki project (https://github.com/hexgrad/misaki, Apache-2.0, LICENSE read on 2026-11-15) holds dictionaries of the same names, which is not proof that these are those"
+      ]
+    },
+    {
+      "name": "Pronunciation tables of speech-swift KokoroTTS (French, Portuguese, Hindi)",
+      "version": "",
+      "license": "MIT",
+      "url": "https://github.com/open-dict-data/ipa-dict",
+      "notes": [
+        "bundled in the app with the KokoroTTS target of speech-swift, which offers no language but English",
+        "license: as stated by the comment of PronunciationDicts.swift in the pinned revision (ipa-dict, MIT); the upstream license file was not read"
+      ]
+    },
+    {
+      "name": "pinyin-to-ipa mapping (stefantaubert/pinyin-to-ipa)",
+      "version": "",
+      "license": "MIT",
+      "url": "https://github.com/stefantaubert/pinyin-to-ipa",
+      "notes": [
+        "adapted in ChinesePhonemizer.swift of the KokoroTTS target of speech-swift, which is linked but offers no language but English",
+        "license: as stated by the comment of ChinesePhonemizer.swift in the pinned revision; the upstream license file was not read"
+      ]
+    }
+  ]
+}

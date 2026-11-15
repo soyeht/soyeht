@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Per-step wall times of a gate run, kept in `.cache/gate-timings.json` (ADR 0089).
 
-`scripts/check_all.sh` appends one tab-separated line per step (`id area seconds status`)
+`scripts/check_all.sh` appends one tab-separated line per step (`id area seconds status skipped`,
+where `skipped` says what the step did not check and is empty for a step that checked all it names)
 to a scratch file and calls `finalize` when it exits. The output file holds the latest
 run in full and a short history of earlier runs, so slow steps can be watched over time.
 
@@ -26,11 +27,22 @@ def read_steps(path: Path) -> list[dict]:
     steps = []
     for line in path.read_text().splitlines():
         fields = line.split("\t")
-        if len(fields) != 4:
+        if len(fields) not in (4, 5):
             continue
-        step_id, area, seconds, status = fields
-        steps.append({"id": step_id, "area": area, "seconds": float(seconds), "status": int(status)})
+        step_id, area, seconds, status, *skipped = fields
+        step = {"id": step_id, "area": area, "seconds": float(seconds), "status": int(status)}
+        if skipped and skipped[0]:
+            step["skipped"] = skipped[0]
+        steps.append(step)
     return steps
+
+
+def skipped_summary(steps: list[dict]) -> str | None:
+    """One line naming the steps that passed or failed without checking all they name, or nothing. It
+    does not start with the marker of the line each step prints when it skips (`check_all: SKIPPED`):
+    that line is the only one the remote gate repeats, once per step, and the reasons are there."""
+    skipped = [step["id"] for step in steps if step.get("skipped")]
+    return f"check_all: {len(skipped)} step(s) checked less than their names say: {', '.join(skipped)}" if skipped else None
 
 
 def load(out: Path) -> dict:
@@ -87,6 +99,9 @@ def main(argv: list[str] | None = None) -> int:
         finalize(steps, arguments.tier, arguments.exit_code, arguments.areas, arguments.out, time.time())
         total = sum(step["seconds"] for step in steps)
         print(f"check_all: {len(steps)} steps, {total:.0f}s; timings in {arguments.out}")
+        summary = skipped_summary(steps)
+        if summary:
+            print(summary)
     else:
         for step_id, seconds in slowest(load(arguments.out), arguments.count):
             print(f"{seconds:8.1f}s  {step_id}")

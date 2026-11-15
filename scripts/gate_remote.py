@@ -106,7 +106,7 @@ def run(arguments: argparse.Namespace, root: Path) -> int:
             root, base, arguments.only, TO_STDOUT, Path(scratch) / "timings.json",
             arguments.check_all.split(), remote, tier=arguments.tier, event=arguments.event_file,
             ship=True, engine_test_args=engine_test_args(arguments, root, base),
-            concurrent=not arguments.sequential)
+            concurrent=not arguments.sequential, abandon_when_host_fails=True)
     label = f"{arguments.tier}+remote:{remote.host}" + (f"+only:{arguments.only}" if arguments.only else "")
     if steps:
         finalize(steps, label, code, " ".join(sorted({step["area"] for step in steps})),
@@ -122,7 +122,9 @@ def report(sha: str, remote: Remote, steps: list[dict], code: int, seconds: floa
     split = (f"{len(there)} steps on {remote.host} ({sum(s['seconds'] for s in there):.0f}s), "
              f"{len(here)} here ({sum(s['seconds'] for s in here):.0f}s)")
     result = "passed" if code == 0 else f"FAILED (exit {code})"
-    return f"gate_remote: {result} {sha[:12]}: {split}; {seconds:.0f}s wall"
+    skipped = [step["id"] for step in steps if step.get("skipped")]
+    unchecked = f"; SKIPPED (checked less than their names say): {', '.join(skipped)}" if skipped else ""
+    return f"gate_remote: {result} {sha[:12]}: {split}; {seconds:.0f}s wall{unchecked}"
 
 
 def main(argv: list[str] | None = None) -> int:

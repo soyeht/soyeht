@@ -256,8 +256,10 @@ impl Core {
         // The event streams of the file followers raise the tick, which sleeps until a deadline.
         let kick = core.background.kicker();
         core.project_watches.kicked_by(Arc::clone(&kick));
+        core.web.pages.kicked_by(Arc::clone(&kick));
         core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
+        core.serve_project_pages_again();
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.
@@ -686,6 +688,7 @@ impl Core {
         self.isolated("local_servers", Self::advance_local_servers);
         self.isolated("input_receipts", Self::flush_input_receipts);
         self.isolated("web_commands", Self::advance_web_commands);
+        self.isolated("project_pages", Self::reload_project_pages);
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());
         }

@@ -12,7 +12,12 @@ use soyeht_protocol::{
 use soyeht_web::NormalizedUrl;
 use uuid::Uuid;
 
-use super::panes::NewWebPane;
+use super::{
+    panes::NewWebPane,
+    permissions::WebPermission,
+    project_page::{PageFile, ProjectPage},
+};
+use std::path::Path;
 
 const NAVIGATION_TIMEOUT_MS: u32 = 30_000;
 
@@ -32,18 +37,56 @@ impl Core {
         if request.mode == Some(WebInteractionMode::Human) {
             return Err(soyeht_web::Error::HumanModeUnavailable.into());
         }
-        let url = NormalizedUrl::parse(&request.url)?;
+        let by_address = request
+            .url
+            .as_deref()
+            .map(NormalizedUrl::parse)
+            .transpose()?;
+        if by_address.is_some() == request.path.is_some() {
+            return Err(errors::invalid(
+                "Web open requires exactly one URL or project file path",
+            ));
+        }
         let (scope, workspace_id) = self.web_open_context(connection, request.workspace_id)?;
         let workspace = model::workspace(&self.store, &workspace_id)?;
         let incognito = request.incognito.unwrap_or(false);
+        let project_file = request
+            .path
+            .as_deref()
+            .map(|path| PageFile::resolve(Path::new(&workspace.path), path))
+            .transpose()?;
+        let shown = match (&by_address, &project_file) {
+            (Some(url), _) => self.matching_web_pane(&workspace_id, url.as_str(), incognito),
+            (None, Some(file)) => self
+                .web
+                .pages
+                .pane_showing(&workspace_id, file, |pane_id| {
+                    self.live_web_pane_url(pane_id)
+                })
+                .map(str::to_owned),
+            (None, None) => None,
+        };
         if !request.new_pane.unwrap_or(false)
-            && let Some(pane_id) = self.matching_web_pane(&workspace_id, url.as_str(), incognito)
+            && let Some(pane_id) = shown
         {
             return self
                 .focus_open_web_pane(connection, params, &scope, &workspace_id, &pane_id)
                 .map(Outcome::Reply);
         }
-        if !incognito && self.web_open_is_agent(connection) {
+        let page = project_file
+            .map(|file| self.web.pages.start(&workspace_id, file))
+            .transpose()?;
+        let url = match (by_address, &page) {
+            (Some(url), _) => url,
+            (None, Some(page)) => NormalizedUrl::parse(page.entry_url())?,
+            (None, None) => return Err(errors::internal("Web open has no address")),
+        };
+        if self.web_open_is_agent(connection) && page.is_some() {
+            // A project page has no session to ask about, so an agent's pane is made with its address
+            // already set, as a person's is: the host holds the page to its origin from the first
+            // load. Without a host there is nothing to show the page, and the call says so.
+            self.web_host_connection()?;
+        } else if !incognito && self.web_open_is_agent(connection) {
             return self.web_open_routed(connection, request_id, params, &workspace, &url);
         }
         let result = self.persist_web_pane(
@@ -55,9 +98,26 @@ impl Core {
                 name: None,
                 url: Some(&url),
                 incognito,
+                project_path: page.as_ref().map(ProjectPage::project_path),
             },
         )?;
+        self.attach_project_page(&result, page);
         Ok(Outcome::Reply(result))
+    }
+
+    /// Keeps the page a `web.open` of a project file started for the pane it opened.
+    fn attach_project_page(&mut self, result: &Value, page: Option<ProjectPage>) {
+        if let (Some(pane_id), Some(page)) = (result["paneId"].as_str(), page) {
+            self.web.pages.attach(pane_id, page);
+        }
+    }
+
+    /// The address a live web pane holds now.
+    fn live_web_pane_url(&self, pane_id: &str) -> Option<String> {
+        self.panes
+            .get(pane_id)
+            .filter(|running| !running.stored.closed && running.stored.pane.mode == PaneMode::Web)
+            .and_then(|running| running.stored.pane.url.clone())
     }
 
     /// An agent's open of a pane that is not private: the pane is made empty and the address is
@@ -91,6 +151,7 @@ impl Core {
                 name: None,
                 url: None,
                 incognito: false,
+                project_path: None,
             },
         )?;
         let pane_id = result["paneId"]
@@ -123,7 +184,11 @@ impl Core {
         let request: WebNavigateParams = serde_json::from_value(params.clone())
             .map_err(|_| errors::invalid("Invalid web navigation parameters"))?;
         let args = match (request.url.as_deref(), request.action.as_ref()) {
-            (Some(url), None) => json!({"url":NormalizedUrl::parse(url)?.as_str()}),
+            (Some(url), None) => {
+                let url = NormalizedUrl::parse(url)?;
+                self.keep_project_page_on_its_origin(&request.pane_id, url.as_str())?;
+                json!({"url":url.as_str()})
+            }
             (None, Some(action)) => json!({"action":action}),
             _ => {
                 return Err(errors::invalid(
@@ -146,6 +211,125 @@ impl Core {
             command,
         )?;
         Ok(Outcome::Queued)
+    }
+
+    /// Tells the web host to reload each pane whose project page changed on disk, when the pane
+    /// still shows that page. No answer is awaited: the host's reply to a command the engine no
+    /// longer waits for is dropped (`web_host_response`), and a reload that fails leaves the page
+    /// as it was.
+    pub(crate) fn reload_project_pages(&mut self) -> Result<()> {
+        for (pane_id, base) in self.web.pages.take_changed() {
+            let showing = self.panes.get(&pane_id).is_some_and(|running| {
+                !running.stored.closed
+                    && running
+                        .stored
+                        .pane
+                        .url
+                        .as_deref()
+                        .is_some_and(|url| url.starts_with(&base))
+            });
+            // With no host connected nothing shows the page, and the next open loads it afresh.
+            let Ok(host) = self.web_host_connection() else {
+                continue;
+            };
+            if !showing {
+                continue;
+            }
+            let mut command = WebCommandParams {
+                pane_id,
+                command: WebCommandKind::Navigate,
+                args: json!({"action":"reload"}),
+                timeout_ms: NAVIGATION_TIMEOUT_MS,
+                operation_key: Uuid::new_v4().to_string(),
+            };
+            WebPermission::background().apply_to(&mut command)?;
+            let payload = serde_json::to_value(&command)
+                .map_err(|_| errors::internal("Web command serialization failed"))?;
+            let frame = model::request(
+                json!(Uuid::new_v4().to_string()),
+                method::WEB_COMMAND,
+                payload,
+            )?;
+            if let Some(client) = self.clients.get(&host) {
+                client.outbox.send(frame);
+            }
+        }
+        Ok(())
+    }
+
+    /// A pane that holds a project page goes only where the page's own origin is (contract 11,
+    /// section 5b); the hosts refuse the rest, which only they see.
+    fn keep_project_page_on_its_origin(&self, pane_id: &str, target: &str) -> Result<()> {
+        let pane = self
+            .panes
+            .get(pane_id)
+            .filter(|running| !running.stored.closed && running.stored.pane.mode == PaneMode::Web)
+            .map(|running| &running.stored.pane);
+        match pane {
+            Some(pane)
+                if pane.project_path.is_some()
+                    && !pane
+                        .url
+                        .as_deref()
+                        .is_some_and(|page| soyeht_protocol::web::same_origin(page, target)) =>
+            {
+                Err(soyeht_web::Error::ProjectPageOrigin.into())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    /// Serves again the project page of each pane that holds a `projectPath`, when the engine
+    /// starts: the port and the token of the last run are gone, so the pane gets new ones and its
+    /// address is updated. A pane whose file is gone, or that cannot be served, is left as it was.
+    pub(crate) fn serve_project_pages_again(&mut self) {
+        let panes: Vec<(String, String, String)> = self
+            .panes
+            .values()
+            .filter(|running| !running.stored.closed && running.stored.pane.mode == PaneMode::Web)
+            .filter_map(|running| {
+                let pane = &running.stored.pane;
+                Some((
+                    pane.pane_id.clone(),
+                    pane.workspace_id.clone(),
+                    pane.project_path.clone()?,
+                ))
+            })
+            .collect();
+        for (pane_id, workspace_id, path) in panes {
+            if let Err(error) = self.serve_project_page_again(&pane_id, &workspace_id, &path) {
+                soyeht_platform::log::failure("engine.project_page_not_served", &error);
+            }
+        }
+    }
+
+    fn serve_project_page_again(
+        &mut self,
+        pane_id: &str,
+        workspace_id: &str,
+        path: &str,
+    ) -> Result<()> {
+        let workspace = model::workspace(&self.store, workspace_id)?;
+        let file = PageFile::resolve(Path::new(&workspace.path), path)?;
+        let page = self.web.pages.start(workspace_id, file)?;
+        let mut saved = errors::invariant(self.panes.get(pane_id), "Web pane disappeared")?
+            .stored
+            .clone();
+        saved.pane.url = Some(page.entry_url().to_owned());
+        crate::ports::StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &format!("web-project-page-restore:{pane_id}:{}", Uuid::new_v4()),
+            "web.project_page.restore",
+            |change| {
+                crate::core::persist_pane(change, &saved)?;
+                Ok((json!({}), Vec::new()))
+            },
+        )
+        .map_err(errors::storage)?;
+        errors::invariant(self.panes.get_mut(pane_id), "Web pane disappeared")?.stored = saved;
+        self.web.pages.attach(pane_id, page);
+        Ok(())
     }
 
     fn web_open_context(
@@ -239,7 +423,6 @@ mod tests {
     use crate::web::test_support::{
         connect_local, create_workspace, next_json, reply, request, temp_root,
     };
-    use serde_json::json;
     use soyeht_protocol::ErrorKind;
 
     async fn connect(

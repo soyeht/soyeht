@@ -61,6 +61,7 @@ struct WebPaneKey: Hashable {
   private func synchronize(_ pane: Pane) -> MacWebSession {
     if let existing = sessions[pane.paneId] {
       existing.advanceMinimumGeneration(pane.generation)
+      existing.followProjectPage(isProjectPage: pane.projectPath != nil, address: pane.url)
       existing.loadIfNeeded(pane.url)
       return existing
     }
@@ -76,6 +77,7 @@ struct WebPaneKey: Hashable {
           paneId: pane.paneId, warnings: warnings, errors: errors)
       })
     sessions[pane.paneId] = session
+    session.followProjectPage(isProjectPage: pane.projectPath != nil, address: pane.url)
     session.loadIfNeeded(pane.url)
     return session
   }
@@ -92,17 +94,9 @@ struct WebPaneKey: Hashable {
     else {
       throw ClientFailure.webHost(.internal_error, "The web pane is unavailable.")
     }
-    if humanCommand(command.args) { client?.select(command.paneId) }
+    if WebCommandAccess.isPersons(command) { client?.select(command.paneId) }
     end(WebSessionLifecycle.ended(sessions: kinds(of: [pane.paneId]), panes: [pane]))
     return try await synchronize(pane).execute(command)
-  }
-
-  private func humanCommand(_ args: JsonValue) -> Bool {
-    guard case .object(let values) = args,
-      case .object(let access)? = values["_soyehtAccess"],
-      case .string("human")? = access["session"]
-    else { return false }
-    return true
   }
 
   private func reportNavigation(
@@ -138,6 +132,13 @@ struct WebPaneKey: Hashable {
   @ObservationIgnored
   private let onNavigated: (UInt64, String, String) async -> Void
   private var requestedURL: URL?
+  /// Whether the pane shows a project file as a page, and the address the engine holds for it
+  /// (nil until the engine has served it): the only origin the pane may go to. A project page
+  /// with no address yet loads nothing (contract 11, section 5b).
+  @ObservationIgnored
+  private var isProjectPage = false
+  @ObservationIgnored
+  private var projectPageAddress: String?
   private var navigationGeneration: UInt64 = 0
   private(set) var viewport: WebViewport?
   @ObservationIgnored
@@ -237,7 +238,22 @@ struct WebPaneKey: Hashable {
 
   func loadIfNeeded(_ rawURL: String?) {
     guard webView.url == nil, requestedURL == nil, let rawURL,
-      let url = allowedURL(rawURL)
+      allowsNavigation(to: rawURL, isMainFrame: true), let url = allowedURL(rawURL)
+    else { return }
+    requestedURL = url
+    webView.load(URLRequest(url: url))
+  }
+
+  /// Records whether the pane shows a project file as a page and its address (nil while the
+  /// engine has none). When the engine served the page again at another port and token, the
+  /// session still shows the old one, and it goes to the new one: the only navigation of such a
+  /// pane that no page, link or command asked for.
+  func followProjectPage(isProjectPage: Bool, address: String?) {
+    self.isProjectPage = isProjectPage
+    projectPageAddress = address
+    guard isProjectPage, let address, let url = allowedURL(address),
+      let showing = (requestedURL ?? webView.url)?.absoluteString,
+      !ProjectPageOrigin.sameOrigin(page: showing, target: address)
     else { return }
     requestedURL = url
     webView.load(URLRequest(url: url))
@@ -402,7 +418,17 @@ struct WebPaneKey: Hashable {
   func webView(
     _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction
   ) async -> WKNavigationActionPolicy {
-    guard let url = navigationAction.request.url, allowedURL(url.absoluteString) != nil else {
+    guard let url = navigationAction.request.url else { return .cancel }
+    if isProjectPage {
+      // A project page goes only where its own address does; a frame may also load what the
+      // page makes itself. A new window (no target frame) is never opened.
+      guard
+        ProjectPageNavigation.allows(
+          isProjectPage: true, pageAddress: projectPageAddress, target: url.absoluteString,
+          isMainFrame: navigationAction.targetFrame?.isMainFrame == true,
+          hasTargetFrame: navigationAction.targetFrame != nil)
+      else { return .cancel }
+    } else if allowedURL(url.absoluteString) == nil {
       return .cancel
     }
     if navigationAction.targetFrame?.isMainFrame == true {
@@ -411,7 +437,27 @@ struct WebPaneKey: Hashable {
     return .allow
   }
 
+  /// Whether a project page may load `target`; true for any other pane, whose scheme policy is
+  /// `allowedURL`.
+  private func allowsNavigation(to target: String, isMainFrame: Bool) -> Bool {
+    ProjectPageNavigation.allows(
+      isProjectPage: isProjectPage, pageAddress: projectPageAddress, target: target,
+      isMainFrame: isMainFrame, hasTargetFrame: true)
+  }
+
   private func navigate(_ args: JsonValue) throws {
+    if isProjectPage, let rawURL = value(args, "url") {
+      guard allowsNavigation(to: rawURL, isMainFrame: true),
+        let url = allowedURL(rawURL),
+        allowsNavigation(to: url.absoluteString, isMainFrame: true)
+      else {
+        throw ClientFailure.webHost(
+          .navigation_refused, "A page of a project file stays on its own address.")
+      }
+      requestedURL = url
+      webView.load(URLRequest(url: url))
+      return
+    }
     if let rawURL = value(args, "url"), let url = allowedURL(rawURL) {
       requestedURL = url
       webView.load(URLRequest(url: url))

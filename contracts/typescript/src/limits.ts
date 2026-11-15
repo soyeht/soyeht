@@ -78,6 +78,8 @@ export const limits = {
   "webReadLinks": 100,
   "webReadBytes": 524288,
   "webAgentImageBytes": 262144,
+  "webProjectFileBytes": 16777216,
+  "webProjectPageConnections": 32,
   "promptAttachments": 20,
   "promptAttachmentBytes": 10485760,
   "promptAttachmentTotalBytes": 20971520,

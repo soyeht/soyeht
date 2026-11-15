@@ -99,6 +99,13 @@ fn command(kind: WebCommandKind, session: &str, args: Value) -> WebCommandParams
     }
 }
 
+/// The engine's own command: the access note carries `"background": true`.
+fn background_command(kind: WebCommandKind, session: &str, args: Value) -> WebCommandParams {
+    let mut params = command(kind, session, args);
+    params.args["_soyehtAccess"]["background"] = json!(true);
+    params
+}
+
 fn host(page: &Arc<FakePage>) -> Host {
     Host::new(Arc::new(Registry(page.clone())))
 }
@@ -165,6 +172,115 @@ fn an_agent_is_refused_while_a_person_has_the_pane_and_a_person_is_not() {
     page.handoff.hand_back();
     let agent = host(&page).execute(&command(WebCommandKind::Snapshot, "granted", json!({})));
     assert!(agent.result.is_ok());
+}
+
+#[test]
+fn the_engines_own_reload_goes_while_a_person_has_the_pane_and_does_not_take_it_over() {
+    let page = FakePage::new();
+    page.handoff.note_person();
+    let reload = background_command(
+        WebCommandKind::Navigate,
+        "human",
+        json!({"action": "reload"}),
+    );
+    let outcome = host(&page).execute(&reload);
+    assert_eq!(value(&outcome)["accepted"], true);
+    assert_eq!(*page.navigated.lock().unwrap(), [Target::Reload]);
+    // It is no act of a person's, and no hand-back either: the pane stays as it was.
+    assert!(page.handoff.person_has_control());
+    page.handoff.hand_back();
+    host(&page).execute(&reload);
+    assert!(!page.handoff.person_has_control());
+}
+
+#[test]
+fn the_background_note_is_read_as_true_only_and_is_a_persons_session_only() {
+    let page = FakePage::new();
+    page.handoff.note_person();
+    let agent = host(&page).execute(&command(WebCommandKind::Snapshot, "granted", json!({})));
+    assert_eq!(error_kind(&agent), ErrorKind::HumanTookOver);
+    // A background note that is not `true` is not one: an agent's reload is still refused.
+    for note in [json!(false), json!("true"), json!(1), Value::Null] {
+        let mut params = command(
+            WebCommandKind::Navigate,
+            "granted",
+            json!({"action": "reload"}),
+        );
+        params.args["_soyehtAccess"]["background"] = note;
+        assert_eq!(
+            error_kind(&host(&page).execute(&params)),
+            ErrorKind::HumanTookOver
+        );
+    }
+    // The engine's own reload has no agent's session: one that claims it is invalid.
+    let claimed = background_command(
+        WebCommandKind::Navigate,
+        "granted",
+        json!({"action": "reload"}),
+    );
+    let outcome = host(&page).execute(&claimed);
+    assert_eq!(error_kind(&outcome), ErrorKind::InternalError);
+    assert_eq!(
+        outcome.result.unwrap_err().message,
+        "The web command access is invalid."
+    );
+    assert!(page.navigated.lock().unwrap().is_empty());
+}
+
+/// The note counts for the engine's reload and for nothing else: any other command is what its
+/// session says, so an agent's is still asked about the hand-off and a person's still is not.
+#[test]
+fn the_background_note_on_any_other_command_is_ignored() {
+    let page = FakePage::with(vec![("maxNodes", READ.into())], false, false);
+    page.handoff.note_person();
+    let others = [
+        (WebCommandKind::Snapshot, json!({})),
+        (
+            WebCommandKind::Navigate,
+            json!({"url": "https://example.com/x"}),
+        ),
+        (WebCommandKind::Navigate, json!({"action": "back"})),
+        (
+            WebCommandKind::Navigate,
+            json!({"action": "reload_ignoring_cache"}),
+        ),
+        // A reload that also names an address is a navigation to that address.
+        (
+            WebCommandKind::Navigate,
+            json!({"action": "reload", "url": "https://example.com/x"}),
+        ),
+        (WebCommandKind::Scroll, json!({})),
+        (WebCommandKind::Screenshot, json!({})),
+    ];
+    for (kind, args) in others {
+        // The session is read as it stands: an agent's is held by the hand-off check, with the
+        // note or without it.
+        let mut plain = command(kind.clone(), "granted", args.clone());
+        assert_eq!(
+            error_kind(&host(&page).execute(&plain)),
+            ErrorKind::HumanTookOver,
+            "{kind:?}"
+        );
+        plain.args["_soyehtAccess"]["background"] = json!(true);
+        assert_eq!(
+            error_kind(&host(&page).execute(&plain)),
+            ErrorKind::HumanTookOver,
+            "{kind:?}"
+        );
+    }
+    assert!(page.navigated.lock().unwrap().is_empty());
+    // A person's command with the note is a person's command: the person has the pane and it
+    // goes, and it is not the engine's own, so it takes the pane no further than it was.
+    let outcome = host(&page).execute(&background_command(
+        WebCommandKind::Navigate,
+        "human",
+        json!({"url": "https://example.com/x"}),
+    ));
+    assert_eq!(value(&outcome)["accepted"], true);
+    assert_eq!(
+        *page.navigated.lock().unwrap(),
+        [Target::Url("https://example.com/x".into())]
+    );
 }
 
 #[test]

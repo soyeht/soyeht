@@ -12,7 +12,7 @@ apps/desktop/ and apps/android/, the Package.resolved files of the Swift package
 apps/android/app/build.gradle.kts and scripts/third_party/. Do not edit it:
     uv run python scripts/third_party_notices.py generate
 
-1. Components (886)
+1. Components (890)
 
 Rust crates (818)
   accesskit 0.24.1  (MIT OR Apache-2.0)  [apps/desktop]
@@ -3062,6 +3062,24 @@ Fonts and icons (7)
   Nunito  (OFL-1.1)
       https://github.com/googlefonts/nunito
 
+Speech models, dictionaries and pronunciation tables (4)
+  Kokoro English pronunciation dictionaries (us_gold, us_silver)  (Apache-2.0)
+      https://huggingface.co/aufklarer/Kokoro-82M-CoreML
+      downloaded with the model; the model card states Apache-2.0 for the dictionaries and gives no upstream source for their data
+      provenance is not stated upstream: the misaki project (https://github.com/hexgrad/misaki, Apache-2.0, LICENSE read on 2026-11-15) holds dictionaries of the same names, which is not proof that these are those
+  Kokoro-82M CoreML (aufklarer/Kokoro-82M-CoreML)  (Apache-2.0)
+      https://huggingface.co/aufklarer/Kokoro-82M-CoreML
+      the text-to-speech model and its two grapheme-to-phoneme models, downloaded after the person presses Install and never bundled
+      license: the model card metadata (license: apache-2.0), read on 2026-11-15; base model hexgrad/Kokoro-82M, also apache-2.0 in its card
+  pinyin-to-ipa mapping (stefantaubert/pinyin-to-ipa)  (MIT)
+      https://github.com/stefantaubert/pinyin-to-ipa
+      adapted in ChinesePhonemizer.swift of the KokoroTTS target of speech-swift, which is linked but offers no language but English
+      license: as stated by the comment of ChinesePhonemizer.swift in the pinned revision; the upstream license file was not read
+  Pronunciation tables of speech-swift KokoroTTS (French, Portuguese, Hindi)  (MIT)
+      https://github.com/open-dict-data/ipa-dict
+      bundled in the app with the KokoroTTS target of speech-swift, which offers no language but English
+      license: as stated by the comment of PronunciationDicts.swift in the pinned revision (ipa-dict, MIT); the upstream license file was not read
+
 2. License and notice texts
 
 ----------------------------------------------------------------------------------------------------
@@ -3073,19 +3091,20 @@ Used by: androidx.activity:activity-compose 1.9.3, androidx.camera:camera-camera
     androidx.compose:compose-bom 2024.12.01, androidx.lifecycle:lifecycle-viewmodel-compose 2.8.7,
     androidx.work:work-runtime 2.7.0, async-http-client 1.36.2, codespan-reporting 0.13.1,
     com.google.zxing:core 3.5.3, compress-nio 1.4.2, gethostname 1.1.0, glutin_wgl_sys 0.6.1,
-    hummingbird 2.16.0, hummingbird-websocket 2.6.0, Kotlin standard library, AndroidX, Room,
-    Firebase components, Datatransport, OkHttp and Okio libraries (transitive), mlx-swift 0.31.6,
-    net.java.dev.jna:jna 5.14.0, ring 0.17.14, ryu 1.0.23, self_cell 1.3.0, similar 3.2.0, spirv
-    0.4.0+sdk-1.4.341.0, stacksafe 0.1.4, stacksafe-macro 0.1.4, swift-algorithms 1.2.1,
-    swift-argument-parser 1.8.2, swift-asn1 1.7.3, swift-async-algorithms 1.1.7, swift-atomics
-    1.3.1, swift-certificates 1.21.0, swift-collections 1.7.2, swift-configuration 1.2.2,
-    swift-crypto 4.5.2, swift-distributed-tracing 1.5.0, swift-http-structured-headers 1.7.0,
-    swift-http-types 1.8.0, swift-huggingface 0.13.0, swift-jinja 2.5.1, swift-log 1.16.1,
-    swift-markdown 0.9.0, swift-metrics 2.12.0, swift-nio 2.104.0, swift-nio-extras 1.35.1,
-    swift-nio-http2 1.46.0, swift-nio-ssl 2.37.5, swift-nio-transport-services 1.28.0,
-    swift-numerics 1.1.1, swift-service-context 1.3.0, swift-service-lifecycle 2.12.1, swift-syntax
-    603.0.2, swift-system 1.8.1, swift-transformers 1.3.4, swift-websocket 1.5.0, unicode-linebreak
-    0.1.5, wgpu-core 29.0.3
+    hummingbird 2.16.0, hummingbird-websocket 2.6.0, Kokoro English pronunciation dictionaries
+    (us_gold, us_silver), Kokoro-82M CoreML (aufklarer/Kokoro-82M-CoreML), Kotlin standard library,
+    AndroidX, Room, Firebase components, Datatransport, OkHttp and Okio libraries (transitive),
+    mlx-swift 0.31.6, net.java.dev.jna:jna 5.14.0, ring 0.17.14, ryu 1.0.23, self_cell 1.3.0,
+    similar 3.2.0, spirv 0.4.0+sdk-1.4.341.0, stacksafe 0.1.4, stacksafe-macro 0.1.4,
+    swift-algorithms 1.2.1, swift-argument-parser 1.8.2, swift-asn1 1.7.3, swift-async-algorithms
+    1.1.7, swift-atomics 1.3.1, swift-certificates 1.21.0, swift-collections 1.7.2,
+    swift-configuration 1.2.2, swift-crypto 4.5.2, swift-distributed-tracing 1.5.0,
+    swift-http-structured-headers 1.7.0, swift-http-types 1.8.0, swift-huggingface 0.13.0,
+    swift-jinja 2.5.1, swift-log 1.16.1, swift-markdown 0.9.0, swift-metrics 2.12.0, swift-nio
+    2.104.0, swift-nio-extras 1.35.1, swift-nio-http2 1.46.0, swift-nio-ssl 2.37.5,
+    swift-nio-transport-services 1.28.0, swift-numerics 1.1.1, swift-service-context 1.3.0,
+    swift-service-lifecycle 2.12.1, swift-syntax 603.0.2, swift-system 1.8.1, swift-transformers
+    1.3.4, swift-websocket 1.5.0, unicode-linebreak 0.1.5, wgpu-core 29.0.3
 ----------------------------------------------------------------------------------------------------
                                  Apache License
                            Version 2.0, January 2004
@@ -6732,15 +6751,16 @@ Used by: accesskit 0.24.1, accesskit_atspi_common 0.18.1, accesskit_consumer 0.3
     parking_lot_core 0.9.12, paste 1.0.15, pastey 0.1.1, pathfinder_geometry 0.5.1, pathfinder_simd
     0.5.6, pbkdf2 0.12.2, percent-encoding 2.3.2, phf 0.13.1, phf_generator 0.13.1, phf_macros
     0.13.1, phf_shared 0.13.1, pico-args 0.5.0, pin-project 1.1.13, pin-project-internal 1.1.13,
-    pin-project-lite 0.2.17, piper 0.2.5, pkcs8 0.10.2, plain 0.2.3, png 0.17.16, png 0.18.1,
-    polling 3.11.0, pollster 0.2.5, pollster 0.4.0, polycool 0.4.0, portable-atomic 1.15.0,
-    portable-atomic-util 0.2.8, postage 0.5.0, powerfmt 0.2.1, ppv-lite86 0.2.21, presser 0.3.1,
-    proc-macro-crate 3.5.0, proc-macro-error-attr2 2.0.0, proc-macro-error2 2.0.1, proc-macro2
-    1.0.107, profiling 1.0.18, profiling-procmacros 1.0.18, psm 0.1.32, pulldown-cmark 0.13.4,
-    pulldown-cmark 0.13.6, pulp 0.22.3, pulp-wasm-simd-flag 0.1.1, qoi 0.4.1, qrcode 0.14.1,
-    quick-error 2.0.1, quick-xml 0.41.0, quote 1.0.47, r-efi 5.3.0, r-efi 6.0.0, rand 0.10.2, rand
-    0.10.3, rand 0.8.8, rand 0.9.5, rand_chacha 0.3.1, rand_chacha 0.9.0, rand_core 0.10.1,
-    rand_core 0.6.4, rand_core 0.9.5, range-alloc 0.1.5, rangemap 1.8.0, raw-cpuid 11.6.0,
+    pin-project-lite 0.2.17, pinyin-to-ipa mapping (stefantaubert/pinyin-to-ipa), piper 0.2.5, pkcs8
+    0.10.2, plain 0.2.3, png 0.17.16, png 0.18.1, polling 3.11.0, pollster 0.2.5, pollster 0.4.0,
+    polycool 0.4.0, portable-atomic 1.15.0, portable-atomic-util 0.2.8, postage 0.5.0, powerfmt
+    0.2.1, ppv-lite86 0.2.21, presser 0.3.1, proc-macro-crate 3.5.0, proc-macro-error-attr2 2.0.0,
+    proc-macro-error2 2.0.1, proc-macro2 1.0.107, profiling 1.0.18, profiling-procmacros 1.0.18,
+    Pronunciation tables of speech-swift KokoroTTS (French, Portuguese, Hindi), psm 0.1.32,
+    pulldown-cmark 0.13.4, pulldown-cmark 0.13.6, pulp 0.22.3, pulp-wasm-simd-flag 0.1.1, qoi 0.4.1,
+    qrcode 0.14.1, quick-error 2.0.1, quick-xml 0.41.0, quote 1.0.47, r-efi 5.3.0, r-efi 6.0.0, rand
+    0.10.2, rand 0.10.3, rand 0.8.8, rand 0.9.5, rand_chacha 0.3.1, rand_chacha 0.9.0, rand_core
+    0.10.1, rand_core 0.6.4, rand_core 0.9.5, range-alloc 0.1.5, rangemap 1.8.0, raw-cpuid 11.6.0,
     raw-window-handle 0.6.2, raw-window-metal 1.1.0, rayon 1.12.0, rayon-core 1.13.0, read-fonts
     0.37.0, read-fonts 0.41.0, reborrow 0.5.5, redox_syscall 0.5.18, redox_users 0.5.3, ref-cast
     1.0.27, ref-cast-impl 1.0.27, regex 1.13.1, regex-automata 0.4.18, regex-syntax 0.8.11,

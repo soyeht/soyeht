@@ -362,6 +362,8 @@ pub struct Pane {
     pub title: Option<String>,
     #[serde(rename = "viewport", skip_serializing_if = "Option::is_none")]
     pub viewport: Option<WebViewport>,
+    #[serde(rename = "projectPath", skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
     pub incognito: Option<bool>,
     #[serde(rename = "webSession", skip_serializing_if = "Option::is_none")]
@@ -5626,8 +5628,10 @@ pub struct WebElementPackage {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WebOpenParams {
-    #[serde(rename = "url")]
-    pub url: String,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<Id>,
     #[serde(rename = "newPane", skip_serializing_if = "Option::is_none")]

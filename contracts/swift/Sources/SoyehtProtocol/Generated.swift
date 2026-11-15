@@ -394,11 +394,12 @@ public struct Pane: Codable, Sendable {
     public var `url`: String?
     public var `title`: String?
     public var `viewport`: WebViewport?
+    public var `projectPath`: String?
     public var `incognito`: Bool?
     public var `webSession`: WebSessionState?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `experimentCapture`: PaneExperimentCapture? = nil, `pid`: UInt32? = nil, `exitCode`: Int64? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `experimentCapture`: PaneExperimentCapture? = nil, `pid`: UInt32? = nil, `exitCode`: Int64? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `projectPath`: String? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
         self.`name` = `name`
@@ -420,6 +421,7 @@ public struct Pane: Codable, Sendable {
         self.`url` = `url`
         self.`title` = `title`
         self.`viewport` = `viewport`
+        self.`projectPath` = `projectPath`
         self.`incognito` = `incognito`
         self.`webSession` = `webSession`
         self.`writingKind` = `writingKind`
@@ -6711,14 +6713,16 @@ public struct WebElementPackage: Codable, Sendable {
 }
 
 public struct WebOpenParams: Codable, Sendable {
-    public var `url`: String
+    public var `url`: String?
+    public var `path`: String?
     public var `workspaceId`: Id?
     public var `newPane`: Bool?
     public var `incognito`: Bool?
     public var `mode`: WebInteractionMode?
     public var `idempotencyKey`: Id
-    public init(`url`: String, `workspaceId`: Id? = nil, `newPane`: Bool? = nil, `incognito`: Bool? = nil, `mode`: WebInteractionMode? = nil, `idempotencyKey`: Id) {
+    public init(`url`: String? = nil, `path`: String? = nil, `workspaceId`: Id? = nil, `newPane`: Bool? = nil, `incognito`: Bool? = nil, `mode`: WebInteractionMode? = nil, `idempotencyKey`: Id) {
         self.`url` = `url`
+        self.`path` = `path`
         self.`workspaceId` = `workspaceId`
         self.`newPane` = `newPane`
         self.`incognito` = `incognito`

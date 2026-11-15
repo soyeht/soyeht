@@ -53,6 +53,7 @@ SECTIONS = (
     ("Swift", "Swift packages"),
     ("Android", "Android libraries"),
     ("Asset", "Fonts and icons"),
+    ("Model", "Speech models, dictionaries and pronunciation tables"),
 )
 
 
@@ -64,6 +65,7 @@ def collect(policy, root=ROOT, metadata=sources.cargo_metadata):
         + sources.swift_components(policy, root)
         + sources.gradle_components(policy, root)
         + sources.asset_components(policy, root)
+        + sources.model_components(policy)
     )
     used = {(c.name, c.license) for c in found if c.exception}
     unused = sorted(set(policy.exceptions) - used)

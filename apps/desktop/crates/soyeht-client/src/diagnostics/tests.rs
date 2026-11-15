@@ -1,6 +1,5 @@
 use super::*;
 use soyeht_platform::log::Failure as _;
-use std::path::PathBuf;
 
 /// The deadline and budget the report is collected with.
 fn limits() -> Limits {
@@ -108,6 +107,7 @@ fn a_window_with_no_soyeht_program_beside_it_has_no_report() {
 #[cfg(unix)]
 mod running {
     use super::*;
+    use std::path::PathBuf;
 
     fn shell(script: &str) -> Result<String, super::super::Failure> {
         run(Path::new("/bin/sh"), &texts(&["-c", script]), limits())

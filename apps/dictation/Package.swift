@@ -17,6 +17,7 @@ let package = Package(
             dependencies: [
                 .product(name: "SoyehtClient", package: "shared"),
                 .product(name: "AudioCommon", package: "speech-swift"),
+                .product(name: "KokoroTTS", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
             ]
         ),

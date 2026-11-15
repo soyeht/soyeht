@@ -20,6 +20,7 @@ pub enum Error {
     InvalidViewport,
     InvalidWait,
     HumanModeUnavailable,
+    ProjectPageOrigin,
     InvalidCommand,
     SequenceExhausted,
 }
@@ -44,6 +45,7 @@ impl fmt::Display for Error {
             Self::InvalidViewport => "web viewport is not valid",
             Self::InvalidWait => "web wait is not valid",
             Self::HumanModeUnavailable => "human mode is unavailable on this host",
+            Self::ProjectPageOrigin => "a project page stays on its own address",
             Self::InvalidCommand => "web command is not valid",
             Self::SequenceExhausted => "web metadata sequence is exhausted",
         };
@@ -64,6 +66,7 @@ impl From<&Error> for ErrorKind {
             | Error::MissingHost
             | Error::InvalidViewport
             | Error::InvalidWait
+            | Error::ProjectPageOrigin
             | Error::InvalidCommand => ErrorKind::NavigationRefused,
             Error::StaleReference => ErrorKind::StaleReference,
             Error::HumanModeUnavailable => ErrorKind::WebHostUnavailable,
