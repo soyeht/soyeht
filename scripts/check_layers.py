@@ -45,6 +45,7 @@ BLOCKS = (
     "soyeht-lsp",
     "soyeht-skills",
     "soyeht-ink",
+    "soyeht-avatar",
 )
 LAYERS: dict[str, set[str]] = {
     # Layer 2: wire models and rules, and the operating-system seams.
@@ -64,6 +65,9 @@ LAYERS: dict[str, set[str]] = {
         "soyeht-ptyd",
         "soyeht-service",
         "soyeht-store",
+        # `soyeht avatar build` loads, validates and writes packages with the same crate the
+        # desktop draws from (ADR 0166).
+        "soyeht-avatar",
     },
     "soyeht-mcp": {"soyeht-protocol", "soyeht-platform", "soyeht-skills"},
     # Layer 7: the Rust desktop client, its own workspace.
@@ -77,7 +81,13 @@ LAYERS: dict[str, set[str]] = {
     # The same for the LGPL-2.1 protocol crate that GPUI's Linux backend names: a protocol of our own
     # with the names GPUI imports, which no compositor advertises (ADR 0149).
     "wayland-protocols-plasma": set(),
-    "soyeht-desktop": {"soyeht-client", "soyeht-webview", "soyeht-protocol", "soyeht-platform"},
+    "soyeht-desktop": {
+        "soyeht-client",
+        "soyeht-webview",
+        "soyeht-protocol",
+        "soyeht-platform",
+        "soyeht-avatar",
+    },
     # Layer 8: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
     # connection and replica and holds no rule of its own.
     "soyeht-android": {"soyeht-client", "soyeht-protocol", "soyeht-platform"},
