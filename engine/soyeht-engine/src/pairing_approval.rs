@@ -299,8 +299,17 @@ impl Pairing {
 /// controls, the line and paragraph separators, the zero-width characters and the tag
 /// characters), and is no longer than the contract allows.
 pub(crate) fn check_device_name(name: &str) -> Result<()> {
-    let disguising = |c: char| {
-        matches!(
+    if name.len() > limits::DEVICE_NAME_BYTES || name.chars().any(hides_text) {
+        return Err(errors::invalid("The device name is not allowed"));
+    }
+    Ok(())
+}
+
+/// A character that is not text a person reads: a control, or one that reorders, hides or breaks
+/// the text around it.
+fn hides_text(c: char) -> bool {
+    c.is_control()
+        || matches!(
             c,
             '\u{061C}'
                 | '\u{200E}'
@@ -314,13 +323,22 @@ pub(crate) fn check_device_name(name: &str) -> Result<()> {
                 | '\u{FEFF}'
                 | '\u{E0000}'..='\u{E007F}'
         )
-    };
-    if name.len() > limits::DEVICE_NAME_BYTES
-        || name.chars().any(|c| c.is_control() || disguising(c))
-    {
-        return Err(errors::invalid("The device name is not allowed"));
+}
+
+/// A tailnet node's name as the person reads it in the notice of a device added. The name is
+/// whatever the node's owner gave it, so it is shown under the device name's rules instead of being
+/// refused: what a person cannot read is dropped, and the rest is held to the device name's
+/// length. A name with nothing left is none.
+pub(crate) fn readable_node_name(name: &str) -> Option<String> {
+    let mut readable = String::new();
+    for c in name.chars().filter(|c| !hides_text(*c)) {
+        if readable.len() + c.len_utf8() > limits::DEVICE_NAME_BYTES {
+            break;
+        }
+        readable.push(c);
     }
-    Ok(())
+    let readable = readable.trim();
+    (!readable.is_empty()).then(|| readable.to_owned())
 }
 
 #[cfg(test)]

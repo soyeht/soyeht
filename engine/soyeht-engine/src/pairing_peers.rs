@@ -10,6 +10,7 @@
 //! the daemon answer. [`SystemPeers`] is the shipped answer (`system_peers`): `getifaddrs` and the local API of
 //! `tailscaled`.
 
+use crate::pairing_approval::readable_node_name;
 use serde::Deserialize;
 use soyeht_protocol::pairing_link::permitted_address;
 use std::{io, net::IpAddr};
@@ -45,6 +46,9 @@ impl Peer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Node {
     pub id: String,
+    /// The node's name as Tailscale shows it, readable by a person (ADR 0164): shown in the notice
+    /// of a device added. It names nothing the rules decide on.
+    pub name: Option<String>,
 }
 
 /// The tailnet this computer is in and its own node.
@@ -89,6 +93,12 @@ struct WhoisNode {
     stable_id: String,
     #[serde(rename = "Addresses", default)]
     addresses: Vec<String>,
+    /// The name Tailscale shows for the node, without its tailnet.
+    #[serde(rename = "ComputedName", default)]
+    computed_name: String,
+    /// The node's full name in the tailnet (`phone.tail.ts.net.`).
+    #[serde(rename = "Name", default)]
+    full_name: String,
 }
 
 /// The node of a `whois` answer. A node whose id is empty, or whose addresses do not include
@@ -108,7 +118,14 @@ pub(crate) fn parse_whois(body: &[u8], address: IpAddr) -> io::Result<Node> {
     {
         return Err(invalid());
     }
-    Ok(Node { id: node.stable_id })
+    let name = readable_node_name(&node.computed_name).or_else(|| {
+        let first = node.full_name.split('.').next().unwrap_or_default();
+        readable_node_name(first)
+    });
+    Ok(Node {
+        id: node.stable_id,
+        name,
+    })
 }
 
 #[derive(Deserialize)]
@@ -291,7 +308,10 @@ mod tests {
     fn observed(local: &[&str], node: Option<&str>, this: Option<&str>) -> Observed {
         Observed {
             local: Some(local.iter().map(|text| ip(text)).collect()),
-            node: node.map(|id| Node { id: id.into() }),
+            node: node.map(|id| Node {
+                id: id.into(),
+                name: None,
+            }),
             identity: this.map(|node| Identity {
                 tailnet: "tail.example".into(),
                 node_key: "nodekey:1".into(),
@@ -412,6 +432,33 @@ mod tests {
         // A daemon that lists no addresses is believed about the address it was asked for.
         let bare = br#"{"Node":{"StableID":"nABC123"}}"#;
         assert_eq!(parse_whois(bare, ip("100.64.0.9")).unwrap().id, "nABC123");
+    }
+
+    #[test]
+    fn a_whois_answer_gives_the_node_a_name_a_person_can_read() {
+        let named = |node: &str| {
+            let body = format!(r#"{{"Node":{{"StableID":"nA",{node}}}}}"#);
+            parse_whois(body.as_bytes(), ip("100.64.0.9")).unwrap().name
+        };
+        // The name Tailscale shows, else the first label of the full name, else none.
+        assert_eq!(
+            named(r#""ComputedName":"Caio's phone","Name":"phone.tail.ts.net.""#).as_deref(),
+            Some("Caio's phone")
+        );
+        assert_eq!(
+            named(r#""Name":"phone.tail.ts.net.""#).as_deref(),
+            Some("phone")
+        );
+        assert_eq!(named(r#""Name":"""#), None);
+        assert_eq!(named(r#""ID":7"#), None);
+        // What a person cannot read is dropped, and a long name is cut to the device name's length.
+        assert_eq!(
+            named(r#""ComputedName":"gpj.evil\u202E\u0007""#).as_deref(),
+            Some("gpj.evil")
+        );
+        let long = "n".repeat(soyeht_protocol::limits::DEVICE_NAME_BYTES * 2);
+        let cut = named(&format!(r#""ComputedName":"{long}""#)).unwrap();
+        assert_eq!(cut.len(), soyeht_protocol::limits::DEVICE_NAME_BYTES);
     }
 
     #[test]

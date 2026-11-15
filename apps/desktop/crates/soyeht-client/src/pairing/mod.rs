@@ -10,18 +10,20 @@
 
 mod commands;
 pub mod copy;
+mod notice;
 mod qr;
 #[cfg(test)]
 mod tests;
 
 pub use commands::{Command, TypedCode, run};
+pub use notice::DevicePanes;
 pub use qr::{Matrix, QUIET_ZONE};
 
 use crate::{Error, timestamp};
 use serde_json::Value;
 use soyeht_protocol::{
     Device, DevicePairPending, DevicePairRequestedEvent, DevicePairStartResult, DevicePairedEvent,
-    DeviceRevokedEvent, EngineCapability, ErrorKind, PairResultEvent, approval_code, limits,
+    DeviceRevokedEvent, EngineCapability, ErrorKind, PairResultEvent, Pane, approval_code, limits,
     pairing_link,
 };
 
@@ -165,10 +167,31 @@ pub enum Event {
         request_id: String,
         refusal: Refusal,
     },
+    /// The device is revoked; `left_open` of the panes the person chose to close could not be.
     Revoked {
         device_id: String,
+        left_open: usize,
     },
     RevokeFailed {
+        device_id: String,
+        refusal: Refusal,
+    },
+    /// The devices added since the notice was last dismissed.
+    Noticed {
+        devices: Vec<Device>,
+    },
+    NoticeDismissed {
+        through: String,
+    },
+    NoticeFailed {
+        refusal: Refusal,
+    },
+    /// The panes `device_id` made, for the question before it is revoked.
+    PanesListed {
+        device_id: String,
+        panes: Vec<Pane>,
+    },
+    PanesFailed {
         device_id: String,
         refusal: Refusal,
     },
@@ -185,6 +208,12 @@ pub struct Pairing {
     revoking: Option<String>,
     /// Why the last revocation failed.
     revoke_failure: Option<String>,
+    /// What is known of the panes the device being revoked made.
+    revoking_panes: DevicePanes,
+    /// The devices added since the person last dismissed the notice.
+    notice: Vec<Device>,
+    /// Why the notice could not be read or dismissed.
+    notice_failure: Option<String>,
     tickets: u64,
 }
 
@@ -318,6 +347,7 @@ impl Pairing {
                     .retain(|r| r.fingerprint != paired.device.fingerprint);
                 self.devices
                     .retain(|device| device.device_id != paired.device.device_id);
+                self.added(&paired.device);
                 self.devices.push(paired.device);
             }
             EventName::DeviceRevoked => {
@@ -360,6 +390,8 @@ impl Pairing {
         if self.revoking.as_deref() == Some(device_id) {
             self.revoking = None;
         }
+        // A revoked device is no longer news.
+        self.notice.retain(|device| device.device_id != device_id);
     }
 
     /// What the person did with a request: the command that decides it, or why none is sent.
@@ -417,26 +449,8 @@ impl Pairing {
         self.revoke_failure.as_deref()
     }
 
-    /// The person asks to revoke a device: the question comes first.
-    pub fn ask_to_revoke(&mut self, device_id: &str) {
-        self.revoke_failure = None;
-        if self
-            .devices
-            .iter()
-            .any(|device| device.device_id == device_id && !device.revoked)
-        {
-            self.revoking = Some(device_id.to_owned());
-        }
-    }
-
     pub fn cancel_revoke(&mut self) {
         self.revoking = None;
-    }
-
-    /// The person confirmed.
-    pub fn confirm_revoke(&mut self) -> Option<Command> {
-        let device_id = self.revoking.take()?;
-        Some(Command::Revoke { device_id })
     }
 
     /// Takes in what the engine answered to a command, or why it did not.
@@ -464,10 +478,23 @@ impl Pairing {
                 request_id,
                 refusal,
             } => self.decision_failed(&request_id, refusal),
-            Event::Revoked { device_id } => self.revoked(&device_id),
+            Event::Revoked {
+                device_id,
+                left_open,
+            } => {
+                self.revoked(&device_id);
+                if left_open > 0 {
+                    self.revoke_failure = Some(copy::panes_left_open(left_open));
+                }
+            }
             Event::RevokeFailed { refusal, .. } => {
                 self.revoke_failure = Some(format!("{} {}", copy::REVOKE_FAILED, refusal.message));
             }
+            Event::Noticed { devices } => self.notice_listed(devices),
+            Event::NoticeDismissed { through } => self.notice_dismissed(&through),
+            Event::NoticeFailed { refusal } => self.notice_failed(&refusal),
+            Event::PanesListed { device_id, panes } => self.panes_listed(&device_id, panes),
+            Event::PanesFailed { device_id, .. } => self.panes_failed(&device_id),
         }
     }
 

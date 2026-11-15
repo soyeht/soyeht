@@ -21,7 +21,7 @@ use crate::{
 use gpui::{Bounds, canvas, fill, point, size};
 use soyeht_client::{
     Connection,
-    pairing::{Matrix, Offer, Phase, QUIET_ZONE, Request, copy},
+    pairing::{DevicePanes, Matrix, Offer, Phase, QUIET_ZONE, Request, copy},
     timestamp,
 };
 use soyeht_protocol::{
@@ -126,6 +126,10 @@ pub(super) fn phone_place(
         cx,
         ui::open,
     );
+    let notice = (
+        wb.state.pairing.notice().to_vec(),
+        wb.state.pairing.notice_failure().map(str::to_owned),
+    );
     let waiting: Vec<Request> = wb.state.pairing.requests().to_vec();
     let devices: Vec<Device> = wb.state.pairing.devices().to_vec();
     let waiting = waiting.iter().filter(|request| !request.closed);
@@ -149,6 +153,7 @@ pub(super) fn phone_place(
             copy::PHONE_SUBTITLE,
             pair,
         ))
+        .children(notice_card(notice, palette, cx))
         .children(revoke_question(wb, palette, cx))
         .child(list);
     place_card(palette, Icon::Smartphone, copy::PHONE_TITLE, page)
@@ -191,12 +196,12 @@ fn entry_row(
             } else {
                 (copy::PAIRED, palette.success())
             };
-            (
-                device.name.clone(),
-                compact(&device.fingerprint),
-                status,
-                revoke,
-            )
+            let added = copy::added_line(device.added_at.as_deref(), device.node.as_deref());
+            let note = match added {
+                Some(added) => format!("{added} \u{b7} {}", compact(&device.fingerprint)),
+                None => compact(&device.fingerprint),
+            };
+            (device.name.clone(), note, status, revoke)
         }
     };
     row()
@@ -238,6 +243,47 @@ fn deny_button(
     )
 }
 
+/// The notice of the devices added, which stays until the person dismisses it: each with when
+/// and from which node it was added, so that adding one is not silent (ADR 0164).
+fn notice_card(
+    (added, failure): (Vec<Device>, Option<String>),
+    palette: &'static Palette,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    if added.is_empty() && failure.is_none() {
+        return None;
+    }
+    let mut card = well_card(palette);
+    if !added.is_empty() {
+        card = card
+            .child(chrome_text(FontWeight::BOLD, type_scale::SUBHEADING).child(copy::NOTICE_TITLE));
+        for device in &added {
+            let line = copy::added_line(device.added_at.as_deref(), device.node.as_deref());
+            card = card.child(entry_words(
+                palette,
+                &device.name,
+                line.as_deref().unwrap_or_default(),
+            ));
+        }
+        card = card
+            .child(caption(palette).child(copy::NOTICE_NOTE))
+            .child(action(
+                cx,
+                palette,
+                "notice-dismiss".into(),
+                (Role::Secondary, copy::DISMISS),
+                (true, |this, cx| ui::dismiss_notice(this, cx)),
+            ));
+    }
+    Some(with_failure(card, failure, palette))
+}
+
+/// `card`, and under it why what it asks did not work, when that is said.
+fn with_failure(card: Div, failure: Option<String>, palette: &Palette) -> AnyElement {
+    card.children(failure.map(|text| warning(palette, text)))
+        .into_any_element()
+}
+
 /// The confirmation before a device is revoked, and why the last revocation failed.
 fn revoke_question(
     wb: &Workbench,
@@ -250,39 +296,62 @@ fn revoke_question(
         .pairing
         .revoking()
         .map(|device| device.name.clone());
+    let panes = wb.state.pairing.revoking_panes().clone();
     if asked.is_none() && failure.is_none() {
         return None;
     }
     let mut card = well_card(palette);
     if let Some(name) = asked {
-        let buttons = row()
-            .gap(px(space::X8))
-            .child(action(
+        let open_panes = match &panes {
+            DevicePanes::Listed(panes) => panes.clone(),
+            DevicePanes::Loading | DevicePanes::Unknown => Vec::new(),
+        };
+        let mut buttons = row().gap(px(space::X8)).child(action(
+            cx,
+            palette,
+            "revoke-cancel".into(),
+            (Role::Secondary, CANCEL),
+            (true, |this, cx| ui::cancel_revoke(this, cx)),
+        ));
+        if !open_panes.is_empty() {
+            buttons = buttons.child(action(
                 cx,
                 palette,
-                "revoke-cancel".into(),
-                (Role::Secondary, CANCEL),
-                (true, |this, cx| ui::cancel_revoke(this, cx)),
-            ))
-            .child(action(
-                cx,
-                palette,
-                "revoke-confirm".into(),
-                (Role::Destructive, copy::REVOKE),
-                (true, |this, cx| ui::confirm_revoke(this, cx)),
+                "revoke-keep".into(),
+                (Role::Secondary, copy::REVOKE_AND_KEEP),
+                (true, |this, cx| ui::confirm_revoke(this, false, cx)),
             ));
+        }
+        let confirm = if open_panes.is_empty() {
+            (Role::Destructive, copy::REVOKE.into())
+        } else {
+            (Role::Destructive, copy::revoke_and_close(open_panes.len()))
+        };
+        buttons = buttons.child(pressable(
+            button("revoke-confirm".into(), confirm.0, &confirm.1, palette),
+            true,
+            cx,
+            |this, cx| ui::confirm_revoke(this, true, cx),
+        ));
         card = card
             .child(
                 chrome_text(FontWeight::BOLD, type_scale::SUBHEADING)
                     .child(format!("{} {name}", copy::REVOKE_QUESTION)),
             )
-            .child(caption(palette).child(copy::REVOKE_NOTE))
-            .child(buttons);
+            .child(caption(palette).child(copy::REVOKE_NOTE));
+        if !open_panes.is_empty() {
+            card = card.child(caption(palette).child(copy::panes_opened(open_panes.len())));
+            for pane in &open_panes {
+                card = card.child(entry_words(palette, &pane.name, &pane.cwd));
+            }
+            card = card.child(caption(palette).child(copy::PANES_NOTE));
+        }
+        if panes == DevicePanes::Unknown {
+            card = card.child(warning(palette, copy::PANES_UNKNOWN));
+        }
+        card = card.child(buttons);
     }
-    Some(
-        card.children(failure.map(|text| warning(palette, text)))
-            .into_any_element(),
-    )
+    Some(with_failure(card, failure, palette))
 }
 
 /// The sheet over the window while the person pairs a phone, or `None` when it is closed.

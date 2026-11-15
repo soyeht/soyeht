@@ -4,8 +4,10 @@
 use super::{Event, Offer, Refusal};
 use crate::{Error, Result, commands::key, event::Event as ClientEvent, rpc::Rpc, timestamp};
 use soyeht_protocol::{
-    DevicePairDecideParams, DevicePairDecideResult, DevicePairStartParams, DevicePairStartResult,
-    DeviceRevokeParams, DeviceRevokeResult, Request, approval_code,
+    DeviceNoticeDismissParams, DeviceNoticeDismissResult, DeviceNoticeListParams,
+    DeviceNoticeListResult, DevicePairDecideParams, DevicePairDecideResult, DevicePairStartParams,
+    DevicePairStartResult, DevicePanesListParams, DevicePanesListResult, DeviceRevokeParams,
+    DeviceRevokeResult, PaneCloseParams, Request, approval_code,
 };
 
 /// The six digits the person typed for a request. They are the person's own action (ADR 0164), so
@@ -29,9 +31,7 @@ impl std::fmt::Debug for TypedCode {
 pub enum Command {
     /// Open a pairing window. `ticket` names the attempt in the answer, so that the answer of an
     /// attempt a reconnect replaced is not taken for the current one.
-    Start {
-        ticket: u64,
-    },
+    Start { ticket: u64 },
     /// Allow or deny a request. `code` goes only to an engine that offers `pairing-code`, and only
     /// with an approval.
     Decide {
@@ -39,9 +39,18 @@ pub enum Command {
         approve: bool,
         code: Option<TypedCode>,
     },
+    /// Revoke a device and then close `close_panes`, the panes it made that the person chose to
+    /// close: revoking does not stop what a device's terminals started (ADR 0164).
     Revoke {
         device_id: String,
+        close_panes: Vec<String>,
     },
+    /// Ask which devices were added since the notice was last dismissed.
+    LoadNotice,
+    /// Dismiss the notice up to the device added at `through`.
+    DismissNotice { through: String },
+    /// Ask which panes `device_id` made, for the question that precedes its revocation.
+    LoadPanes { device_id: String },
 }
 
 impl Command {
@@ -58,7 +67,12 @@ impl Command {
                 request_id: request_id.clone(),
                 refusal,
             },
-            Self::Revoke { device_id } => Event::RevokeFailed {
+            Self::Revoke { device_id, .. } => Event::RevokeFailed {
+                device_id: device_id.clone(),
+                refusal,
+            },
+            Self::LoadNotice | Self::DismissNotice { .. } => Event::NoticeFailed { refusal },
+            Self::LoadPanes { device_id } => Event::PanesFailed {
                 device_id: device_id.clone(),
                 refusal,
             },
@@ -101,14 +115,60 @@ pub fn run(rpc: &Rpc, command: &Command) -> Result<Option<ClientEvent>> {
                 approved: decided.approved,
             }
         }
-        Command::Revoke { device_id } => {
+        Command::Revoke {
+            device_id,
+            close_panes,
+        } => {
             let revoked: DeviceRevokeResult =
                 serde_json::from_value(rpc.call(&Request::DeviceRevoke(DeviceRevokeParams {
                     device_id: device_id.clone(),
                     idempotency_key: key(),
                 }))?)?;
+            // The device is revoked whatever happens to its panes: each one that cannot be closed
+            // is counted, and the person is told how many are still open.
+            let left_open = close_panes
+                .iter()
+                .filter(|pane_id| {
+                    rpc.call(&Request::PaneClose(PaneCloseParams {
+                        pane_id: (*pane_id).clone(),
+                        idempotency_key: key(),
+                    }))
+                    .is_err()
+                })
+                .count();
             Event::Revoked {
                 device_id: revoked.device_id,
+                left_open,
+            }
+        }
+        Command::LoadNotice => {
+            let listed: DeviceNoticeListResult = serde_json::from_value(
+                rpc.call(&Request::DeviceNoticeList(DeviceNoticeListParams {}))?,
+            )?;
+            Event::Noticed {
+                devices: listed.items,
+            }
+        }
+        Command::DismissNotice { through } => {
+            let dismissed: DeviceNoticeDismissResult = serde_json::from_value(rpc.call(
+                &Request::DeviceNoticeDismiss(DeviceNoticeDismissParams {
+                    through: through.clone(),
+                    idempotency_key: key(),
+                }),
+            )?)?;
+            Event::NoticeDismissed {
+                through: dismissed.through,
+            }
+        }
+        Command::LoadPanes { device_id } => {
+            let listed: DevicePanesListResult = serde_json::from_value(rpc.call(
+                &Request::DevicePanesList(DevicePanesListParams {
+                    device_id: device_id.clone(),
+                }),
+            )?)?;
+            Event::PanesListed {
+                device_id: device_id.clone(),
+                panes: listed.items,
             }
         }
     };

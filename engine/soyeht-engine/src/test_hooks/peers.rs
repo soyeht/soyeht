@@ -109,6 +109,11 @@ pub fn fixture_identity(tailnet: &str, node_key: &str) -> Identity {
     }
 }
 
+/// The name the fixture's daemon gives the node `id`.
+pub fn fixture_node_name(id: &str) -> String {
+    format!("host-of-{id}")
+}
+
 fn unavailable() -> io::Error {
     io::Error::from(io::ErrorKind::ConnectionRefused)
 }
@@ -131,7 +136,10 @@ impl PairingPeers for FixturePeers {
         state
             .nodes
             .get(&address)
-            .map(|id| Node { id: id.clone() })
+            .map(|id| Node {
+                id: id.clone(),
+                name: Some(fixture_node_name(id)),
+            })
             .ok_or_else(unavailable)
     }
 

@@ -381,6 +381,10 @@ pub struct Device {
     pub fingerprint: String,
     #[serde(rename = "revoked")]
     pub revoked: bool,
+    #[serde(rename = "addedAt", skip_serializing_if = "Option::is_none")]
+    pub added_at: Option<String>,
+    #[serde(rename = "node", skip_serializing_if = "Option::is_none")]
+    pub node: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct StreamInfo {
@@ -852,6 +856,35 @@ pub struct DeviceRevokeParams {
 pub struct DeviceRevokeResult {
     #[serde(rename = "deviceId")]
     pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Device>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeDismissParams {
+    #[serde(rename = "through")]
+    pub through: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DeviceNoticeDismissResult {
+    #[serde(rename = "through")]
+    pub through: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePanesListParams {
+    #[serde(rename = "deviceId")]
+    pub device_id: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePanesListResult {
+    #[serde(rename = "items")]
+    pub items: Vec<Pane>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum PushPlatform {
@@ -6642,6 +6675,12 @@ pub enum Request {
     DeviceList(DeviceListParams),
     #[serde(rename = "device.revoke")]
     DeviceRevoke(DeviceRevokeParams),
+    #[serde(rename = "device.notice.list")]
+    DeviceNoticeList(DeviceNoticeListParams),
+    #[serde(rename = "device.notice.dismiss")]
+    DeviceNoticeDismiss(DeviceNoticeDismissParams),
+    #[serde(rename = "device.panes.list")]
+    DevicePanesList(DevicePanesListParams),
     #[serde(rename = "push.register")]
     PushRegister(PushRegisterParams),
     #[serde(rename = "push.unregister")]
@@ -7005,6 +7044,24 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "DeviceRevokeParams",
         "DeviceRevokeResult",
         true,
+    ),
+    (
+        "device.notice.list",
+        "DeviceNoticeListParams",
+        "DeviceNoticeListResult",
+        false,
+    ),
+    (
+        "device.notice.dismiss",
+        "DeviceNoticeDismissParams",
+        "DeviceNoticeDismissResult",
+        true,
+    ),
+    (
+        "device.panes.list",
+        "DevicePanesListParams",
+        "DevicePanesListResult",
+        false,
     ),
     (
         "push.register",
@@ -9026,6 +9083,9 @@ pub mod method {
     pub const DEVICE_PAIR_DECIDE: &str = "device.pair.decide";
     pub const DEVICE_LIST: &str = "device.list";
     pub const DEVICE_REVOKE: &str = "device.revoke";
+    pub const DEVICE_NOTICE_LIST: &str = "device.notice.list";
+    pub const DEVICE_NOTICE_DISMISS: &str = "device.notice.dismiss";
+    pub const DEVICE_PANES_LIST: &str = "device.panes.list";
     pub const PUSH_REGISTER: &str = "push.register";
     pub const PUSH_UNREGISTER: &str = "push.unregister";
     pub const PAIR_BEGIN: &str = "pair.begin";

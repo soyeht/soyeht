@@ -22,7 +22,7 @@ use crate::{
 mod peers;
 pub use peers::{
     FIXTURE_COMPUTER_NODE, FIXTURE_NODE_KEY, FIXTURE_PHONE_ADDRESS, FIXTURE_PHONE_NODE,
-    FIXTURE_TAILNET, FixturePeers, fixture_identity,
+    FIXTURE_TAILNET, FixturePeers, fixture_identity, fixture_node_name,
 };
 use soyeht_ink::Recognizer;
 use soyeht_ptyd::wire::Request;

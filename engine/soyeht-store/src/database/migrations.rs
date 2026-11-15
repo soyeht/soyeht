@@ -56,6 +56,12 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
     if version < 36 {
         tx.execute_batch(include_str!("../../migrations/036-pairing-nodes.sql"))?;
     }
+    if version < 37 {
+        if lacks_column(tx, "panes", "created_by")? {
+            tx.execute_batch("ALTER TABLE panes ADD COLUMN created_by TEXT;")?;
+        }
+        tx.execute_batch(include_str!("../../migrations/037-device-notices.sql"))?;
+    }
     Ok(())
 }
 

@@ -149,10 +149,7 @@ pub(crate) fn dismiss(this: &mut Workbench, request_id: &str, cx: &mut Context<W
 }
 
 pub(crate) fn ask_to_revoke(this: &mut Workbench, device_id: &str, cx: &mut Context<Workbench>) {
-    act(this, cx, |_, state, _| {
-        state.pairing.ask_to_revoke(device_id);
-        Vec::new()
-    });
+    act(this, cx, |_, state, _| state.ask_to_revoke(device_id));
 }
 
 pub(crate) fn cancel_revoke(this: &mut Workbench, cx: &mut Context<Workbench>) {
@@ -162,8 +159,14 @@ pub(crate) fn cancel_revoke(this: &mut Workbench, cx: &mut Context<Workbench>) {
     });
 }
 
-pub(crate) fn confirm_revoke(this: &mut Workbench, cx: &mut Context<Workbench>) {
-    act(this, cx, |_, state, _| state.confirm_revoke());
+/// The person confirmed revoking the device, and whether the panes it made are closed with it.
+pub(crate) fn confirm_revoke(this: &mut Workbench, close_panes: bool, cx: &mut Context<Workbench>) {
+    act(this, cx, |_, state, _| state.confirm_revoke(close_panes));
+}
+
+/// The person dismissed the notice of devices added.
+pub(crate) fn dismiss_notice(this: &mut Workbench, cx: &mut Context<Workbench>) {
+    act(this, cx, |_, state, _| state.dismiss_notice());
 }
 
 pub(crate) fn copy_link(this: &mut Workbench, link: String, cx: &mut Context<Workbench>) {

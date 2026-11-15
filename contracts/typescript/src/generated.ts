@@ -115,6 +115,8 @@ export interface Device {
   "name": string;
   "fingerprint": string;
   "revoked": boolean;
+  "addedAt"?: string;
+  "node"?: string;
 }
 
 export interface StreamInfo {
@@ -432,6 +434,31 @@ export interface DeviceRevokeParams {
 
 export interface DeviceRevokeResult {
   "deviceId": Id;
+}
+
+export interface DeviceNoticeListParams {
+
+}
+
+export interface DeviceNoticeListResult {
+  "items": Array<Device>;
+}
+
+export interface DeviceNoticeDismissParams {
+  "through": string;
+  "idempotencyKey": Id;
+}
+
+export interface DeviceNoticeDismissResult {
+  "through": string;
+}
+
+export interface DevicePanesListParams {
+  "deviceId": Id;
+}
+
+export interface DevicePanesListResult {
+  "items": Array<Pane>;
 }
 
 export type PushPlatform = "apns";
@@ -3623,6 +3650,9 @@ export interface Methods {
   "device.pair.decide": { params: DevicePairDecideParams; result: DevicePairDecideResult };
   "device.list": { params: DeviceListParams; result: DeviceListResult };
   "device.revoke": { params: DeviceRevokeParams; result: DeviceRevokeResult };
+  "device.notice.list": { params: DeviceNoticeListParams; result: DeviceNoticeListResult };
+  "device.notice.dismiss": { params: DeviceNoticeDismissParams; result: DeviceNoticeDismissResult };
+  "device.panes.list": { params: DevicePanesListParams; result: DevicePanesListResult };
   "push.register": { params: PushRegisterParams; result: PushRegisterResult };
   "push.unregister": { params: PushUnregisterParams; result: PushUnregisterResult };
   "pair.begin": { params: PairBeginParams; result: PairBeginResult };

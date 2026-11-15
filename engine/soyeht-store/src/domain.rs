@@ -371,8 +371,8 @@ impl Change<'_> {
 
     pub fn insert_pane(&self, pane: &PaneRecord) -> Result<()> {
         self.transaction.execute(
-            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base,created_seq) VALUES (?1,?2,?3,?4,?5,(SELECT COALESCE(MAX(created_seq),0)+1 FROM panes))",
-            params![pane.pane.pane_id, pane.pane.workspace_id, serde_json::to_string(&pane.pane)?, pane.instance_key, pane.sequence_base.to_string()],
+            "INSERT INTO panes(id,workspace_id,payload,instance_key,sequence_base,created_seq,created_by) VALUES (?1,?2,?3,?4,?5,(SELECT COALESCE(MAX(created_seq),0)+1 FROM panes),?6)",
+            params![pane.pane.pane_id, pane.pane.workspace_id, serde_json::to_string(&pane.pane)?, pane.instance_key, pane.sequence_base.to_string(), self.device],
         )?;
         Ok(())
     }
