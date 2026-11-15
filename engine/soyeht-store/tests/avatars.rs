@@ -65,6 +65,15 @@ fn bind(store: &mut Store, key: &str, binding: &AvatarBinding) -> Result<(), Err
         .map(drop)
 }
 
+/// A store with the avatar `a1` bound, at revision 1, to the open workspace `w1`.
+fn store_with_a_binding(profile: &Profile) -> Store {
+    let mut store = profile.store();
+    add(&mut store, "a1", &avatar("a1", "One"));
+    open_workspace(&mut store, "w1");
+    bind(&mut store, "first", &binding("w1", "a1", 1)).unwrap();
+    store
+}
+
 fn assert_stale(store: &mut Store, key: &str, binding: &AvatarBinding) {
     assert!(matches!(
         bind(store, key, binding),
@@ -112,11 +121,8 @@ fn a_kind_nobody_defined_reads_back_as_it_was_stored() {
 #[test]
 fn a_binding_is_replaced_one_revision_at_a_time() {
     let profile = Profile::new();
-    let mut store = profile.store();
-    add(&mut store, "a1", &avatar("a1", "One"));
+    let mut store = store_with_a_binding(&profile);
     add(&mut store, "a2", &avatar("a2", "Two"));
-    open_workspace(&mut store, "w1");
-    bind(&mut store, "first", &binding("w1", "a1", 1)).unwrap();
     let mut changed = binding("w1", "a2", 2);
     changed.persona = String::new();
     changed.hearing = None;
@@ -130,10 +136,7 @@ fn a_binding_is_replaced_one_revision_at_a_time() {
 #[test]
 fn a_binding_written_from_an_old_copy_is_refused_and_changes_nothing() {
     let profile = Profile::new();
-    let mut store = profile.store();
-    add(&mut store, "a1", &avatar("a1", "One"));
-    open_workspace(&mut store, "w1");
-    bind(&mut store, "first", &binding("w1", "a1", 1)).unwrap();
+    let mut store = store_with_a_binding(&profile);
     let mut newer = binding("w1", "a1", 2);
     newer.persona = "v2".into();
     bind(&mut store, "second", &newer).unwrap();
