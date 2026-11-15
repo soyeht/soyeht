@@ -70,6 +70,9 @@ def finish_after_flake(root: Path, worktree: Path, scratch: Path, record: dict, 
     note says they are unverified); False when one failed, which is now `failed_step`."""
     log, base = Path(record["log"]), parent_of(root, record["sha"])
     code = run_unrun_steps(worktree, base, record, log, scratch, command, remote, areas)
+    other = gate_flakes.unjudged_failure(record) if code == 0 else None
+    if other:  # the other half of the run failed as well; it is judged next, as any failing step is
+        record["failed_step"], code = other, 1
     if code and code not in INFRASTRUCTURE_EXITS:
         if record["failed_step"] == EDITOR_STEP and lacks_measurement(log):
             code = settle_missing_measurement(worktree, base, record, log, scratch, command, remote)

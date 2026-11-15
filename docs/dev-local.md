@@ -135,8 +135,12 @@ FORBIDDEN_TERMS=... uv run python scripts/main_watch.py --apply \
 `--remote HOST --remote-root PATH` (also accepted by `post_merge.py`) runs the steps of the
 areas engine, desktop, e2e and timing on HOST and the other full-tier steps (the Swift packages, the
 Mac and iOS apps, the editor measurement, the dictation tests, the
-`always` checks and the `gate_scripts` unit tests) on the local machine, after the remote ones. The interface with the host is
-this and nothing else:
+`always` checks and the `gate_scripts` unit tests) on the local machine, at the same time as the remote ones
+(the pre-merge gate does the same). Both halves are reported, so a failure in one does not hide one in the
+other: the failing step of the first half is judged first and the other is judged next, never dropped. The
+log gets the host's output after the run, under a `gate: output of HOST:` line, so that the lines of the two
+halves are not mixed. When the host could not run the gate at all (ssh failed, its worktree is busy), the
+local half is stopped, as that run is discarded. The interface with the host is this and nothing else:
 
 - HOST is anything `ssh` accepts, with key authentication and no prompt (`ssh -o
   BatchMode=yes HOST ...`). `SOYEHT_REMOTE_SSH` replaces the `ssh -o BatchMode=yes` command
@@ -232,9 +236,16 @@ which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
   Linux host and nowhere else in this gate: there is no macOS `cfg` coverage in it, exactly as after
   the merge. The Mac half is the `always` checks, the Swift format and build, TypeScript and the Android
   core. The Windows lints (`engine:clippy-windows` and `desktop:clippy-windows`, the desktop's
-  falling back to `cargo check` of the crates that need no C compiler) run on the host, which
-  skips them, with a passing step, when it lacks the Windows target; the output then carries
-  `WARNING: HOST skipped the Windows lint` (`rustup target add x86_64-pc-windows-msvc` on the host fixes it).
+  falling back to `cargo check` of the crates that need no C compiler) run on the host. The host has
+  the target when `rustc --print target-libdir --target x86_64-pc-windows-msvc` holds a `libstd`,
+  which holds with `rustup` (`rustup target add x86_64-pc-windows-msvc`) and without it (the Nix shell
+  of `scripts/linux-gate.nix` lists the target). A step that checks less than its name says
+  (no target, no C compiler for the engine and the cli) still passes, but it never passes quietly:
+  it prints `check_all: SKIPPED STEP: REASON`, keeps the reason as `skipped` in its entry of the timings
+  (and so in the post-merge record), and the run ends with a `check_all: SKIPPED` summary. A remote run
+  repeats each such line as `WARNING: HOST ran with less than its steps name; ...` and says it in
+  `gate_remote`'s result line. Without a C compiler for Windows the engine and the cli are not
+  linted, and the desktop gets `cargo check` and no clippy; those lines say so on every run until the host has one.
 - **A gate that checked nothing is not a pass.** It refuses (exit 2) when the worktree has uncommitted
   changes to tracked files (the host gates the commit, this machine would gate the working tree);
   it fails with exit 78 when the plan selects no step or `--only` names a step the plan lacks; and

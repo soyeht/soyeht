@@ -122,7 +122,9 @@ def report(sha: str, remote: Remote, steps: list[dict], code: int, seconds: floa
     split = (f"{len(there)} steps on {remote.host} ({sum(s['seconds'] for s in there):.0f}s), "
              f"{len(here)} here ({sum(s['seconds'] for s in here):.0f}s)")
     result = "passed" if code == 0 else f"FAILED (exit {code})"
-    return f"gate_remote: {result} {sha[:12]}: {split}; {seconds:.0f}s wall"
+    skipped = [step["id"] for step in steps if step.get("skipped")]
+    unchecked = f"; SKIPPED (checked less than their names say): {', '.join(skipped)}" if skipped else ""
+    return f"gate_remote: {result} {sha[:12]}: {split}; {seconds:.0f}s wall{unchecked}"
 
 
 def main(argv: list[str] | None = None) -> int:

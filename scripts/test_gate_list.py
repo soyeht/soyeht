@@ -553,6 +553,116 @@ class BuildStepTests(unittest.TestCase):
         self.assertEqual(suite_runs(script), ["swift test --package-path apps/shared"])
 
 
+class WindowsLintTests(unittest.TestCase):
+    """The Windows lints run the functions of check_all.sh, here with a stand-in `rustc` and `cargo`
+    (check_all.sh itself is never run by a test)."""
+
+    CHECK_ALL = (ROOT / "scripts/check_all.sh").read_text()
+    FUNCTIONS = ("skip_note", "windows_target_installed", "skip_without_windows_target", "windows_c_compiler",
+                 "lint_windows", "lint_desktop_windows")
+
+    def setUp(self):
+        self.directory = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.directory)])
+        self.bin = self.directory / "bin"
+        self.bin.mkdir()
+        self.cargo_log = self.directory / "cargo.txt"
+        self.skips = self.directory / "skips.txt"
+        self.skips.touch()
+
+    def program(self, name: str, body: str) -> None:
+        path = self.bin / name
+        path.write_text("#!/bin/bash\n" + body + "\n")
+        path.chmod(0o755)
+
+    def rustc_with(self, libstd: bool) -> None:
+        """A `rustc` whose library directory for the Windows target holds a `libstd` or does not."""
+        library = self.directory / "sysroot/lib/rustlib/x86_64-pc-windows-msvc/lib"
+        library.mkdir(parents=True, exist_ok=True)
+        (library / "libcore-1.rlib").touch()
+        (library / "libstd-1.rlib").unlink(missing_ok=True)
+        if libstd:
+            (library / "libstd-1.rlib").touch()
+        self.program("rustc", f'[[ "$*" == "--print target-libdir --target x86_64-pc-windows-msvc" ]] && echo {library}')
+        self.program("cargo", f'echo "$@" >> {self.cargo_log}')
+
+    def call(self, function: str, *, compiler: bool, rustup: bool) -> tuple[int, str]:
+        """Run one function with `current_step` set; the exit code and the output. `compiler` says
+        whether the C compiler can build for Windows. A `rustup` that fails shows the check no longer asks it."""
+        self.program("fake-cc", "exit 0" if compiler else "exit 1")
+        if rustup:
+            self.program("rustup", "exit 1")
+        definitions = "\n".join(
+            re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", self.CHECK_ALL, re.MULTILINE | re.DOTALL).group(0)
+            for name in self.FUNCTIONS
+        )
+        script = (f'skip_file={self.skips}; current_step=the:step; CC_x86_64_pc_windows_msvc={self.bin}/fake-cc\n'
+                  f'{definitions}\n{function}')
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                                env={"PATH": f"{self.bin}:/usr/bin:/bin"})
+        return result.returncode, result.stdout
+
+    def test_the_target_is_found_with_rustup_and_without_it(self):
+        self.rustc_with(libstd=True)
+        for rustup in (False, True):
+            self.assertEqual(self.call("windows_target_installed", compiler=True, rustup=rustup)[0], 0)
+        self.rustc_with(libstd=False)  # rustup names a directory for a target it has not installed
+        self.assertEqual(self.call("windows_target_installed", compiler=True, rustup=False)[0], 1)
+        (self.bin / "rustc").unlink()
+        self.assertEqual(self.call("windows_target_installed", compiler=True, rustup=False)[0], 1)
+
+    def test_a_host_without_the_target_passes_the_step_but_says_it_skipped_it_and_why(self):
+        self.rustc_with(libstd=False)
+        for function in ("lint_windows", "lint_desktop_windows"):
+            code, output = self.call(function, compiler=True, rustup=False)
+            self.assertEqual(code, 0)
+            self.assertIn("check_all: SKIPPED the:step: the Rust target x86_64-pc-windows-msvc is not installed", output)
+        self.assertFalse(self.cargo_log.exists())
+        self.assertIn("scripts/linux-gate.nix", self.skips.read_text())
+
+    def test_a_host_without_a_windows_c_compiler_lints_what_it_can_and_says_what_it_did_not(self):
+        self.rustc_with(libstd=True)
+        code, output = self.call("lint_windows", compiler=False, rustup=False)
+        self.assertEqual(code, 0)
+        self.assertIn("check_all: SKIPPED the:step: the engine and the cli were not linted for Windows", output)
+        arguments = self.cargo_log.read_text()
+        self.assertIn("clippy --locked --target x86_64-pc-windows-msvc -p soyeht-platform", arguments)
+        self.assertNotIn("soyeht-engine", arguments)
+        self.cargo_log.unlink()
+        code, output = self.call("lint_desktop_windows", compiler=False, rustup=False)
+        self.assertIn("SKIPPED the:step: only the desktop crates that need no C compiler", output)
+        self.assertIn("check --locked --target x86_64-pc-windows-msvc", self.cargo_log.read_text())
+
+    def test_a_step_that_skipped_says_so_in_its_line_of_the_step_log_and_in_the_summary_ids(self):
+        step_log = self.directory / "steps.tsv"
+        definitions = "\n".join(
+            re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", self.CHECK_ALL, re.MULTILINE | re.DOTALL).group(0)
+            for name in ("skip_note", "step")
+        )
+        script = (f'skip_file={self.skips}; step_log={step_log}; skipped_ids=""; current_step=""; list=0; matched=0\n'
+                  'should_run() { return 0; }\nnow() { echo 1; }\n'
+                  f'{definitions}\n'
+                  'checks_less() { skip_note "no target"; skip_note "no compiler"; }\n'
+                  'checks_all() { :; }\n'
+                  'step engine both a:skips checks_less\nstep engine both b:whole checks_all\n'
+                  'echo "ids=$skipped_ids"')
+        result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("check_all: SKIPPED a:skips: no target", result.stdout)
+        self.assertIn("ids=a:skips\n", result.stdout)
+        rows = [line.split("\t") for line in step_log.read_text().splitlines()]
+        self.assertEqual([(row[0], row[3], row[4]) for row in rows],
+                         [("a:skips", "0", "no target; no compiler"), ("b:whole", "0", "")])
+
+    def test_a_host_with_everything_lints_all_and_skips_nothing(self):
+        self.rustc_with(libstd=True)
+        for function in ("lint_windows", "lint_desktop_windows"):
+            code, output = self.call(function, compiler=True, rustup=False)
+            self.assertEqual((code, "SKIPPED" in output), (0, False))
+        self.assertIn("-p soyeht-engine -p soyeht-cli", self.cargo_log.read_text())
+        self.assertEqual(self.skips.read_text(), "")
+
+
 class GateListTests(unittest.TestCase):
     def test_every_workflow_delegates_to_check_all(self):
         problems = [

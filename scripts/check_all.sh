@@ -89,6 +89,10 @@ fi
 # Per-step wall times: each step appends a line; the EXIT trap writes the JSON.
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
+# What a step says it did not check (`skip_note`), and the ids of the steps that did so.
+skip_file="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-skips.XXXXXX")"
+skipped_ids=""
+current_step=""
 GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
 # The engine crates `engine:test-changed` tests. The plan sets them from the changed paths; a
 # `--only` run has no plan, so a caller that ran the plan elsewhere (scripts/gate_remote.py, whose
@@ -107,7 +111,7 @@ finish() {
             --tier "$label" --exit-code "$code" \
             --areas "$GATE_AREAS" --out "$timings_out" || echo 'check_all: could not write the timings' >&2
     fi
-    rm -f "$step_log"
+    rm -f "$step_log" "$skip_file"
     if [[ "${RUSTC_WRAPPER:-}" == sccache && $code -eq 0 ]] && ((!list)); then
         sccache --show-stats 2>/dev/null | grep -E '^(Compile requests|Cache hits  |Cache misses  )' || true
     fi
@@ -156,14 +160,29 @@ step() {
         return 0
     fi
     echo "check_all: [$area] $id"
-    local started status=0
+    local started status=0 skipped
     started="$(now)"
+    current_step="$id"
+    : >"$skip_file"
     "$@" || status=$?
-    printf '%s\t%s\t%s\t%s\n' "$id" "$area" "$(perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$started" "$(now)")" "$status" >>"$step_log"
+    skipped="$(tr '\n\t' '  ' <"$skip_file")"
+    skipped="${skipped%; }"
+    if [[ -n "$skipped" ]]; then
+        skipped_ids="${skipped_ids:+$skipped_ids, }$id"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$area" "$(perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$started" "$(now)")" "$status" "$skipped" >>"$step_log"
     if ((status)); then
         echo "check_all: FAILED step $id (area $area, exit $status)" >&2
         exit "$status"
     fi
+}
+
+# A step that checks less than its name says (a missing toolchain, a missing compiler) says so:
+# the line, the step's entry in the timings and the summary at the end name it, so that a step
+# that passed without checking cannot be taken for one that checked.
+skip_note() {
+    echo "check_all: SKIPPED $current_step: $1"
+    printf '%s; ' "$1" >>"$skip_file"
 }
 
 in_dir() {
@@ -178,17 +197,30 @@ run_exact_rust_test() {
     "$@" 2>&1 | uv run python "$repo_root/scripts/require_one_rust_test.py" "$expected"
 }
 
+# Whether the compiler can build the standard library's crates for Windows. It asks `rustc` for the
+# target's library directory, so it works with `rustup` (which adds the target) and without it (a
+# toolchain from Nix lists the target in scripts/linux-gate.nix, and has no `rustup` at all).
+windows_target_installed() {
+    local libdir
+    libdir="$(rustc --print target-libdir --target x86_64-pc-windows-msvc 2>/dev/null)" || return 1
+    compgen -G "$libdir/libstd-*.rlib" >/dev/null
+}
+
+skip_without_windows_target() {
+    skip_note 'the Rust target x86_64-pc-windows-msvc is not installed, so nothing was linted for Windows (rustup: run `rustup target add x86_64-pc-windows-msvc`; Nix: list it in scripts/linux-gate.nix)'
+}
+
 # Windows-only code has no host build here, so lint it for the Windows target.
 lint_windows() {
-    if ! rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
-        echo 'check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc'
+    if ! windows_target_installed; then
+        skip_without_windows_target
         return 0
     fi
     local packages=(-p soyeht-platform -p soyeht-process -p soyeht-ptyd -p soyeht-mcp -p soyeht-service)
     if windows_c_compiler; then
         packages+=(-p soyeht-engine -p soyeht-cli)
     else
-        echo 'check_all: skipped the Windows lint of the engine and cli: their SQLite and tree-sitter build scripts need a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
+        skip_note 'the engine and the cli were not linted for Windows: their SQLite and tree-sitter build scripts need a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
     fi
     cargo clippy --locked --target x86_64-pc-windows-msvc "${packages[@]}" --all-targets -- -D warnings
 }
@@ -198,14 +230,14 @@ lint_windows() {
 # script fails without one. So the crates whose dependencies need no C compiler are checked, and
 # the whole workspace is linted when the host can build C for Windows.
 lint_desktop_windows() {
-    if ! rustup target list --installed | grep -qx x86_64-pc-windows-msvc; then
-        echo 'check_all: skipped the Windows check of the desktop; run: rustup target add x86_64-pc-windows-msvc'
+    if ! windows_target_installed; then
+        skip_without_windows_target
         return 0
     fi
     if windows_c_compiler; then
         cargo clippy --locked --target x86_64-pc-windows-msvc --workspace --all-targets -- -D warnings
     else
-        echo 'check_all: checked only the desktop crates that need no C compiler; stacker needs a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
+        skip_note 'only the desktop crates that need no C compiler were checked for Windows, and without clippy; stacker needs a C compiler that targets Windows (clang-cl with the Windows SDK, for instance through cargo-xwin)'
         cargo check --locked --target x86_64-pc-windows-msvc --all-targets \
             -p soyeht-client -p soyeht-webview -p ztracing -p wayland-protocols-plasma
     fi
@@ -480,5 +512,8 @@ if ((!list)); then
         echo "check_all: passed (tier $tier; vocabulary scan SKIPPED, not merge-grade)"
     else
         echo "check_all: passed (tier $tier)"
+    fi
+    if [[ -n "$skipped_ids" ]]; then
+        echo "check_all: SKIPPED, which passed without checking all they name: $skipped_ids"
     fi
 fi

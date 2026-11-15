@@ -8,6 +8,7 @@ from unittest import mock
 
 import gate_flakes
 import post_merge_gate
+import post_merge_investigate
 from test_post_merge_fixtures import FAKE_ONLY_ARGUMENTS, FAKE_RECORD_STEP, SyntheticRepositoryCase
 
 
@@ -215,6 +216,44 @@ class FlakeLedgerTests(unittest.TestCase):
         self.assertEqual(gate_flakes.unrun_steps(areas, [{"id": "c"}, {"id": "a"}]), ["b"])
         self.assertIsNone(gate_flakes.unrun_steps(areas, []), "a run with no step times cannot say")
         self.assertIsNone(gate_flakes.unrun_steps(None, [{"id": "a"}]))
+
+
+class BothHalvesFailTests(unittest.TestCase):
+    """The two halves of a split run go on after one fails, so both can fail in one run."""
+
+    def record(self, flaky=("eng",)):
+        steps = [{"id": "eng", "status": 1}, {"id": "ok", "status": 0}, {"id": "sw", "status": 1}]
+        return {"sha": "a" * 40, "log": "log", "result": "fail", "failed_step": "eng", "steps": steps,
+                "flaky_steps": [{"step": step} for step in flaky]}
+
+    def finish(self, record, unrun=0):
+        with mock.patch.object(post_merge_investigate, "run_unrun_steps", return_value=unrun), \
+                mock.patch.object(post_merge_investigate, "parent_of", return_value=None):
+            return post_merge_investigate.finish_after_flake(None, None, None, record, [], None, None, "")
+
+    def test_a_failed_step_nobody_judged_is_found(self):
+        self.assertEqual(gate_flakes.unjudged_failure(self.record()), "sw")
+        self.assertIsNone(gate_flakes.unjudged_failure(self.record(flaky=("eng", "sw"))))
+        self.assertIsNone(gate_flakes.unjudged_failure({"steps": [{"id": "a", "status": 0}]}))
+
+    def test_a_flake_in_one_half_does_not_hide_a_failure_in_the_other(self):
+        record = self.record()
+        self.assertFalse(self.finish(record))  # not settled: `sw` is judged next
+        self.assertEqual((record["failed_step"], record["result"]), ("sw", "fail"))
+
+    def test_when_both_flaked_the_run_is_flaky(self):
+        record = self.record(flaky=("eng", "sw"))
+        self.assertTrue(self.finish(record))
+        self.assertEqual(record["result"], "flaky")
+
+    def test_the_editor_check_that_lacks_its_measurement_is_the_other_halfs_failure_to_settle(self):
+        record = self.record()
+        record["steps"][2]["id"] = post_merge_investigate.EDITOR_STEP
+        with mock.patch.object(post_merge_investigate, "lacks_measurement", return_value=True), \
+                mock.patch.object(post_merge_investigate, "settle_missing_measurement", return_value=0) as settle:
+            self.assertTrue(self.finish(record))
+        settle.assert_called_once()
+        self.assertEqual(record["failed_step"], post_merge_investigate.EDITOR_STEP)
 
 
 if __name__ == "__main__":

@@ -25,6 +25,15 @@ class TimingTests(unittest.TestCase):
             ],
         )
 
+    def test_a_step_that_skipped_part_of_its_work_says_so(self):
+        self.steps_file.write_text("a:one\talways\t1.5\t0\t\nw:lint\tengine\t0.01\t0\tno Windows target\n")
+        steps = gate_timings.read_steps(self.steps_file)
+        self.assertNotIn("skipped", steps[0])
+        self.assertEqual(steps[1]["skipped"], "no Windows target")
+        self.assertEqual(gate_timings.skipped_lines(steps), ["check_all: SKIPPED w:lint: no Windows target"])
+        data = gate_timings.finalize(steps, "fast", 0, "engine", self.out, 0)
+        self.assertEqual(data["latest"]["steps"][1]["skipped"], "no Windows target")
+
     def test_finalize_writes_latest_and_history(self):
         steps = gate_timings.read_steps(self.steps_file)
         data = gate_timings.finalize(steps, "fast", 1, "always engine", self.out, 0)
