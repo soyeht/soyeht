@@ -419,7 +419,6 @@ mod tests {
     use crate::web::test_support::{
         connect_local, create_workspace, next_json, reply, request, temp_root,
     };
-    use serde_json::json;
     use soyeht_protocol::ErrorKind;
 
     async fn connect(

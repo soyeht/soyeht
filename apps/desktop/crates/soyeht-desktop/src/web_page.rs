@@ -171,7 +171,11 @@ impl Page for WebPage {
             Target::Reload => Navigation::Reload,
             Target::ReloadIgnoringCache => Navigation::ReloadIgnoringCache,
         };
-        self.view.navigate(navigation).map_err(|error| match error {
+        let outcome = self
+            .view
+            .checked(navigation)
+            .and_then(|navigation| self.view.navigate(navigation));
+        outcome.map_err(|error| match error {
             Error::OutsidePage => {
                 HostError::NavigationRefused("This page does not leave its own address.")
             }

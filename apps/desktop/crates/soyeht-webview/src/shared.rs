@@ -152,6 +152,15 @@ macro_rules! shared_view_calls {
             self.shared.set_limit(limit);
         }
 
+        /// The navigation, if the view's limit lets it happen: the window asks before it
+        /// navigates, so a refusal can be answered at once (`Error::OutsidePage`).
+        pub fn checked<'a>(
+            &self,
+            navigation: $crate::Navigation<'a>,
+        ) -> $crate::Result<$crate::Navigation<'a>> {
+            self.shared.checked(navigation)
+        }
+
         /// How many navigations the view has begun.
         pub fn navigations(&self) -> u64 {
             self.shared.navigations()
