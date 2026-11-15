@@ -113,7 +113,7 @@ E2E_SET = (
 # The unit tests of the gate scripts that only a change to the scripts can break.
 GATE_SCRIPT_UNITS = (
     "post-merge:unit", "post-merge-editor:unit", "post-merge-flakes:unit", "post-merge-remote:unit",
-    "post-merge-load:unit", "post-merge-waiver:unit", "post-merge-prerequisites:unit",
+    "post-merge-halves:unit", "post-merge-load:unit", "post-merge-waiver:unit", "post-merge-prerequisites:unit",
     "post-merge-control:unit", "e2e-real-harnesses:unit", "main-watch:unit", "quality:unit",
     "gate-list:unit", "gate-timings:unit", "e2e-swift-client:unit",
 )

@@ -40,17 +40,6 @@ class RemoteGateTests(RemoteHostCase):
         self.assertEqual(git(self.host_checkout / ".cache/remote-gate/tree", "rev-parse", "HEAD"), head)
         self.assertEqual(self.ssh_log.read_text().split(), ["linux-host", "linux-host"])  # run, timings
 
-
-
-
-
-
-
-
-
-
-
-
     def test_the_base_goes_to_both_sides(self):
         head = self.add("two", {"b": "2"})
         self.assertEqual(self.run_remote(head), 0)
