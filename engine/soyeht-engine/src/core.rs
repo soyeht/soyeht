@@ -89,7 +89,7 @@ pub struct Core {
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
     /// What the tick remembers between its runs (ADR 0147, step 1b).
-    pub(crate) tick: crate::tick_due::State,
+    tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
     pub(crate) task_revision_due: BTreeMap<(String, String), i64>,
     pub panes: BTreeMap<String, RunningPane>,
@@ -654,24 +654,16 @@ impl Core {
 
     pub fn save_runtime(&mut self, id: &str, saved: StoredPane) -> Result<()> {
         let state_changed = state_event(&saved)?;
-        let updated = model::pane_updated(&saved.pane)?;
-        let change = StorePort::mutate(
-            &mut self.store,
-            "engine",
-            &Uuid::new_v4().to_string(),
-            "runtime",
-            |tx| {
-                write_pane(tx, &saved)?;
-                Ok((json!({}), vec![state_changed, updated]))
-            },
-        )
-        .map_err(errors::storage)?;
-        errors::invariant(
-            self.panes.get_mut(id),
-            "Pane disappeared before runtime publication",
-        )?
-        .stored = saved;
-        self.publish(&change.events)
+        self.save_pane(id, saved, "runtime", vec![state_changed])
+    }
+
+    /// The scans of what the terminal panes run (ADR 0165).
+    pub(crate) fn foreground(&self) -> &crate::terminal_foreground::Service {
+        &self.tick.foreground
+    }
+
+    pub(crate) fn foreground_mut(&mut self) -> &mut crate::terminal_foreground::Service {
+        &mut self.tick.foreground
     }
 
     /// One engine tick, under the Core lock. Blocking work never runs here

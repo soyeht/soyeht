@@ -2,5 +2,9 @@
   "loose_literals.engine/soyeht-engine/src/experiment_export/tests.rs.rust_limits": {
     "value": 1,
     "reason": "Pure move: the single 512 literal is a test value that moved with its test out of experiment_export.rs, whose entry of 1 is removed in the same change; the repository total does not grow."
+  },
+  "central_objects.core_impl_files": {
+    "value": 101,
+    "reason": "terminal_foreground.rs is one new concern of the engine (which harness a terminal pane runs, ADR 0165) and needs the panes, the supervisor link, the store and the background jobs of Core, so it is one more file with an impl Core block. Its state is one private struct (terminal_foreground::Service) behind two accessors; Core gains no open field."
   }
 }

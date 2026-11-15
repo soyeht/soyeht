@@ -55,11 +55,14 @@ fn a_terminal_reports_the_program_it_runs_and_an_unknown_one_is_left_out() {
             .find(|foreground| foreground.instance_id == instance.instance_id)
             .map(|foreground| foreground.programs)
             .unwrap_or_default();
+        // A program that has only just been started may show its file before its arguments (Linux
+        // reads them from different places), so a Unix program counts once it has both.
         let running = ours.iter().any(|program| {
-            program.executable.as_deref().is_some_and(|path| {
-                let path = path.to_ascii_lowercase();
-                path.ends_with(wanted) || path.ends_with(&format!("{wanted}.exe"))
-            })
+            (cfg!(windows) || !program.arguments.is_empty())
+                && program.executable.as_deref().is_some_and(|path| {
+                    let path = path.to_ascii_lowercase();
+                    path.ends_with(wanted) || path.ends_with(&format!("{wanted}.exe"))
+                })
         });
         if running {
             break ours;

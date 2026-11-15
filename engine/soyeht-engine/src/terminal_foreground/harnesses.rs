@@ -216,18 +216,22 @@ pub(super) fn pick(programs: &[Program]) -> Option<Matched<'_>> {
     None
 }
 
+/// A program as the tests of this module and of its users spell one.
+#[cfg(test)]
+pub(super) fn sample(pid: u32, parent: Option<u32>, exe: &str, args: &[&str]) -> Program {
+    Program {
+        pid,
+        parent_pid: parent,
+        executable: Some(exe.into()),
+        arguments: args.iter().map(|argument| (*argument).into()).collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn program(pid: u32, parent: Option<u32>, exe: &str, args: &[&str]) -> Program {
-        Program {
-            pid,
-            parent_pid: parent,
-            executable: Some(exe.into()),
-            arguments: args.iter().map(|argument| (*argument).into()).collect(),
-        }
-    }
+    use super::sample as program;
 
     fn named(programs: &[Program]) -> Option<&'static str> {
         pick(programs).map(|matched| matched.known.name)

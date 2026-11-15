@@ -5,10 +5,11 @@ use crate::{
     dispatch::Outcome,
     outbox,
     panes::persist_new_pane,
+    ports::StorePort,
     supervisor_link::tests::Manual,
     test_panes::{Answering, core_with_workspace, insert_agent_pane, insert_terminal_pane},
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use soyeht_protocol::{Actor, Role, method};
 use soyeht_ptyd::wire::Foreground;
 use std::{
@@ -19,15 +20,7 @@ use std::{
 const WORKSPACE: &str = "workspace-1";
 
 fn program(pid: u32, exe: &str, arguments: &[&str]) -> Program {
-    Program {
-        pid,
-        parent_pid: None,
-        executable: Some(exe.into()),
-        arguments: arguments
-            .iter()
-            .map(|argument| (*argument).into())
-            .collect(),
-    }
+    harnesses::sample(pid, None, exe, arguments)
 }
 
 /// The programs of each terminal instance, in the order they were set.
@@ -125,6 +118,22 @@ impl Rig {
         )
         .unwrap();
         (pane, format!("{label}-instance"))
+    }
+
+    /// A rig whose app watches and whose one terminal runs `programs`, scanned once.
+    fn scanned(programs: Vec<Program>) -> (Self, String, String) {
+        let mut rig = Self::new();
+        rig.watch();
+        let (pane, instance) = rig.terminal("shell");
+        rig.programs.set(&instance, programs);
+        rig.core.advance_foreground().unwrap();
+        (rig, pane, instance)
+    }
+
+    /// The next scan of the period.
+    fn rescan(&mut self) {
+        self.advance(INTERVAL_MS);
+        self.core.advance_foreground().unwrap();
     }
 
     /// An app that has subscribed to events.
@@ -226,20 +235,14 @@ fn a_terminal_that_runs_a_known_harness_is_recorded_with_its_version_and_cleared
     // The person leaves the harness: the shell is in the foreground again.
     rig.programs
         .set(&instance, vec![program(41, "/bin/zsh", &["-zsh"])]);
-    rig.advance(INTERVAL_MS);
-    rig.core.advance_foreground().unwrap();
+    rig.rescan();
     assert_eq!(rig.harness_of(&pane), None);
     rig.finish();
 }
 
 #[test]
 fn a_plain_shell_has_no_harness() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
-    rig.programs
-        .set(&instance, vec![program(41, "/bin/zsh", &["-zsh"])]);
-    rig.core.advance_foreground().unwrap();
+    let (rig, pane, _) = Rig::scanned(vec![program(41, "/bin/zsh", &["-zsh"])]);
     assert_eq!(rig.programs.asked(), 1);
     assert_eq!(rig.harness_of(&pane), None);
     rig.finish();
@@ -247,19 +250,12 @@ fn a_plain_shell_has_no_harness() {
 
 #[test]
 fn the_harness_without_a_readable_version_is_still_recorded() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
     // The file is not on this disk, so `--version` is never run.
-    rig.programs.set(
-        &instance,
-        vec![program(
-            12,
-            "/nowhere/opencode-v2/2.2.5/bin/opencode",
-            &["opencode", "--standalone"],
-        )],
-    );
-    rig.core.advance_foreground().unwrap();
+    let (rig, pane, _) = Rig::scanned(vec![program(
+        12,
+        "/nowhere/opencode-v2/2.2.5/bin/opencode",
+        &["opencode", "--standalone"],
+    )]);
     assert_eq!(
         rig.harness_of(&pane),
         Some(TerminalHarness {
@@ -290,55 +286,35 @@ fn nothing_is_scanned_while_no_app_watches_or_no_terminal_is_open() {
 
 #[test]
 fn a_scan_is_not_repeated_before_its_period_is_up() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (_pane, instance) = rig.terminal("shell");
-    rig.programs
-        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
-    rig.core.advance_foreground().unwrap();
+    let (mut rig, _, _) = Rig::scanned(vec![program(1, "/bin/zsh", &["zsh"])]);
     rig.core.advance_foreground().unwrap();
     assert_eq!(rig.programs.asked(), 1);
-    rig.advance(INTERVAL_MS);
-    rig.core.advance_foreground().unwrap();
+    rig.rescan();
     assert_eq!(rig.programs.asked(), 2);
     rig.finish();
 }
 
 #[test]
 fn a_pane_the_supervisor_cannot_read_keeps_its_harness() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
-    rig.programs.set(
-        &instance,
-        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
-    );
-    rig.core.advance_foreground().unwrap();
+    let (mut rig, pane, _) =
+        Rig::scanned(vec![program(12, "/nowhere/bin/opencode", &["opencode"])]);
     assert!(rig.harness_of(&pane).is_some());
     // No answer for the instance: the supervisor could not read it.
     rig.programs.by_instance.lock().unwrap().clear();
-    rig.advance(INTERVAL_MS);
-    rig.core.advance_foreground().unwrap();
+    rig.rescan();
     assert!(rig.harness_of(&pane).is_some());
     rig.finish();
 }
 
 #[test]
 fn a_pane_whose_process_ended_loses_the_harness_it_had() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
-    rig.programs.set(
-        &instance,
-        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
-    );
-    rig.core.advance_foreground().unwrap();
+    let (mut rig, pane, _) =
+        Rig::scanned(vec![program(12, "/nowhere/bin/opencode", &["opencode"])]);
     assert!(rig.harness_of(&pane).is_some());
     if let Some(running) = rig.core.panes.get_mut(&pane) {
         running.stored.pane.state = PaneState::Dead;
     }
-    rig.advance(INTERVAL_MS);
-    rig.core.advance_foreground().unwrap();
+    rig.rescan();
     assert_eq!(rig.harness_of(&pane), None);
     rig.finish();
 }
@@ -418,7 +394,7 @@ fn a_list_scan_remembers_the_workspace_it_was_limited_to() {
     rig.programs
         .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
     rig.agent_list(&sender);
-    let scanned = rig.core.tick.foreground.scanned.clone();
+    let scanned = rig.core.foreground().scanned.clone();
     assert_eq!(
         scanned.map(|(scope, _)| scope),
         Some(Some(WORKSPACE.into()))

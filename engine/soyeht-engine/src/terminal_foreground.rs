@@ -15,23 +15,19 @@ mod harnesses;
 mod version;
 
 use crate::{
-    core::{Core, write_pane},
+    core::Core,
     dispatch::Outcome,
     errors::{self, Result},
-    model,
     offload::Offload,
-    ports::StorePort,
     supervisor_handle::Supervisor,
     tick_due::Next,
 };
-use serde_json::json;
 use soyeht_protocol::{PaneMode, PaneState, TerminalHarness};
 use soyeht_ptyd::wire::{MAX_FOREGROUND, Program, Request, Response};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
-use uuid::Uuid;
 use version::Versions;
 
 /// The time between scans while an app watches.
@@ -161,14 +157,14 @@ impl Core {
         Ok(Scan {
             supervisor: self.supervisor()?,
             targets,
-            versions: Arc::clone(&self.tick.foreground.versions),
+            versions: Arc::clone(&self.foreground().versions),
         })
     }
 
     /// The tick's scan: starts one when an app watches, a terminal is open and the period is up.
     pub(crate) fn advance_foreground(&mut self) -> Result<()> {
         let now = self.now_ms();
-        if now < self.tick.foreground.next_ms || self.background.is_active(SCAN_JOB) {
+        if now < self.foreground().next_ms || self.background.is_active(SCAN_JOB) {
             return Ok(());
         }
         let watched = self.clients.values().any(|client| client.events);
@@ -177,8 +173,8 @@ impl Core {
         } else {
             Vec::new()
         };
-        self.tick.foreground.watching = !targets.is_empty();
-        self.tick.foreground.next_ms = now + INTERVAL_MS;
+        self.foreground_mut().watching = !targets.is_empty();
+        self.foreground_mut().next_ms = now + INTERVAL_MS;
         if targets.is_empty() {
             return Ok(());
         }
@@ -193,8 +189,8 @@ impl Core {
 
     /// When the tick must run for the period, while there is something to scan.
     pub(crate) fn foreground_due(&self, next: &mut Next, now: i64) {
-        if self.tick.foreground.watching {
-            next.at_ms(now, self.tick.foreground.next_ms);
+        if self.foreground().watching {
+            next.at_ms(now, self.foreground().next_ms);
         }
     }
 
@@ -209,7 +205,7 @@ impl Core {
         let Some(found) = self.settle_if_current(used, scanned)? else {
             return Ok(());
         };
-        self.tick.foreground.scanned = Some((workspace, self.now_ms()));
+        self.foreground_mut().scanned = Some((workspace, self.now_ms()));
         for Found {
             pane_id,
             instance_id,
@@ -234,24 +230,7 @@ impl Core {
             return Ok(());
         }
         saved.pane.terminal_harness = harness;
-        let updated = model::pane_updated(&saved.pane)?;
-        let change = StorePort::mutate(
-            &mut self.store,
-            "engine",
-            &Uuid::new_v4().to_string(),
-            "terminal-harness",
-            |tx| {
-                write_pane(tx, &saved)?;
-                Ok((json!({}), vec![updated]))
-            },
-        )
-        .map_err(errors::storage)?;
-        errors::invariant(
-            self.panes.get_mut(id),
-            "Pane disappeared before its harness was recorded",
-        )?
-        .stored = saved;
-        self.publish(&change.events)
+        self.save_pane(id, saved, "terminal-harness", Vec::new())
     }
 
     /// `agent.list`: the agent panes of the sender's workspace, and its terminal panes that run a
@@ -262,8 +241,7 @@ impl Core {
         workspace_id: String,
     ) -> Result<Outcome> {
         let fresh = self
-            .tick
-            .foreground
+            .foreground()
             .scanned
             .as_ref()
             .is_some_and(|(scope, at)| {

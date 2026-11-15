@@ -217,10 +217,13 @@ mod tests {
             // SAFETY: only async-signal-safe calls between fork and exec.
             unsafe {
                 command.pre_exec(|| {
-                    if libc::setsid() == -1 || libc::ioctl(0, libc::TIOCSCTTY as _, 0) == -1 {
-                        return Err(io::Error::last_os_error());
+                    let session = libc::setsid();
+                    let terminal = libc::ioctl(0, libc::TIOCSCTTY as _, 0);
+                    if session == -1 || terminal == -1 {
+                        Err(io::Error::last_os_error())
+                    } else {
+                        Ok(())
                     }
-                    Ok(())
                 });
             }
             command.spawn().unwrap()

@@ -175,12 +175,7 @@ mod tests {
     use std::cell::Cell;
 
     fn program(exe: &str, args: &[&str]) -> Program {
-        Program {
-            pid: 1,
-            parent_pid: None,
-            executable: Some(exe.into()),
-            arguments: args.iter().map(|argument| (*argument).into()).collect(),
-        }
+        super::super::harnesses::sample(1, None, exe, args)
     }
 
     #[test]
@@ -262,61 +257,68 @@ mod tests {
         }
     }
 
+    /// A harness file in a folder of its own, with a cache and a count of the times it was asked.
+    struct Asking {
+        directory: PathBuf,
+        question: Question,
+        cache: Mutex<Versions>,
+        asked: Cell<u32>,
+    }
+
+    impl Asking {
+        fn new(name: &str) -> Self {
+            let directory = crate::supervisor_link::tests::short_directory();
+            let question = file_in(&directory, name);
+            Self {
+                directory,
+                question,
+                cache: Mutex::new(Versions::default()),
+                asked: Cell::new(0),
+            }
+        }
+
+        /// The version at `now`; the question, when it is put, is answered by `answer(count)`.
+        fn at(&self, now: Instant, answer: impl Fn(u32) -> Option<String>) -> Option<String> {
+            version_of(&self.cache, &self.question, now, |_: &Question| {
+                self.asked.set(self.asked.get() + 1);
+                answer(self.asked.get())
+            })
+        }
+
+        fn finish(self) {
+            std::fs::remove_dir_all(self.directory).unwrap();
+        }
+    }
+
     #[test]
     fn a_version_is_asked_once_per_file_and_again_when_the_file_changes() {
-        let directory = crate::supervisor_link::tests::short_directory();
-        let question = file_in(&directory, "claude");
-        let cache = Mutex::new(Versions::default());
-        let asked = Cell::new(0);
-        let ask = |_: &Question| {
-            asked.set(asked.get() + 1);
-            Some(format!("1.0.{}", asked.get()))
-        };
+        let asking = Asking::new("claude");
         let now = Instant::now();
-        assert_eq!(
-            version_of(&cache, &question, now, ask).as_deref(),
-            Some("1.0.1")
-        );
-        assert_eq!(
-            version_of(&cache, &question, now, ask).as_deref(),
-            Some("1.0.1")
-        );
-        assert_eq!(asked.get(), 1);
+        let numbered = |count| Some(format!("1.0.{count}"));
+        assert_eq!(asking.at(now, numbered).as_deref(), Some("1.0.1"));
+        assert_eq!(asking.at(now, numbered).as_deref(), Some("1.0.1"));
+        assert_eq!(asking.asked.get(), 1);
         // The file is replaced: a new modification time is a new question.
         std::fs::File::options()
             .write(true)
-            .open(&question.file)
+            .open(&asking.question.file)
             .unwrap()
             .set_modified(SystemTime::now() + Duration::from_secs(60))
             .unwrap();
-        assert_eq!(
-            version_of(&cache, &question, now, ask).as_deref(),
-            Some("1.0.2")
-        );
-        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(asking.at(now, numbered).as_deref(), Some("1.0.2"));
+        asking.finish();
     }
 
     #[test]
     fn a_harness_that_did_not_answer_is_left_alone_for_a_while() {
-        let directory = crate::supervisor_link::tests::short_directory();
-        let question = file_in(&directory, "opencode");
-        let cache = Mutex::new(Versions::default());
-        let asked = Cell::new(0);
-        let ask = |_: &Question| {
-            asked.set(asked.get() + 1);
-            None
-        };
+        let asking = Asking::new("opencode");
         let start = Instant::now();
-        assert_eq!(version_of(&cache, &question, start, ask), None);
-        let soon = start + Duration::from_secs(30);
-        assert_eq!(version_of(&cache, &question, soon, ask), None);
-        assert_eq!(asked.get(), 1);
-        assert_eq!(
-            version_of(&cache, &question, start + RETRY_AFTER, ask),
-            None
-        );
-        assert_eq!(asked.get(), 2);
-        std::fs::remove_dir_all(directory).unwrap();
+        assert_eq!(asking.at(start, |_| None), None);
+        assert_eq!(asking.at(start + Duration::from_secs(30), |_| None), None);
+        assert_eq!(asking.asked.get(), 1);
+        assert_eq!(asking.at(start + RETRY_AFTER, |_| None), None);
+        assert_eq!(asking.asked.get(), 2);
+        asking.finish();
     }
 
     #[test]
