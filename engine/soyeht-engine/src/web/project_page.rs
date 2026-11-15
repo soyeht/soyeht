@@ -8,6 +8,8 @@
 //! reloads the pane's page ([`watch`]), and a pane that holds `projectPath` is served again when
 //! the engine starts.
 
+#[cfg(test)]
+mod pane_tests;
 mod serve;
 #[cfg(test)]
 mod tests;

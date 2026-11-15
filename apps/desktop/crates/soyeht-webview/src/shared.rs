@@ -57,10 +57,10 @@ impl Shared {
 
     /// Refuses an address the view's limit does not allow, before it is sent to the page. Back,
     /// forward and reload stay allowed.
-    pub fn check_navigation(&self, navigation: &Navigation<'_>) -> Result<()> {
-        match (navigation, self.limit()) {
+    pub fn checked<'a>(&self, navigation: Navigation<'a>) -> Result<Navigation<'a>> {
+        match (&navigation, self.limit()) {
             (Navigation::Url(url), Some(limit)) if !limit.allows(url) => Err(Error::OutsidePage),
-            _ => Ok(()),
+            _ => Ok(navigation),
         }
     }
 
@@ -281,9 +281,9 @@ mod tests {
         }
         let shared = Shared::new(Arc::new(|_| {}));
         let elsewhere = Navigation::Url("ftp://example.com/");
-        assert!(shared.check_navigation(&elsewhere).is_ok());
+        assert!(shared.checked(elsewhere).is_ok());
         shared.set_limit(Some(PageLimit::new("https://a/", same_scheme)));
-        assert!(shared.check_navigation(&elsewhere).is_err());
+        assert!(shared.checked(elsewhere).is_err());
         for fine in [
             Navigation::Url("https://b/"),
             Navigation::Back,
@@ -291,10 +291,10 @@ mod tests {
             Navigation::Reload,
             Navigation::ReloadIgnoringCache,
         ] {
-            assert!(shared.check_navigation(&fine).is_ok());
+            assert!(shared.checked(fine).is_ok());
         }
         shared.set_limit(None);
-        assert!(shared.check_navigation(&elsewhere).is_ok());
+        assert!(shared.checked(elsewhere).is_ok());
     }
 
     #[test]
