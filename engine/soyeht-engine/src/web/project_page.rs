@@ -1,91 +1,120 @@
 //! A project file shown as a page (contract 11, section 5b; ADR 0166, section 9).
 //!
 //! `web.open {path}` names a file of the workspace. The engine serves it, and the files below its
-//! directory, read-only on the loopback interface for the life of the pane, and the pane shows
-//! the address like any other page. The rules that keep a local file from widening what a page can
-//! read are `soyeht_web::project_page`'s (the token, the host, the policy of every answer) and
-//! [`serve`]'s (the files below the root, re-checked on every request). A change under the
-//! directory reloads the pane's page once the burst settles ([`watch`]).
+//! directory, read-only on the loopback interface for the life of the pane, and the pane shows the
+//! address like any other page. What a page may read, who may ask and what the answers carry are
+//! the contract's; the rules that are pure are `soyeht_web::project_page`'s and the checks on the
+//! files are [`serve`]'s, made again on every request. A change to a file the page has been given
+//! reloads the pane's page ([`watch`]), and a pane that holds `projectPath` is served again when
+//! the engine starts.
 
 mod serve;
 #[cfg(test)]
 mod tests;
 mod watch;
 
-use crate::errors::{self, Result};
+use crate::{
+    auth,
+    errors::{self, Result},
+};
+use soyeht_web::name_allowed;
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     path::{Component, Path, PathBuf},
     sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
     },
 };
 use tokio::{sync::Notify, task::JoinHandle};
-use uuid::Uuid;
 
 /// The file a `web.open` names, resolved: canonical, inside the workspace, and a regular file.
-pub(crate) struct ProjectFile {
+pub(crate) struct PageFile {
     /// The file, canonical.
     file: PathBuf,
     /// Its directory: what the page may read.
     root: PathBuf,
     /// Its name, which the address ends with.
     name: String,
+    /// Its path below the workspace folder, with `/` between the parts: the pane's `projectPath`.
+    relative: String,
 }
 
-impl ProjectFile {
-    /// The file `requested` names inside `workspace_root`. An absolute path, a part that climbs
-    /// or starts with `.`, a link that leads out of the folder, a file that is not there and
-    /// anything that is not a regular file are refused.
+impl PageFile {
+    /// The file `requested` names inside `workspace_root`, by the rule the editor opens a file
+    /// with (an absolute path, a part that climbs and a link that leads out are refused), and
+    /// by the names `soyeht_web::name_allowed` accepts, on the path as written and as resolved.
     pub(crate) fn resolve(workspace_root: &Path, requested: &str) -> Result<Self> {
         let outside = || errors::invalid("Project file path must stay within the workspace");
-        let path = Path::new(requested);
-        let plain = path.components().all(|part| match part {
-            Component::Normal(name) => !name.to_string_lossy().starts_with('.'),
+        let named = Path::new(requested).components().all(|part| match part {
+            Component::Normal(name) => name.to_str().is_some_and(name_allowed),
             Component::CurDir => true,
             _ => false,
         });
-        if path.is_absolute() || !plain {
+        if !named {
             return Err(outside());
         }
-        let root =
-            soyeht_platform::fs::canonicalize(workspace_root).map_err(errors::workspace_root)?;
-        let file = soyeht_platform::fs::canonicalize(&root.join(path)).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                errors::not_found("Project file not found")
-            } else {
-                errors::io(error)
-            }
-        })?;
-        let relative = file.strip_prefix(&root).map_err(|_| outside())?;
-        if relative.components().any(hidden) {
+        let resolved =
+            crate::editor::resolve_in(&crate::editor::SystemFiles, workspace_root, requested)
+                .map_err(|error| match error {
+                    errors::Error::Io(io) if io.kind() == std::io::ErrorKind::NotFound => {
+                        errors::not_found("Project file not found")
+                    }
+                    other => other,
+                })?;
+        if !resolved.relative.split('/').all(name_allowed) {
             return Err(outside());
         }
-        let metadata = std::fs::metadata(&file).map_err(errors::io)?;
+        let metadata = std::fs::metadata(&resolved.canonical).map_err(errors::io)?;
         if !metadata.is_file() {
             return Err(errors::invalid("Project path is not a file"));
         }
-        let name = file
+        let name = resolved
+            .canonical
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or_else(|| errors::invalid("Project file name must be text"))?
             .to_owned();
-        let directory = file
+        let root = resolved
+            .canonical
             .parent()
             .ok_or_else(|| errors::invalid("Project file has no folder"))?
             .to_path_buf();
         Ok(Self {
-            file,
-            root: directory,
+            file: resolved.canonical,
+            root,
             name,
+            relative: resolved.relative,
         })
     }
 }
 
-/// Whether a part of a path is hidden (starts with `.`).
-fn hidden(part: Component<'_>) -> bool {
-    matches!(part, Component::Normal(name) if name.to_string_lossy().starts_with('.'))
+/// The files a page's server gave since the page last loaded: the ones a change reloads it for.
+#[derive(Default)]
+pub(super) struct Served {
+    files: Mutex<BTreeSet<PathBuf>>,
+}
+
+impl Served {
+    /// The page's own document was asked for: the page loads again, and what it needs is asked
+    /// for again.
+    fn loaded(&self, document: &Path) {
+        let mut files = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        files.clear();
+        files.insert(document.to_path_buf());
+    }
+
+    fn gave(&self, file: &Path) {
+        self.files
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(file.to_path_buf());
+    }
+
+    fn any_of(&self, paths: &[PathBuf]) -> bool {
+        let files = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        paths.iter().any(|path| files.contains(path))
+    }
 }
 
 /// The page of one pane: the server that answers for it and the watch that reloads it.
@@ -94,13 +123,16 @@ pub(crate) struct ProjectPage {
     file: PathBuf,
     /// `http://127.0.0.1:<port>/<token>/`: what the pane's address starts with while it shows
     /// this page.
-    base: String,
+    prefix: String,
     /// The address of the file.
     entry: String,
-    /// Raised once per burst of changes under the root.
+    /// The path the pane holds as its `projectPath`.
+    relative: String,
+    /// Raised once per reload the watch asks for.
     changes: Arc<AtomicU64>,
     seen: u64,
-    stop: Arc<AtomicBool>,
+    /// What keeps the watch going; dropping it ends the watch's thread.
+    _watch: Arc<Mutex<Option<crate::file_events::Hold>>>,
     server: JoinHandle<()>,
 }
 
@@ -109,12 +141,16 @@ impl ProjectPage {
     pub(crate) fn entry_url(&self) -> &str {
         &self.entry
     }
+
+    /// The pane's `projectPath`.
+    pub(crate) fn project_path(&self) -> &str {
+        &self.relative
+    }
 }
 
 impl Drop for ProjectPage {
     fn drop(&mut self) {
         self.server.abort();
-        self.stop.store(true, Ordering::Relaxed);
     }
 }
 
@@ -132,46 +168,60 @@ impl ProjectPages {
         self.kick = kick;
     }
 
-    /// The pane of `workspace_id` that shows `file`, if there is one.
-    pub(crate) fn pane_showing(&self, workspace_id: &str, file: &ProjectFile) -> Option<&str> {
+    /// The pane of `workspace_id` that shows `file` still, when it was asked for and `url` is the
+    /// address the pane holds now.
+    pub(crate) fn pane_showing<'a>(
+        &'a self,
+        workspace_id: &str,
+        file: &PageFile,
+        current_url: impl Fn(&str) -> Option<String>,
+    ) -> Option<&'a str> {
         self.pages
             .iter()
-            .find(|(_, page)| page.workspace_id == workspace_id && page.file == file.file)
+            .find(|(pane_id, page)| {
+                page.workspace_id == workspace_id
+                    && page.file == file.file
+                    && current_url(pane_id).is_some_and(|url| url.starts_with(&page.prefix))
+            })
             .map(|(pane_id, _)| pane_id.as_str())
     }
 
     /// Starts serving `file` for the workspace: the listener, the token and the watch.
-    pub(crate) fn start(&self, workspace_id: &str, file: ProjectFile) -> Result<ProjectPage> {
+    pub(crate) fn start(&self, workspace_id: &str, file: PageFile) -> Result<ProjectPage> {
         let runtime = tokio::runtime::Handle::try_current()
             .map_err(|_| errors::internal("Serving a project page needs the engine's runtime"))?;
         let listener = crate::network::listen(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
             .map_err(errors::io)?;
         let port = listener.local_addr().map_err(errors::io)?.port();
-        let token = Uuid::new_v4().simple().to_string();
+        let token = auth::token().map_err(|_| errors::internal("No random token is available"))?;
         let page_error = |_| errors::internal("The project page address is not valid");
         let entry = soyeht_web::page_url(port, &token, std::slice::from_ref(&file.name))
             .map_err(page_error)?;
-        let base = soyeht_web::page_url(port, &token, &[]).map_err(page_error)?;
+        let prefix = format!(
+            "{}/",
+            soyeht_web::page_url(port, &token, &[]).map_err(page_error)?
+        );
+        let served = Arc::new(Served::default());
+        served.loaded(&file.file);
         let changes = Arc::new(AtomicU64::new(0));
-        let stop = Arc::new(AtomicBool::new(false));
-        watch::follow(
+        let watch = watch::follow(
             file.root.clone(),
+            Arc::clone(&served),
             Arc::clone(&self.kick),
             Arc::clone(&changes),
-            Arc::clone(&stop),
         );
-        let server = runtime.spawn(serve::run(
-            listener,
-            serve::Site::new(port, token, file.root),
-        ));
+        let site = serve::Site::new(port, token, file.root, file.file.clone(), served);
+        let relative = file.relative;
+        let server = runtime.spawn(serve::run(listener, site));
         Ok(ProjectPage {
             workspace_id: workspace_id.into(),
             file: file.file,
-            base,
+            prefix,
             entry,
+            relative,
             changes,
             seen: 0,
-            stop,
+            _watch: watch,
             server,
         })
     }
@@ -187,8 +237,8 @@ impl ProjectPages {
         self.pages.remove(pane_id);
     }
 
-    /// The panes whose files changed since this was last asked, with the address their page starts
-    /// with.
+    /// The panes whose page was changed since this was last asked, with the address their page
+    /// starts with.
     pub(crate) fn take_changed(&mut self) -> Vec<(String, String)> {
         self.pages
             .iter_mut()
@@ -196,7 +246,7 @@ impl ProjectPages {
                 let now = page.changes.load(Ordering::Relaxed);
                 let changed = now != page.seen;
                 page.seen = now;
-                changed.then(|| (pane_id.clone(), page.base.clone()))
+                changed.then(|| (pane_id.clone(), page.prefix.clone()))
             })
             .collect()
     }

@@ -131,40 +131,81 @@ address bar) pauses agent driving and the next tool call returns
 
 ### 5b. A project file as a page (ADR 0166, section 9)
 `web.open` takes `path` in place of `url`: a path relative to the workspace folder. Exactly one of
-`url` and `path` is given; both, or neither, is `INVALID_PARAMS`. The engine serves the file read-only on the
-loopback interface for the life of the pane, and the pane shows it as it shows any `http` address. The
-pane's `url` is that loopback address, so the address bar, `web_navigate`, `web_snapshot` and every other
-tool work on it as on a page of a development server. What it allows, and what it refuses, so that a
-local file shown in a pane widens nothing a page can read:
+`url` and `path` is given; both, or neither, is `INVALID_PARAMS`. The engine serves the file read-only on
+the loopback interface for the life of the pane, and the pane shows it as it shows any `http` address. The
+pane's `url` is that loopback address, so the address bar, `web_snapshot` and every other tool work on it as
+on a page of a development server, and its record carries `projectPath`, the path that was opened, so that
+the page can be served again (below) and a client that cannot show it can name it.
 
-- **What is served.** The one file and the files below its directory, nothing above it. `path` must stay
-  inside the workspace folder: an absolute path, a `..` part, and a file that a link leads out of the
-  folder are refused (`INVALID_PARAMS`), as the editor refuses them. The file must exist and be a regular
-  file. Every request is checked again against the canonical path, so a link made after the page opened
-  does not lead out either. A path with a part that starts with `.` (a dotfile, `.git`) is never served, and
-  neither is a file over `webProjectFileBytes` (16 MiB). Only `GET` and `HEAD` are answered; a request
-  names a file, not a directory, and no listing is ever made.
-- **Who can ask.** The address is `http://127.0.0.1:<port>/<token>/<path>`: a port the engine chooses at
-  open, and a random token of 128 bits that only the pane's record holds. A request without the token, or
-  with a `Host` that is not the loopback address on that port (a page that came to the port through a name
-  it controls), is refused. At most `webProjectPageConnections` (32) connections are served at once.
-- **What the page is.** Every answer carries a content security policy that gives the page an opaque
-  origin (`sandbox allow-scripts`): it has no cookies, no storage and no access to another page of the
-  loopback interface, whatever the cookies of the other development servers are, and it cannot open
-  windows, submit forms or navigate the pane's top frame. Its own scripts and styles run;
-  what it fetches is only what the engine serves (`default-src 'self' data: blob:`, `connect-src 'self'`),
-  so a page cannot call the agent, the engine or any other address. It is a view: the agent edits files
-  and the page changes. Answers are never cached (`no-store`) and carry `nosniff`.
-- **The page follows the files.** When a file under the page's directory changes, the engine tells the
-  pane's host to reload, once a burst of changes has settled. A pane that has gone to another address
-  is left where it is, and a pane with no host connected is not reloaded.
-- **Same file, same pane.** Opening a file that a live pane of the workspace already shows focuses that
-  pane, unless `newPane` is set. A page counts against `webPanesPerWorkspace` like any web pane.
-- **When it ends.** Closing the pane ends the server. The server does not outlive the engine: after a
-  restart the pane's record is restored with an address that no longer answers, and the file is opened
-  again with `web.open`.
-- **Sessions.** An agent's `web_open` of a pane that is not incognito is the navigation of §6 and asks
-  about the session of `127.0.0.1`, as for any local page; the page itself never has one (above).
+**What the page can read.** The page's script can read every file below the directory of the file that
+was opened, except those with a part of the path that starts with `.` (a dotfile, `.git`): the whole
+directory tree, not only the files the page names. A file opened at the workspace root therefore lets the
+page read the whole project minus its dotfiles, and `path` at the root is allowed. Nothing above that
+directory is served: `path` must stay inside the workspace folder, by the rule the editor uses to open a file
+(one function, `resolve_in`, covered by the editor's containment fuzz test), so an absolute path, a `..`
+part and a link that leads out of the folder are refused (`INVALID_PARAMS`); it must also name an existing
+regular file (a missing file is `NOT_FOUND`), and no part of it may start with `.`, contain `:` or a
+backslash, end with a dot or a space, or be the name of a Windows device (`CON`, `NUL`, `COM1`, ...), on
+every system, so that a name means the same wherever the project is opened. Every request is checked again
+on the canonical path, so a link made after the page opened does not lead out either. A file over
+`webProjectFileBytes` is refused, only `GET` and `HEAD` are answered, a request names a file and never a
+directory (no listing), and `Range` is answered with `206` (WebKit needs it for audio and video).
+
+**Who can ask.** The address is `http://127.0.0.1:<port>/<token>/<path>`: a port the engine chooses at open
+and a random token of 256 bits (the engine's own `auth::token`, compared in constant time). The engine
+listens on the loopback interface only. The token keeps out a program or a web page that does not know the
+address: another page in a pane, a script that probes local ports, another user of this machine. It does not
+keep out whoever can read the address, and every client of the engine can: it is the pane's `url` on the
+phone and in the other clients' lists, and in the result of `web_read` and `web_snapshot`. A request whose
+`Host` is not the loopback address on the page's port is refused, so that a name that an attacker made point at
+`127.0.0.1` (a rebinding) gets nothing even from someone who has learned the token. The sandboxed page has the
+origin `null`, so the answers allow it to read them (`Access-Control-Allow-Origin: null`) and no other
+origin. At most `webProjectPageConnections` connections are served at once.
+
+**What the page is.** Every answer carries a content security policy that gives the page an opaque origin
+(`sandbox allow-scripts`: no cookies, no storage, no windows, no forms, whatever the cookies of the other
+development servers on `127.0.0.1` are) and names the page's own address, `http://127.0.0.1:<port>`, for
+everything it may load or fetch (`default-src`, `script-src`, `style-src`, `connect-src`, with `data:` and
+`blob:` for what the page makes itself; `'self'` is not used because a sandboxed page's own origin is opaque and
+WebKit does not match it). The page cannot fetch from the agent, the engine, another local server or the
+network, and cannot send what it reads out of the page by a request. Answers are never cached (`no-store`) and
+carry `nosniff`.
+
+**The page cannot navigate away.** A pane that holds `projectPath` goes only to addresses with the
+scheme, host and port of the address the engine holds for it (`contracts/vectors/project-page-origin.json`,
+passed by `soyeht_protocol::web::same_origin` and the Swift client). Every host refuses any other
+navigation of that pane: a link, `location`, a redirect, a frame and a command; the Mac and the desktop
+client do, and the engine refuses `web_navigate` to another origin with `NAVIGATION_REFUSED`. Without
+this a script could carry a file it fetched out in an address. The sandbox refuses windows and forms. A
+client that does not implement the rule can be navigated away by the page; every client that renders a web
+page implements it.
+
+**The page follows the files, and not the build.** The engine reloads the pane's page when a file that
+the page's server has served since the page last loaded changes, once a burst of changes has settled; a
+change to any other file under the folder (a build output, `node_modules`, a file the page never asked
+for) reloads nothing. A page that is changed again and again is reloaded at a growing interval, from
+half a second to half a minute, and the interval is back at its start after a quiet while. The reload is
+the engine's own: the command carries `background` in its access (§7), so no host selects the pane, raises its
+window or moves focus for it. A pane that has gone to another address is left where it is, and a pane with no
+host connected is not reloaded.
+
+**Same file, same pane.** Opening a file that a live pane of the workspace still shows focuses that pane,
+unless `newPane` is set; a pane that has since gone to another address is not that pane. A page counts
+against `webPanesPerWorkspace` like any web pane.
+
+**When it ends, and after a restart.** Closing the pane ends the server. A pane that holds `projectPath` is
+served again when the engine starts: it gets a new port and token, and its `url` is updated, so that the page
+is back at every login and update with no new pane. A file that is no longer there leaves the pane as it was.
+
+**Who can load it.** The page is served on the loopback interface of the computer that runs the engine, so
+only a client on that computer loads it. A paired phone, which is remote, shows a card with the pane's title
+and `projectPath` and the button "open on the Mac", and never the address with its token; it does not render
+the page. The `web_open` of an agent for a project page is the navigation of §6 and asks about the session of
+`127.0.0.1`, as for any local page; the page itself never has one.
+
+**Not verified.** Windows: the file, the server and the watch are written for it and the path rules have
+cases that run on any system, but nobody has run a project page on Windows; the link cases run only on
+systems with symbolic links.
 
 ## 6. Session, cookies and privacy (assumed)
 - One persistent WebKit data store per Soyeht profile on this Mac (Dev and
@@ -197,10 +238,14 @@ local file shown in a pane widens nothing a page can read:
 The page runs in the client that hosts the pane; the engine keeps the pane
 record and routes agent calls to that client.
 - `pane.create {mode: "web", url, incognito?}`; pane record fields
-  `{url, title, viewport, incognito}` (persisted, contract 07; navigation
+  `{url, title, viewport, incognito, projectPath?}` (persisted, contract 07; navigation
   history is not persisted in v1).
 - Engine → client request `web.command {paneId, command, args, timeoutMs}` →
-  result. When no connected client hosts the pane (the Mac app is closed)
+  result. `args._soyehtAccess` says who asks and what the session may do: `{session, evaluation,
+  background?}`. `background: true` marks a command the engine sends on its own, which is no act of a
+  person (the reload of a project page, §5b): a host does it without selecting the pane, raising its window
+  or moving focus, whatever the session says. A host that does not know the key reads the command as a
+  person's, which is why it is a key and not a new session. When no connected client hosts the pane (the Mac app is closed)
   tools fail with `WEB_HOST_UNAVAILABLE`.
 - `servers.local.list` → `[{port, pid, command, cwd, title?}]`; event
   `servers.local.changed`. The list leaves out the engine itself and any
@@ -217,7 +262,10 @@ record and routes agent calls to that client.
 10 web panes per workspace; snapshot ≤ 200 KiB (truncated with a marker);
 screenshot picture ≤ 256 KiB (`webAgentImageBytes`; `webScreenshotBytes`, 2 MiB, stays the largest the engine takes); `web_read` ≤ 12 screens, text ≤ 64 KiB, links ≤ 100; `web_evaluate` result ≤ 64 KiB; console ring 500,
 network ring 300; `web_wait` timeout ≤ 60 s; local-server list ≤ 50 entries; a served project file ≤ 16 MiB
-(`webProjectFileBytes`) and 32 connections at once (`webProjectPageConnections`).
+(`webProjectFileBytes`: the page's own pictures, fonts and short clips, and each request reads its file whole into
+memory, so the limit is also the most one request holds) and 32 connections at once
+(`webProjectPageConnections`: a page fetches a few dozen files in parallel when it loads, and a page that
+opens connections without end must not take the engine's threads).
 
 ## 9. Out of v1
 Driving the user's everyday browser (Chrome or Safari) in human mode,

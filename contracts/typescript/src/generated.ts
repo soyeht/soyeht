@@ -104,6 +104,7 @@ export interface Pane {
   "url"?: string;
   "title"?: string;
   "viewport"?: WebViewport;
+  "projectPath"?: string;
   "incognito"?: boolean;
   "webSession"?: WebSessionState;
   "writingKind"?: WritingKind;

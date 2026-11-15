@@ -102,6 +102,7 @@ pub fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {
         title: None,
         viewport: None,
         incognito: None,
+        project_path: None,
         web_session: None,
         writing_kind: None,
         writing_section: None,

@@ -258,6 +258,7 @@ impl Core {
         core.web.pages.kicked_by(Arc::clone(&kick));
         core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
+        core.serve_project_pages_again();
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.

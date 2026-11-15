@@ -434,6 +434,10 @@
         "viewport": {
           "$ref": "#/$defs/WebViewport"
         },
+        "projectPath": {
+          "type": "string",
+          "maxLength": 4096
+        },
         "incognito": {
           "type": "boolean"
         },

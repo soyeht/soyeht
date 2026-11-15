@@ -362,6 +362,8 @@ pub struct Pane {
     pub title: Option<String>,
     #[serde(rename = "viewport", skip_serializing_if = "Option::is_none")]
     pub viewport: Option<WebViewport>,
+    #[serde(rename = "projectPath", skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
     pub incognito: Option<bool>,
     #[serde(rename = "webSession", skip_serializing_if = "Option::is_none")]

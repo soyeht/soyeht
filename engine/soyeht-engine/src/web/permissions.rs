@@ -34,6 +34,8 @@ pub(super) struct WebPermission {
     task_id: Option<String>,
     session: SessionAccess,
     evaluation: bool,
+    /// The engine's own command, which is no act of a person (`_soyehtAccess.background`).
+    background: bool,
     pub(super) request_id: Option<String>,
     pub(super) expires_ms: Option<i64>,
 }
@@ -46,14 +48,16 @@ enum PermissionDecision {
 
 impl WebPermission {
     /// The engine's own command (a reload of a project page after its file changed): no agent, no
-    /// session to ask about.
-    pub(super) fn engine() -> Self {
+    /// session to ask about, and no act of a person, so no host selects the pane or moves focus
+    /// for it.
+    pub(super) fn background() -> Self {
         Self {
             agent: false,
             domain: String::new(),
             task_id: None,
             session: SessionAccess::Human,
             evaluation: false,
+            background: true,
             request_id: None,
             expires_ms: None,
         }
@@ -74,10 +78,11 @@ impl WebPermission {
             SessionAccess::Probe => "probe",
             SessionAccess::Granted => "granted",
         };
-        args.insert(
-            INTERNAL_ACCESS_KEY.into(),
-            json!({"session":session,"evaluation":self.evaluation}),
-        );
+        let mut access = json!({"session":session,"evaluation":self.evaluation});
+        if self.background {
+            access["background"] = json!(true);
+        }
+        args.insert(INTERNAL_ACCESS_KEY.into(), access);
         Ok(())
     }
 }
@@ -152,6 +157,7 @@ impl Core {
             task_id,
             session: session_access(agent, incognito, granted),
             evaluation: !agent && method == method::WEB_EVALUATE,
+            background: false,
             request_id: None,
             expires_ms: None,
         };
