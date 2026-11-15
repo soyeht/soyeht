@@ -177,7 +177,12 @@ message that says why and no address or name:
    the refusal and says why to the device; the engine also tells the person's own connections that
    a change waits, once for each change, with the transient event `device.pair_tailnet_changed
    {tailnetChanged: true}` (a paired device is not told), so that a pairing sheet that is open says
-   so. This raises a cost and no more: the confirmation is a local call;
+   so. The answer to `device.pair.start` and the event also carry what the person is to be shown
+   of the change: `tailnetName`, the tailnet the refusal saw (what a person cannot read is dropped from it, and
+   it is held to the device name's length), and `tailnetPin`, an opaque name for the identity a confirmation
+   would pin. The app sends it back with the confirmation, as `confirmTailnetPin`, and the engine pins
+   the identity only while it is still the one that was named, and otherwise answers `transition_refused` and
+   pins nothing: a person confirms the change they saw. This raises a cost and no more: the confirmation is a local call;
 6. the peer's node is not one a device's authenticated `hello` came from. In this mode the engine
    asks Tailscale for the node of each tailnet `hello` and keeps it, and keeps the node of a
    request's `pair.begin` when the request is approved (a lookup that fails or takes more than a

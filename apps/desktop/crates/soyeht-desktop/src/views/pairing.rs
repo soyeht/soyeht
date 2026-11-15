@@ -21,7 +21,7 @@ use crate::{
 use gpui::{Bounds, canvas, fill, point, size};
 use soyeht_client::{
     Connection,
-    pairing::{DevicePanes, Matrix, Offer, Phase, QUIET_ZONE, Request, copy},
+    pairing::{DevicePanes, Matrix, Offer, Phase, QUIET_ZONE, Request, TailnetChange, copy},
     timestamp,
 };
 use soyeht_protocol::{
@@ -393,7 +393,14 @@ pub(super) fn pairing_sheet(
         subtitle,
         close,
     ));
-    let waiting = wb.state.pairing.tailnet_changed().then_some(connected);
+    // The press is offered while connected, and not while a window is being asked for: one press is
+    // one window.
+    let asking = matches!(phase, Phase::Starting { .. });
+    let waiting = wb
+        .state
+        .pairing
+        .tailnet_change()
+        .map(|change| (change, connected && !asking));
     card = card.children(tailnet_notice(waiting, palette, cx));
     for request in &requests {
         card = card.child(request_card(wb, request, offers_code, palette, cx));
@@ -414,19 +421,21 @@ pub(super) fn pairing_sheet(
 /// action that confirms it (ADR 0164), which is offered while the window is connected (`waiting`
 /// says whether it is). A phone cannot pair until the person does.
 fn tailnet_notice(
-    waiting: Option<bool>,
+    shown: Option<(&TailnetChange, bool)>,
     palette: &'static Palette,
     cx: &mut Context<Workbench>,
 ) -> Option<AnyElement> {
-    waiting.map(|connected| {
+    shown.map(|(change, enabled)| {
+        let seen = change.name.as_deref().map(copy::tailnet_seen);
         well_card(palette)
             .child(warning(palette, copy::TAILNET_CHANGED))
+            .children(seen.map(|seen| caption(palette).child(seen)))
             .child(action(
                 cx,
                 palette,
                 "pairing-confirm-tailnet".into(),
                 (Role::Primary, copy::CONFIRM_TAILNET),
-                (connected, |this, cx| ui::confirm_tailnet(this, cx)),
+                (enabled, |this, cx| ui::confirm_tailnet(this, cx)),
             ))
             .into_any_element()
     })

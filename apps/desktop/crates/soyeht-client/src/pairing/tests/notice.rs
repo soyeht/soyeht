@@ -162,15 +162,23 @@ fn panes_that_would_not_close_are_said_once_the_device_is_revoked() {
     );
 }
 
+/// What the engine says of a change that waits, as the person is shown it.
+fn change(name: &str, pin: &str) -> Option<TailnetChange> {
+    Some(TailnetChange {
+        name: Some(name.to_owned()),
+        pin: Some(pin.to_owned()),
+    })
+}
+
 /// The window the engine answers a start with, with or without a tailnet change waiting.
-fn started_with(pairing: &mut Pairing, tailnet_changed: bool) {
+fn started_with(pairing: &mut Pairing, tailnet: Option<TailnetChange>) {
     let asked = pairing.open(true);
     let ticket = match asked {
         Some(Command::Start { ticket }) => ticket,
         other => panic!("a connected sheet asks for a window, not {other:?}"),
     };
     let window = Offer {
-        tailnet_changed,
+        tailnet,
         ..offer(1000.0)
     };
     pairing.apply(Event::Started {
@@ -179,23 +187,42 @@ fn started_with(pairing: &mut Pairing, tailnet_changed: bool) {
     });
 }
 
+fn refused_with_kind(command: &Command, kind: ErrorKind) -> Event {
+    command.failure(&Error::Remote(soyeht_protocol::RpcError {
+        code: -32000,
+        message: "no".to_owned(),
+        data: ErrorData {
+            kind,
+            detail: None,
+            retry_after_sec: None,
+        },
+    }))
+}
+
 #[test]
 fn a_tailnet_change_that_waits_is_known_from_the_window_or_from_the_engine_telling_it() {
     let mut pairing = adopted(true);
     assert!(!pairing.tailnet_changed());
     // The answer to the call that opens the window says it for a sheet opened after the refusal.
-    started_with(&mut pairing, true);
-    assert!(pairing.tailnet_changed());
-    started_with(&mut pairing, false);
+    started_with(&mut pairing, change("attacker.example", "pin-1"));
+    assert_eq!(
+        pairing.tailnet_change(),
+        change("attacker.example", "pin-1").as_ref()
+    );
+    started_with(&mut pairing, None);
     assert!(!pairing.tailnet_changed());
     // The engine tells a sheet that is open when the refusal comes.
-    let told = json!({"tailnetChanged": true});
+    let told = json!({"tailnetChanged": true, "tailnetName": "other.example",
+        "tailnetPin": "pin-2"});
     assert!(
         pairing
             .notified(&EventName::DevicePairTailnetChanged, told.clone())
             .unwrap()
     );
-    assert!(pairing.tailnet_changed());
+    assert_eq!(
+        pairing.tailnet_change(),
+        change("other.example", "pin-2").as_ref()
+    );
     // An engine that does not ask for the person's code has no such change to confirm.
     let mut mac = adopted(false);
     mac.notified(&EventName::DevicePairTailnetChanged, told)
@@ -205,17 +232,21 @@ fn a_tailnet_change_that_waits_is_known_from_the_window_or_from_the_engine_telli
 }
 
 #[test]
-fn confirming_a_tailnet_change_asks_for_a_new_window_with_the_confirmation_and_only_when_one_waits()
-{
+fn confirming_a_tailnet_change_names_what_was_shown_and_is_one_press_for_one_window() {
     let mut pairing = adopted(true);
     // Nothing waits: nothing is sent.
     assert_eq!(pairing.confirm_tailnet(true), None);
-    started_with(&mut pairing, true);
-    // No connection: the choice is kept for the next, and nothing is sent.
+    started_with(&mut pairing, change("attacker.example", "pin-1"));
+    // No connection: nothing is sent, and nothing is kept; the person confirms again once connected.
     assert_eq!(pairing.confirm_tailnet(false), None);
-    let Some(Command::ConfirmTailnet { ticket }) = pairing.confirm_tailnet(true) else {
+    let Some(Command::ConfirmTailnet { ticket, pin }) = pairing.confirm_tailnet(true) else {
         panic!("the confirmation asks for a window");
     };
+    // It names the identity the person was shown.
+    assert_eq!(pin.as_deref(), Some("pin-1"));
+    assert_eq!(pairing.phase(), &Phase::Starting { ticket });
+    // A second press, a double click, asks for no second window while the first is awaited.
+    assert_eq!(pairing.confirm_tailnet(true), None);
     assert_eq!(pairing.phase(), &Phase::Starting { ticket });
     // The window that answers has no change waiting: the notice goes, and the code shows.
     pairing.apply(Event::Started {
@@ -224,22 +255,29 @@ fn confirming_a_tailnet_change_asks_for_a_new_window_with_the_confirmation_and_o
     });
     assert!(!pairing.tailnet_changed());
     assert!(matches!(pairing.phase(), Phase::Showing(_)));
-    // A refused confirmation is a refused start, and the change still waits.
-    started_with(&mut pairing, true);
-    let Some(command @ Command::ConfirmTailnet { ticket }) = pairing.confirm_tailnet(true) else {
+    // A confirmation that fails frees the press again, and the change still waits.
+    started_with(&mut pairing, change("attacker.example", "pin-1"));
+    let Some(command) = pairing.confirm_tailnet(true) else {
         panic!("the confirmation asks for a window");
     };
-    pairing.apply(command.failure(&Error::Remote(soyeht_protocol::RpcError {
-        code: -32000,
-        message: "no".to_owned(),
-        data: ErrorData {
-            kind: ErrorKind::ForbiddenRole,
-            detail: None,
-            retry_after_sec: None,
-        },
-    })));
-    assert!(matches!(pairing.phase(), Phase::Refused(_)), "{ticket}");
+    pairing.apply(refused_with_kind(&command, ErrorKind::ForbiddenRole));
+    assert!(matches!(pairing.phase(), Phase::Refused(_)));
     assert!(pairing.tailnet_changed());
+    assert!(pairing.confirm_tailnet(true).is_some());
+}
+
+#[test]
+fn a_confirmation_of_what_is_not_waiting_any_more_forgets_what_was_shown() {
+    let mut pairing = adopted(true);
+    started_with(&mut pairing, change("attacker.example", "pin-1"));
+    let Some(command) = pairing.confirm_tailnet(true) else {
+        panic!("the confirmation asks for a window");
+    };
+    // The tailnet changed again: the engine pinned nothing, so what the person saw is stale.
+    pairing.apply(refused_with_kind(&command, ErrorKind::TransitionRefused));
+    assert!(matches!(pairing.phase(), Phase::Refused(_)));
+    assert!(!pairing.tailnet_changed());
+    assert_eq!(pairing.confirm_tailnet(true), None);
 }
 
 #[test]

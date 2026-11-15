@@ -12,7 +12,7 @@ fn offer(expires_at: f64) -> Offer {
         link: "soyeht-next://pair?engineId=x".to_owned(),
         expires_at,
         problem: None,
-        tailnet_changed: false,
+        tailnet: None,
     }
 }
 

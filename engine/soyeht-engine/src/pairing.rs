@@ -480,6 +480,10 @@ impl Core {
         // (`authorize_device_management` has already seen to that). Pinned only when the window is
         // made now: a replayed call confirms nothing.
         let confirms = self.approval().asks_for_code() && start.confirm_tailnet == Some(true);
+        if confirms {
+            // Before a window is made: a confirmation of what is no longer there opens none.
+            pairing_gate::check_confirmation(self, start.confirm_tailnet_pin.as_deref())?;
+        }
         let code = auth::token().map_err(|error| errors::internal(error.to_string()))?;
         let now = self.now_unix();
         let expires = now + limits::PAIRING_WINDOW_SECONDS as i64;
@@ -495,6 +499,8 @@ impl Core {
             qr: Some(qr),
             reachability: None,
             tailnet_changed: None,
+            tailnet_name: None,
+            tailnet_pin: None,
         })?;
         let result = self
             .mutate(connection, method, params, |tx| {
@@ -513,7 +519,12 @@ impl Core {
             }
         }
         result.reachability = Some(self.reachability.clone());
-        result.tailnet_changed = self.pairing.unconfirmed.is_some().then_some(true);
+        let change = pairing_gate::tailnet_change(self);
+        result.tailnet_changed = change.is_some().then_some(true);
+        (result.tailnet_name, result.tailnet_pin) = match change {
+            Some((name, pin)) => (name, Some(pin)),
+            None => (None, None),
+        };
         let result = model::to_value(&result)?;
         Ok(result)
     }

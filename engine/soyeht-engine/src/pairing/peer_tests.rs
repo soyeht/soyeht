@@ -502,7 +502,14 @@ async fn a_window_that_is_open_is_told_once_that_a_changed_tailnet_waits_and_a_d
         .filter(|message| message["method"] == "device.pair_tailnet_changed")
         .collect();
     assert_eq!(told.len(), 1, "{heard:?}");
-    assert_eq!(told[0]["params"], json!({"tailnetChanged": true}));
+    // What it says is what the answer to `device.pair.start` says of the same change.
+    let started = rig.call(&app, "device.pair.start", json!({})).unwrap();
+    assert_eq!(
+        told[0]["params"],
+        json!({"tailnetChanged": true, "tailnetName": "attacker.example",
+            "tailnetPin": started["tailnetPin"]})
+    );
+    assert_eq!(started["tailnetName"], "attacker.example");
     let mut device_heard = vec![];
     while let Ok(Ok(Some(packet))) =
         tokio::time::timeout(std::time::Duration::from_millis(30), device_events.next()).await
@@ -595,4 +602,57 @@ async fn the_mode_hook_of_a_test_does_not_change_what_a_shipped_engine_asks() {
     );
     drop(core);
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn a_confirmation_pins_only_the_identity_the_person_was_shown() {
+    let (mut rig, app, window) = rig_with_window();
+    let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+    assert!(begin(&mut rig, &phone, &window, "Test phone", 21).is_ok());
+    // A tailnet whose name has a bidirectional control in it: shown without it.
+    rig.peers.set_identity(Some(fixture_identity(
+        "first\u{202E}.example",
+        FIXTURE_NODE_KEY,
+    )));
+    let window = rig.open_window(&app);
+    let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+    refused_with(
+        &begin(&mut rig, &phone, &window, "Test phone", 22),
+        Refusal::TailnetChanged,
+    );
+    let shown = rig.call(&app, "device.pair.start", json!({})).unwrap();
+    assert_eq!(shown["tailnetName"], "first.example");
+    let pin = shown["tailnetPin"].as_str().unwrap().to_owned();
+    // The tailnet changes again between the person's look and their click.
+    rig.peers
+        .set_identity(Some(fixture_identity("second.example", FIXTURE_NODE_KEY)));
+    let window = rig.open_window(&app);
+    let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+    refused_with(
+        &begin(&mut rig, &phone, &window, "Test phone", 23),
+        Refusal::TailnetChanged,
+    );
+    let stale = rig.call(
+        &app,
+        "device.pair.start",
+        json!({"confirmTailnet": true, "confirmTailnetPin": pin}),
+    );
+    assert_eq!(kind(&stale), ErrorKind::TransitionRefused);
+    // Nothing was pinned, and the call was refused before it made a window.
+    let pinned = pairing_nodes::pinned(&rig.core.store).unwrap().unwrap();
+    assert_eq!(pinned.tailnet, FIXTURE_TAILNET);
+    // The answer now shows the new change, and a confirmation naming it pins it.
+    let now = rig.call(&app, "device.pair.start", json!({})).unwrap();
+    assert_eq!(now["tailnetName"], "second.example");
+    assert_ne!(now["tailnetPin"], json!(pin));
+    let confirmed = rig
+        .call(
+            &app,
+            "device.pair.start",
+            json!({"confirmTailnet": true, "confirmTailnetPin": now["tailnetPin"]}),
+        )
+        .unwrap();
+    assert!(confirmed.get("tailnetChanged").is_none(), "{confirmed}");
+    let pinned = pairing_nodes::pinned(&rig.core.store).unwrap().unwrap();
+    assert_eq!(pinned.tailnet, "second.example");
 }

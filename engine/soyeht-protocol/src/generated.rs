@@ -804,6 +804,8 @@ pub struct DevicePairStartParams {
     pub idempotency_key: Id,
     #[serde(rename = "confirmTailnet", skip_serializing_if = "Option::is_none")]
     pub confirm_tailnet: Option<bool>,
+    #[serde(rename = "confirmTailnetPin", skip_serializing_if = "Option::is_none")]
+    pub confirm_tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartResult {
@@ -819,6 +821,10 @@ pub struct DevicePairStartResult {
     pub reachability: Option<EngineReachability>,
     #[serde(rename = "tailnetChanged", skip_serializing_if = "Option::is_none")]
     pub tailnet_changed: Option<bool>,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairDecideParams {
@@ -1258,6 +1264,10 @@ pub struct DevicePairedEvent {
 pub struct DevicePairTailnetChangedEvent {
     #[serde(rename = "tailnetChanged")]
     pub tailnet_changed: bool,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokedEvent {

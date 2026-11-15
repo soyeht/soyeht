@@ -540,7 +540,7 @@ fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent
     rig.remote.reply(
         &start,
         json!({"code": "CODE", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK,
-            "tailnetChanged": true}),
+            "tailnetChanged": true, "tailnetName": "other.example", "tailnetPin": "pin-1"}),
     );
     rig.settle(|state| state.pairing.tailnet_changed());
     // The person confirms: a new window is asked for with `confirmTailnet`.
@@ -548,6 +548,9 @@ fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent
     rig.dispatch(effects);
     let confirm = rig.remote.expect("device.pair.start");
     assert_eq!(confirm["params"]["confirmTailnet"], true);
+    // It names the change the person was shown, and a second press while it is awaited sends nothing.
+    assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-1");
+    assert!(rig.state.confirm_tailnet().is_empty());
     rig.remote.reply(
         &confirm,
         json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),

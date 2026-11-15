@@ -396,6 +396,7 @@ export interface PaneExperimentExportResult {
 export interface DevicePairStartParams {
   "idempotencyKey": Id;
   "confirmTailnet"?: boolean;
+  "confirmTailnetPin"?: string;
 }
 
 export interface DevicePairStartResult {
@@ -405,6 +406,8 @@ export interface DevicePairStartResult {
   "qr"?: string;
   "reachability"?: EngineReachability;
   "tailnetChanged"?: boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DevicePairDecideParams {
@@ -683,6 +686,8 @@ export interface DevicePairedEvent {
 
 export interface DevicePairTailnetChangedEvent {
   "tailnetChanged": boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DeviceRevokedEvent {

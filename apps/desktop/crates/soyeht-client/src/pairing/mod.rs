@@ -40,7 +40,17 @@ pub struct Offer {
     pub problem: Option<String>,
     /// The engine refused a pairing because the tailnet or this computer's node is not what the
     /// first pairing pinned, and waits for the person to confirm it.
-    pub tailnet_changed: bool,
+    pub tailnet: Option<TailnetChange>,
+}
+
+/// A tailnet change the engine waits for the person to confirm, as it was shown to them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TailnetChange {
+    /// The tailnet the refused pairing saw, for the person to compare; never trusted.
+    pub name: Option<String>,
+    /// The engine's name for that identity, which the confirmation sends back so that it pins what
+    /// was shown. An engine that sends none confirms whatever it refused last.
+    pub pin: Option<String>,
 }
 
 /// The window's code is the secret of the link: nothing prints it.
@@ -67,7 +77,10 @@ impl Offer {
                 .reachability
                 .as_ref()
                 .and_then(copy::reachability_problem),
-            tailnet_changed: started.tailnet_changed == Some(true),
+            tailnet: (started.tailnet_changed == Some(true)).then_some(TailnetChange {
+                name: started.tailnet_name,
+                pin: started.tailnet_pin,
+            }),
         }
     }
 }
@@ -214,7 +227,7 @@ pub struct Pairing {
     /// Why the last revocation failed.
     revoke_failure: Option<String>,
     /// A pairing was refused because the tailnet changed, and the person has not confirmed it.
-    tailnet_changed: bool,
+    tailnet: Option<TailnetChange>,
     /// What is known of the panes the device being revoked made.
     revoking_panes: DevicePanes,
     /// The devices added since the person last dismissed the notice.
@@ -265,22 +278,31 @@ impl Pairing {
 
     /// The engine refused a pairing because the tailnet changed, and waits for the person.
     pub fn tailnet_changed(&self) -> bool {
-        self.tailnet_changed
+        self.tailnet.is_some()
+    }
+
+    /// The change the person is asked to confirm, as it was shown to them.
+    pub fn tailnet_change(&self) -> Option<&TailnetChange> {
+        self.tailnet.as_ref()
     }
 
     /// The person confirms the tailnet change: a new window is asked for with the confirmation,
     /// and the sheet shows its code. Only an engine that asks for the person's code reads it, and
     /// only when it said a change waits.
     pub fn confirm_tailnet(&mut self, connected: bool) -> Option<Command> {
-        if !(connected && self.offers_code && self.tailnet_changed) {
+        // One press is one window: while a window is being asked for, a second is not.
+        if !(connected && self.offers_code) || matches!(self.phase, Phase::Starting { .. }) {
             return None;
         }
+        let shown = self.tailnet.as_ref()?;
+        let pin = shown.pin.clone();
         self.tickets += 1;
         self.phase = Phase::Starting {
             ticket: self.tickets,
         };
         Some(Command::ConfirmTailnet {
             ticket: self.tickets,
+            pin,
         })
     }
 
@@ -384,7 +406,11 @@ impl Pairing {
             }
             EventName::DevicePairTailnetChanged => {
                 let told: DevicePairTailnetChangedEvent = serde_json::from_value(params)?;
-                self.tailnet_changed = self.offers_code && told.tailnet_changed;
+                self.tailnet =
+                    (self.offers_code && told.tailnet_changed).then_some(TailnetChange {
+                        name: told.tailnet_name,
+                        pin: told.tailnet_pin,
+                    });
             }
             EventName::PairResult => {
                 let result: PairResultEvent = serde_json::from_value(params)?;
@@ -489,10 +515,15 @@ impl Pairing {
     pub fn apply(&mut self, event: Event) {
         match event {
             Event::Started { ticket, offer } if self.starting(ticket) => {
-                self.tailnet_changed = offer.tailnet_changed;
+                self.tailnet = offer.tailnet.clone();
                 self.phase = Phase::Showing(offer);
             }
             Event::StartFailed { ticket, refusal } if self.starting(ticket) => {
+                // The engine refused to confirm a change that is not the one that was shown: what
+                // is shown is stale, and the next window says what waits now.
+                if refusal.kind == Some(ErrorKind::TransitionRefused) {
+                    self.tailnet = None;
+                }
                 self.phase = Phase::Refused(refusal);
             }
             // The answer of an attempt a newer one replaced, or of a sheet since closed.
