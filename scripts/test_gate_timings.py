@@ -30,7 +30,10 @@ class TimingTests(unittest.TestCase):
         steps = gate_timings.read_steps(self.steps_file)
         self.assertNotIn("skipped", steps[0])
         self.assertEqual(steps[1]["skipped"], "no Windows target")
-        self.assertEqual(gate_timings.skipped_lines(steps), ["check_all: SKIPPED w:lint: no Windows target"])
+        self.assertEqual(gate_timings.skipped_summary(steps),
+                         "check_all: 1 step(s) checked less than their names say: w:lint")
+        self.assertIsNone(gate_timings.skipped_summary(steps[:1]))
+        self.assertFalse(gate_timings.skipped_summary(steps).startswith("check_all: SKIPPED"))
         data = gate_timings.finalize(steps, "fast", 0, "engine", self.out, 0)
         self.assertEqual(data["latest"]["steps"][1]["skipped"], "no Windows target")
 

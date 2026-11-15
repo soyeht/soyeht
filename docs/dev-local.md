@@ -211,7 +211,10 @@ The flags `--remote`, `--remote-root` and `--remote-slot` are the same settings.
 gate scripts changed), sends those of the areas engine, desktop, e2e and timing to the host
 through `remote_gate.sh` (the same split and the same host settings as `post_merge.py --remote`) and runs the rest here with
 `check_all.sh --only`: the `always` checks, Swift, TypeScript and the Android core. The two halves run at the same time (`--sequential`
-runs the host first and stops at its failure). The exit code is 0 when both pass, the failing half's code
+runs the host first and stops at its failure); when the host could not be reached or could not run the
+gate, the Mac half is stopped, as the run counts for nothing. A step of either half that exits with
+a code the gate also uses for "could not run" (2, for instance) is still a failed step: the step list
+that says a step failed decides, not the number. The exit code is 0 when both pass, the failing half's code
 otherwise, and 2 when the host could not be reached or could not run the gate; the output then says
 which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
 
@@ -241,10 +244,10 @@ which (`gate: cannot reach HOST over ssh ...`), and nothing counts as a pass.
   which holds with `rustup` (`rustup target add x86_64-pc-windows-msvc`) and without it (the Nix shell
   of `scripts/linux-gate.nix` lists the target). A step that checks less than its name says
   (no target, no C compiler for the engine and the cli) still passes, but it never passes quietly:
-  it prints `check_all: SKIPPED STEP: REASON`, keeps the reason as `skipped` in its entry of the timings
-  (and so in the post-merge record), and the run ends with a `check_all: SKIPPED` summary. A remote run
-  repeats each such line as `WARNING: HOST ran with less than its steps name; ...` and says it in
-  `gate_remote`'s result line. Without a C compiler for Windows the engine and the cli are not
+  it prints `check_all: SKIPPED STEP: REASON` (one line per step), keeps the reason as `skipped` in its entry
+  of the timings (and so in the post-merge record), and the timings line at the end of the run lists
+  the steps. A remote run repeats each `SKIPPED` line once as `WARNING: HOST ran with less than its
+  steps name; ...` and names the steps in `gate_remote`'s result line. Without a C compiler for Windows the engine and the cli are not
   linted, and the desktop gets `cargo check` and no clippy; those lines say so on every run until the host has one.
 - **A gate that checked nothing is not a pass.** It refuses (exit 2) when the worktree has uncommitted
   changes to tracked files (the host gates the commit, this machine would gate the working tree);

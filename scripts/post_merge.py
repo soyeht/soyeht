@@ -41,7 +41,9 @@ engine, desktop, e2e, timing) run on HOST over ssh, through `scripts/remote_gate
 PATH (docs/dev-local.md), and the other steps (the Swift packages, the Mac and iOS apps, the
 editor measurement, the dictation tests, the `always` checks) run here. The
 Rust half of the editor check is the engine step `editor-performance:rust`, so it runs on the
-host too. The remote steps run first; a failure there stops the run, as a local failure does.
+host too. The two halves run at the same time, as in the pre-merge gate; both are reported, so a failure
+in one half does not hide one in the other (each is judged in its turn). When the host could not run the
+gate at all (ssh failed, its worktree is busy), the local half is stopped and nothing is recorded.
 
 The editor measurement is the VM1 report `.cache/editor-performance-vm.json`, which a fresh
 worktree does not have. `--editor-meter REPORT` (env `SOYEHT_EDITOR_METER`) copies it into the
@@ -102,7 +104,7 @@ from post_merge_editor import (EDITOR_METER_ENV, EDITOR_STEP, GREEN_RESULTS, NEE
                                NEEDS_MEASUREMENT_EXIT, install_editor_meter, lacks_measurement, measured_since)
 from post_merge_gate import INFRASTRUCTURE_EXITS, failing_step, fuzz_seed_of, run_gate
 from post_merge_hosts import Remote
-from post_merge_investigate import investigate, settle_missing_measurement
+from post_merge_investigate import UnjudgedFailure, investigate, settle_missing_measurement
 from post_merge_records import (archive_previous_run, commit_info, host_retry_due, parent_of, read_record, report,
                                 write_json)
 
@@ -165,6 +167,8 @@ def run(root: Path, sha: str, health: Path, command: list[str], since: str | Non
             try:
                 investigate(root, worktree, scratch, health, record, since, command, remote,
                             persistent=worktree_dir is not None)
+            except UnjudgedFailure:
+                raise  # nothing is recorded, and a later pass runs the gate again
             except RuntimeError as error:  # the record of the red run is still written
                 record["note"] = f"the culprit search failed: {error}"
         write_json(health / f"{sha}.json", record)

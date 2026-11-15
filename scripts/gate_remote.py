@@ -106,7 +106,7 @@ def run(arguments: argparse.Namespace, root: Path) -> int:
             root, base, arguments.only, TO_STDOUT, Path(scratch) / "timings.json",
             arguments.check_all.split(), remote, tier=arguments.tier, event=arguments.event_file,
             ship=True, engine_test_args=engine_test_args(arguments, root, base),
-            concurrent=not arguments.sequential)
+            concurrent=not arguments.sequential, abandon_when_host_fails=True)
     label = f"{arguments.tier}+remote:{remote.host}" + (f"+only:{arguments.only}" if arguments.only else "")
     if steps:
         finalize(steps, label, code, " ".join(sorted({step["area"] for step in steps})),

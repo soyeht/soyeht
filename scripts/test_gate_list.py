@@ -633,23 +633,22 @@ class WindowsLintTests(unittest.TestCase):
         self.assertIn("SKIPPED the:step: only the desktop crates that need no C compiler", output)
         self.assertIn("check --locked --target x86_64-pc-windows-msvc", self.cargo_log.read_text())
 
-    def test_a_step_that_skipped_says_so_in_its_line_of_the_step_log_and_in_the_summary_ids(self):
+    def test_a_step_that_skipped_says_so_in_its_line_of_the_step_log(self):
         step_log = self.directory / "steps.tsv"
         definitions = "\n".join(
             re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", self.CHECK_ALL, re.MULTILINE | re.DOTALL).group(0)
             for name in ("skip_note", "step")
         )
-        script = (f'skip_file={self.skips}; step_log={step_log}; skipped_ids=""; current_step=""; list=0; matched=0\n'
+        script = (f'skip_file={self.skips}; step_log={step_log}; current_step=""; list=0; matched=0\n'
                   'should_run() { return 0; }\nnow() { echo 1; }\n'
                   f'{definitions}\n'
                   'checks_less() { skip_note "no target"; skip_note "no compiler"; }\n'
                   'checks_all() { :; }\n'
-                  'step engine both a:skips checks_less\nstep engine both b:whole checks_all\n'
-                  'echo "ids=$skipped_ids"')
+                  'step engine both a:skips checks_less\nstep engine both b:whole checks_all\n')
         result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("check_all: SKIPPED a:skips: no target", result.stdout)
-        self.assertIn("ids=a:skips\n", result.stdout)
+        self.assertEqual(result.stdout.count("SKIPPED"), 2, "one line for each reason, no summary of the same text")
         rows = [line.split("\t") for line in step_log.read_text().splitlines()]
         self.assertEqual([(row[0], row[3], row[4]) for row in rows],
                          [("a:skips", "0", "no target; no compiler"), ("b:whole", "0", "")])

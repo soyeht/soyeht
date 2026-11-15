@@ -470,7 +470,7 @@ inherit the main actor.
   targets Windows, and otherwise `cargo check`s the crates that build without one
   (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`). A step that checks
   less than its name says (no target, no Windows C compiler) prints `check_all: SKIPPED STEP: REASON`,
-  records the reason in the timings and ends the run with a `SKIPPED` summary: a skip is visible,
+  records the reason in the timings and names the step in the run's summary: a skip is visible,
   never a quiet pass.
 
 ## Repository hygiene

@@ -89,9 +89,8 @@ fi
 # Per-step wall times: each step appends a line; the EXIT trap writes the JSON.
 timings_out="${SOYEHT_GATE_TIMINGS:-$repo_root/.cache/gate-timings.json}"
 step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
-# What a step says it did not check (`skip_note`), and the ids of the steps that did so.
+# What a step says it did not check (`skip_note`).
 skip_file="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-skips.XXXXXX")"
-skipped_ids=""
 current_step=""
 GATE_AREAS="always gate_scripts engine desktop swift dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
 # The engine crates `engine:test-changed` tests. The plan sets them from the changed paths; a
@@ -167,9 +166,6 @@ step() {
     "$@" || status=$?
     skipped="$(tr '\n\t' '  ' <"$skip_file")"
     skipped="${skipped%; }"
-    if [[ -n "$skipped" ]]; then
-        skipped_ids="${skipped_ids:+$skipped_ids, }$id"
-    fi
     printf '%s\t%s\t%s\t%s\t%s\n' "$id" "$area" "$(perl -e 'printf "%.2f", $ARGV[1] - $ARGV[0]' "$started" "$(now)")" "$status" "$skipped" >>"$step_log"
     if ((status)); then
         echo "check_all: FAILED step $id (area $area, exit $status)" >&2
@@ -178,7 +174,8 @@ step() {
 }
 
 # A step that checks less than its name says (a missing toolchain, a missing compiler) says so:
-# the line, the step's entry in the timings and the summary at the end name it, so that a step
+# the line (the only one that starts with `check_all: SKIPPED`, which the remote gate looks for),
+# the step's entry in the timings and the summary of the timings at the end name it, so that a step
 # that passed without checking cannot be taken for one that checked.
 skip_note() {
     echo "check_all: SKIPPED $current_step: $1"
@@ -512,8 +509,5 @@ if ((!list)); then
         echo "check_all: passed (tier $tier; vocabulary scan SKIPPED, not merge-grade)"
     else
         echo "check_all: passed (tier $tier)"
-    fi
-    if [[ -n "$skipped_ids" ]]; then
-        echo "check_all: SKIPPED, which passed without checking all they name: $skipped_ids"
     fi
 fi

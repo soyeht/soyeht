@@ -37,9 +37,12 @@ def read_steps(path: Path) -> list[dict]:
     return steps
 
 
-def skipped_lines(steps: list[dict]) -> list[str]:
-    """One line per step that passed or failed without checking all it names, for the run's summary."""
-    return [f"check_all: SKIPPED {step['id']}: {step['skipped']}" for step in steps if step.get("skipped")]
+def skipped_summary(steps: list[dict]) -> str | None:
+    """One line naming the steps that passed or failed without checking all they name, or nothing. It
+    does not start with the marker of the line each step prints when it skips (`check_all: SKIPPED`):
+    that line is the only one the remote gate repeats, once per step, and the reasons are there."""
+    skipped = [step["id"] for step in steps if step.get("skipped")]
+    return f"check_all: {len(skipped)} step(s) checked less than their names say: {', '.join(skipped)}" if skipped else None
 
 
 def load(out: Path) -> dict:
@@ -96,8 +99,9 @@ def main(argv: list[str] | None = None) -> int:
         finalize(steps, arguments.tier, arguments.exit_code, arguments.areas, arguments.out, time.time())
         total = sum(step["seconds"] for step in steps)
         print(f"check_all: {len(steps)} steps, {total:.0f}s; timings in {arguments.out}")
-        for line in skipped_lines(steps):
-            print(line)
+        summary = skipped_summary(steps)
+        if summary:
+            print(summary)
     else:
         for step_id, seconds in slowest(load(arguments.out), arguments.count):
             print(f"{seconds:8.1f}s  {step_id}")

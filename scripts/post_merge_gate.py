@@ -63,6 +63,10 @@ REMOTE_PREREQUISITES = {"engine:test": "engine:build", "engine:test-changed": "e
 # What `check_all.sh` prints at the start of a line when a step checked less than its name says (the
 # host lacks the Windows target, a compiler): the step passes, unchecked.
 SKIPPED_MARKER = b"check_all: SKIPPED "
+# What `check_all.sh` prints when a step fails: the sign that a step, not the gate, ended the run.
+FAILED_MARKER = b"check_all: FAILED step "
+# After SIGTERM, how long a stopped run may take to end before its process group is killed.
+STOP_GRACE_SECONDS = 10
 # The longest line the pump keeps to look for the marker, and how many skipped lines it keeps.
 SKIPPED_LINE_LIMIT = 1000
 SKIPPED_LINES_KEPT = 20
@@ -101,7 +105,8 @@ def start_process(arguments: list[str], cwd: Path, env: dict, output) -> subproc
 
 class Pump(threading.Thread):
     """Copies the output of the remote gate to its sink, and keeps the lines that say a step skipped
-    some of its checks (`skipped`; no sink: the output is dropped). It reads the pipe's descriptor with
+    some of its checks (`skipped`) and whether a step failed (`failed`); no sink: the output is
+    dropped. It reads the pipe's descriptor with
     a timeout so that it can be told to finish (`finish`): a process that inherited ssh's output
     (a ControlPersist master, a ProxyCommand child) keeps the pipe open after ssh exits, and the
     gate must not wait for it beyond `DRAIN_SECONDS`. A sink that fails (a closed pipe, a full
@@ -109,7 +114,7 @@ class Pump(threading.Thread):
 
     def __init__(self, stream, sink) -> None:
         super().__init__(daemon=True)
-        self.stream, self.sink, self.skipped = stream, sink, []
+        self.stream, self.sink, self.skipped, self.failed = stream, sink, [], False
         self.line = b""  # the last line the host wrote, which is not over yet
         self.finishing = threading.Event()
 
@@ -135,6 +140,7 @@ class Pump(threading.Thread):
         for line in lines:
             if line.startswith(SKIPPED_MARKER) and len(self.skipped) < SKIPPED_LINES_KEPT:
                 self.skipped.append(line[:SKIPPED_LINE_LIMIT].decode(errors="replace").strip())
+            self.failed = self.failed or line.startswith(FAILED_MARKER)
 
     def run(self) -> None:
         self.read()
@@ -186,11 +192,36 @@ def end_pump(process: subprocess.Popen) -> None:
             process.stdout.close()
 
 
+def signal_group(process: subprocess.Popen, number: int) -> None:
+    """Signal the process group the run started (by its id, never by a name)."""
+    try:
+        os.killpg(process.pid, number)
+    except ProcessLookupError:
+        pass  # the group is gone already
+
+
 def stop_process(process: subprocess.Popen) -> None:
+    """SIGTERM to the run's group, and SIGKILL when it has not ended within `STOP_GRACE_SECONDS`, so
+    that waiting for it cannot hang."""
     if process.poll() is None:
-        os.killpg(process.pid, signal.SIGTERM)
+        signal_group(process, signal.SIGTERM)
+        try:
+            process.wait(timeout=STOP_GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            signal_group(process, signal.SIGKILL)
     process.wait()
     end_pump(process)
+
+
+def stop_processes(processes: list[subprocess.Popen | None]) -> None:
+    """Stop each one that still runs; an interrupt while one is stopping still stops the rest."""
+    running = [process for process in processes if process]
+    try:
+        if running:
+            stop_process(running[0])
+    finally:
+        if running[1:]:
+            stop_processes(running[1:])
 
 
 def wait_process(process: subprocess.Popen) -> int:
@@ -229,7 +260,8 @@ def start_local_steps(worktree: Path, tier: str, base: str | None, only: str | N
 
 def run_local_steps(worktree: Path, tier: str, base: str | None, only: str | None, event: Path | None,
                     log: Path | None, timings: Path, command: list[str]) -> int:
-    return wait_process(start_local_steps(worktree, tier, base, only, event, log, timings, command))
+    return local_exit(wait_process(start_local_steps(worktree, tier, base, only, event, log, timings, command)),
+                      timings)
 
 
 @contextmanager
@@ -331,6 +363,25 @@ def plan_problem(areas: dict[str, str] | None, only: str | None) -> str | None:
     return f"--only names no such step: {', '.join(missing)}" if missing else None
 
 
+def step_exit(code: int, step_failed: bool) -> int:
+    """The exit code of a half in which a step failed. A step's own exit code can equal one of the codes
+    that say the gate could not run (2 for a usage error, for instance), and a failure of a step must
+    never be read as that: where the code comes from decides, not its value."""
+    return 1 if step_failed and (code in INFRASTRUCTURE_EXITS or code in (SSH_FAILED_EXIT, REMOTE_BUSY_EXIT)) else code
+
+
+def local_steps_of(timings: Path) -> list[dict]:
+    """The steps a local `check_all.sh` recorded, or none (a gate that failed to start records none)."""
+    try:
+        return json.loads(timings.read_text())["latest"]["steps"]
+    except (OSError, ValueError, KeyError):
+        return []
+
+
+def local_exit(code: int, timings: Path) -> int:
+    return step_exit(code, any(step["status"] for step in local_steps_of(timings)))
+
+
 def combine_codes(remote_code: int, local_code: int) -> int:
     """One exit code for the two halves: a gate that could not run (an infrastructure code of either
     half) outranks a step that failed."""
@@ -341,11 +392,41 @@ def combine_codes(remote_code: int, local_code: int) -> int:
 
 
 def append_remote_output(log: Path, remote_log: Path, host: str) -> None:
-    """The host's output, after the run, in the log (see `split_gate`): each half's lines stay whole."""
-    note(log, f"output of {host}:")
-    with log.open("ab") as handle:
-        handle.write(remote_log.read_bytes())
-    remote_log.unlink()
+    """The host's output, after the run, in the log (see `split_gate`): each half's lines stay whole.
+    A log that cannot be written must not hide how the run ended or leave the bundle on the host."""
+    try:
+        note(log, f"output of {host}:")
+        with log.open("ab") as handle:
+            output = remote_log.read_bytes()
+            handle.write(output if output.endswith(b"\n") or not output else output + b"\n")
+        remote_log.unlink()
+    except OSError:
+        pass  # the log is what failed; the exit code and the step times still say how the run ended
+
+
+def wait_remote(process: subprocess.Popen) -> int:
+    """The exit code of the host's run, as the run's failure when a step failed (see `step_exit`)."""
+    code = wait_process(process)
+    return step_exit(code, process.pump.failed)
+
+
+def run_halves(remote_process: subprocess.Popen, start_local, concurrent: bool,
+               abandon_when_host_fails: bool) -> tuple[int, int, bool]:
+    """Wait for the host's run and the local one: their exit codes, and whether the local run was
+    stopped (the host could not run the gate and `abandon_when_host_fails`). Sequentially the host
+    comes first and a failure there ends the run."""
+    if not concurrent:
+        remote_code = wait_remote(remote_process)
+        local_process = start_local() if not remote_code else None
+        return remote_code, wait_process(local_process) if local_process else 0, False
+    local_process = start_local()
+    try:
+        remote_code = wait_remote(remote_process)
+        if abandon_when_host_fails and local_process and remote_code in HOST_DID_NOT_RUN:
+            return remote_code, 0, True  # the caller's `finally` stops it
+        return remote_code, wait_process(local_process) if local_process else 0, False
+    finally:
+        stop_processes([remote_process, local_process])
 
 
 def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None, timings: Path,
@@ -371,14 +452,17 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
     timings.unlink(missing_ok=True)
     local_timings = timings.with_name(timings.name + ".local")
     local_timings.unlink(missing_ok=True)
-    processes: dict[str, subprocess.Popen | None] = {"remote": None, "local": None}
     pump: Pump | None = None
     bundle = None
     remote_code = local_code = 0
     abandoned = False
     remote_log = log.with_name(log.name + ".remote") if concurrent and log not in (None, TO_STDOUT) else None
+    if remote_log:
+        remote_log.unlink(missing_ok=True)  # a killed run's leftover is not part of this one
 
-    def start_local() -> subprocess.Popen:
+    def start_local() -> subprocess.Popen | None:
+        if not local_ids:
+            return None
         return start_local_steps(worktree, tier, base, ",".join(local_ids), event, log, local_timings, command)
 
     try:
@@ -390,44 +474,30 @@ def split_gate(worktree: Path, base: str | None, only: str | None, log: Path | N
                 return INFRASTRUCTURE_EXIT, []
             arguments = remote_gate_arguments(remote, sha, remote_ids, base, bundle, engine_test_args)
             with opened(remote_log or log) as output:
-                processes["remote"] = start_remote(remote.ssh(arguments), worktree, output)
-                pump = processes["remote"].pump
+                process = start_remote(remote.ssh(arguments), worktree, output)
+                pump = process.pump
                 try:
-                    if concurrent:
-                        processes["local"] = start_local() if local_ids else None
-                    else:
-                        remote_code, processes["remote"] = wait_process(processes["remote"]), None
-                        if not remote_code and local_ids:
-                            local_code = wait_process(start_local())
-                    if processes["remote"]:
-                        remote_code, processes["remote"] = wait_process(processes["remote"]), None
-                    if processes["local"]:
-                        if abandon_when_host_fails and remote_code in HOST_DID_NOT_RUN:
-                            stop_process(processes["local"])
-                            processes["local"], abandoned = None, True
-                        else:
-                            local_code, processes["local"] = wait_process(processes["local"]), None
+                    remote_code, local_code, abandoned = run_halves(
+                        process, start_local, concurrent, abandon_when_host_fails)
                 finally:
-                    for running in processes.values():  # an interrupt: stop both runs while the log is open
-                        if running:
-                            stop_process(running)
+                    stop_processes([process])
         elif local_ids:
-            local_code = wait_process(start_local())
+            local_code = wait_process(start_local())  # local_ids is not empty, so there is a run to wait for
     finally:
-        if remote_log and remote_log.exists():
-            append_remote_output(log, remote_log, remote.host)
-        if bundle:
-            drop_bundle(remote, bundle)
+        try:
+            if remote_log and remote_log.exists():
+                append_remote_output(log, remote_log, remote.host)
+        finally:
+            if bundle:
+                drop_bundle(remote, bundle)
     for line in pump.skipped if pump else []:
         note(log, f"WARNING: {remote.host} ran with less than its steps name; {line}")
     steps = []
     if remote_ids and remote_code not in (SSH_FAILED_EXIT, REMOTE_BUSY_EXIT, INFRASTRUCTURE_EXIT):
         steps = [{**step, "host": remote.host} for step in remote_steps_timings(remote)]
-    try:
-        steps += [] if abandoned else json.loads(local_timings.read_text())["latest"]["steps"]
-    except (OSError, ValueError, KeyError):
-        pass  # a gate that failed to start has no timings; the exit code says so
-    return combine_codes(remote_exit(remote, remote_code, log), local_code), steps
+    local_steps = [] if abandoned else local_steps_of(local_timings)
+    local_code = step_exit(local_code, any(step["status"] for step in local_steps))
+    return combine_codes(remote_exit(remote, remote_code, log), local_code), steps + local_steps
 
 
 def run_split_gate(worktree: Path, base: str | None, only: str | None, log: Path | None,
