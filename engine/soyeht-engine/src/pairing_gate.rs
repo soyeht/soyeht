@@ -19,7 +19,9 @@ use crate::{
 };
 use serde_json::Value;
 use soyeht_platform::log;
-use soyeht_protocol::{HelloParams, PairBeginParams, PairProveParams, method};
+use soyeht_protocol::{
+    DevicePairTailnetChangedEvent, HelloParams, PairBeginParams, PairProveParams, event, method,
+};
 use soyeht_store::pairing_nodes;
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
@@ -174,9 +176,35 @@ fn check_tailnet_pin(core: &mut Core, identity: &Identity) -> Result<()> {
             Ok(())
         }
         Some(_) => {
-            core.pairing.unconfirmed = Some(identity.clone());
+            // The person's window is told the first time a change waits, and again for another one.
+            if core.pairing.unconfirmed.as_ref() != Some(identity) {
+                core.pairing.unconfirmed = Some(identity.clone());
+                tell_windows_of_tailnet_change(core);
+            }
             Err(refused(core, Refusal::TailnetChanged))
         }
+    }
+}
+
+/// Tells the person's own connections that a pairing waits for the tailnet change to be confirmed,
+/// so that a pairing sheet that is open says so. A paired device is not told: what it can do about
+/// it is nothing, and it is no business of its own.
+fn tell_windows_of_tailnet_change(core: &Core) {
+    let told = model::to_value(&DevicePairTailnetChangedEvent {
+        tailnet_changed: true,
+    })
+    .and_then(|params| model::notification(event::DEVICE_PAIR_TAILNET_CHANGED, params));
+    match told {
+        Ok(frame) => {
+            for client in core
+                .clients
+                .values()
+                .filter(|client| client.local && client.events && client.actor.is_some())
+            {
+                client.outbox.send(frame.clone());
+            }
+        }
+        Err(error) => log::failure("engine.pair_tailnet_event_failed", &error),
     }
 }
 

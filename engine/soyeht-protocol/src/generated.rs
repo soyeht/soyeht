@@ -1255,6 +1255,11 @@ pub struct DevicePairedEvent {
     pub device: Device,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePairTailnetChangedEvent {
+    #[serde(rename = "tailnetChanged")]
+    pub tailnet_changed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokedEvent {
     #[serde(rename = "eventId")]
     pub event_id: Decimal,
@@ -7671,6 +7676,8 @@ pub enum EventName {
     DevicePaired,
     #[serde(rename = "device.revoked")]
     DeviceRevoked,
+    #[serde(rename = "device.pair_tailnet_changed")]
+    DevicePairTailnetChanged,
     #[serde(rename = "pair.result")]
     PairResult,
     #[serde(rename = "engine.updating")]
@@ -7811,6 +7818,7 @@ impl EventName {
             Self::DevicePairRequested => "device.pair_requested",
             Self::DevicePaired => "device.paired",
             Self::DeviceRevoked => "device.revoked",
+            Self::DevicePairTailnetChanged => "device.pair_tailnet_changed",
             Self::PairResult => "pair.result",
             Self::EngineUpdating => "engine.updating",
             Self::EngineRestarted => "engine.restarted",
@@ -7960,6 +7968,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::DeviceRevoked,
         params_type: "DeviceRevokedEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::DevicePairTailnetChanged,
+        params_type: "DevicePairTailnetChangedEvent",
+        durable: false,
     },
     EventDescriptor {
         name: EventName::PairResult,
@@ -8393,6 +8406,9 @@ pub struct DeviceRevokedDraft {
 }
 impl EventParams for DeviceRevokedDraft {
     const NAME: EventName = EventName::DeviceRevoked;
+}
+impl EventParams for DevicePairTailnetChangedEvent {
+    const NAME: EventName = EventName::DevicePairTailnetChanged;
 }
 impl EventParams for PairResultEvent {
     const NAME: EventName = EventName::PairResult;
@@ -9277,6 +9293,7 @@ pub mod event {
     pub const DEVICE_PAIR_REQUESTED: &str = "device.pair_requested";
     pub const DEVICE_PAIRED: &str = "device.paired";
     pub const DEVICE_REVOKED: &str = "device.revoked";
+    pub const DEVICE_PAIR_TAILNET_CHANGED: &str = "device.pair_tailnet_changed";
     pub const PAIR_RESULT: &str = "pair.result";
     pub const ENGINE_UPDATING: &str = "engine.updating";
     pub const ENGINE_RESTARTED: &str = "engine.restarted";

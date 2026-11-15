@@ -364,6 +364,7 @@ pub(super) fn pairing_sheet(
         return None;
     }
     let extent = sheet_extent((wb.window.width, wb.window.height));
+    let connected = wb.state.connection == Connection::Connected;
     let phase = wb.state.pairing.phase().clone();
     let remaining = wb.state.pairing.remaining(timestamp::now());
     let requests: Vec<Request> = wb.state.pairing.requests().to_vec();
@@ -390,6 +391,8 @@ pub(super) fn pairing_sheet(
         subtitle,
         close,
     ));
+    let waiting = wb.state.pairing.tailnet_changed().then_some(connected);
+    card = card.children(tailnet_notice(waiting, palette, cx));
     for request in &requests {
         card = card.child(request_card(wb, request, offers_code, palette, cx));
     }
@@ -403,6 +406,28 @@ pub(super) fn pairing_sheet(
             .child(card)
             .into_any_element(),
     )
+}
+
+/// What the engine says when it refused a pairing because the tailnet changed: the words, and the
+/// action that confirms it (ADR 0164), which is offered while the window is connected (`waiting`
+/// says whether it is). A phone cannot pair until the person does.
+fn tailnet_notice(
+    waiting: Option<bool>,
+    palette: &'static Palette,
+    cx: &mut Context<Workbench>,
+) -> Option<AnyElement> {
+    waiting.map(|connected| {
+        well_card(palette)
+            .child(warning(palette, copy::TAILNET_CHANGED))
+            .child(action(
+                cx,
+                palette,
+                "pairing-confirm-tailnet".into(),
+                (Role::Primary, copy::CONFIRM_TAILNET),
+                (connected, |this, cx| ui::confirm_tailnet(this, cx)),
+            ))
+            .into_any_element()
+    })
 }
 
 /// What the sheet shows of the window: the code, why there is none, or that it ran out.

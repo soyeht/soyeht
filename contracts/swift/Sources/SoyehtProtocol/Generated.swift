@@ -1562,6 +1562,13 @@ public struct DevicePairedEvent: Codable, Sendable {
     }
 }
 
+public struct DevicePairTailnetChangedEvent: Codable, Sendable {
+    public var `tailnetChanged`: Bool
+    public init(`tailnetChanged`: Bool) {
+        self.`tailnetChanged` = `tailnetChanged`
+    }
+}
+
 public struct DeviceRevokedEvent: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
@@ -8080,6 +8087,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case devicePairRequested = "device.pair_requested"
     case devicePaired = "device.paired"
     case deviceRevoked = "device.revoked"
+    case devicePairTailnetChanged = "device.pair_tailnet_changed"
     case pairResult = "pair.result"
     case engineUpdating = "engine.updating"
     case engineRestarted = "engine.restarted"
@@ -8168,6 +8176,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .devicePairRequested: EventDescriptor(paramsType: "DevicePairRequestedEvent", durable: true),
     .devicePaired: EventDescriptor(paramsType: "DevicePairedEvent", durable: true),
     .deviceRevoked: EventDescriptor(paramsType: "DeviceRevokedEvent", durable: true),
+    .devicePairTailnetChanged: EventDescriptor(paramsType: "DevicePairTailnetChangedEvent", durable: false),
     .pairResult: EventDescriptor(paramsType: "PairResultEvent", durable: false),
     .engineUpdating: EventDescriptor(paramsType: "EngineUpdatingEvent", durable: true),
     .engineRestarted: EventDescriptor(paramsType: "EngineRestartedEvent", durable: true),

@@ -46,6 +46,9 @@ pub const PHONE_SHOWS_NO_CODE: &str = "If your phone shows no code, update Soyeh
 pub const MALFORMED_CODE: &str = "Type the six digits your phone shows.";
 pub const REQUEST_GONE: &str =
     "This request is not waiting any more: it was decided, denied or it expired.";
+/// A pairing was refused because Tailscale is not what this computer paired with before.
+pub const TAILNET_CHANGED: &str = "A pairing was refused: this computer's Tailscale is not the one it paired phones with before (its tailnet or its key changed). If you changed it yourself, confirm it and scan the new code. If you did not, do not confirm.";
+pub const CONFIRM_TAILNET: &str = "Confirm this tailnet";
 pub const REVOKE_FAILED: &str = "Soyeht could not revoke this device.";
 /// The notice of a device added, which stays until the person dismisses it.
 pub const NOTICE_TITLE: &str = "A device was added";

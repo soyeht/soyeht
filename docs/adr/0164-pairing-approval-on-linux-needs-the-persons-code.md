@@ -463,8 +463,11 @@ the text above in these places.
 - **The desktop** shows `addedAt` and `node` in the device list, the notice with Dismiss, and the
   revoke dialog's list of panes with the choice to close them (the dialog says that a process that
   detached itself keeps running). A pane the device made that was already closed is not listed.
-- **The visible notice of a changed tailnet** is not part of this slice: the desktop's
-  confirmation of `tailnetChanged` follows it.
+- **The visible notice of a changed tailnet** is a transient event, `device.pair_tailnet_changed`,
+  sent to the person's own connections (not to a paired device) the first time a change waits and
+  again for another one, so that a sheet that is already open says so: the answer of `device.pair.start`
+  only states it for a sheet opened after the refusal. The desktop shows it with the action that
+  confirms (`device.pair.start {confirmTailnet: true}`), which opens a new window.
 
 ## Slices
 

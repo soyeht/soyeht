@@ -15,7 +15,7 @@ use crate::{
     test_hooks::{FIXTURE_NODE_KEY, FIXTURE_PHONE_NODE, FIXTURE_TAILNET, fixture_identity},
 };
 use ed25519_dalek::Signer as _;
-use soyeht_protocol::ErrorKind;
+use soyeht_protocol::{ErrorKind, frame::Frame};
 use soyeht_store::pairing_nodes;
 use std::{
     net::IpAddr,
@@ -464,6 +464,59 @@ async fn a_changed_tailnet_is_refused_until_the_person_confirms_it() {
     assert!(begin(&mut rig, &phone, &window, "Test phone", 15).is_ok());
     let pinned = pairing_nodes::pinned(&rig.core.store).unwrap().unwrap();
     assert_eq!(pinned.node_key, "nodekey:other");
+}
+
+#[tokio::test]
+async fn a_window_that_is_open_is_told_once_that_a_changed_tailnet_waits_and_a_device_is_not() {
+    let (mut rig, app, window) = rig_with_window();
+    let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+    assert!(begin(&mut rig, &phone, &window, "Test phone", 18).is_ok());
+    // The app listens for events, and so does a paired device.
+    rig.call(&app, "events.subscribe", json!({"since":"0"}))
+        .unwrap();
+    let (outbox, mut device_events) = outbox::channel();
+    let device = rig.core.connect(false, false, outbox).unwrap();
+    rig.core.clients.get_mut(&device).unwrap().events = true;
+    rig.core.clients.get_mut(&device).unwrap().actor = Some(soyeht_protocol::Actor {
+        role: Role::HumanDevice,
+        client: "phone".into(),
+        device_id: Some("d1".into()),
+        pane_id: None,
+    });
+    rig.notifications(&app).await;
+    rig.peers
+        .set_identity(Some(fixture_identity("attacker.example", FIXTURE_NODE_KEY)));
+    for seed in [19, 20] {
+        let window = rig.open_window(&app);
+        let phone = tailnet_peer(&mut rig, &phone_address().to_string());
+        refused_with(
+            &begin(&mut rig, &phone, &window, "Test phone", seed),
+            Refusal::TailnetChanged,
+        );
+    }
+    // Two refusals of one change: the window hears of it once, with what the answer to
+    // `device.pair.start` states.
+    let heard = rig.notifications(&app).await;
+    let told: Vec<_> = heard
+        .iter()
+        .filter(|message| message["method"] == "device.pair_tailnet_changed")
+        .collect();
+    assert_eq!(told.len(), 1, "{heard:?}");
+    assert_eq!(told[0]["params"], json!({"tailnetChanged": true}));
+    let mut device_heard = vec![];
+    while let Ok(Ok(Some(packet))) =
+        tokio::time::timeout(std::time::Duration::from_millis(30), device_events.next()).await
+    {
+        if let Frame::Json(bytes) = packet.frame {
+            device_heard.push(String::from_utf8(bytes).unwrap());
+        }
+    }
+    assert!(
+        device_heard
+            .iter()
+            .all(|frame| !frame.contains("device.pair_tailnet_changed")),
+        "a paired device is not told: {device_heard:?}"
+    );
 }
 
 #[tokio::test]

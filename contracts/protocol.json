@@ -2376,6 +2376,19 @@
       ],
       "additionalProperties": true
     },
+    "DevicePairTailnetChangedEvent": {
+      "type": "object",
+      "properties": {
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True: a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (ADR 0164). It is the same fact `tailnetChanged` of the answer to `device.pair.start` states, told to a window that is already open."
+        }
+      },
+      "required": [
+        "tailnetChanged"
+      ],
+      "additionalProperties": true
+    },
     "DeviceRevokedEvent": {
       "type": "object",
       "properties": {
@@ -14601,6 +14614,12 @@
         "$ref": "#/$defs/DeviceRevokedEvent"
       },
       "durable": true
+    },
+    "device.pair_tailnet_changed": {
+      "params": {
+        "$ref": "#/$defs/DevicePairTailnetChangedEvent"
+      },
+      "durable": false
     },
     "pair.result": {
       "params": {
