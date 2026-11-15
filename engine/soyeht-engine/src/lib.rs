@@ -42,6 +42,7 @@ pub mod pairing_peers;
 pub mod pane_observations;
 mod pane_restore;
 pub mod panes;
+mod png;
 pub mod ports;
 mod process_start;
 pub mod project_trust;

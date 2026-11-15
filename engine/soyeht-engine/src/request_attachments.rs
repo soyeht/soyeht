@@ -1,8 +1,10 @@
 //! The binary attachments a request carried, committed before its stored result is looked up.
 //!
 //! A client sends the bytes of an attachment as frames that come before the request naming them.
-//! Whatever the request's outcome, they are taken out of the connection here, so a refused request
-//! leaves nothing pending for the next one.
+//! Once a request reaches this step the frames are taken out of the connection whatever comes after
+//! (a request that is then refused or repeated leaves nothing pending). A request refused before it,
+//! by the schema or by the role of the caller, never gets here: `Core::dispatch` drops the frames
+//! when it returns an error.
 use crate::{
     agents::attachments::PreparedAttachment,
     avatars::AvatarPicture,

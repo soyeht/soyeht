@@ -100,6 +100,8 @@ pub enum Error {
     InvalidAdapterAcknowledgement,
     InvalidProjectTrust,
     InvalidAvatar,
+    AvatarInUse,
+    StaleAvatarBinding,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -206,6 +208,8 @@ impl fmt::Display for Error {
             Self::InvalidAdapterAcknowledgement => f.write_str("invalid adapter acknowledgement"),
             Self::InvalidProjectTrust => f.write_str("invalid project trust"),
             Self::InvalidAvatar => f.write_str("invalid avatar"),
+            Self::AvatarInUse => f.write_str("an open workspace has this avatar"),
+            Self::StaleAvatarBinding => f.write_str("the avatar binding changed since it was read"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -220,7 +224,8 @@ impl From<&Error> for ErrorKind {
             Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
             Error::CursorTooOld => ErrorKind::CursorTooOld,
             Error::DiskFull => ErrorKind::DiskFull,
-            Error::TaskVersionConflict => ErrorKind::StaleVersion,
+            Error::TaskVersionConflict | Error::StaleAvatarBinding => ErrorKind::StaleVersion,
+            Error::AvatarInUse => ErrorKind::PaneBusy,
             Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
             Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
             Error::SubitemNotFound => ErrorKind::NotFound,

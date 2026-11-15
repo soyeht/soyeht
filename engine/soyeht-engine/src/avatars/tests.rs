@@ -3,7 +3,6 @@
 use super::*;
 use crate::{outbox, test_panes};
 use soyeht_protocol::{Actor, ErrorKind, Role, attachment::attachment_header};
-use std::sync::Arc;
 
 type Answer = std::result::Result<Outcome, errors::Error>;
 
@@ -13,23 +12,33 @@ struct Rig {
     local: String,
 }
 
-/// The first bytes of a PNG file and a few more: what the library checks, and no image.
-fn png(extra: u8) -> Vec<u8> {
-    let mut bytes = PNG_SIGNATURE.to_vec();
-    bytes.extend_from_slice(&[extra; 24]);
+/// A PNG header of the size given, with a few bytes after it: what the library checks, and no image.
+fn png_of(width: u32, height: u32, extra: u8) -> Vec<u8> {
+    let mut bytes = png::header_of(width, height);
+    bytes.extend_from_slice(&[extra; 16]);
     bytes
+}
+
+fn png(extra: u8) -> Vec<u8> {
+    png_of(64, 48, extra)
+}
+
+/// A core on `directory`, whose background work runs at once.
+fn boot(directory: &Path) -> Core {
+    let mut core = Core::open(directory).unwrap();
+    core.background = crate::offload::Background::inline();
+    core.link_supervisor(Box::new(test_panes::Answering(|_| {
+        Ok(soyeht_ptyd::wire::Response::Ok)
+    })));
+    core
 }
 
 impl Rig {
     fn new() -> Self {
         let directory = std::env::temp_dir().join(format!("soyeht-avatars-{}", Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
-        let mut core = Core::open(&directory).unwrap();
-        core.link_supervisor(Box::new(test_panes::Answering(|_| {
-            Ok(soyeht_ptyd::wire::Response::Ok)
-        })));
         let mut rig = Self {
-            core,
+            core: boot(&directory),
             directory,
             local: String::new(),
         };
@@ -37,7 +46,15 @@ impl Rig {
         rig
     }
 
-    /// A connection that has said `hello`: the person at the computer, or a paired device.
+    /// The engine stops and starts again on the same data.
+    fn restart(&mut self) {
+        let local = self.local.clone();
+        self.core.disconnect(&local).unwrap();
+        self.core = boot(&self.directory);
+        self.local = self.connect(Role::HumanLocal, None);
+    }
+
+    /// A connection that has said `hello`: the person at the computer, or another role.
     fn connect(&mut self, role: Role, device: Option<&str>) -> String {
         let (outbox, receiver) = outbox::channel();
         // The test never reads this connection's notifications.
@@ -88,13 +105,10 @@ impl Rig {
         let id = Uuid::new_v4().to_string();
         let header = attachment_header(&id).unwrap();
         let local = self.local.clone();
-        self.core
-            .clients
-            .get_mut(&local)
-            .unwrap()
-            .attachments
-            .push(header, bytes)
-            .unwrap();
+        let attachments = &mut self.core.clients.get_mut(&local).unwrap().attachments;
+        for chunk in bytes.chunks(limits::ATTACHMENT_PAYLOAD_BYTES) {
+            attachments.push(header, chunk).unwrap();
+        }
         json!({"attachmentId": id, "mimeType": "image/png", "name": "face.png",
                "bytes": bytes.len().to_string()})
     }
@@ -127,13 +141,25 @@ impl Rig {
             .to_owned()
     }
 
-    fn assign(&mut self, workspace: &str, avatar: &str, extra: Value) -> Result<Value> {
-        let mut params =
-            json!({"workspaceId": workspace, "avatarId": avatar, "harness": "claude-code"});
+    fn assign_as(
+        &mut self,
+        connection: &str,
+        workspace: &str,
+        avatar: &str,
+        base: &str,
+        extra: Value,
+    ) -> Result<Value> {
+        let mut params = json!({"workspaceId": workspace, "avatarId": avatar,
+            "harness": "claude-code", "baseRevision": base});
         for (key, value) in extra.as_object().unwrap() {
             params[key] = value.clone();
         }
-        self.call("avatar.assign", params)
+        self.call_as(connection, "avatar.assign", params)
+    }
+
+    fn assign(&mut self, workspace: &str, avatar: &str, base: &str, extra: Value) -> Result<Value> {
+        let connection = self.local.clone();
+        self.assign_as(&connection, workspace, avatar, base, extra)
     }
 
     /// The `avatar.changed` events written so far, as their parameters.
@@ -155,22 +181,8 @@ impl Rig {
             .collect()
     }
 
-    /// Puts an avatar in a state no call of this slice reaches: the builder's (slice 9).
-    fn force_state(&self, avatar: &str, state: &str, failure: Option<&str>) {
-        let hash = "b".repeat(64);
-        soyeht_store::test_support::DatabaseProbe::open(&self.directory)
-            .unwrap()
-            .set_avatar_build(
-                avatar,
-                state,
-                failure,
-                (state == "ready").then_some(hash.as_str()),
-            )
-            .unwrap();
-    }
-
-    fn package(&self, avatar: &str) -> PathBuf {
-        avatar_directory(&self.core, avatar).join(PACKAGE_DIRECTORY)
+    fn folder(&self, avatar: &str) -> PathBuf {
+        avatar_directory(&self.core, avatar)
     }
 }
 
@@ -185,14 +197,25 @@ fn kind(answer: &Result<Value>) -> ErrorKind {
 }
 
 #[test]
-fn an_avatar_is_made_from_a_picture_and_is_listed_with_nothing_built() {
+fn an_avatar_is_made_from_a_picture_and_is_listed() {
     let mut rig = Rig::new();
-    let avatar = rig.avatar("  Sabio ");
+    let picture = rig.upload(&png(1));
+    let made = rig
+        .call(
+            "avatar.create",
+            json!({"name": "  Sabio ", "kind": "generated", "picture": picture,
+                   "imageProvider": "a-provider", "imageModel": "a-model"}),
+        )
+        .unwrap();
+    let avatar: Avatar = serde_json::from_value(made["avatar"].clone()).unwrap();
     assert_eq!(avatar.name, "Sabio");
-    assert_eq!(avatar.build_state, AvatarBuildState::None);
     assert_eq!(avatar.source_hash, hex_digest(&png(1)));
-    let source = avatar_directory(&rig.core, &avatar.avatar_id).join(SOURCE_FILE);
-    assert_eq!(std::fs::read(source).unwrap(), png(1));
+    assert_eq!(avatar.image_provider.as_deref(), Some("a-provider"));
+    assert_eq!(avatar.image_model.as_deref(), Some("a-model"));
+    assert_eq!(
+        std::fs::read(rig.folder(&avatar.avatar_id).join(SOURCE_FILE)).unwrap(),
+        png(1)
+    );
     let listed = rig.call("avatar.list", json!({})).unwrap();
     assert_eq!(listed["avatars"][0]["avatarId"], avatar.avatar_id);
     assert_eq!(listed["bindings"], json!([]));
@@ -203,57 +226,119 @@ fn an_avatar_is_made_from_a_picture_and_is_listed_with_nothing_built() {
 }
 
 #[test]
-fn a_picture_that_is_not_a_png_or_a_name_with_nothing_in_it_makes_nothing() {
+fn a_picture_that_is_not_a_png_of_a_size_the_library_takes_makes_nothing() {
     let mut rig = Rig::new();
-    let refused = rig.create("Sabio", b"GIF89a not a png");
+    let side = u32::try_from(limits::AVATAR_PICTURE_DIMENSION).unwrap();
+    let signature_only = b"\x89PNG\r\n\x1a\n\0".to_vec();
+    for (label, bytes) in [
+        ("a GIF", b"GIF89a not a png".to_vec()),
+        ("the signature and nothing else", signature_only),
+        ("no width", png_of(0, 48, 1)),
+        ("no height", png_of(64, 0, 1)),
+        ("a width over the limit", png_of(side + 1, 48, 1)),
+        ("a height over the limit", png_of(64, side + 1, 1)),
+    ] {
+        let refused = rig.create("Sabio", &bytes);
+        assert_eq!(kind(&refused), ErrorKind::InvalidParams, "{label}");
+    }
+    let mut jpeg = rig.upload(&png(1));
+    jpeg["mimeType"] = json!("image/jpeg");
+    let refused = rig.call(
+        "avatar.create",
+        json!({"name": "Sabio", "kind": "uploaded", "picture": jpeg}),
+    );
     assert_eq!(kind(&refused), ErrorKind::InvalidParams);
     assert_eq!(kind(&rig.create("   ", &png(1))), ErrorKind::InvalidParams);
-    let mut empty = rig.upload(&png(1));
-    empty["mimeType"] = json!("image/jpeg");
-    let jpeg = rig.call(
-        "avatar.create",
-        json!({"name": "Sabio", "kind": "uploaded", "picture": empty}),
-    );
-    assert_eq!(kind(&jpeg), ErrorKind::InvalidParams);
-    let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(listed["avatars"], json!([]));
-    assert!(rig.changes().is_empty());
-    assert!(
-        !rig.directory.join(AVATARS_DIRECTORY).exists()
-            || std::fs::read_dir(rig.directory.join(AVATARS_DIRECTORY))
-                .unwrap()
-                .next()
-                .is_none()
-    );
-    // What was sent and refused is not left for the next request.
-    assert!(rig.call("avatar.list", json!({})).is_ok());
-}
-
-#[test]
-fn a_picture_over_the_limit_is_refused() {
-    let mut rig = Rig::new();
-    let mut big = PNG_SIGNATURE.to_vec();
-    big.resize(limits::AVATAR_PICTURE_BYTES + 1, 0);
-    // The connection takes at most the largest attachment the contract names, so the transfer may
-    // fail on its own: either way, nothing is made.
-    let id = Uuid::new_v4().to_string();
-    let local = rig.local.clone();
-    let header = attachment_header(&id).unwrap();
-    let client = rig.core.clients.get_mut(&local).unwrap();
-    for chunk in big.chunks(limits::ATTACHMENT_PAYLOAD_BYTES) {
-        client.attachments.push(header, chunk).unwrap();
+    for refused_kind in ["preset", "hologram"] {
+        let picture = rig.upload(&png(1));
+        let refused = rig.call(
+            "avatar.create",
+            json!({"name": "Sabio", "kind": refused_kind, "picture": picture}),
+        );
+        assert_eq!(kind(&refused), ErrorKind::InvalidParams, "{refused_kind}");
     }
-    let picture = json!({"attachmentId": id, "mimeType": "image/png", "name": "big.png",
-                         "bytes": big.len().to_string()});
-    let made = rig.call(
-        "avatar.create",
-        json!({"name": "Big", "kind": "uploaded", "picture": picture}),
-    );
-    assert!(made.is_err());
     assert_eq!(
         rig.call("avatar.list", json!({})).unwrap()["avatars"],
         json!([])
     );
+    assert!(rig.changes().is_empty());
+    let leftovers = std::fs::read_dir(rig.directory.join(AVATARS_DIRECTORY))
+        .map_or(0, |entries| entries.count());
+    assert_eq!(leftovers, 0);
+}
+
+#[test]
+fn a_picture_that_never_arrived_or_is_too_large_is_refused_with_the_kind_the_contract_names() {
+    let mut rig = Rig::new();
+    // Named in the request, and never sent.
+    let missing = json!({"attachmentId": Uuid::new_v4().to_string(), "mimeType": "image/png",
+                         "name": "face.png", "bytes": "64"});
+    let never = rig.call(
+        "avatar.create",
+        json!({"name": "Sabio", "kind": "uploaded", "picture": missing}),
+    );
+    assert_eq!(kind(&never), ErrorKind::InvalidParams);
+    // Sent, but not what the request says it is.
+    let mut short = rig.upload(&png(1));
+    short["bytes"] = json!("999");
+    let wrong_size = rig.call(
+        "avatar.create",
+        json!({"name": "Sabio", "kind": "uploaded", "picture": short}),
+    );
+    assert_eq!(kind(&wrong_size), ErrorKind::InvalidParams);
+    // Over the library's limit, and under the connection's.
+    let mut big = png(1);
+    big.resize(limits::AVATAR_PICTURE_BYTES + 1, 0);
+    assert_eq!(
+        kind(&rig.create("Big", &big)),
+        ErrorKind::AttachmentLimitExceeded
+    );
+    // Over what the connection takes at all.
+    let mut huge = png(1);
+    huge.resize(limits::PROMPT_ATTACHMENT_TOTAL_BYTES + 1, 0);
+    assert_eq!(
+        kind(&rig.create("Huge", &huge)),
+        ErrorKind::AttachmentLimitExceeded
+    );
+    assert_eq!(
+        rig.call("avatar.list", json!({})).unwrap()["avatars"],
+        json!([])
+    );
+}
+
+#[test]
+fn a_request_the_schema_refuses_after_its_frames_were_sent_leaves_nothing_pending() {
+    let mut rig = Rig::new();
+    // An avatar.create refused by the schema (a name past the limit).
+    let picture = rig.upload(&png(1));
+    let long_name = "x".repeat(limits::AVATAR_NAME_CHARS + 1);
+    let refused = rig.call(
+        "avatar.create",
+        json!({"name": long_name, "kind": "uploaded", "picture": picture}),
+    );
+    assert_eq!(kind(&refused), ErrorKind::InvalidParams);
+    assert!(rig.call("avatar.list", json!({})).is_ok());
+    // The same for the other users of attachment frames: a prompt and a writing image.
+    for method in ["pane.prompt", "writing.format"] {
+        rig.upload(&png(2));
+        let refused = rig.call(method, json!({}));
+        assert_eq!(kind(&refused), ErrorKind::InvalidParams, "{method}");
+        assert!(rig.call("avatar.list", json!({})).is_ok(), "after {method}");
+    }
+    // A role that may not call it gets the same treatment.
+    let agent = rig.connect(Role::Agent, None);
+    let id = Uuid::new_v4().to_string();
+    let header = attachment_header(&id).unwrap();
+    rig.core
+        .clients
+        .get_mut(&agent)
+        .unwrap()
+        .attachments
+        .push(header, b"bytes")
+        .unwrap();
+    let forbidden = rig.call_as(&agent, "avatar.list", json!({}));
+    assert_eq!(kind(&forbidden), ErrorKind::ForbiddenRole);
+    assert!(!rig.core.clients[&agent].attachments.is_pending());
 }
 
 #[test]
@@ -266,19 +351,15 @@ fn the_same_picture_sent_again_with_the_same_key_is_one_avatar() {
         made.push(
             rig.call(
                 "avatar.create",
-                json!({"name": "Sabio", "kind": "generated", "picture": picture, "idempotencyKey": key}),
+                json!({"name": "Sabio", "kind": "generated", "picture": picture,
+                       "idempotencyKey": key}),
             )
             .unwrap(),
         );
     }
     assert_eq!(made[0], made[1]);
-    assert_eq!(
-        rig.call("avatar.list", json!({})).unwrap()["avatars"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["avatars"].as_array().unwrap().len(), 1);
     // Another picture under the same key is another request.
     let picture = rig.upload(&png(4));
     let other = rig.call(
@@ -292,19 +373,21 @@ fn the_same_picture_sent_again_with_the_same_key_is_one_avatar() {
 fn the_library_holds_the_most_the_contract_says() {
     let mut rig = Rig::new();
     for index in 0..limits::AVATAR_COUNT {
-        let connection = rig.local.clone();
-        let picture = rig.upload(&png(1));
-        rig.call_as(
-            &connection,
-            "avatar.create",
-            json!({"name": format!("Avatar {index}"), "kind": "uploaded", "picture": picture}),
-        )
-        .unwrap();
+        rig.create(&format!("Avatar {index}"), &png(1)).unwrap();
     }
     assert_eq!(
         kind(&rig.create("One more", &png(1))),
         ErrorKind::InvalidParams
     );
+}
+
+#[test]
+fn two_avatars_may_have_the_same_name() {
+    let mut rig = Rig::new();
+    let first = rig.avatar("Sabio");
+    let second = rig.avatar("Sabio");
+    assert_ne!(first.avatar_id, second.avatar_id);
+    assert_eq!(first.name, second.name);
 }
 
 #[test]
@@ -328,6 +411,23 @@ fn an_avatar_is_renamed_and_its_clients_are_told() {
     assert_eq!(kind(&blank), ErrorKind::InvalidParams);
 }
 
+/// Every file the database keeps, joined: the main file, the write-ahead log and the index of it.
+fn database_bytes(directory: &Path) -> Vec<u8> {
+    let mut all = Vec::new();
+    for entry in std::fs::read_dir(directory).unwrap().flatten() {
+        if entry.file_name().to_string_lossy().starts_with("soyeht.db") {
+            all.extend(std::fs::read(entry.path()).unwrap());
+        }
+    }
+    all
+}
+
+fn contains(haystack: &[u8], needle: &str) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle.as_bytes())
+}
+
 #[test]
 fn an_assigned_avatar_binds_the_workspace_and_a_key_in_the_request_is_never_kept() {
     let mut rig = Rig::new();
@@ -337,30 +437,33 @@ fn an_assigned_avatar_binds_the_workspace_and_a_key_in_the_request_is_never_kept
         .assign(
             &workspace,
             &avatar.avatar_id,
-            json!({"model": "a-model", "effort": "high", "persona": "Speak briefly.",
+            "0",
+            json!({"model": "a-model", "effort": "high", "persona": "persona-marker-text",
                    "hearing": {"providerId": "cloud", "language": "pt-BR", "apiKey": "sk-secret"},
                    "voice": {"providerId": "cloud", "voiceId": "v1", "token": "sk-secret"},
-                   "apiKey": "sk-secret", "voiceOn": true}),
+                   "apiKey": "sk-secret"}),
         )
         .unwrap();
     let binding = &bound["binding"];
     assert_eq!(binding["harness"], "claude-code");
-    assert_eq!(binding["persona"], "Speak briefly.");
-    assert_eq!(binding["voiceOn"], json!(["local"]));
+    assert_eq!(binding["persona"], "persona-marker-text");
+    assert_eq!(binding["revision"], "1");
     let listed = rig.call("avatar.list", json!({})).unwrap();
     assert_eq!(listed["bindings"][0], *binding);
-    // The provider keys went nowhere: not in the answer, not in an event, not in the database.
     let events = rig.changes();
     assert_eq!(events.last().unwrap()["workspaceId"], workspace);
     assert_eq!(events.last().unwrap()["binding"], *binding);
+    // The keys went nowhere: not in an answer, an event or what the database holds. The persona is
+    // found in the same bytes, so the search reads what holds the data.
     assert!(!listed.to_string().contains("sk-secret"));
     assert!(
         !serde_json::to_string(&events)
             .unwrap()
             .contains("sk-secret")
     );
-    let everything = std::fs::read(rig.directory.join("soyeht.db")).unwrap();
-    assert!(!String::from_utf8_lossy(&everything).contains("sk-secret"));
+    let stored = database_bytes(&rig.directory);
+    assert!(contains(&stored, "persona-marker-text"));
+    assert!(!contains(&stored, "sk-secret"));
 }
 
 #[test]
@@ -368,334 +471,182 @@ fn an_assignment_needs_an_open_workspace_and_an_avatar_of_the_library() {
     let mut rig = Rig::new();
     let avatar = rig.avatar("Sabio");
     let workspace = rig.workspace("project");
-    assert_eq!(
-        kind(&rig.assign("nobody", &avatar.avatar_id, json!({}))),
-        ErrorKind::NotFound
-    );
-    assert_eq!(
-        kind(&rig.assign(&workspace, "nobody", json!({}))),
-        ErrorKind::NotFound
-    );
+    let unknown_workspace = rig.assign("nobody", &avatar.avatar_id, "0", json!({}));
+    assert_eq!(kind(&unknown_workspace), ErrorKind::NotFound);
+    let unknown_avatar = rig.assign(&workspace, "nobody", "0", json!({}));
+    assert_eq!(kind(&unknown_avatar), ErrorKind::NotFound);
     rig.call("workspace.close", json!({"workspaceId": workspace}))
         .unwrap();
-    assert_eq!(
-        kind(&rig.assign(&workspace, &avatar.avatar_id, json!({}))),
-        ErrorKind::NotFound
-    );
+    let closed = rig.assign(&workspace, &avatar.avatar_id, "0", json!({}));
+    assert_eq!(kind(&closed), ErrorKind::NotFound);
 }
 
-/// A library of two avatars and one open workspace.
-fn rig_with_two_avatars_and_a_workspace() -> (Rig, Avatar, Avatar, String) {
+#[test]
+fn a_client_with_an_old_copy_cannot_overwrite_a_newer_binding() {
     let mut rig = Rig::new();
-    let first = rig.avatar("Sabio");
-    let second = rig.avatar("Other");
+    let avatar = rig.avatar("Sabio");
     let workspace = rig.workspace("project");
-    (rig, first, second, workspace)
-}
-
-#[test]
-fn voice_is_on_per_client_and_a_new_assignment_does_not_touch_the_others() {
-    let (mut rig, avatar, other, workspace) = rig_with_two_avatars_and_a_workspace();
     let phone = rig.connect(Role::HumanDevice, Some("phone-1"));
-    rig.assign(&workspace, &avatar.avatar_id, json!({"voiceOn": true}))
+    rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "0",
+        json!({"persona": "v1", "model": "m1"}),
+    )
+    .unwrap();
+    // The computer and the phone both read revision 1. The computer changes the persona.
+    let newer = rig
+        .assign(
+            &workspace,
+            &avatar.avatar_id,
+            "1",
+            json!({"persona": "v2", "model": "m1"}),
+        )
         .unwrap();
-    let from_phone = rig.call_as(
+    assert_eq!(newer["binding"]["revision"], "2");
+    // The phone writes from what it read: refused, and nothing changes.
+    let stale = rig.assign_as(
         &phone,
-        "avatar.assign",
-        json!({"workspaceId": workspace, "avatarId": avatar.avatar_id, "harness": "codex",
-               "voiceOn": true}),
+        &workspace,
+        &avatar.avatar_id,
+        "1",
+        json!({"persona": "v1"}),
     );
-    assert_eq!(
-        from_phone.unwrap()["binding"]["voiceOn"],
-        json!(["local", "phone-1"])
-    );
-    // Rebinding without `voiceOn` leaves every client as it was.
-    let rebound = rig.assign(&workspace, &other.avatar_id, json!({})).unwrap();
-    assert_eq!(rebound["binding"]["voiceOn"], json!(["local", "phone-1"]));
-    assert_eq!(rebound["binding"]["avatarId"], other.avatar_id);
-    // Only the caller's own entry follows `voiceOn: false`.
-    let off = rig
-        .assign(&workspace, &other.avatar_id, json!({"voiceOn": false}))
-        .unwrap();
-    assert_eq!(off["binding"]["voiceOn"], json!(["phone-1"]));
+    assert_eq!(kind(&stale), ErrorKind::StaleVersion);
     let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(listed["bindings"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["bindings"][0]["persona"], "v2");
+    assert_eq!(listed["bindings"][0]["model"], "m1");
+    assert_eq!(listed["bindings"][0]["revision"], "2");
+    // After it reads again, it writes.
+    let fresh = rig
+        .assign_as(
+            &phone,
+            &workspace,
+            &avatar.avatar_id,
+            "2",
+            json!({"persona": "v3"}),
+        )
+        .unwrap();
+    assert_eq!(fresh["binding"]["revision"], "3");
+    // A first assignment that thinks the workspace already has one is stale too.
+    let other = rig.workspace("other");
+    let early = rig.assign(&other, &avatar.avatar_id, "1", json!({}));
+    assert_eq!(kind(&early), ErrorKind::StaleVersion);
 }
 
 #[test]
-fn an_avatar_that_a_workspace_uses_is_not_deleted_until_the_workspace_is_gone_or_changes() {
-    let (mut rig, avatar, other, workspace) = rig_with_two_avatars_and_a_workspace();
-    rig.assign(&workspace, &avatar.avatar_id, json!({}))
-        .unwrap();
+fn an_avatar_that_a_workspace_has_is_not_deleted_until_the_workspace_changes_or_closes() {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let other = rig.avatar("Other");
+    let workspace = rig.workspace("project");
+    rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "0",
+        json!({"persona": "secret persona"}),
+    )
+    .unwrap();
     let busy = rig.call("avatar.delete", json!({"avatarId": avatar.avatar_id}));
     assert_eq!(kind(&busy), ErrorKind::PaneBusy);
-    rig.assign(&workspace, &other.avatar_id, json!({})).unwrap();
-    let folder = avatar_directory(&rig.core, &avatar.avatar_id);
-    assert!(folder.exists());
+    assert!(rig.folder(&avatar.avatar_id).exists());
+    rig.assign(&workspace, &other.avatar_id, "1", json!({}))
+        .unwrap();
     let gone = rig
         .call("avatar.delete", json!({"avatarId": avatar.avatar_id}))
         .unwrap();
     assert_eq!(gone, json!({"avatarId": avatar.avatar_id, "removed": true}));
-    assert!(!folder.exists());
+    assert!(!rig.folder(&avatar.avatar_id).exists());
     let last = rig.changes().pop().unwrap();
     assert_eq!(last["avatarId"], avatar.avatar_id);
     assert!(last.get("avatar").is_none());
-    // A closed workspace no longer holds its avatar.
+    // Closing the workspace takes its binding, and the persona in it, with it.
     rig.call("workspace.close", json!({"workspaceId": workspace}))
         .unwrap();
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["bindings"], json!([]));
     rig.call("avatar.delete", json!({"avatarId": other.avatar_id}))
         .unwrap();
-    let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(
-        (listed["avatars"].clone(), listed["bindings"].clone()),
-        (json!([]), json!([]))
-    );
     let again = rig.call("avatar.delete", json!({"avatarId": other.avatar_id}));
     assert_eq!(kind(&again), ErrorKind::NotFound);
 }
 
 #[test]
-fn a_build_is_asked_for_once_and_waits_for_the_builder() {
+fn an_agent_and_a_chief_have_none_of_the_avatar_methods() {
     let mut rig = Rig::new();
     let avatar = rig.avatar("Sabio");
-    let started = rig
-        .call("avatar.build", json!({"avatarId": avatar.avatar_id}))
-        .unwrap();
-    assert_eq!(started["avatar"]["buildState"], "building");
-    let events = rig.changes().len();
-    // Asking again while it builds answers what is, and says nothing new.
-    let again = rig
-        .call("avatar.build", json!({"avatarId": avatar.avatar_id}))
-        .unwrap();
-    assert_eq!(again["avatar"]["buildState"], "building");
-    assert_eq!(rig.changes().len(), events);
-    // A failed build is asked for again, and forgets its failure.
-    rig.force_state(&avatar.avatar_id, "failed", Some("frames"));
-    let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(listed["avatars"][0]["failureKind"], "frames");
-    let retried = rig
-        .call("avatar.build", json!({"avatarId": avatar.avatar_id}))
-        .unwrap();
-    assert_eq!(retried["avatar"]["buildState"], "building");
-    assert!(retried["avatar"].get("failureKind").is_none());
-    // A built avatar is finished.
-    rig.force_state(&avatar.avatar_id, "ready", None);
-    let refused = rig.call("avatar.build", json!({"avatarId": avatar.avatar_id}));
-    assert_eq!(kind(&refused), ErrorKind::TransitionRefused);
-    let missing = rig.call("avatar.build", json!({"avatarId": "nobody"}));
-    assert_eq!(kind(&missing), ErrorKind::NotFound);
-}
-
-/// A ready avatar whose package holds `manifest.json` and a file in a folder.
-fn ready_avatar(rig: &mut Rig) -> Avatar {
-    let avatar = rig.avatar("Sabio");
-    rig.force_state(&avatar.avatar_id, "ready", None);
-    let package = rig.package(&avatar.avatar_id);
-    std::fs::create_dir_all(package.join("atlas")).unwrap();
-    std::fs::write(package.join("manifest.json"), b"{\"format\":1}").unwrap();
-    std::fs::write(
-        package.join("atlas/mouth.png"),
-        (0..=255u8).collect::<Vec<_>>(),
-    )
-    .unwrap();
-    avatar
-}
-
-fn read_package(
-    rig: &mut Rig,
-    avatar: &str,
-    file: &str,
-    offset: &str,
-    length: Option<u32>,
-) -> Answer {
-    let mut params = json!({"avatarId": avatar, "file": file, "offset": offset});
-    if let Some(length) = length {
-        params["length"] = json!(length);
-    }
-    let local = rig.local.clone();
-    rig.outcome(&local, "avatar.package.read", params)
-}
-
-fn chunk(answer: Answer) -> (Value, Vec<u8>) {
-    match answer.unwrap() {
-        Outcome::Attachment {
-            result,
-            reference,
-            bytes,
-        } => {
-            soyeht_protocol::validate::result("avatar.package.read", &result).unwrap();
-            assert_eq!(reference.bytes, bytes.len().to_string());
-            assert_eq!(result["chunk"]["attachmentId"], reference.attachment_id);
-            (result, bytes)
-        }
-        _ => panic!("the package read did not answer with an attachment"),
-    }
-}
-
-#[test]
-fn a_ready_package_is_read_in_ranges_that_add_up_to_the_file() {
-    let mut rig = Rig::new();
-    let avatar = ready_avatar(&mut rig);
-    let id = avatar.avatar_id;
-    let (whole, bytes) = chunk(read_package(&mut rig, &id, "manifest.json", "0", None));
-    assert_eq!(bytes, b"{\"format\":1}");
-    assert_eq!(
-        (whole["size"].as_str(), whole["offset"].as_str()),
-        (Some("12"), Some("0"))
-    );
-    assert_eq!(whole["chunk"]["name"], "manifest.json");
-    let mut joined = vec![];
-    for offset in (0..256).step_by(100) {
-        let (result, bytes) = chunk(read_package(
-            &mut rig,
-            &id,
-            "atlas/mouth.png",
-            &offset.to_string(),
-            Some(100),
-        ));
-        assert_eq!(result["size"], "256");
-        joined.extend(bytes);
-    }
-    assert_eq!(joined, (0..=255u8).collect::<Vec<_>>());
-    // At the end there is nothing more, and past it is a mistake.
-    let (_, empty) = chunk(read_package(&mut rig, &id, "atlas/mouth.png", "256", None));
-    assert!(empty.is_empty());
-    let past = read_package(&mut rig, &id, "atlas/mouth.png", "257", None);
-    assert_eq!(errors::kind(&past.err().unwrap()), ErrorKind::InvalidParams);
-}
-
-#[test]
-fn a_package_read_never_leaves_the_package_folder() {
-    let mut rig = Rig::new();
-    let avatar = ready_avatar(&mut rig);
-    let id = avatar.avatar_id;
-    std::fs::write(avatar_directory(&rig.core, &id).join("secret.txt"), b"nope").unwrap();
-    for file in [
-        "../secret.txt",
-        "atlas/../../secret.txt",
-        "/etc/passwd",
-        "atlas//mouth.png",
-        "./manifest.json",
-        "atlas\\mouth.png",
-        "C:manifest.json",
-        "atlas/",
-    ] {
-        let refused = read_package(&mut rig, &id, file, "0", None);
-        assert_eq!(
-            errors::kind(&refused.err().unwrap()),
-            ErrorKind::InvalidParams,
-            "{file}"
-        );
-    }
-    let missing = read_package(&mut rig, &id, "nothing.json", "0", None);
-    assert_eq!(errors::kind(&missing.err().unwrap()), ErrorKind::NotFound);
-    // A folder is not a file.
-    let folder = read_package(&mut rig, &id, "atlas", "0", None);
-    assert_eq!(errors::kind(&folder.err().unwrap()), ErrorKind::NotFound);
-    #[cfg(unix)]
-    {
-        let package = rig.package(&id);
-        std::os::unix::fs::symlink(
-            avatar_directory(&rig.core, &id).join("secret.txt"),
-            package.join("link.txt"),
-        )
-        .unwrap();
-        let linked = read_package(&mut rig, &id, "link.txt", "0", None);
-        assert_eq!(errors::kind(&linked.err().unwrap()), ErrorKind::NotFound);
-    }
-}
-
-#[test]
-fn an_avatar_without_a_ready_package_has_none_to_read() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let package = rig.package(&avatar.avatar_id);
-    std::fs::create_dir_all(&package).unwrap();
-    std::fs::write(package.join("manifest.json"), b"{}").unwrap();
-    let unready = read_package(&mut rig, &avatar.avatar_id, "manifest.json", "0", None);
-    assert_eq!(errors::kind(&unready.err().unwrap()), ErrorKind::NotFound);
-    let nobody = read_package(&mut rig, "nobody", "manifest.json", "0", None);
-    assert_eq!(errors::kind(&nobody.err().unwrap()), ErrorKind::NotFound);
-}
-
-#[test]
-fn a_chunk_is_never_larger_than_one_attachment_frame() {
-    let mut rig = Rig::new();
-    let avatar = ready_avatar(&mut rig);
-    let package = rig.package(&avatar.avatar_id);
-    std::fs::write(
-        package.join("big.bin"),
-        vec![9u8; limits::ATTACHMENT_PAYLOAD_BYTES + 10],
-    )
-    .unwrap();
-    let (result, bytes) = chunk(read_package(
-        &mut rig,
-        &avatar.avatar_id,
-        "big.bin",
-        "0",
-        None,
-    ));
-    assert_eq!(bytes.len(), limits::ATTACHMENT_PAYLOAD_BYTES);
-    assert_eq!(
-        result["size"],
-        (limits::ATTACHMENT_PAYLOAD_BYTES + 10).to_string()
-    );
-}
-
-#[test]
-fn an_agent_has_no_avatar_methods() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    let picture = json!({"attachmentId": Uuid::new_v4().to_string(), "mimeType": "image/png",
+                         "name": "face.png", "bytes": "64"});
+    let calls = [
+        ("avatar.list", json!({})),
+        (
+            "avatar.create",
+            json!({"name": "X", "kind": "uploaded", "picture": picture}),
+        ),
+        (
+            "avatar.rename",
+            json!({"avatarId": avatar.avatar_id, "name": "Y"}),
+        ),
+        ("avatar.delete", json!({"avatarId": avatar.avatar_id})),
+        (
+            "avatar.assign",
+            json!({"workspaceId": workspace, "avatarId": avatar.avatar_id,
+                   "harness": "claude-code", "baseRevision": "0"}),
+        ),
+    ];
+    assert_eq!(calls.len(), 5);
     for role in [Role::Agent, Role::Chief] {
-        let agent = rig.connect(role, None);
-        let listed = rig.call_as(&agent, "avatar.list", json!({}));
-        assert_eq!(kind(&listed), ErrorKind::ForbiddenRole);
-        let deleted = rig.call_as(
-            &agent,
-            "avatar.delete",
-            json!({"avatarId": avatar.avatar_id}),
-        );
-        assert_eq!(kind(&deleted), ErrorKind::ForbiddenRole);
+        let connection = rig.connect(role, None);
+        for (method, params) in &calls {
+            let refused = rig.call_as(&connection, method, params.clone());
+            assert_eq!(kind(&refused), ErrorKind::ForbiddenRole, "{method}");
+        }
     }
-    assert_eq!(
-        rig.call("avatar.list", json!({})).unwrap()["avatars"]
-            .as_array()
-            .unwrap()
-            .len(),
-        1
-    );
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["avatars"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["bindings"], json!([]));
 }
 
 #[test]
-fn the_library_is_still_there_when_the_engine_starts_again() {
+fn the_library_is_still_there_when_the_engine_starts_again_and_orphan_folders_are_swept() {
     let mut rig = Rig::new();
     let avatar = rig.avatar("Sabio");
     let workspace = rig.workspace("project");
     rig.assign(
         &workspace,
         &avatar.avatar_id,
-        json!({"persona": "Be brief.", "voiceOn": true}),
+        "0",
+        json!({"persona": "Be brief."}),
     )
     .unwrap();
-    let directory = rig.directory.clone();
     let before = rig.call("avatar.list", json!({})).unwrap();
-    let local = rig.local.clone();
-    rig.core.disconnect(&local).unwrap();
-    rig.core = Core::open_with(&directory, Arc::new(crate::hooks::NoHooks)).unwrap();
-    rig.local = rig.connect(Role::HumanLocal, None);
+    // What a crash leaves: the folder of an avatar whose creation never committed, and a stray file.
+    let orphan = rig
+        .directory
+        .join(AVATARS_DIRECTORY)
+        .join("never-committed");
+    std::fs::create_dir_all(&orphan).unwrap();
+    std::fs::write(orphan.join(SOURCE_FILE), png(9)).unwrap();
+    std::fs::write(
+        rig.directory.join(AVATARS_DIRECTORY).join("stray.txt"),
+        b"x",
+    )
+    .unwrap();
+    rig.restart();
     assert_eq!(rig.call("avatar.list", json!({})).unwrap(), before);
+    assert!(!orphan.exists());
+    assert!(
+        !rig.directory
+            .join(AVATARS_DIRECTORY)
+            .join("stray.txt")
+            .exists()
+    );
+    assert!(rig.folder(&avatar.avatar_id).join(SOURCE_FILE).exists());
 }
 
 #[test]
-fn a_package_path_is_judged_before_the_disk_is_touched() {
-    let root = std::env::temp_dir().join("soyeht-avatar-no-such-folder");
-    for file in ["", "a//b", "a/./b", "../a", "a/..", "/a", "a\\b", "c:a"] {
-        assert!(
-            matches!(
-                package_file(&root, file),
-                Err(errors::Error::InvalidParams(_))
-            ),
-            "{file:?}"
-        );
-    }
+fn the_engine_offers_the_avatars_capability() {
+    let rig = Rig::new();
+    assert!(rig.core.capabilities().contains(&"avatars".to_owned()));
 }

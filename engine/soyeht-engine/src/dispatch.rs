@@ -558,7 +558,19 @@ impl Core {
         }
     }
 
+    /// Answers one request. A request that is refused leaves no attachment frame pending on its
+    /// connection: bytes sent for a request that never committed them would fail every later one.
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
+        let outcome = self.dispatch_request(connection, request);
+        if outcome.is_err()
+            && let Some(client) = self.clients.get_mut(connection)
+        {
+            client.attachments.discard();
+        }
+        outcome
+    }
+
+    fn dispatch_request(&mut self, connection: &str, request: Value) -> Result<Outcome> {
         if request["jsonrpc"] != "2.0" || !request["id"].is_string() && !request["id"].is_u64() {
             return Err(errors::invalid("Expected JSON-RPC 2.0 request with id"));
         }
@@ -702,6 +714,7 @@ impl Core {
             EngineCapability::DevicePairing,
             EngineCapability::WorkspaceTasks,
             EngineCapability::SubscriptionUsage,
+            EngineCapability::Avatars,
         ];
         if self.push.enabled() {
             offered.push(EngineCapability::Push);

@@ -174,8 +174,15 @@ message that says why and no address or name:
    differs, `pair.begin` is refused until the person confirms the change: the app calls
    `device.pair.start {confirmTailnet: true}`, which pins the identity the refusal saw. While a
    refusal waits, the answer to `device.pair.start` carries `tailnetChanged: true`. The engine logs
-   the refusal and says why to the device; the desktop app's confirmation of it is a later slice
-   (ADR 0164). This raises a cost and no more: the confirmation is a local call;
+   the refusal and says why to the device; the engine also tells the person's own connections that
+   a change waits, once for each change, with the transient event `device.pair_tailnet_changed
+   {tailnetChanged: true}` (a paired device is not told), so that a pairing sheet that is open says
+   so. The answer to `device.pair.start` and the event also carry what the person is to be shown
+   of the change: `tailnetName`, the tailnet the refusal saw (what a person cannot read is dropped from it, and
+   it is held to the device name's length), and `tailnetPin`, an opaque name for the identity a confirmation
+   would pin. The app sends it back with the confirmation, as `confirmTailnetPin`, and the engine pins
+   the identity only while it is still the one that was named, and otherwise answers `transition_refused` and
+   pins nothing: a person confirms the change they saw. This raises a cost and no more: the confirmation is a local call;
 6. the peer's node is not one a device's authenticated `hello` came from. In this mode the engine
    asks Tailscale for the node of each tailnet `hello` and keeps it, and keeps the node of a
    request's `pair.begin` when the request is approved (a lookup that fails or takes more than a
@@ -235,7 +242,12 @@ nothing itself (the engine's count spans reconnects and windows, and one error k
 missing code, no code and a wrong one), and closes the request, which then offers only Dismiss,
 with the refusal's words beside it. The sheet keeps the one connection of
 the window: when it is lost the window and its requests are lost with it, and the sheet asks for a
-new window on the next connection. An engine that refuses (Windows) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
+new window on the next connection. When the engine says a tailnet change waits (`tailnetChanged` in the answer to
+`device.pair.start`, or the `device.pair_tailnet_changed` event), the sheet says that Tailscale is not what
+this computer paired with before, and offers "Confirm this tailnet", which asks for a new window with
+`confirmTailnet: true`: the engine pins the identity it refused and the QR code the sheet then shows is
+the new window's, to scan again. The app never sends `confirmTailnet` to an engine that does not offer
+`pairing-code`, nor without the person's choice. An engine that refuses (Windows) is shown with the app's words, "This computer cannot pair a phone yet.", and its own
 refusal under them, in place of a code. `contracts/vectors/pairing-approval.json` and
 `pairing-comparison.json` are passed by the client's tests.
 

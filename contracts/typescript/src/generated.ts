@@ -396,6 +396,7 @@ export interface PaneExperimentExportResult {
 export interface DevicePairStartParams {
   "idempotencyKey": Id;
   "confirmTailnet"?: boolean;
+  "confirmTailnetPin"?: string;
 }
 
 export interface DevicePairStartResult {
@@ -405,6 +406,8 @@ export interface DevicePairStartResult {
   "qr"?: string;
   "reachability"?: EngineReachability;
   "tailnetChanged"?: boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DevicePairDecideParams {
@@ -679,6 +682,12 @@ export interface DevicePairedEvent {
   "at": string;
   "actor"?: Actor;
   "device": Device;
+}
+
+export interface DevicePairTailnetChangedEvent {
+  "tailnetChanged": boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DeviceRevokedEvent {
@@ -2938,7 +2947,7 @@ export interface EditorReviewRequestedEvent {
 
 export type ClientCapability = "web_host";
 
-export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push" | "ink-recognition" | "pairing-code";
+export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push" | "ink-recognition" | "pairing-code" | "avatars";
 
 export type WebInteractionMode = "structured" | "human";
 
@@ -3623,12 +3632,6 @@ export interface InkRecognizeResult {
 
 export type InkUnsupportedReason = "no_os_support" | "language_pack_missing" | "model_not_installed";
 
-export type AvatarKind = "preset" | "uploaded" | "generated" | (string & {});
-
-export type AvatarBuildState = "none" | "building" | "ready" | "failed" | (string & {});
-
-export type AvatarBuildFailureKind = "provider" | "frames" | "package" | "cancelled" | "interrupted" | (string & {});
-
 export interface AvatarVoice {
   "providerId": string;
   "voiceId": string;
@@ -3642,11 +3645,10 @@ export interface AvatarHearing {
 export interface Avatar {
   "avatarId": Id;
   "name": string;
-  "kind": AvatarKind;
+  "kind": string;
   "sourceHash": string;
-  "buildState": AvatarBuildState;
-  "failureKind"?: AvatarBuildFailureKind;
-  "packageHash"?: string;
+  "imageProvider"?: string;
+  "imageModel"?: string;
   "voice"?: AvatarVoice;
   "createdAt": string;
 }
@@ -3660,7 +3662,7 @@ export interface AvatarBinding {
   "hearing"?: AvatarHearing;
   "voice"?: AvatarVoice;
   "persona": string;
-  "voiceOn": Array<string>;
+  "revision": Decimal;
 }
 
 export interface AvatarListParams {
@@ -3674,8 +3676,10 @@ export interface AvatarListResult {
 
 export interface AvatarCreateParams {
   "name": string;
-  "kind": AvatarKind;
+  "kind": string;
   "picture": AttachmentRef;
+  "imageProvider"?: string;
+  "imageModel"?: string;
   "voice"?: AvatarVoice;
   "idempotencyKey": Id;
 }
@@ -3713,36 +3717,12 @@ export interface AvatarAssignParams {
   "hearing"?: AvatarHearing;
   "voice"?: AvatarVoice;
   "persona"?: string;
-  "voiceOn"?: boolean;
+  "baseRevision": Decimal;
   "idempotencyKey": Id;
 }
 
 export interface AvatarAssignResult {
   "binding": AvatarBinding;
-}
-
-export interface AvatarBuildParams {
-  "avatarId": Id;
-  "idempotencyKey": Id;
-}
-
-export interface AvatarBuildResult {
-  "avatar": Avatar;
-}
-
-export interface AvatarPackageReadParams {
-  "avatarId": Id;
-  "file": string;
-  "offset": Decimal;
-  "length"?: number;
-}
-
-export interface AvatarPackageReadResult {
-  "avatarId": Id;
-  "file": string;
-  "offset": Decimal;
-  "size": Decimal;
-  "chunk": AttachmentRef;
 }
 
 export interface AvatarChangedEvent {
@@ -3753,12 +3733,6 @@ export interface AvatarChangedEvent {
   "avatar"?: Avatar;
   "workspaceId"?: Id;
   "binding"?: AvatarBinding;
-}
-
-export interface AvatarBuildProgressEvent {
-  "avatarId": Id;
-  "done": number;
-  "total": number;
 }
 
 export interface Methods {
@@ -3919,8 +3893,6 @@ export interface Methods {
   "avatar.rename": { params: AvatarRenameParams; result: AvatarRenameResult };
   "avatar.delete": { params: AvatarDeleteParams; result: AvatarDeleteResult };
   "avatar.assign": { params: AvatarAssignParams; result: AvatarAssignResult };
-  "avatar.build": { params: AvatarBuildParams; result: AvatarBuildResult };
-  "avatar.package.read": { params: AvatarPackageReadParams; result: AvatarPackageReadResult };
 }
 
 export interface Events {
@@ -3940,6 +3912,7 @@ export interface Events {
   "device.pair_requested": DevicePairRequestedEvent;
   "device.paired": DevicePairedEvent;
   "device.revoked": DeviceRevokedEvent;
+  "device.pair_tailnet_changed": DevicePairTailnetChangedEvent;
   "pair.result": PairResultEvent;
   "engine.updating": EngineUpdatingEvent;
   "engine.restarted": EngineRestartedEvent;
@@ -4001,7 +3974,6 @@ export interface Events {
   "web.agent_driving": WebAgentDrivingEvent;
   "writing.changed": WritingChangedEvent;
   "avatar.changed": AvatarChangedEvent;
-  "avatar.build_progress": AvatarBuildProgressEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -4025,6 +3997,7 @@ export const eventRegistry = {
   "device.pair_requested": { paramsType: "DevicePairRequestedEvent", durable: true },
   "device.paired": { paramsType: "DevicePairedEvent", durable: true },
   "device.revoked": { paramsType: "DeviceRevokedEvent", durable: true },
+  "device.pair_tailnet_changed": { paramsType: "DevicePairTailnetChangedEvent", durable: false },
   "pair.result": { paramsType: "PairResultEvent", durable: false },
   "engine.updating": { paramsType: "EngineUpdatingEvent", durable: true },
   "engine.restarted": { paramsType: "EngineRestartedEvent", durable: true },
@@ -4086,5 +4059,4 @@ export const eventRegistry = {
   "web.agent_driving": { paramsType: "WebAgentDrivingEvent", durable: false },
   "writing.changed": { paramsType: "WritingChangedEvent", durable: true },
   "avatar.changed": { paramsType: "AvatarChangedEvent", durable: true },
-  "avatar.build_progress": { paramsType: "AvatarBuildProgressEvent", durable: false },
 } as const satisfies Record<EventName, EventDescriptor>;

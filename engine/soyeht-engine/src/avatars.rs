@@ -1,45 +1,39 @@
 //! The avatar library, and the avatar a workspace has (ADR 0166, contract 19).
 //!
-//! An avatar is a reusable record of the person's own: a name, a source picture, a build state and a
-//! default voice, with its files in `<data>/avatars/<id>/`. A workspace has at most one avatar, bound
-//! with the harness the avatar thinks with, the speech settings, the persona and the clients that
-//! have voice on. The engine keeps identifiers and settings: a speech or image provider's key stays
-//! in the vault of the device that calls the provider, and a persona is never part of a log line.
+//! An avatar is a reusable record of the person's own: a name, a source picture, the catalogue ids
+//! of the image provider and model, and a default voice, with its files in `<data>/avatars/<id>/`.
+//! A workspace has at most one avatar, bound with the harness the avatar thinks with, the speech
+//! settings and the persona, under a revision: a client that read an older binding cannot overwrite
+//! a newer one. The engine keeps identifiers and settings: a speech or image provider's key stays in
+//! the vault of the device that calls the provider, whether a client has voice on stays with that
+//! client, and a persona is never part of a log line.
 //!
-//! This module only records and serves. Starting the avatar's pane is the workspace's (slice 2),
-//! and running a build is the builder's (slice 9): a build requested here waits as `building`.
+//! This module only records. Starting the avatar's pane is the workspace's (slice 2), and building
+//! the avatar is the builder's (slice 9), which brings its own calls.
 use crate::{
     core::Core,
-    device_notices::{time_text, viewer},
     dispatch::Outcome,
     errors::{self, Result},
     immutable_file::hex_digest,
-    model,
+    model, png,
 };
 use serde_json::{Value, json};
-use soyeht_platform::fs::{WriteMode, canonicalize, ensure_private_dir, write_atomic};
+use soyeht_platform::fs::{WriteMode, ensure_private_dir, write_atomic};
 use soyeht_protocol::{
-    AttachmentRef, Avatar, AvatarAssignParams, AvatarAssignResult, AvatarBinding,
-    AvatarBuildParams, AvatarBuildResult, AvatarBuildState, AvatarChangedDraft, AvatarCreateParams,
-    AvatarCreateResult, AvatarDeleteParams, AvatarDeleteResult, AvatarListResult,
-    AvatarPackageReadParams, AvatarPackageReadResult, AvatarRenameParams, AvatarRenameResult,
-    limits, method,
+    Avatar, AvatarAssignParams, AvatarAssignResult, AvatarBinding, AvatarChangedDraft,
+    AvatarCreateParams, AvatarCreateResult, AvatarDeleteParams, AvatarDeleteResult,
+    AvatarListResult, AvatarRenameParams, AvatarRenameResult, limits, method,
 };
-use soyeht_store::avatars as library;
-use std::{
-    fs::File,
-    io::{Read as _, Seek as _, SeekFrom},
-    path::{Path, PathBuf},
-};
+use soyeht_store::{avatars as library, database::Store};
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 /// The folder of the data directory that holds one folder per avatar.
 const AVATARS_DIRECTORY: &str = "avatars";
 /// The source picture, in the avatar's folder.
 const SOURCE_FILE: &str = "source.png";
-/// The folder of a ready package, in the avatar's folder.
-const PACKAGE_DIRECTORY: &str = "package";
-const PNG_SIGNATURE: &[u8] = b"\x89PNG\r\n\x1a\n";
+/// The kinds `avatar.create` takes. `preset` has no producer yet: presets come with the preset pack.
+const CREATABLE_KINDS: [&str; 2] = ["uploaded", "generated"];
 
 /// A source picture that was sent with `avatar.create` and checked, with its hash.
 pub(crate) struct AvatarPicture {
@@ -56,8 +50,6 @@ pub(crate) fn handles(method: &str) -> bool {
             | method::AVATAR_RENAME
             | method::AVATAR_DELETE
             | method::AVATAR_ASSIGN
-            | method::AVATAR_BUILD
-            | method::AVATAR_PACKAGE_READ
     )
 }
 
@@ -80,9 +72,10 @@ fn changed(avatar: &Avatar) -> Result<(String, Value)> {
     })
 }
 
-/// Commits the picture of an `avatar.create` and checks it is a PNG of a size the library takes.
-/// The request's identity then names the picture by its content, so a retry that sends the same
-/// bytes again repeats the call.
+/// Commits the picture of an `avatar.create` and checks it is a PNG of a size the library takes:
+/// its header must be well formed, and neither side may pass `avatarPictureDimension`. The
+/// request's identity then names the picture by its content, so a retry that sends the same bytes
+/// again repeats the call.
 pub(crate) fn prepare_avatar_picture(
     core: &mut Core,
     connection: &str,
@@ -93,13 +86,32 @@ pub(crate) fn prepare_avatar_picture(
         core.clients.get_mut(connection),
         "Attachment connection is unknown",
     )?;
-    let bytes = client.attachments.commit(&request.picture)?;
-    if request.picture.mime_type != "image/png"
-        || bytes.is_empty()
-        || bytes.len() > limits::AVATAR_PICTURE_BYTES
-        || !bytes.starts_with(PNG_SIGNATURE)
-    {
-        return Err(errors::invalid("An avatar's picture is a PNG file"));
+    let bytes = client
+        .attachments
+        .commit(&request.picture)
+        .map_err(|error| {
+            crate::agents::attachments::upload_failure(
+                error,
+                format!(
+                    "A picture of an avatar is at most {} MiB",
+                    limits::AVATAR_PICTURE_BYTES / (1024 * 1024)
+                ),
+            )
+        })?;
+    if bytes.len() > limits::AVATAR_PICTURE_BYTES {
+        return Err(errors::attachment_limit_exceeded(format!(
+            "A picture of an avatar is at most {} MiB",
+            limits::AVATAR_PICTURE_BYTES / (1024 * 1024)
+        )));
+    }
+    let side = u32::try_from(limits::AVATAR_PICTURE_DIMENSION).unwrap_or(u32::MAX);
+    let sized =
+        png::dimensions(&bytes).is_some_and(|(width, height)| width <= side && height <= side);
+    if request.picture.mime_type != png::MIME || !sized {
+        return Err(errors::invalid(format!(
+            "An avatar's picture is a PNG file of at most {} pixels a side",
+            limits::AVATAR_PICTURE_DIMENSION
+        )));
     }
     let hash = hex_digest(&bytes);
     let picture = errors::required(
@@ -118,7 +130,6 @@ pub(crate) fn avatar_request(
     picture: Option<AvatarPicture>,
 ) -> Result<Outcome> {
     let result = match method {
-        method::AVATAR_PACKAGE_READ => return avatar_package_read(core, params),
         method::AVATAR_LIST => avatar_list(core)?,
         method::AVATAR_CREATE => {
             let picture =
@@ -128,7 +139,6 @@ pub(crate) fn avatar_request(
         method::AVATAR_RENAME => avatar_rename(core, connection, params)?,
         method::AVATAR_DELETE => avatar_delete(core, connection, params)?,
         method::AVATAR_ASSIGN => avatar_assign(core, connection, params)?,
-        method::AVATAR_BUILD => avatar_build(core, connection, params)?,
         _ => return Err(errors::internal("Method is not an avatar method")),
     };
     Ok(Outcome::Reply(result))
@@ -158,6 +168,11 @@ fn avatar_create(
     picture: AvatarPicture,
 ) -> Result<Value> {
     let request: AvatarCreateParams = model::typed_params(params)?;
+    if !CREATABLE_KINDS.contains(&request.kind.as_str()) {
+        return Err(errors::invalid(
+            "An avatar's kind is `uploaded` or `generated`",
+        ));
+    }
     if library::count(&core.store).map_err(errors::storage)? >= limits::AVATAR_COUNT {
         return Err(errors::invalid("The avatar library is full"));
     }
@@ -166,18 +181,16 @@ fn avatar_create(
         name: clean_name(&request.name)?,
         kind: request.kind,
         source_hash: picture.hash,
-        build_state: AvatarBuildState::None,
-        failure_kind: None,
-        package_hash: None,
+        image_provider: request.image_provider,
+        image_model: request.image_model,
         voice: request.voice,
-        created_at: time_text(core.now_unix())?,
+        created_at: crate::device_notices::time_text(core.now_unix())?,
     };
     let result = model::to_value(&AvatarCreateResult {
         avatar: avatar.clone(),
     })?;
     let event = changed(&avatar)?;
-    let directory = avatar_directory(core, &avatar.avatar_id);
-    write_source(&directory, &picture.bytes)?;
+    write_source(&avatar_directory(core, &avatar.avatar_id), &picture.bytes)?;
     let made = core.mutate(connection, method::AVATAR_CREATE, params, |tx| {
         library::insert_in(tx, &avatar)?;
         Ok((result, vec![event]))
@@ -185,7 +198,7 @@ fn avatar_create(
     match made {
         Ok(mutation) => Ok(mutation.result),
         Err(error) => {
-            remove_directory(&directory);
+            remove_folder(core, &avatar.avatar_id);
             Err(error)
         }
     }
@@ -207,17 +220,10 @@ fn avatar_rename(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         .result)
 }
 
+/// Removes the avatar. One that an open workspace has is refused by the store (`pane_busy`).
 fn avatar_delete(core: &mut Core, connection: &str, params: &Value) -> Result<Value> {
     let request: AvatarDeleteParams = model::typed_params(params)?;
     stored_avatar(core, &request.avatar_id)?;
-    if !library::open_workspaces_of(&core.store, &request.avatar_id)
-        .map_err(errors::storage)?
-        .is_empty()
-    {
-        return Err(errors::pane_busy(
-            "Give the workspaces that use this avatar another one first",
-        ));
-    }
     let result = model::to_value(&AvatarDeleteResult {
         avatar_id: request.avatar_id.clone(),
         removed: true,
@@ -234,27 +240,30 @@ fn avatar_delete(core: &mut Core, connection: &str, params: &Value) -> Result<Va
             Ok((result, vec![event]))
         })?
         .result;
-    remove_directory(&avatar_directory(core, &request.avatar_id));
+    remove_folder(core, &request.avatar_id);
     Ok(result)
 }
 
+/// Gives an open workspace its avatar, replacing the binding it had. The caller names the revision
+/// it read (`0` for none); another is `stale_version`, so a client with an old copy never overwrites
+/// a newer one.
 fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Value> {
     let request: AvatarAssignParams = model::typed_params(params)?;
     model::workspace(&core.store, &request.workspace_id)?;
     stored_avatar(core, &request.avatar_id)?;
-    // Another client's voice is not this call's to change: the clients that have it on are
-    // kept, and only the caller's own entry follows `voiceOn`.
-    let (me, _) = viewer(core, connection)?;
-    let mut voice_on = library::binding(&core.store, &request.workspace_id)
+    let current = library::binding(&core.store, &request.workspace_id)
         .map_err(errors::storage)?
-        .map(|binding| binding.voice_on)
-        .unwrap_or_default();
-    match request.voice_on {
-        Some(true) if !voice_on.contains(&me) => voice_on.push(me.clone()),
-        Some(false) => voice_on.retain(|client| *client != me),
-        _ => {}
+        .map_or(Ok(0), |binding| binding.revision.parse::<u64>())
+        .map_err(|_| errors::internal("A stored binding has no revision"))?;
+    let base = request
+        .base_revision
+        .parse::<u64>()
+        .map_err(|_| errors::invalid("`baseRevision` is not a number"))?;
+    if base != current {
+        return Err(errors::stale_version(
+            "The workspace's avatar changed since it was read",
+        ));
     }
-    voice_on.sort();
     let binding = AvatarBinding {
         workspace_id: request.workspace_id,
         avatar_id: request.avatar_id,
@@ -264,7 +273,7 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         hearing: request.hearing,
         voice: request.voice,
         persona: request.persona.unwrap_or_default(),
-        voice_on,
+        revision: (current + 1).to_string(),
     };
     let result = model::to_value(&AvatarAssignResult {
         binding: binding.clone(),
@@ -278,77 +287,9 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
     Ok(core
         .mutate(connection, method::AVATAR_ASSIGN, params, |tx| {
             library::bind_in(tx, &binding)?;
-            if let Some(on) = request.voice_on {
-                library::set_voice_in(tx, &binding.workspace_id, &me, on)?;
-            }
             Ok((result, vec![event]))
         })?
         .result)
-}
-
-/// Asks for a build. An avatar with nothing built, or whose last build failed, becomes
-/// `building`; one already building stays so and is answered as it is. A ready avatar is
-/// finished: another picture is another avatar.
-fn avatar_build(core: &mut Core, connection: &str, params: &Value) -> Result<Value> {
-    let request: AvatarBuildParams = model::typed_params(params)?;
-    let mut avatar = stored_avatar(core, &request.avatar_id)?;
-    match avatar.build_state {
-        AvatarBuildState::Building => {
-            return model::to_value(&AvatarBuildResult { avatar });
-        }
-        AvatarBuildState::Ready => {
-            return Err(errors::transition_refused(
-                "The avatar is built; another picture makes another avatar",
-            ));
-        }
-        _ => {}
-    }
-    avatar.build_state = AvatarBuildState::Building;
-    avatar.failure_kind = None;
-    avatar.package_hash = None;
-    let result = model::to_value(&AvatarBuildResult {
-        avatar: avatar.clone(),
-    })?;
-    let event = changed(&avatar)?;
-    Ok(core
-        .mutate(connection, method::AVATAR_BUILD, params, |tx| {
-            library::start_build_in(tx, &avatar.avatar_id)?;
-            Ok((result, vec![event]))
-        })?
-        .result)
-}
-
-/// One chunk of one file of a ready package, so that a phone can fetch it in pieces.
-pub(crate) fn avatar_package_read(core: &Core, params: &Value) -> Result<Outcome> {
-    let request: AvatarPackageReadParams = model::typed_params(params)?;
-    let avatar = stored_avatar(core, &request.avatar_id)?;
-    if avatar.build_state != AvatarBuildState::Ready {
-        return Err(errors::not_found("The avatar has no package"));
-    }
-    let offset = errors::required(
-        request.offset.parse::<u64>().ok(),
-        "Package offset is not a number",
-    )?;
-    let root = avatar_directory(core, &avatar.avatar_id).join(PACKAGE_DIRECTORY);
-    let (name, size, bytes) = read_chunk(&root, &request.file, offset, request.length)?;
-    let reference = AttachmentRef {
-        attachment_id: Uuid::new_v4().to_string(),
-        mime_type: "application/octet-stream".into(),
-        name,
-        bytes: bytes.len().to_string(),
-    };
-    let result = model::to_value(&AvatarPackageReadResult {
-        avatar_id: avatar.avatar_id,
-        file: request.file,
-        offset: request.offset,
-        size: size.to_string(),
-        chunk: reference.clone(),
-    })?;
-    Ok(Outcome::Attachment {
-        result,
-        reference,
-        bytes,
-    })
 }
 
 /// Makes the avatar's folder, owner-only, and writes its source picture in it.
@@ -360,60 +301,66 @@ fn write_source(directory: &Path, bytes: &[u8]) -> Result<()> {
     write_atomic(&directory.join(SOURCE_FILE), bytes, WriteMode::OwnerOnly).map_err(errors::io)
 }
 
-/// Removes an avatar's folder. A failure is logged by kind: nothing refers to the folder any more,
-/// and what stays is the person's own disk space.
-fn remove_directory(directory: &Path) {
-    if let Err(error) = std::fs::remove_dir_all(directory)
-        && error.kind() != std::io::ErrorKind::NotFound
-    {
+/// Removes an avatar's folder off the Core lock (ADR 0079): it is a walk of a tree. A failure is
+/// logged by kind: nothing refers to the folder any more, and what stays is the person's own disk
+/// space, which the next start sweeps.
+fn remove_folder(core: &mut Core, avatar_id: &str) {
+    let folder = avatar_directory(core, avatar_id);
+    let started = core.spawn_background(
+        format!("avatar-folder:{avatar_id}"),
+        move || remove_tree(&folder),
+        |_, removed| {
+            if let Err(error) = &removed {
+                soyeht_platform::log::failure("engine.avatar_folder_removal_failed", error);
+            }
+            Ok(())
+        },
+    );
+    if let Err(error) = started {
         soyeht_platform::log::failure("engine.avatar_folder_removal_failed", &error);
     }
 }
 
-/// The path of `file` in the package folder `root`, when `file` names one regular file inside it:
-/// written with `/`, with no empty, `.` or `..` part, and not through a link that leaves the folder.
-fn package_file(root: &Path, file: &str) -> Result<PathBuf> {
-    if file.contains(['\\', ':'])
-        || file.starts_with('/')
-        || file.split('/').any(|part| matches!(part, "" | "." | ".."))
-    {
-        return Err(errors::invalid("Package file name is not a relative path"));
+fn remove_tree(path: &Path) -> Result<()> {
+    match std::fs::remove_dir_all(path) {
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(errors::io(error)),
+        _ => Ok(()),
     }
-    let missing = || errors::not_found("The package has no such file");
-    let root = canonicalize(root).map_err(|_| missing())?;
-    let target = canonicalize(&root.join(file)).map_err(|_| missing())?;
-    if !target.starts_with(&root) || !target.is_file() {
-        return Err(missing());
-    }
-    Ok(target)
 }
 
-/// The last name of `file`, its size and the bytes of the chunk at `offset`: at most `length`, and
-/// at most one attachment frame.
-fn read_chunk(
-    root: &Path,
-    file: &str,
-    offset: u64,
-    length: Option<u32>,
-) -> Result<(String, u64, Vec<u8>)> {
-    let target = package_file(root, file)?;
-    let mut open = File::open(&target).map_err(errors::io)?;
-    let size = open.metadata().map_err(errors::io)?.len();
-    if offset > size {
-        return Err(errors::invalid(
-            "Package offset is past the end of the file",
-        ));
+/// Removes what `<data>/avatars/` holds that the library does not know: the folder of an avatar
+/// whose creation did not commit, or whose removal did not finish. It runs as the engine opens, before
+/// the Core is shared, so no request waits for the walk.
+pub(crate) fn sweep_orphans(directory: &Path, store: &Store) {
+    let root = directory.join(AVATARS_DIRECTORY);
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return;
+    };
+    let known = match library::ids(store) {
+        Ok(known) => known,
+        Err(error) => {
+            soyeht_platform::log::failure("engine.avatar_sweep_failed", &errors::storage(error));
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name
+            .to_str()
+            .is_some_and(|name| known.iter().any(|id| id == name))
+        {
+            continue;
+        }
+        let path = entry.path();
+        let removed = if path.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        if let Err(error) = removed {
+            soyeht_platform::log::failure("engine.avatar_sweep_failed", &error);
+        }
     }
-    let wanted = u64::from(length.unwrap_or(u32::MAX))
-        .min(limits::ATTACHMENT_PAYLOAD_BYTES as u64)
-        .min(size - offset);
-    open.seek(SeekFrom::Start(offset)).map_err(errors::io)?;
-    let mut bytes = Vec::new();
-    open.take(wanted)
-        .read_to_end(&mut bytes)
-        .map_err(errors::io)?;
-    let name = file.rsplit('/').next().unwrap_or(file).to_owned();
-    Ok((name, size, bytes))
 }
 
 #[cfg(test)]

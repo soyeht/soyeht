@@ -133,6 +133,9 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "StreamGapEvent" => decode_encode::<StreamGapEvent>(name, value),
         "DevicePairRequestedEvent" => decode_encode::<DevicePairRequestedEvent>(name, value),
         "DevicePairedEvent" => decode_encode::<DevicePairedEvent>(name, value),
+        "DevicePairTailnetChangedEvent" => {
+            decode_encode::<DevicePairTailnetChangedEvent>(name, value)
+        }
         "DeviceRevokedEvent" => decode_encode::<DeviceRevokedEvent>(name, value),
         "PairResultEvent" => decode_encode::<PairResultEvent>(name, value),
         "EngineUpdatingEvent" => decode_encode::<EngineUpdatingEvent>(name, value),
@@ -613,9 +616,6 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "InkCandidate" => decode_encode::<InkCandidate>(name, value),
         "InkRecognizeResult" => decode_encode::<InkRecognizeResult>(name, value),
         "InkUnsupportedReason" => decode_encode::<InkUnsupportedReason>(name, value),
-        "AvatarKind" => decode_encode::<AvatarKind>(name, value),
-        "AvatarBuildState" => decode_encode::<AvatarBuildState>(name, value),
-        "AvatarBuildFailureKind" => decode_encode::<AvatarBuildFailureKind>(name, value),
         "AvatarVoice" => decode_encode::<AvatarVoice>(name, value),
         "AvatarHearing" => decode_encode::<AvatarHearing>(name, value),
         "Avatar" => decode_encode::<Avatar>(name, value),
@@ -630,12 +630,7 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "AvatarDeleteResult" => decode_encode::<AvatarDeleteResult>(name, value),
         "AvatarAssignParams" => decode_encode::<AvatarAssignParams>(name, value),
         "AvatarAssignResult" => decode_encode::<AvatarAssignResult>(name, value),
-        "AvatarBuildParams" => decode_encode::<AvatarBuildParams>(name, value),
-        "AvatarBuildResult" => decode_encode::<AvatarBuildResult>(name, value),
-        "AvatarPackageReadParams" => decode_encode::<AvatarPackageReadParams>(name, value),
-        "AvatarPackageReadResult" => decode_encode::<AvatarPackageReadResult>(name, value),
         "AvatarChangedEvent" => decode_encode::<AvatarChangedEvent>(name, value),
-        "AvatarBuildProgressEvent" => decode_encode::<AvatarBuildProgressEvent>(name, value),
         _ => Err(Mismatch::Unknown(name.to_owned())),
     }
 }

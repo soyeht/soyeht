@@ -59,7 +59,7 @@ pub(crate) fn request(
 
 /// Who is asking: a paired device, or the person at the computer, and for a device when it was
 /// added.
-pub(crate) fn viewer(core: &Core, connection: &str) -> Result<(String, Option<i64>)> {
+fn viewer(core: &Core, connection: &str) -> Result<(String, Option<i64>)> {
     let client = errors::invariant(core.clients.get(connection), "Connection disappeared")?;
     match client
         .actor

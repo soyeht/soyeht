@@ -134,24 +134,26 @@ public enum ProtocolLimits {
     public static let inkDeadlineSec = 10
     /// The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.
     public static let avatarCount = 200
-    /// The longest avatar name (in characters).
+    /// The longest avatar name (in characters); the `maxLength` of `Avatar.name`.
     public static let avatarNameChars = 80
-    /// The largest source picture (a PNG) `avatar.create` takes.
+    /// The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.
     public static let avatarPictureBytes = 10485760
-    /// The longest persona text (in characters) of a workspace's avatar binding. Never written to a log.
+    /// The largest width or height, in pixels, the PNG header of a source picture may declare.
+    public static let avatarPictureDimension = 8192
+    /// The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.
     public static let avatarPersonaChars = 16000
-    /// The longest speech provider identifier (in characters) an avatar or a binding names.
+    /// The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.
     public static let avatarProviderIdChars = 64
-    /// The longest voice identifier (in characters) of a speech provider.
+    /// The longest voice identifier (in characters) of an `AvatarVoice`.
     public static let avatarVoiceIdChars = 128
-    /// The longest language tag (in characters) of a binding's speech-to-text.
+    /// The longest language tag (in characters) of an `AvatarHearing`; the length a BCP 47 tag may have.
     public static let avatarLanguageChars = 35
-    /// The longest model or effort name (in characters) of a binding; the length of an `Id`.
+    /// The longest model or effort name (in characters) of a binding.
     public static let avatarSettingChars = 128
-    /// The longest file path (in characters) `avatar.package.read` takes, relative to the package folder.
-    public static let avatarPackagePathChars = 256
-    /// The most frames a build reports in `avatar.build_progress`.
-    public static let avatarProgressFrames = 1000
+    /// The longest image provider or image model catalogue id (in characters) of an avatar.
+    public static let avatarCatalogueIdChars = 128
+    /// The longest `Avatar.kind` (in characters).
+    public static let avatarKindChars = 32
 }
 
 public enum ProtocolVersion {

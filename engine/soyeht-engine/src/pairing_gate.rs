@@ -7,19 +7,24 @@
 
 use crate::system_peers::SystemPeers;
 use crate::{
+    auth,
     core::Core,
     dispatch::Outcome,
     errors::{self, Result},
     model,
     offload::Offload,
+    pairing_approval::readable_name,
     pairing_peers::{
         Admitted, Identity, ListenerKind, Node, Observed, PairingPeers, Peer, Refusal, admit,
         in_tailscale_range, observe, observe_node,
     },
 };
+use base64::Engine as _;
 use serde_json::Value;
 use soyeht_platform::log;
-use soyeht_protocol::{HelloParams, PairBeginParams, PairProveParams, method};
+use soyeht_protocol::{
+    DevicePairTailnetChangedEvent, HelloParams, PairBeginParams, PairProveParams, event, method,
+};
 use soyeht_store::pairing_nodes;
 use std::{net::IpAddr, sync::Arc, time::Duration};
 
@@ -174,9 +179,65 @@ fn check_tailnet_pin(core: &mut Core, identity: &Identity) -> Result<()> {
             Ok(())
         }
         Some(_) => {
-            core.pairing.unconfirmed = Some(identity.clone());
+            // The person's window is told the first time a change waits, and again for another one.
+            if core.pairing.unconfirmed.as_ref() != Some(identity) {
+                core.pairing.unconfirmed = Some(identity.clone());
+                tell_windows_of_tailnet_change(core);
+            }
             Err(refused(core, Refusal::TailnetChanged))
         }
+    }
+}
+
+/// An opaque name for `identity`, which the person's confirmation names so that it pins what they
+/// were shown and nothing the tailnet became since.
+fn pin_of(identity: &Identity) -> String {
+    let named = format!("{}\n{}", identity.tailnet, identity.node_key);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(auth::token_hash(&named))
+}
+
+/// What the person is shown of the change that waits: the tailnet's name and the pin that names it.
+pub(crate) fn tailnet_change(core: &Core) -> Option<(Option<String>, String)> {
+    let identity = core.pairing.unconfirmed.as_ref()?;
+    Some((readable_name(&identity.tailnet), pin_of(identity)))
+}
+
+/// A confirmation that names what the person was shown is refused when what waits is another
+/// identity now. One that names nothing, or made with nothing waiting, passes.
+pub(crate) fn check_confirmation(core: &Core, pin: Option<&str>) -> Result<()> {
+    let (Some(pin), Some(waiting)) = (pin, core.pairing.unconfirmed.as_ref()) else {
+        return Ok(());
+    };
+    if auth::same_token(pin, &pin_of(waiting)) {
+        return Ok(());
+    }
+    Err(errors::transition_refused(
+        "The tailnet changed again since it was shown to you; look at it and confirm again",
+    ))
+}
+
+/// Tells the person's own connections that a pairing waits for the tailnet change to be confirmed,
+/// so that a pairing sheet that is open says so. A paired device is not told: what it can do about
+/// it is nothing, and it is no business of its own.
+fn tell_windows_of_tailnet_change(core: &Core) {
+    let (tailnet_name, tailnet_pin) = tailnet_change(core).unzip();
+    let told = model::to_value(&DevicePairTailnetChangedEvent {
+        tailnet_changed: true,
+        tailnet_name: tailnet_name.flatten(),
+        tailnet_pin,
+    })
+    .and_then(|params| model::notification(event::DEVICE_PAIR_TAILNET_CHANGED, params));
+    match told {
+        Ok(frame) => {
+            for client in core
+                .clients
+                .values()
+                .filter(|client| client.local && client.events && client.actor.is_some())
+            {
+                client.outbox.send(frame.clone());
+            }
+        }
+        Err(error) => log::failure("engine.pair_tailnet_event_failed", &error),
     }
 }
 

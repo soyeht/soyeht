@@ -386,10 +386,53 @@ class SchemaTests(unittest.TestCase):
             self.assertNotIn("eventId", properties, name)
             self.assertNotIn("at", properties, name)
 
+    def assert_fields_bounded_by_limits(self, bounds):
+        """Each `(definition, field)` has the `maxLength` of the limit it is listed under."""
+        for limit, fields in bounds.items():
+            for definition, field in fields:
+                self.assertEqual(
+                    self.schema["$defs"][definition]["properties"][field]["maxLength"],
+                    self.schema["x-limits"][limit],
+                    f"{definition}.{field} against {limit}",
+                )
+
     def test_a_diagnostic_message_is_bounded_by_the_named_limit(self):
         """The longest message a language server diagnostic carries is a limit with a name."""
         message = self.schema["$defs"]["FileDiagnostic"]["properties"]["message"]
         self.assertEqual(message["maxLength"], self.schema["x-limits"]["diagnosticMessageChars"])
+
+    def test_avatar_field_bounds_are_the_named_limits(self):
+        """Each avatar string is bounded by the limit that names it, and the engine's own limits are
+        the ones the schema refuses at."""
+        limits = self.schema["x-limits"]
+        bounds = {
+            "avatarNameChars": [("Avatar", "name"), ("AvatarCreateParams", "name"), ("AvatarRenameParams", "name")],
+            "avatarKindChars": [("Avatar", "kind"), ("AvatarCreateParams", "kind")],
+            "avatarCatalogueIdChars": [
+                ("Avatar", "imageProvider"),
+                ("Avatar", "imageModel"),
+                ("AvatarCreateParams", "imageProvider"),
+                ("AvatarCreateParams", "imageModel"),
+            ],
+            "avatarPersonaChars": [("AvatarBinding", "persona"), ("AvatarAssignParams", "persona")],
+            "avatarProviderIdChars": [("AvatarVoice", "providerId"), ("AvatarHearing", "providerId")],
+            "avatarVoiceIdChars": [("AvatarVoice", "voiceId")],
+            "avatarLanguageChars": [("AvatarHearing", "language")],
+            "avatarSettingChars": [
+                ("AvatarBinding", "model"),
+                ("AvatarBinding", "effort"),
+                ("AvatarAssignParams", "model"),
+                ("AvatarAssignParams", "effort"),
+            ],
+        }
+        self.assert_fields_bounded_by_limits(bounds)
+        # The rest are read by the engine: a limit that nothing reads has no place in the contract.
+        used = {name for names in bounds for name in [names]} | {
+            "avatarCount",
+            "avatarPictureBytes",
+            "avatarPictureDimension",
+        }
+        self.assertEqual({name for name in limits if name.startswith("avatar")}, used)
 
     def test_web_field_bounds_are_the_named_limits(self):
         """Each web string or extent is bounded by the limit that names it."""
@@ -433,13 +476,7 @@ class SchemaTests(unittest.TestCase):
             ],
         }
         definitions = self.schema["$defs"]
-        for limit, fields in bounds.items():
-            for definition, field in fields:
-                self.assertEqual(
-                    definitions[definition]["properties"][field]["maxLength"],
-                    limits[limit],
-                    f"{definition}.{field} against {limit}",
-                )
+        self.assert_fields_bounded_by_limits(bounds)
         self.assertEqual(
             definitions["WebPickedElement"]["properties"]["path"]["items"]["maxLength"],
             limits["webPartBytes"],

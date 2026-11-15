@@ -804,6 +804,8 @@ pub struct DevicePairStartParams {
     pub idempotency_key: Id,
     #[serde(rename = "confirmTailnet", skip_serializing_if = "Option::is_none")]
     pub confirm_tailnet: Option<bool>,
+    #[serde(rename = "confirmTailnetPin", skip_serializing_if = "Option::is_none")]
+    pub confirm_tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartResult {
@@ -819,6 +821,10 @@ pub struct DevicePairStartResult {
     pub reachability: Option<EngineReachability>,
     #[serde(rename = "tailnetChanged", skip_serializing_if = "Option::is_none")]
     pub tailnet_changed: Option<bool>,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairDecideParams {
@@ -1253,6 +1259,15 @@ pub struct DevicePairedEvent {
     pub actor: Option<Actor>,
     #[serde(rename = "device")]
     pub device: Device,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DevicePairTailnetChangedEvent {
+    #[serde(rename = "tailnetChanged")]
+    pub tailnet_changed: bool,
+    #[serde(rename = "tailnetName", skip_serializing_if = "Option::is_none")]
+    pub tailnet_name: Option<String>,
+    #[serde(rename = "tailnetPin", skip_serializing_if = "Option::is_none")]
+    pub tailnet_pin: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DeviceRevokedEvent {
@@ -5352,6 +5367,8 @@ pub enum EngineCapability {
     InkRecognition,
     #[serde(rename = "pairing-code")]
     PairingCode,
+    #[serde(rename = "avatars")]
+    Avatars,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
@@ -6621,51 +6638,6 @@ pub enum InkUnsupportedReason {
     ModelNotInstalled,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum AvatarKind {
-    #[serde(rename = "preset")]
-    Preset,
-    #[serde(rename = "uploaded")]
-    Uploaded,
-    #[serde(rename = "generated")]
-    Generated,
-    /// A value this build does not know (ADR 0161).
-    #[cfg(feature = "open-enums")]
-    #[serde(other, skip_serializing)]
-    Unknown,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum AvatarBuildState {
-    #[serde(rename = "none")]
-    None,
-    #[serde(rename = "building")]
-    Building,
-    #[serde(rename = "ready")]
-    Ready,
-    #[serde(rename = "failed")]
-    Failed,
-    /// A value this build does not know (ADR 0161).
-    #[cfg(feature = "open-enums")]
-    #[serde(other, skip_serializing)]
-    Unknown,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub enum AvatarBuildFailureKind {
-    #[serde(rename = "provider")]
-    Provider,
-    #[serde(rename = "frames")]
-    Frames,
-    #[serde(rename = "package")]
-    Package,
-    #[serde(rename = "cancelled")]
-    Cancelled,
-    #[serde(rename = "interrupted")]
-    Interrupted,
-    /// A value this build does not know (ADR 0161).
-    #[cfg(feature = "open-enums")]
-    #[serde(other, skip_serializing)]
-    Unknown,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AvatarVoice {
     #[serde(rename = "providerId")]
     pub provider_id: String,
@@ -6686,15 +6658,13 @@ pub struct Avatar {
     #[serde(rename = "name")]
     pub name: String,
     #[serde(rename = "kind")]
-    pub kind: AvatarKind,
+    pub kind: String,
     #[serde(rename = "sourceHash")]
     pub source_hash: String,
-    #[serde(rename = "buildState")]
-    pub build_state: AvatarBuildState,
-    #[serde(rename = "failureKind", skip_serializing_if = "Option::is_none")]
-    pub failure_kind: Option<AvatarBuildFailureKind>,
-    #[serde(rename = "packageHash", skip_serializing_if = "Option::is_none")]
-    pub package_hash: Option<String>,
+    #[serde(rename = "imageProvider", skip_serializing_if = "Option::is_none")]
+    pub image_provider: Option<String>,
+    #[serde(rename = "imageModel", skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
     #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
     pub voice: Option<AvatarVoice>,
     #[serde(rename = "createdAt")]
@@ -6718,8 +6688,8 @@ pub struct AvatarBinding {
     pub voice: Option<AvatarVoice>,
     #[serde(rename = "persona")]
     pub persona: String,
-    #[serde(rename = "voiceOn")]
-    pub voice_on: Vec<String>,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AvatarListParams {}
@@ -6735,9 +6705,13 @@ pub struct AvatarCreateParams {
     #[serde(rename = "name")]
     pub name: String,
     #[serde(rename = "kind")]
-    pub kind: AvatarKind,
+    pub kind: String,
     #[serde(rename = "picture")]
     pub picture: AttachmentRef,
+    #[serde(rename = "imageProvider", skip_serializing_if = "Option::is_none")]
+    pub image_provider: Option<String>,
+    #[serde(rename = "imageModel", skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
     #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
     pub voice: Option<AvatarVoice>,
     #[serde(rename = "idempotencyKey")]
@@ -6794,8 +6768,8 @@ pub struct AvatarAssignParams {
     pub voice: Option<AvatarVoice>,
     #[serde(rename = "persona", skip_serializing_if = "Option::is_none")]
     pub persona: Option<String>,
-    #[serde(rename = "voiceOn", skip_serializing_if = "Option::is_none")]
-    pub voice_on: Option<bool>,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -6803,42 +6777,6 @@ pub struct AvatarAssignParams {
 pub struct AvatarAssignResult {
     #[serde(rename = "binding")]
     pub binding: AvatarBinding,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct AvatarBuildParams {
-    #[serde(rename = "avatarId")]
-    pub avatar_id: Id,
-    #[serde(rename = "idempotencyKey")]
-    pub idempotency_key: Id,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct AvatarBuildResult {
-    #[serde(rename = "avatar")]
-    pub avatar: Avatar,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct AvatarPackageReadParams {
-    #[serde(rename = "avatarId")]
-    pub avatar_id: Id,
-    #[serde(rename = "file")]
-    pub file: String,
-    #[serde(rename = "offset")]
-    pub offset: Decimal,
-    #[serde(rename = "length", skip_serializing_if = "Option::is_none")]
-    pub length: Option<u32>,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct AvatarPackageReadResult {
-    #[serde(rename = "avatarId")]
-    pub avatar_id: Id,
-    #[serde(rename = "file")]
-    pub file: String,
-    #[serde(rename = "offset")]
-    pub offset: Decimal,
-    #[serde(rename = "size")]
-    pub size: Decimal,
-    #[serde(rename = "chunk")]
-    pub chunk: AttachmentRef,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AvatarChangedEvent {
@@ -6856,15 +6794,6 @@ pub struct AvatarChangedEvent {
     pub workspace_id: Option<Id>,
     #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
     pub binding: Option<AvatarBinding>,
-}
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct AvatarBuildProgressEvent {
-    #[serde(rename = "avatarId")]
-    pub avatar_id: Id,
-    #[serde(rename = "done")]
-    pub done: u32,
-    #[serde(rename = "total")]
-    pub total: u32,
 }
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
@@ -7183,10 +7112,6 @@ pub enum Request {
     AvatarDelete(AvatarDeleteParams),
     #[serde(rename = "avatar.assign")]
     AvatarAssign(AvatarAssignParams),
-    #[serde(rename = "avatar.build")]
-    AvatarBuild(AvatarBuildParams),
-    #[serde(rename = "avatar.package.read")]
-    AvatarPackageRead(AvatarPackageReadParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -7861,18 +7786,6 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "AvatarAssignResult",
         true,
     ),
-    (
-        "avatar.build",
-        "AvatarBuildParams",
-        "AvatarBuildResult",
-        true,
-    ),
-    (
-        "avatar.package.read",
-        "AvatarPackageReadParams",
-        "AvatarPackageReadResult",
-        false,
-    ),
 ];
 pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.role.set", "paneId"),
@@ -7968,6 +7881,8 @@ pub enum EventName {
     DevicePaired,
     #[serde(rename = "device.revoked")]
     DeviceRevoked,
+    #[serde(rename = "device.pair_tailnet_changed")]
+    DevicePairTailnetChanged,
     #[serde(rename = "pair.result")]
     PairResult,
     #[serde(rename = "engine.updating")]
@@ -8090,8 +8005,6 @@ pub enum EventName {
     WritingChanged,
     #[serde(rename = "avatar.changed")]
     AvatarChanged,
-    #[serde(rename = "avatar.build_progress")]
-    AvatarBuildProgress,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -8112,6 +8025,7 @@ impl EventName {
             Self::DevicePairRequested => "device.pair_requested",
             Self::DevicePaired => "device.paired",
             Self::DeviceRevoked => "device.revoked",
+            Self::DevicePairTailnetChanged => "device.pair_tailnet_changed",
             Self::PairResult => "pair.result",
             Self::EngineUpdating => "engine.updating",
             Self::EngineRestarted => "engine.restarted",
@@ -8173,7 +8087,6 @@ impl EventName {
             Self::WebAgentDriving => "web.agent_driving",
             Self::WritingChanged => "writing.changed",
             Self::AvatarChanged => "avatar.changed",
-            Self::AvatarBuildProgress => "avatar.build_progress",
         }
     }
 }
@@ -8263,6 +8176,11 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::DeviceRevoked,
         params_type: "DeviceRevokedEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::DevicePairTailnetChanged,
+        params_type: "DevicePairTailnetChangedEvent",
+        durable: false,
     },
     EventDescriptor {
         name: EventName::PairResult,
@@ -8569,11 +8487,6 @@ pub const EVENTS: &[EventDescriptor] = &[
         params_type: "AvatarChangedEvent",
         durable: true,
     },
-    EventDescriptor {
-        name: EventName::AvatarBuildProgress,
-        params_type: "AvatarBuildProgressEvent",
-        durable: false,
-    },
 ];
 // Events with no `EventParams` type:
 // pane.update: has union params (PaneUpdateEvent), so the engine builds it as JSON.
@@ -8706,6 +8619,9 @@ pub struct DeviceRevokedDraft {
 }
 impl EventParams for DeviceRevokedDraft {
     const NAME: EventName = EventName::DeviceRevoked;
+}
+impl EventParams for DevicePairTailnetChangedEvent {
+    const NAME: EventName = EventName::DevicePairTailnetChanged;
 }
 impl EventParams for PairResultEvent {
     const NAME: EventName = EventName::PairResult;
@@ -9383,9 +9299,6 @@ pub struct AvatarChangedDraft {
 impl EventParams for AvatarChangedDraft {
     const NAME: EventName = EventName::AvatarChanged;
 }
-impl EventParams for AvatarBuildProgressEvent {
-    const NAME: EventName = EventName::AvatarBuildProgress;
-}
 pub mod method {
     pub const HELLO: &str = "hello";
     pub const STATE_SNAPSHOT: &str = "state.snapshot";
@@ -9544,8 +9457,6 @@ pub mod method {
     pub const AVATAR_RENAME: &str = "avatar.rename";
     pub const AVATAR_DELETE: &str = "avatar.delete";
     pub const AVATAR_ASSIGN: &str = "avatar.assign";
-    pub const AVATAR_BUILD: &str = "avatar.build";
-    pub const AVATAR_PACKAGE_READ: &str = "avatar.package.read";
 }
 pub mod method_family {
     pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
@@ -9614,6 +9525,7 @@ pub mod event {
     pub const DEVICE_PAIR_REQUESTED: &str = "device.pair_requested";
     pub const DEVICE_PAIRED: &str = "device.paired";
     pub const DEVICE_REVOKED: &str = "device.revoked";
+    pub const DEVICE_PAIR_TAILNET_CHANGED: &str = "device.pair_tailnet_changed";
     pub const PAIR_RESULT: &str = "pair.result";
     pub const ENGINE_UPDATING: &str = "engine.updating";
     pub const ENGINE_RESTARTED: &str = "engine.restarted";
@@ -9675,7 +9587,6 @@ pub mod event {
     pub const WEB_AGENT_DRIVING: &str = "web.agent_driving";
     pub const WRITING_CHANGED: &str = "writing.changed";
     pub const AVATAR_CHANGED: &str = "avatar.changed";
-    pub const AVATAR_BUILD_PROGRESS: &str = "avatar.build_progress";
 }
 
 pub fn error_code(kind: &ErrorKind) -> i64 {

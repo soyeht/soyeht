@@ -120,6 +120,11 @@ pub(crate) fn open(this: &mut Workbench, cx: &mut Context<Workbench>) {
     act(this, cx, |_, state, _| state.open_pairing());
 }
 
+/// The person confirmed the tailnet change a pairing was refused for.
+pub(crate) fn confirm_tailnet(this: &mut Workbench, cx: &mut Context<Workbench>) {
+    act(this, cx, |_, state, _| state.confirm_tailnet());
+}
+
 /// The person closed the sheet. A request still waiting stays in the list of devices.
 pub(crate) fn close(this: &mut Workbench, cx: &mut Context<Workbench>) {
     act(this, cx, |ui, state, _| {

@@ -2,10 +2,8 @@
 
 mod support;
 
-use soyeht_protocol::{
-    Avatar, AvatarBinding, AvatarBuildState, AvatarHearing, AvatarKind, AvatarVoice, Workspace,
-};
-use soyeht_store::{avatars, database::Store};
+use soyeht_protocol::{Avatar, AvatarBinding, AvatarHearing, AvatarVoice, Workspace};
+use soyeht_store::{avatars, database::Error, database::Store};
 use support::{Profile, commit};
 
 fn workspace(id: &str) -> Workspace {
@@ -21,11 +19,10 @@ fn avatar(id: &str, name: &str) -> Avatar {
     Avatar {
         avatar_id: id.into(),
         name: name.into(),
-        kind: AvatarKind::Uploaded,
+        kind: "uploaded".into(),
         source_hash: "a".repeat(64),
-        build_state: AvatarBuildState::Ready,
-        failure_kind: None,
-        package_hash: None,
+        image_provider: Some("a-provider".into()),
+        image_model: Some("a-model".into()),
         voice: Some(AvatarVoice {
             provider_id: "system".into(),
             voice_id: "default".into(),
@@ -34,7 +31,7 @@ fn avatar(id: &str, name: &str) -> Avatar {
     }
 }
 
-fn binding(workspace: &str, avatar: &str) -> AvatarBinding {
+fn binding(workspace: &str, avatar: &str, revision: u32) -> AvatarBinding {
     AvatarBinding {
         workspace_id: workspace.into(),
         avatar_id: avatar.into(),
@@ -47,7 +44,7 @@ fn binding(workspace: &str, avatar: &str) -> AvatarBinding {
         }),
         voice: None,
         persona: "Speak briefly.".into(),
-        voice_on: vec![],
+        revision: revision.to_string(),
     }
 }
 
@@ -59,22 +56,24 @@ fn open_workspace(store: &mut Store, id: &str) {
     commit(store, id, |tx| tx.insert_workspace(&workspace(id)));
 }
 
-#[test]
-fn a_new_avatar_has_nothing_built_whatever_the_record_said() {
-    let profile = Profile::new();
-    let mut store = profile.store();
-    add(&mut store, "one", &avatar("a1", "Sabio"));
-    let stored = avatars::get(&store, "a1").unwrap().unwrap();
-    assert_eq!(stored.build_state, AvatarBuildState::None);
-    assert_eq!(stored.failure_kind, None);
-    assert_eq!(stored.package_hash, None);
-    assert_eq!(stored.voice.unwrap().voice_id, "default");
-    assert_eq!(avatars::count(&store).unwrap(), 1);
-    assert_eq!(avatars::get(&store, "missing").unwrap(), None);
+fn bind(store: &mut Store, key: &str, binding: &AvatarBinding) -> Result<(), Error> {
+    store
+        .mutate("test", key, key, |tx| {
+            avatars::bind_in(tx, binding)?;
+            Ok((serde_json::json!({}), vec![]))
+        })
+        .map(drop)
+}
+
+fn assert_stale(store: &mut Store, key: &str, binding: &AvatarBinding) {
+    assert!(matches!(
+        bind(store, key, binding),
+        Err(Error::StaleAvatarBinding)
+    ));
 }
 
 #[test]
-fn the_library_lists_oldest_first_and_survives_reopening_the_store() {
+fn an_avatar_is_kept_as_it_was_made_and_the_library_lists_oldest_first() {
     let profile = Profile::new();
     let mut store = profile.store();
     add(&mut store, "one", &avatar("b", "Second by id, first made"));
@@ -84,146 +83,116 @@ fn the_library_lists_oldest_first_and_survives_reopening_the_store() {
     });
     drop(store);
     let store = profile.store();
-    let names: Vec<_> = avatars::list(&store)
-        .unwrap()
-        .into_iter()
-        .map(|avatar| avatar.name)
-        .collect();
+    let listed = avatars::list(&store).unwrap();
+    let names: Vec<_> = listed.iter().map(|avatar| avatar.name.as_str()).collect();
     assert_eq!(names, ["Second by id, first made", "Mentor"]);
+    assert_eq!(listed[0].image_provider.as_deref(), Some("a-provider"));
+    assert_eq!(listed[0].image_model.as_deref(), Some("a-model"));
+    assert_eq!(listed[0].voice.as_ref().unwrap().voice_id, "default");
+    assert_eq!(avatars::count(&store).unwrap(), 2);
+    assert_eq!(avatars::ids(&store).unwrap(), ["b", "a"]);
+    assert_eq!(avatars::get(&store, "missing").unwrap(), None);
 }
 
 #[test]
-fn a_build_starts_only_from_nothing_built_or_a_failure() {
+fn a_kind_nobody_defined_reads_back_as_it_was_stored() {
     let profile = Profile::new();
     let mut store = profile.store();
-    add(&mut store, "one", &avatar("a1", "Sabio"));
-    let started = |store: &mut Store, key: &str| {
-        let mut answer = false;
-        commit(store, key, |tx| {
-            answer = avatars::start_build_in(tx, "a1")?;
-            Ok(())
-        });
-        answer
-    };
-    assert!(started(&mut store, "first"));
-    assert_eq!(
-        avatars::get(&store, "a1").unwrap().unwrap().build_state,
-        AvatarBuildState::Building
-    );
-    assert!(!started(&mut store, "second"));
+    add(&mut store, "a1", &avatar("a1", "Sabio"));
+    add(&mut store, "a2", &avatar("a2", "Other"));
     store
         .connection()
-        .execute(
-            "UPDATE avatars SET build_state='failed', failure_kind='frames' WHERE id='a1'",
-            [],
-        )
+        .execute("UPDATE avatars SET kind='hologram' WHERE id='a1'", [])
         .unwrap();
-    let failed = avatars::get(&store, "a1").unwrap().unwrap();
-    assert_eq!(
-        failed.failure_kind.map(|kind| format!("{kind:?}")),
-        Some("Frames".into())
-    );
-    assert!(started(&mut store, "third"));
-    let again = avatars::get(&store, "a1").unwrap().unwrap();
-    assert_eq!(
-        (again.build_state, again.failure_kind),
-        (AvatarBuildState::Building, None)
-    );
-    store
-        .connection()
-        .execute("UPDATE avatars SET build_state='ready' WHERE id='a1'", [])
-        .unwrap();
-    assert!(!started(&mut store, "fourth"));
+    let listed = avatars::list(&store).unwrap();
+    assert_eq!(listed[0].kind, "hologram");
+    assert_eq!(listed[1].kind, "uploaded");
 }
 
 #[test]
-fn a_binding_is_replaced_and_keeps_the_clients_with_voice_on() {
+fn a_binding_is_replaced_one_revision_at_a_time() {
     let profile = Profile::new();
     let mut store = profile.store();
     add(&mut store, "a1", &avatar("a1", "One"));
     add(&mut store, "a2", &avatar("a2", "Two"));
     open_workspace(&mut store, "w1");
-    commit(&mut store, "bind", |tx| {
-        avatars::bind_in(tx, &binding("w1", "a1"))
-    });
-    commit(&mut store, "on-local", |tx| {
-        avatars::set_voice_in(tx, "w1", "local", true)
-    });
-    commit(&mut store, "on-phone", |tx| {
-        avatars::set_voice_in(tx, "w1", "phone", true)
-    });
-    commit(&mut store, "on-again", |tx| {
-        avatars::set_voice_in(tx, "w1", "phone", true)
-    });
-    let mut other = binding("w1", "a2");
-    other.persona = String::new();
-    other.hearing = None;
-    commit(&mut store, "rebind", |tx| avatars::bind_in(tx, &other));
+    bind(&mut store, "first", &binding("w1", "a1", 1)).unwrap();
+    let mut changed = binding("w1", "a2", 2);
+    changed.persona = String::new();
+    changed.hearing = None;
+    bind(&mut store, "second", &changed).unwrap();
     let kept = avatars::binding(&store, "w1").unwrap().unwrap();
     assert_eq!(kept.avatar_id, "a2");
     assert_eq!((kept.persona.as_str(), kept.hearing), ("", None));
-    assert_eq!(kept.voice_on, ["local", "phone"]);
-    commit(&mut store, "off", |tx| {
-        avatars::set_voice_in(tx, "w1", "local", false)
-    });
-    assert_eq!(
-        avatars::binding(&store, "w1").unwrap().unwrap().voice_on,
-        ["phone"]
-    );
+    assert_eq!(kept.revision, "2");
 }
 
 #[test]
-fn voice_is_only_turned_on_for_a_workspace_that_has_an_avatar() {
+fn a_binding_written_from_an_old_copy_is_refused_and_changes_nothing() {
     let profile = Profile::new();
     let mut store = profile.store();
+    add(&mut store, "a1", &avatar("a1", "One"));
     open_workspace(&mut store, "w1");
-    commit(&mut store, "on", |tx| {
-        avatars::set_voice_in(tx, "w1", "local", true)
-    });
-    assert_eq!(avatars::binding(&store, "w1").unwrap(), None);
+    bind(&mut store, "first", &binding("w1", "a1", 1)).unwrap();
+    let mut newer = binding("w1", "a1", 2);
+    newer.persona = "v2".into();
+    bind(&mut store, "second", &newer).unwrap();
+    let mut stale = binding("w1", "a1", 2);
+    stale.persona = "v1".into();
+    assert_stale(&mut store, "stale", &stale);
+    // A revision that skips one, and a first binding that is not revision 1, are stale too.
+    assert_stale(&mut store, "skip", &binding("w1", "a1", 4));
+    open_workspace(&mut store, "w2");
+    assert_stale(&mut store, "late", &binding("w2", "a1", 2));
+    assert_eq!(
+        avatars::binding(&store, "w1").unwrap().unwrap().persona,
+        "v2"
+    );
+    assert_eq!(avatars::binding(&store, "w2").unwrap(), None);
 }
 
 #[test]
-fn only_open_workspaces_hold_an_avatar_and_deleting_it_takes_the_closed_ones_bindings() {
+fn closing_a_workspace_takes_its_binding_and_a_bound_avatar_is_not_deleted() {
     let profile = Profile::new();
     let mut store = profile.store();
     add(&mut store, "a1", &avatar("a1", "One"));
     open_workspace(&mut store, "w1");
     open_workspace(&mut store, "w2");
-    commit(&mut store, "b1", |tx| {
-        avatars::bind_in(tx, &binding("w1", "a1"))
-    });
-    commit(&mut store, "b2", |tx| {
-        avatars::bind_in(tx, &binding("w2", "a1"))
-    });
-    commit(&mut store, "v2", |tx| {
-        avatars::set_voice_in(tx, "w2", "local", true)
-    });
-    assert_eq!(
-        avatars::open_workspaces_of(&store, "a1").unwrap(),
-        ["w1", "w2"]
-    );
-    commit(&mut store, "close", |tx| tx.close_workspace("w2"));
-    assert_eq!(avatars::open_workspaces_of(&store, "a1").unwrap(), ["w1"]);
+    bind(&mut store, "b1", &binding("w1", "a1", 1)).unwrap();
+    bind(&mut store, "b2", &binding("w2", "a1", 1)).unwrap();
     let listed: Vec<_> = avatars::bindings(&store)
         .unwrap()
         .into_iter()
         .map(|binding| binding.workspace_id)
         .collect();
-    assert_eq!(listed, ["w1"]);
-    commit(&mut store, "unbound", |tx| tx.close_workspace("w1"));
-    commit(&mut store, "delete", |tx| {
-        avatars::delete_in(tx, "a1").map(drop)
+    assert_eq!(listed, ["w1", "w2"]);
+    let refused = store.mutate("test", "delete-bound", "x", |tx| {
+        avatars::delete_in(tx, "a1")?;
+        Ok((serde_json::json!({}), vec![]))
     });
-    assert_eq!(avatars::get(&store, "a1").unwrap(), None);
+    assert!(matches!(refused, Err(Error::AvatarInUse)));
+    assert!(avatars::get(&store, "a1").unwrap().is_some());
+    commit(&mut store, "close-1", |tx| tx.close_workspace("w1"));
     assert_eq!(avatars::binding(&store, "w1").unwrap(), None);
-    let leftover: i64 = store
-        .connection()
-        .query_row("SELECT COUNT(*) FROM workspace_avatar_voice", [], |row| {
-            row.get(0)
-        })
-        .unwrap();
-    assert_eq!(leftover, 0);
+    let still: Vec<_> = avatars::bindings(&store)
+        .unwrap()
+        .into_iter()
+        .map(|binding| binding.workspace_id)
+        .collect();
+    assert_eq!(still, ["w2"]);
+    commit(&mut store, "close-2", |tx| tx.close_workspace("w2"));
+    let mut removed = false;
+    commit(&mut store, "delete", |tx| {
+        removed = avatars::delete_in(tx, "a1")?;
+        Ok(())
+    });
+    assert!(removed);
+    assert_eq!(avatars::get(&store, "a1").unwrap(), None);
+    commit(&mut store, "delete-again", |tx| {
+        removed = avatars::delete_in(tx, "a1")?;
+        Ok(())
+    });
+    assert!(!removed);
 }
 
 #[test]
@@ -243,18 +212,6 @@ fn a_blank_name_or_a_short_hash_is_not_an_avatar() {
 }
 
 #[test]
-fn a_stored_value_nobody_defined_is_an_error_and_not_a_guess() {
-    let profile = Profile::new();
-    let mut store = profile.store();
-    add(&mut store, "a1", &avatar("a1", "Sabio"));
-    store
-        .connection()
-        .execute("UPDATE avatars SET kind='hologram' WHERE id='a1'", [])
-        .unwrap();
-    assert!(avatars::get(&store, "a1").is_err());
-}
-
-#[test]
 fn a_database_of_schema_37_gains_the_avatar_tables_and_keeps_what_it_had() {
     let profile = Profile::new();
     let mut store = profile.store();
@@ -263,7 +220,7 @@ fn a_database_of_schema_37_gains_the_avatar_tables_and_keeps_what_it_had() {
     let connection = profile.connection();
     connection
         .execute_batch(
-            "DROP TABLE workspace_avatar_voice; DROP TABLE workspace_avatars; DROP TABLE avatars; PRAGMA user_version = 37;",
+            "DROP TABLE workspace_avatars; DROP TABLE avatars; PRAGMA user_version = 37;",
         )
         .unwrap();
     drop(connection);
@@ -276,9 +233,7 @@ fn a_database_of_schema_37_gains_the_avatar_tables_and_keeps_what_it_had() {
     assert!(avatars::list(&store).unwrap().is_empty());
     assert!(avatars::bindings(&store).unwrap().is_empty());
     add(&mut store, "a1", &avatar("a1", "Sabio"));
-    commit(&mut store, "bind", |tx| {
-        avatars::bind_in(tx, &binding("w1", "a1"))
-    });
+    bind(&mut store, "bind", &binding("w1", "a1", 1)).unwrap();
     assert_eq!(avatars::bindings(&store).unwrap().len(), 1);
 }
 

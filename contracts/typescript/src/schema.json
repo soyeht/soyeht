@@ -1436,6 +1436,10 @@
         "confirmTailnet": {
           "type": "boolean",
           "description": "True when the person confirms the tailnet change that a pairing was refused for (ADR 0164): the engine pins the identity it saw. Only an engine that asks for the person's code (`pairing-code`) reads it, and only from the local human."
+        },
+        "confirmTailnetPin": {
+          "type": "string",
+          "description": "With `confirmTailnet`: the `tailnetPin` of the change the person was shown. The engine pins the identity it refused only when it is still the one this names, and otherwise refuses the call with `transition_refused` and pins nothing, so that a person never confirms a change they have not seen. Without it the engine pins whatever it refused last."
         }
       },
       "required": [
@@ -1465,6 +1469,14 @@
         "tailnetChanged": {
           "type": "boolean",
           "description": "True while a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (`confirmTailnet`; ADR 0164). Absent otherwise."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "With `tailnetChanged`: the name of the tailnet the refused pairing saw, as Tailscale names it, with what a person cannot read dropped and held to the device name's length. It is a name its owner chose, so it is shown for the person to compare and never trusted."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "With `tailnetChanged`: an opaque name for the identity (tailnet and node key) that a confirmation would pin; the app sends it back as `confirmTailnetPin`."
         }
       },
       "required": [
@@ -2373,6 +2385,27 @@
         "eventId",
         "at",
         "device"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairTailnetChangedEvent": {
+      "type": "object",
+      "properties": {
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True: a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (ADR 0164). It is the same fact `tailnetChanged` of the answer to `device.pair.start` states, told to a window that is already open."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "The name of the tailnet the refused pairing saw (`tailnetName` of the answer to `device.pair.start`)."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "An opaque name for the identity a confirmation would pin (`tailnetPin` of the answer to `device.pair.start`)."
+        }
+      },
+      "required": [
+        "tailnetChanged"
       ],
       "additionalProperties": true
     },
@@ -10577,7 +10610,7 @@
     },
     "EngineCapability": {
       "type": "string",
-      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158). `pairing-code` is offered only by an engine whose person approves a pairing by typing the code the new device shows (ADR 0164): a client sends `approvalCode` in `device.pair.decide` only when it is offered.",
+      "description": "A capability the engine offers, in the `capabilities` of `welcome` and of the snapshot. `push` is offered only while the engine can send alerts to a paired phone (contract 08 section 2.3); a client that would ask for notification permission for push asks only when it is offered. `ink-recognition` is offered only where the system has a handwriting recognizer (ADR 0158). `pairing-code` is offered only by an engine whose person approves a pairing by typing the code the new device shows (ADR 0164): a client sends `approvalCode` in `device.pair.decide` only when it is offered. `avatars` is offered by every engine that has the avatar library (ADR 0166, contract 19): a client shows the avatar screens only when it is offered.",
       "enum": [
         "terminal",
         "workspaces",
@@ -10589,7 +10622,8 @@
         "subscription-usage",
         "push",
         "ink-recognition",
-        "pairing-code"
+        "pairing-code",
+        "avatars"
       ]
     },
     "WebInteractionMode": {
@@ -13170,33 +13204,6 @@
         "model_not_installed"
       ]
     },
-    "AvatarKind": {
-      "type": "string",
-      "enum": [
-        "preset",
-        "uploaded",
-        "generated"
-      ]
-    },
-    "AvatarBuildState": {
-      "type": "string",
-      "enum": [
-        "none",
-        "building",
-        "ready",
-        "failed"
-      ]
-    },
-    "AvatarBuildFailureKind": {
-      "type": "string",
-      "enum": [
-        "provider",
-        "frames",
-        "package",
-        "cancelled",
-        "interrupted"
-      ]
-    },
     "AvatarVoice": {
       "type": "object",
       "properties": {
@@ -13249,10 +13256,14 @@
         "name": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 80
+          "maxLength": 80,
+          "description": "The person's name for the avatar. Names are not unique: two avatars may carry the same one."
         },
         "kind": {
-          "$ref": "#/$defs/AvatarKind"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "Where the picture came from: `uploaded`, `generated` or `preset`. An open string: a client that reads another value shows the avatar as it does an uploaded one. `preset` has no producer yet; presets arrive with the preset pack."
         },
         "sourceHash": {
           "type": "string",
@@ -13260,17 +13271,17 @@
           "maxLength": 64,
           "description": "The lowercase hexadecimal SHA-256 of the source picture, `source.png` of the avatar's folder."
         },
-        "buildState": {
-          "$ref": "#/$defs/AvatarBuildState"
-        },
-        "failureKind": {
-          "$ref": "#/$defs/AvatarBuildFailureKind"
-        },
-        "packageHash": {
+        "imageProvider": {
           "type": "string",
-          "minLength": 64,
-          "maxLength": 64,
-          "description": "The lowercase hexadecimal SHA-256 of the ready package's manifest. Present only when `buildState` is `ready`."
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The catalogue id of the image provider that made the picture or built the avatar, when the person said (ADR 0166 section 2). An open string the engine does not interpret."
+        },
+        "imageModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The catalogue id of the image model, as `imageProvider`."
         },
         "voice": {
           "$ref": "#/$defs/AvatarVoice"
@@ -13285,7 +13296,6 @@
         "name",
         "kind",
         "sourceHash",
-        "buildState",
         "createdAt"
       ],
       "additionalProperties": true
@@ -13323,14 +13333,9 @@
           "maxLength": 16000,
           "description": "How the avatar speaks and what the person asked of it, as plain text given to the agent when its pane starts (ADR 0166). Empty when the person wrote none. It is never written to a log."
         },
-        "voiceOn": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
-          },
-          "description": "The clients that have voice on for this workspace: a paired device's `deviceId`, and `local` for the person at the computer. A client reads whether its own entry is in the list."
+        "revision": {
+          "$ref": "#/$defs/Decimal",
+          "description": "Starts at `1` and grows by one with every `avatar.assign` that changes the workspace's binding. A client that changes the binding sends the revision it read as `baseRevision`."
         }
       },
       "required": [
@@ -13338,7 +13343,7 @@
         "avatarId",
         "harness",
         "persona",
-        "voiceOn"
+        "revision"
       ],
       "additionalProperties": true
     },
@@ -13381,10 +13386,23 @@
           "maxLength": 80
         },
         "kind": {
-          "$ref": "#/$defs/AvatarKind"
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "`uploaded` or `generated`. `preset` is refused until presets have a producer."
         },
         "picture": {
           "$ref": "#/$defs/AttachmentRef"
+        },
+        "imageProvider": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "imageModel": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
         },
         "voice": {
           "$ref": "#/$defs/AvatarVoice"
@@ -13511,9 +13529,9 @@
           "type": "string",
           "maxLength": 16000
         },
-        "voiceOn": {
-          "type": "boolean",
-          "description": "Whether the caller's own client has voice on for this workspace. Absent leaves it as it was; the other clients' entries are never changed by this call."
+        "baseRevision": {
+          "$ref": "#/$defs/Decimal",
+          "description": "The `revision` of the binding the caller read, or `0` when the workspace had none. A different one is `stale_version` and nothing changes."
         },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
@@ -13523,6 +13541,7 @@
         "workspaceId",
         "avatarId",
         "harness",
+        "baseRevision",
         "idempotencyKey"
       ],
       "additionalProperties": true
@@ -13536,92 +13555,6 @@
       },
       "required": [
         "binding"
-      ],
-      "additionalProperties": true
-    },
-    "AvatarBuildParams": {
-      "type": "object",
-      "properties": {
-        "avatarId": {
-          "$ref": "#/$defs/Id"
-        },
-        "idempotencyKey": {
-          "$ref": "#/$defs/Id"
-        }
-      },
-      "required": [
-        "avatarId",
-        "idempotencyKey"
-      ],
-      "additionalProperties": true
-    },
-    "AvatarBuildResult": {
-      "type": "object",
-      "properties": {
-        "avatar": {
-          "$ref": "#/$defs/Avatar"
-        }
-      },
-      "required": [
-        "avatar"
-      ],
-      "additionalProperties": true
-    },
-    "AvatarPackageReadParams": {
-      "type": "object",
-      "properties": {
-        "avatarId": {
-          "$ref": "#/$defs/Id"
-        },
-        "file": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256,
-          "description": "A file of the package, relative to its folder, written with `/` and with no `.` or `..` part. The package's own manifest lists the others (ADR 0166)."
-        },
-        "offset": {
-          "$ref": "#/$defs/Decimal"
-        },
-        "length": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 262144
-        }
-      },
-      "required": [
-        "avatarId",
-        "file",
-        "offset"
-      ],
-      "additionalProperties": true
-    },
-    "AvatarPackageReadResult": {
-      "type": "object",
-      "properties": {
-        "avatarId": {
-          "$ref": "#/$defs/Id"
-        },
-        "file": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 256
-        },
-        "offset": {
-          "$ref": "#/$defs/Decimal"
-        },
-        "size": {
-          "$ref": "#/$defs/Decimal"
-        },
-        "chunk": {
-          "$ref": "#/$defs/AttachmentRef"
-        }
-      },
-      "required": [
-        "avatarId",
-        "file",
-        "offset",
-        "size",
-        "chunk"
       ],
       "additionalProperties": true
     },
@@ -13656,30 +13589,6 @@
         "avatarId"
       ],
       "additionalProperties": true
-    },
-    "AvatarBuildProgressEvent": {
-      "type": "object",
-      "properties": {
-        "avatarId": {
-          "$ref": "#/$defs/Id"
-        },
-        "done": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000
-        },
-        "total": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 1000
-        }
-      },
-      "required": [
-        "avatarId",
-        "done",
-        "total"
-      ],
-      "additionalProperties": true
     }
   },
   "x-protocolVersion": {
@@ -13688,9 +13597,6 @@
   },
   "x-openEnums": [
     "AgentLoginPhase",
-    "AvatarBuildFailureKind",
-    "AvatarBuildState",
-    "AvatarKind",
     "EngineReachabilityReason",
     "ErrorKind",
     "HarnessEnvironmentIssue",
@@ -15156,24 +15062,6 @@
         "$ref": "#/$defs/AvatarAssignResult"
       },
       "mutation": true
-    },
-    "avatar.build": {
-      "params": {
-        "$ref": "#/$defs/AvatarBuildParams"
-      },
-      "result": {
-        "$ref": "#/$defs/AvatarBuildResult"
-      },
-      "mutation": true
-    },
-    "avatar.package.read": {
-      "params": {
-        "$ref": "#/$defs/AvatarPackageReadParams"
-      },
-      "result": {
-        "$ref": "#/$defs/AvatarPackageReadResult"
-      },
-      "mutation": false
     }
   },
   "x-events": {
@@ -15272,6 +15160,12 @@
         "$ref": "#/$defs/DeviceRevokedEvent"
       },
       "durable": true
+    },
+    "device.pair_tailnet_changed": {
+      "params": {
+        "$ref": "#/$defs/DevicePairTailnetChangedEvent"
+      },
+      "durable": false
     },
     "pair.result": {
       "params": {
@@ -15638,12 +15532,6 @@
         "$ref": "#/$defs/AvatarChangedEvent"
       },
       "durable": true
-    },
-    "avatar.build_progress": {
-      "params": {
-        "$ref": "#/$defs/AvatarBuildProgressEvent"
-      },
-      "durable": false
     }
   },
   "x-framing": {
@@ -15702,15 +15590,16 @@
     "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.",
     "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.",
     "avatarCount": "The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.",
-    "avatarNameChars": "The longest avatar name (in characters).",
-    "avatarPictureBytes": "The largest source picture (a PNG) `avatar.create` takes.",
-    "avatarPersonaChars": "The longest persona text (in characters) of a workspace's avatar binding. Never written to a log.",
-    "avatarProviderIdChars": "The longest speech provider identifier (in characters) an avatar or a binding names.",
-    "avatarVoiceIdChars": "The longest voice identifier (in characters) of a speech provider.",
-    "avatarLanguageChars": "The longest language tag (in characters) of a binding's speech-to-text.",
-    "avatarSettingChars": "The longest model or effort name (in characters) of a binding; the length of an `Id`.",
-    "avatarPackagePathChars": "The longest file path (in characters) `avatar.package.read` takes, relative to the package folder.",
-    "avatarProgressFrames": "The most frames a build reports in `avatar.build_progress`."
+    "avatarNameChars": "The longest avatar name (in characters); the `maxLength` of `Avatar.name`.",
+    "avatarPictureBytes": "The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.",
+    "avatarPictureDimension": "The largest width or height, in pixels, the PNG header of a source picture may declare.",
+    "avatarPersonaChars": "The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.",
+    "avatarProviderIdChars": "The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.",
+    "avatarVoiceIdChars": "The longest voice identifier (in characters) of an `AvatarVoice`.",
+    "avatarLanguageChars": "The longest language tag (in characters) of an `AvatarHearing`; the length a BCP 47 tag may have.",
+    "avatarSettingChars": "The longest model or effort name (in characters) of a binding.",
+    "avatarCatalogueIdChars": "The longest image provider or image model catalogue id (in characters) of an avatar.",
+    "avatarKindChars": "The longest `Avatar.kind` (in characters)."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -15832,13 +15721,14 @@
     "avatarCount": 200,
     "avatarNameChars": 80,
     "avatarPictureBytes": 10485760,
+    "avatarPictureDimension": 8192,
     "avatarPersonaChars": 16000,
     "avatarProviderIdChars": 64,
     "avatarVoiceIdChars": 128,
     "avatarLanguageChars": 35,
     "avatarSettingChars": 128,
-    "avatarPackagePathChars": 256,
-    "avatarProgressFrames": 1000
+    "avatarCatalogueIdChars": 128,
+    "avatarKindChars": 32
   },
   "x-settings": {
     "terminal.defaultCols": {

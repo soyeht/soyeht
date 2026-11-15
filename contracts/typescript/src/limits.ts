@@ -119,11 +119,12 @@ export const limits = {
   "avatarCount": 200,
   "avatarNameChars": 80,
   "avatarPictureBytes": 10485760,
+  "avatarPictureDimension": 8192,
   "avatarPersonaChars": 16000,
   "avatarProviderIdChars": 64,
   "avatarVoiceIdChars": 128,
   "avatarLanguageChars": 35,
   "avatarSettingChars": 128,
-  "avatarPackagePathChars": 256,
-  "avatarProgressFrames": 1000
+  "avatarCatalogueIdChars": 128,
+  "avatarKindChars": 32
 } as const;
