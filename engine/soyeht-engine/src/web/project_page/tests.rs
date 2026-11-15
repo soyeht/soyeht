@@ -141,7 +141,7 @@ fn a_file_at_the_workspace_root_is_a_page_whose_reach_is_the_whole_project() {
     write(&root, "src/data.json", "{}");
     let file = resolve(&root, "index.html").unwrap();
     assert_eq!(file.relative, "index.html");
-    assert_eq!(file.root, fs::canonicalize(&root).unwrap());
+    assert_eq!(file.root, soyeht_platform::fs::canonicalize(&root).unwrap());
     fs::remove_dir_all(root).unwrap();
 }
 
