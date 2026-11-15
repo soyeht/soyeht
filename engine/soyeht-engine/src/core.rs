@@ -88,8 +88,6 @@ pub struct Core {
     pub editor: crate::editor::Service,
     pub(crate) project_watches: crate::editor::ProjectWatches,
     pub(crate) skill_watches: crate::skills::Watches,
-    /// The project files shown as web pages, by pane (contract 11, section 5b).
-    pub(crate) project_pages: crate::web::ProjectPages,
     /// What the tick remembers between its runs (ADR 0147, step 1b).
     tick: crate::tick_due::State,
     pub languages: crate::languages::Service,
@@ -235,7 +233,6 @@ impl Core {
             ))),
             project_watches: Default::default(),
             skill_watches: Default::default(),
-            project_pages: Default::default(),
             tick: Default::default(),
             languages: crate::languages::Service::restore(language_servers)?,
             task_revision_due: BTreeMap::new(),
@@ -258,7 +255,7 @@ impl Core {
         // The event streams of the file followers raise the tick, which sleeps until a deadline.
         let kick = core.background.kicker();
         core.project_watches.kicked_by(Arc::clone(&kick));
-        core.project_pages.kicked_by(Arc::clone(&kick));
+        core.web.pages.kicked_by(Arc::clone(&kick));
         core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
         core.restore_experiment_captures()?;

@@ -411,7 +411,7 @@ async fn web_open_of_a_project_file_serves_it_in_a_pane_and_ends_with_the_pane()
             json!({"paneId":pane,"idempotencyKey":"close"}),
         ),
     );
-    assert!(!core.project_pages.pages.contains_key(&pane));
+    assert!(!core.web.pages.pages.contains_key(&pane));
     assert!(
         ends(port_of(&url)).await,
         "closing the pane left its page served"
@@ -447,7 +447,7 @@ async fn a_changed_project_page_is_reloaded_in_the_pane_that_still_shows_it() {
         ),
     );
     let pane = opened["paneId"].as_str().unwrap().to_owned();
-    let changes = Arc::clone(&core.project_pages.pages[&pane].changes);
+    let changes = Arc::clone(&core.web.pages.pages[&pane].changes);
 
     core.reload_project_pages().unwrap();
     assert!(

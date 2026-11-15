@@ -54,6 +54,8 @@ pub struct Service {
     next_refresh_ms: i64,
     /// This engine, which listens on its own port but is no project to open.
     own_pid: u32,
+    /// The project files shown as pages, by pane (contract 11, section 5b).
+    pub(crate) pages: ProjectPages,
 }
 
 pub struct Refresh {
@@ -69,6 +71,7 @@ impl Service {
             servers: Vec::new(),
             next_refresh_ms: 0,
             own_pid: std::process::id(),
+            pages: ProjectPages::default(),
         }
     }
 

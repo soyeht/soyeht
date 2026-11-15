@@ -58,7 +58,8 @@ impl Core {
         let shown = match (&by_address, &project_file) {
             (Some(url), _) => self.matching_web_pane(&workspace_id, url.as_str(), incognito),
             (None, Some(file)) => self
-                .project_pages
+                .web
+                .pages
                 .pane_showing(&workspace_id, file)
                 .map(str::to_owned)
                 .filter(|pane_id| self.is_live_web_pane(pane_id)),
@@ -72,7 +73,7 @@ impl Core {
                 .map(Outcome::Reply);
         }
         let page = project_file
-            .map(|file| self.project_pages.start(&workspace_id, file))
+            .map(|file| self.web.pages.start(&workspace_id, file))
             .transpose()?;
         let url = match (by_address, &page) {
             (Some(url), _) => url,
@@ -100,7 +101,7 @@ impl Core {
     /// Keeps the page a `web.open` of a project file started for the pane it opened.
     fn attach_project_page(&mut self, result: &Value, page: Option<ProjectPage>) {
         if let (Some(pane_id), Some(page)) = (result["paneId"].as_str(), page) {
-            self.project_pages.attach(pane_id, page);
+            self.web.pages.attach(pane_id, page);
         }
     }
 
@@ -204,7 +205,7 @@ impl Core {
     /// longer waits for is dropped (`web_host_response`), and a reload that fails leaves the page
     /// as it was.
     pub(crate) fn reload_project_pages(&mut self) -> Result<()> {
-        for (pane_id, base) in self.project_pages.take_changed() {
+        for (pane_id, base) in self.web.pages.take_changed() {
             let showing = self.panes.get(&pane_id).is_some_and(|running| {
                 !running.stored.closed
                     && running
