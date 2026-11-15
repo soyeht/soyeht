@@ -25,6 +25,7 @@ pulldown-cmark.workspace = true
 unicode-segmentation.workspace = true
 unicode-width.workspace = true
 chrono.workspace = true
+qrcode.workspace = true
 
 [lints]
 workspace = true

@@ -127,15 +127,17 @@ mod tests {
         let unserved: Vec<Destination> = Destination::ALL
             .into_iter()
             .filter(|place| {
-                !place.is_pane_grid() && place.section().is_none() && *place != Destination::Tasks
+                !place.is_pane_grid()
+                    && place.section().is_none()
+                    && !matches!(*place, Destination::Tasks | Destination::Phone)
             })
             .collect();
         // Web is drawn where the system has a web view of its own to draw a page with.
         if soyeht_webview::supported() {
-            assert_eq!(unserved, [Destination::Phone]);
+            assert!(unserved.is_empty());
             assert!(Destination::Web.is_pane_grid() && Destination::Web.shows(&PaneMode::Web));
         } else {
-            assert_eq!(unserved, [Destination::Web, Destination::Phone]);
+            assert_eq!(unserved, [Destination::Web]);
         }
         for place in &unserved {
             assert!(!place.shows(&PaneMode::Agent));

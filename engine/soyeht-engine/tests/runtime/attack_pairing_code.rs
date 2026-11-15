@@ -9,10 +9,14 @@ use super::*;
 use ed25519_dalek::SigningKey;
 
 const MARKER: &str = "test-pairing-approval";
+/// The phone of these tests connects from loopback; this marker makes the engine's peer rules see
+/// it as a node of the tailnet (`attack_pairing_peers` shows the rules themselves).
+const PEERS_MARKER: &str = "test-pairing-peers";
 
 fn persons_code_rig() -> Rig {
     let rig = Rig::new();
     fs::write(rig.path.join(MARKER), "persons-code").unwrap();
+    fs::write(rig.path.join(PEERS_MARKER), "phone").unwrap();
     rig
 }
 
@@ -73,6 +77,8 @@ impl Local {
 
 struct Request {
     phone: Phone,
+    /// Where the engine's listener for devices is, for a phone that connects again.
+    address: String,
     id: Value,
     code: String,
 }
@@ -105,6 +111,7 @@ fn request_on_new_window(local: &mut Local, seed: u8) -> Request {
     assert!(code.bytes().all(|byte| byte.is_ascii_digit()), "{code}");
     Request {
         phone,
+        address: address_of(&window),
         id: started["requestId"].clone(),
         code,
     }
@@ -303,14 +310,14 @@ fn a_fifth_window_closes_the_oldest_and_a_device_name_cannot_reorder_text() {
 }
 
 #[test]
-fn without_the_marker_this_engine_keeps_refusing_as_before_and_offers_no_code() {
-    // The same program as a shipped engine would be, but for its hooks: no marker, no mode.
-    // On a system that attests nothing (Linux, Windows) the local human is refused; on macOS
-    // an unsigned program is.
+fn without_the_marker_this_engine_follows_the_rule_of_its_system() {
+    // The same program as a shipped engine would be, but for its hooks: no marker, no mode. On
+    // macOS an unsigned program cannot be the app and the local human is refused; on Linux the
+    // person's code is the rule; on Windows nothing can attest the app yet.
     let rig = Rig::new();
+    fs::write(rig.path.join(MARKER), "system").unwrap();
     let mut local = rig.client();
-    let refused = local.request("device.pair.start", json!({"idempotencyKey":"w"}));
-    assert_eq!(kind(&refused), "forbidden_role", "{refused}");
+    let started = local.request("device.pair.start", json!({"idempotencyKey":"w"}));
     let (_, parts) = local.snapshot();
     let capabilities: Vec<Value> = parts
         .iter()
@@ -318,11 +325,17 @@ fn without_the_marker_this_engine_keeps_refusing_as_before_and_offers_no_code() 
         .flat_map(|part| part["data"].as_array().unwrap().clone())
         .collect();
     assert!(!capabilities.is_empty());
-    assert!(!capabilities.iter().any(|name| name == "pairing-code"));
-    #[cfg(target_os = "linux")]
-    {
+    let offers_code = capabilities.iter().any(|name| name == "pairing-code");
+    if cfg!(target_os = "linux") {
+        assert!(started.get("error").is_none(), "{started}");
+        assert!(offers_code);
+    } else {
+        assert_eq!(kind(&started), "forbidden_role", "{started}");
+        assert!(!offers_code);
+    }
+    if cfg!(windows) {
         assert!(
-            refused["error"]["message"]
+            started["error"]["message"]
                 .as_str()
                 .unwrap()
                 .contains("cannot yet prove itself")
@@ -344,4 +357,60 @@ fn the_refused_rule_names_a_system_where_the_app_cannot_prove_itself_yet() {
             .contains("cannot yet prove itself"),
         "{refused}"
     );
+}
+
+#[test]
+fn the_panes_a_paired_device_made_are_listed_for_its_revocation_and_the_new_device_is_dated() {
+    let rig = persons_code_rig();
+    let mut local = Local::new(&rig);
+    let (workspace, own_pane) = local.client.create(&rig);
+    let mut request = request_on_new_window(&mut local, 38);
+    let code = request.code.clone();
+    let approved = decide(&mut local, &request, Some(&code), "approve-panes");
+    assert_eq!(approved["result"]["approved"], true, "{approved}");
+    let result = request.phone.read()["params"].clone();
+    let device = result["deviceId"].as_str().unwrap().to_owned();
+    // The phone connects again, now as the paired device, and opens a terminal of its own.
+    let key = SigningKey::from_bytes(&[38; 32]);
+    let mut phone = Phone::connect(&request.address);
+    let welcome = phone.hello(&key, result["deviceToken"].as_str().unwrap());
+    assert!(welcome.get("error").is_none(), "{welcome}");
+    let made = phone.request(
+        "pane.create",
+        json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":"phone-pane"}),
+    );
+    let made = made["result"]["paneId"].as_str().unwrap().to_owned();
+
+    // The list is the device's own panes: not the person's, and not another device's.
+    let listed = local.request("device.panes.list", json!({"deviceId":device}));
+    let panes = listed["result"]["items"].as_array().unwrap();
+    assert_eq!(panes.len(), 1, "{listed}");
+    assert_eq!(panes[0]["paneId"], made);
+    assert!(panes.iter().all(|pane| pane["paneId"] != own_pane));
+    let other = local.request("device.panes.list", json!({"deviceId":"nobody"}));
+    assert_eq!(other["result"]["items"], json!([]), "{other}");
+
+    // The device is dated and names its node, and the person at the computer is told of it.
+    let notice = local.request("device.notice.list", json!({}));
+    let added = notice["result"]["items"].as_array().unwrap();
+    assert_eq!(added.len(), 1, "{notice}");
+    assert_eq!(added[0]["deviceId"], device);
+    assert!(added[0]["addedAt"].is_string() && added[0]["node"].is_string());
+    // The phone is not told of itself.
+    let own = phone.request("device.notice.list", json!({}));
+    assert_eq!(own["result"]["items"], json!([]), "{own}");
+
+    // Closing what the revoked device made is the person's, through the call a pane has.
+    let revoked = local.request(
+        "device.revoke",
+        json!({"deviceId":device,"idempotencyKey":"revoke-phone"}),
+    );
+    assert!(revoked.get("error").is_none(), "{revoked}");
+    let closed = local.request(
+        "pane.close",
+        json!({"paneId":made,"idempotencyKey":"close-phone-pane"}),
+    );
+    assert!(closed.get("error").is_none(), "{closed}");
+    let after = local.request("device.panes.list", json!({"deviceId":device}));
+    assert_eq!(after["result"]["items"], json!([]), "{after}");
 }

@@ -25,6 +25,8 @@ pub const PROMPT_QUEUE_COUNT: usize = 64;
 pub const AGENT_MESSAGES_PER_WINDOW: usize = 6;
 pub const AGENT_MESSAGE_WINDOW_SEC: usize = 60;
 pub const AGENT_MESSAGE_BYTES: usize = 60000;
+/// The longest name (in characters) the engine puts in the header of a message between agents, and the longest it compares when a message names its recipient. A longer name is cut.
+pub const AGENT_NAME_CHARS: usize = 40;
 pub const TRANSCRIPT_PAGE_MESSAGES: usize = 200;
 pub const TRANSCRIPT_PAGE_BYTES: usize = 524288;
 pub const TRANSCRIPT_MESSAGE_BYTES: usize = 262144;

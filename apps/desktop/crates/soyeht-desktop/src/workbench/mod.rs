@@ -6,6 +6,7 @@ use crate::{
     alerts::Alerts,
     destination::Destination,
     open_menu::OpenMenu,
+    pairing_ui::PairingUi,
     pane_ui::{PaneUis, ProjectPanels},
     prefs::Prefs,
     rename::Rename,
@@ -109,6 +110,8 @@ pub struct Workbench {
     pub(crate) login_start: LoginStart,
     /// How the last "Copy diagnostics" went (contract 14, section 4).
     pub(crate) diagnostics: diagnostics::Phase,
+    /// What the pairing sheet and the list of devices keep: the field of each code.
+    pub(crate) pairing_ui: PairingUi,
     /// The crash reports the notice "Soyeht closed unexpectedly" shows, none when it is not on
     /// screen (contract 16).
     pub(crate) crash_notice: Vec<String>,
@@ -145,6 +148,10 @@ impl Workbench {
                 cx.background_executor().timer(loops::CLOCK_BEAT).await;
                 let repaint = this.update(cx, |this, cx| {
                     this.beat_drafts(cx);
+                    if this.state.pairing.counting() {
+                        crate::pairing_ui::settle(this, cx);
+                        cx.notify();
+                    }
                     // Only the clock of a pane on screen ticks: a repaint is the whole window.
                     if this.state.shown_turn_running() {
                         cx.notify();
@@ -191,6 +198,7 @@ impl Workbench {
             update_loop: None,
             login_start: LoginStart::default(),
             diagnostics: diagnostics::Phase::default(),
+            pairing_ui: PairingUi::default(),
             crash_notice: Vec::new(),
             _web_signals: None,
             _events: events,
@@ -219,6 +227,7 @@ impl Workbench {
         self.raise_alerts(cx);
         self.restore_failed_start(cx);
         self.restore_returned_prompts(cx);
+        crate::pairing_ui::settle(self, cx);
         if self.switch.is_some() {
             self.choose_first_harness(cx);
         }

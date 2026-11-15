@@ -23,8 +23,12 @@ does nothing silently.
 
 - A local client is accepted when it runs as the engine's own user. Only macOS can
   also prove that the peer is the signed Soyeht app, so on Linux and Windows no local
-  client counts as a signed UI and the consent-changing methods stay refused: `pane.experiment.*`,
-  and starting or deciding a pairing or revoking a device (ADR 0162, 0163).
+  client counts as a signed UI and `pane.experiment.*` stays refused. Starting or deciding a
+  pairing and revoking a device stay refused on Windows (ADR 0162, 0163). On Linux they are the
+  local human's, and a pairing is approved only with the code the new device shows (ADR 0164): the
+  new device must connect through the tailnet interface from another node, the engine asks the
+  local `tailscaled` who it is (`/var/run/tailscale/tailscaled.sock`; with no daemon, or Tailscale
+  in userspace mode, nothing pairs), and the engine marks itself non-dumpable.
 - Moving a project entry to the trash is unsupported (the caller asks before deleting
   permanently). Reading the macOS keychain and browser cookies for usage sources is
   unsupported; those sources report it as such.
@@ -401,8 +405,8 @@ way as on the Mac. Each ACP session gets the engine's own MCP server
 `mcpServers`; the program connects to the engine through `soyeht_platform::local`
 (the Unix socket, or on Windows the loopback endpoint file), so nothing about it differs
 per system. A pane calls `list_agents` and `message_agent`; the engine queues the text,
-and the recipient's harness receives a peer prompt naming the sender and the reply route
-once its input is clean. The engine refuses to open an agent whose `soyeht-mcp` is not
+and the recipient's harness receives a peer prompt that starts with a one-line header naming the
+sender, the recipient and a message id once its input is clean. The engine refuses to open an agent whose `soyeht-mcp` is not
 installed next to the engine, so build the whole workspace (`cargo build --workspace`),
 not only `soyeht-engine`.
 

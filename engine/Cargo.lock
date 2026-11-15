@@ -1386,6 +1386,8 @@ dependencies = [
  "h2",
  "hmac",
  "http",
+ "icu_normalizer",
+ "icu_properties",
  "ignore",
  "libc",
  "notify",

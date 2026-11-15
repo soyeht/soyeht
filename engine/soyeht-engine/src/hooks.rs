@@ -90,6 +90,13 @@ pub trait Hooks: Send + Sync {
         None
     }
 
+    /// The answers about interfaces and Tailscale that replace the system's, which decide where a
+    /// pairing may come from (ADR 0164): a test says which listener and node a connection came
+    /// from.
+    fn pairing_peers(&self) -> Option<Arc<dyn crate::pairing_peers::PairingPeers>> {
+        None
+    }
+
     /// A recognizer that replaces the system's for `ink.recognize`.
     fn ink_recognizer(&self) -> Option<Box<dyn Recognizer>> {
         None

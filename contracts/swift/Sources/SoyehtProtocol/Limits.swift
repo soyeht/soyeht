@@ -24,6 +24,8 @@ public enum ProtocolLimits {
     public static let agentMessagesPerWindow = 6
     public static let agentMessageWindowSec = 60
     public static let agentMessageBytes = 60000
+    /// The longest name (in characters) the engine puts in the header of a message between agents, and the longest it compares when a message names its recipient. A longer name is cut.
+    public static let agentNameChars = 40
     public static let transcriptPageMessages = 200
     public static let transcriptPageBytes = 524288
     public static let transcriptMessageBytes = 262144
