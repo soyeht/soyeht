@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 mod migrations;
 
-pub const SCHEMA_VERSION: u32 = 37;
+pub const SCHEMA_VERSION: u32 = 38;
 
 #[derive(Debug)]
 pub enum Error {
@@ -99,6 +99,7 @@ pub enum Error {
     InvalidHarnessSignIn,
     InvalidAdapterAcknowledgement,
     InvalidProjectTrust,
+    InvalidAvatar,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -204,6 +205,7 @@ impl fmt::Display for Error {
             Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
             Self::InvalidAdapterAcknowledgement => f.write_str("invalid adapter acknowledgement"),
             Self::InvalidProjectTrust => f.write_str("invalid project trust"),
+            Self::InvalidAvatar => f.write_str("invalid avatar"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -260,7 +262,8 @@ impl From<&Error> for ErrorKind {
             | Error::TranscriptPageTooLarge
             | Error::InvalidEditorFile
             | Error::InvalidFileHistoryLimit
-            | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
+            | Error::InvalidFileReplacement
+            | Error::InvalidAvatar => ErrorKind::InvalidParams,
             _ => ErrorKind::InternalError,
         }
     }

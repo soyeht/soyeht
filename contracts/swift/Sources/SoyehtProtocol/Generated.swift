@@ -7908,6 +7908,361 @@ public enum InkUnsupportedReason: String, Codable, Sendable, CaseIterable {
     case `model_not_installed` = "model_not_installed"
 }
 
+public enum AvatarKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `preset`
+    case `uploaded`
+    case `generated`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [AvatarKind] = [.`preset`, .`uploaded`, .`generated`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "preset": self = .`preset`
+        case "uploaded": self = .`uploaded`
+        case "generated": self = .`generated`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`preset`: "preset"
+        case .`uploaded`: "uploaded"
+        case .`generated`: "generated"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = AvatarKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public enum AvatarBuildState: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `none`
+    case `building`
+    case `ready`
+    case `failed`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [AvatarBuildState] = [.`none`, .`building`, .`ready`, .`failed`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "none": self = .`none`
+        case "building": self = .`building`
+        case "ready": self = .`ready`
+        case "failed": self = .`failed`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`none`: "none"
+        case .`building`: "building"
+        case .`ready`: "ready"
+        case .`failed`: "failed"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = AvatarBuildState(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public enum AvatarBuildFailureKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `provider`
+    case `frames`
+    case `package`
+    case `cancelled`
+    case `interrupted`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [AvatarBuildFailureKind] = [.`provider`, .`frames`, .`package`, .`cancelled`, .`interrupted`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "provider": self = .`provider`
+        case "frames": self = .`frames`
+        case "package": self = .`package`
+        case "cancelled": self = .`cancelled`
+        case "interrupted": self = .`interrupted`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`provider`: "provider"
+        case .`frames`: "frames"
+        case .`package`: "package"
+        case .`cancelled`: "cancelled"
+        case .`interrupted`: "interrupted"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = AvatarBuildFailureKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
+public struct AvatarVoice: Codable, Sendable {
+    public var `providerId`: String
+    public var `voiceId`: String
+    public init(`providerId`: String, `voiceId`: String) {
+        self.`providerId` = `providerId`
+        self.`voiceId` = `voiceId`
+    }
+}
+
+public struct AvatarHearing: Codable, Sendable {
+    public var `providerId`: String
+    public var `language`: String?
+    public init(`providerId`: String, `language`: String? = nil) {
+        self.`providerId` = `providerId`
+        self.`language` = `language`
+    }
+}
+
+public struct Avatar: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `name`: String
+    public var `kind`: AvatarKind
+    public var `sourceHash`: String
+    public var `buildState`: AvatarBuildState
+    public var `failureKind`: AvatarBuildFailureKind?
+    public var `packageHash`: String?
+    public var `voice`: AvatarVoice?
+    public var `createdAt`: String
+    public init(`avatarId`: Id, `name`: String, `kind`: AvatarKind, `sourceHash`: String, `buildState`: AvatarBuildState, `failureKind`: AvatarBuildFailureKind? = nil, `packageHash`: String? = nil, `voice`: AvatarVoice? = nil, `createdAt`: String) {
+        self.`avatarId` = `avatarId`
+        self.`name` = `name`
+        self.`kind` = `kind`
+        self.`sourceHash` = `sourceHash`
+        self.`buildState` = `buildState`
+        self.`failureKind` = `failureKind`
+        self.`packageHash` = `packageHash`
+        self.`voice` = `voice`
+        self.`createdAt` = `createdAt`
+    }
+}
+
+public struct AvatarBinding: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `avatarId`: Id
+    public var `harness`: Id
+    public var `model`: String?
+    public var `effort`: String?
+    public var `hearing`: AvatarHearing?
+    public var `voice`: AvatarVoice?
+    public var `persona`: String
+    public var `voiceOn`: [String]
+    public init(`workspaceId`: Id, `avatarId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `hearing`: AvatarHearing? = nil, `voice`: AvatarVoice? = nil, `persona`: String, `voiceOn`: [String]) {
+        self.`workspaceId` = `workspaceId`
+        self.`avatarId` = `avatarId`
+        self.`harness` = `harness`
+        self.`model` = `model`
+        self.`effort` = `effort`
+        self.`hearing` = `hearing`
+        self.`voice` = `voice`
+        self.`persona` = `persona`
+        self.`voiceOn` = `voiceOn`
+    }
+}
+
+public struct AvatarListParams: Codable, Sendable {
+
+    public init() {
+
+    }
+}
+
+public struct AvatarListResult: Codable, Sendable {
+    public var `avatars`: [Avatar]
+    public var `bindings`: [AvatarBinding]
+    public init(`avatars`: [Avatar], `bindings`: [AvatarBinding]) {
+        self.`avatars` = `avatars`
+        self.`bindings` = `bindings`
+    }
+}
+
+public struct AvatarCreateParams: Codable, Sendable {
+    public var `name`: String
+    public var `kind`: AvatarKind
+    public var `picture`: AttachmentRef
+    public var `voice`: AvatarVoice?
+    public var `idempotencyKey`: Id
+    public init(`name`: String, `kind`: AvatarKind, `picture`: AttachmentRef, `voice`: AvatarVoice? = nil, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`kind` = `kind`
+        self.`picture` = `picture`
+        self.`voice` = `voice`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AvatarCreateResult: Codable, Sendable {
+    public var `avatar`: Avatar
+    public init(`avatar`: Avatar) {
+        self.`avatar` = `avatar`
+    }
+}
+
+public struct AvatarRenameParams: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `name`: String
+    public var `idempotencyKey`: Id
+    public init(`avatarId`: Id, `name`: String, `idempotencyKey`: Id) {
+        self.`avatarId` = `avatarId`
+        self.`name` = `name`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AvatarRenameResult: Codable, Sendable {
+    public var `avatar`: Avatar
+    public init(`avatar`: Avatar) {
+        self.`avatar` = `avatar`
+    }
+}
+
+public struct AvatarDeleteParams: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `idempotencyKey`: Id
+    public init(`avatarId`: Id, `idempotencyKey`: Id) {
+        self.`avatarId` = `avatarId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AvatarDeleteResult: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `removed`: Bool
+    public init(`avatarId`: Id, `removed`: Bool) {
+        self.`avatarId` = `avatarId`
+        self.`removed` = `removed`
+    }
+}
+
+public struct AvatarAssignParams: Codable, Sendable {
+    public var `workspaceId`: Id
+    public var `avatarId`: Id
+    public var `harness`: Id
+    public var `model`: String?
+    public var `effort`: String?
+    public var `hearing`: AvatarHearing?
+    public var `voice`: AvatarVoice?
+    public var `persona`: String?
+    public var `voiceOn`: Bool?
+    public var `idempotencyKey`: Id
+    public init(`workspaceId`: Id, `avatarId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `hearing`: AvatarHearing? = nil, `voice`: AvatarVoice? = nil, `persona`: String? = nil, `voiceOn`: Bool? = nil, `idempotencyKey`: Id) {
+        self.`workspaceId` = `workspaceId`
+        self.`avatarId` = `avatarId`
+        self.`harness` = `harness`
+        self.`model` = `model`
+        self.`effort` = `effort`
+        self.`hearing` = `hearing`
+        self.`voice` = `voice`
+        self.`persona` = `persona`
+        self.`voiceOn` = `voiceOn`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AvatarAssignResult: Codable, Sendable {
+    public var `binding`: AvatarBinding
+    public init(`binding`: AvatarBinding) {
+        self.`binding` = `binding`
+    }
+}
+
+public struct AvatarBuildParams: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `idempotencyKey`: Id
+    public init(`avatarId`: Id, `idempotencyKey`: Id) {
+        self.`avatarId` = `avatarId`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct AvatarBuildResult: Codable, Sendable {
+    public var `avatar`: Avatar
+    public init(`avatar`: Avatar) {
+        self.`avatar` = `avatar`
+    }
+}
+
+public struct AvatarPackageReadParams: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `file`: String
+    public var `offset`: Decimal
+    public var `length`: UInt32?
+    public init(`avatarId`: Id, `file`: String, `offset`: Decimal, `length`: UInt32? = nil) {
+        self.`avatarId` = `avatarId`
+        self.`file` = `file`
+        self.`offset` = `offset`
+        self.`length` = `length`
+    }
+}
+
+public struct AvatarPackageReadResult: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `file`: String
+    public var `offset`: Decimal
+    public var `size`: Decimal
+    public var `chunk`: AttachmentRef
+    public init(`avatarId`: Id, `file`: String, `offset`: Decimal, `size`: Decimal, `chunk`: AttachmentRef) {
+        self.`avatarId` = `avatarId`
+        self.`file` = `file`
+        self.`offset` = `offset`
+        self.`size` = `size`
+        self.`chunk` = `chunk`
+    }
+}
+
+public struct AvatarChangedEvent: Codable, Sendable {
+    public var `eventId`: Decimal
+    public var `at`: String
+    public var `actor`: Actor?
+    public var `avatarId`: Id
+    public var `avatar`: Avatar?
+    public var `workspaceId`: Id?
+    public var `binding`: AvatarBinding?
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `avatarId`: Id, `avatar`: Avatar? = nil, `workspaceId`: Id? = nil, `binding`: AvatarBinding? = nil) {
+        self.`eventId` = `eventId`
+        self.`at` = `at`
+        self.`actor` = `actor`
+        self.`avatarId` = `avatarId`
+        self.`avatar` = `avatar`
+        self.`workspaceId` = `workspaceId`
+        self.`binding` = `binding`
+    }
+}
+
+public struct AvatarBuildProgressEvent: Codable, Sendable {
+    public var `avatarId`: Id
+    public var `done`: UInt32
+    public var `total`: UInt32
+    public init(`avatarId`: Id, `done`: UInt32, `total`: UInt32) {
+        self.`avatarId` = `avatarId`
+        self.`done` = `done`
+        self.`total` = `total`
+    }
+}
+
 public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case hello = "hello"
     case stateSnapshot = "state.snapshot"
@@ -8061,6 +8416,13 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case writingBeatDelete = "writing.beat.delete"
     case paneExperimentHook = "pane.experiment.hook"
     case inkRecognize = "ink.recognize"
+    case avatarList = "avatar.list"
+    case avatarCreate = "avatar.create"
+    case avatarRename = "avatar.rename"
+    case avatarDelete = "avatar.delete"
+    case avatarAssign = "avatar.assign"
+    case avatarBuild = "avatar.build"
+    case avatarPackageRead = "avatar.package.read"
 }
 
 public enum EventName: String, Codable, Sendable, CaseIterable {
@@ -8140,6 +8502,8 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case webConsoleCounts = "web.console_counts"
     case webAgentDriving = "web.agent_driving"
     case writingChanged = "writing.changed"
+    case avatarChanged = "avatar.changed"
+    case avatarBuildProgress = "avatar.build_progress"
 }
 
 public struct EventDescriptor: Sendable {
@@ -8228,4 +8592,6 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .webConsoleCounts: EventDescriptor(paramsType: "WebConsoleCountsEvent", durable: false),
     .webAgentDriving: EventDescriptor(paramsType: "WebAgentDrivingEvent", durable: false),
     .writingChanged: EventDescriptor(paramsType: "WritingChangedEvent", durable: true),
+    .avatarChanged: EventDescriptor(paramsType: "AvatarChangedEvent", durable: true),
+    .avatarBuildProgress: EventDescriptor(paramsType: "AvatarBuildProgressEvent", durable: false),
 ]

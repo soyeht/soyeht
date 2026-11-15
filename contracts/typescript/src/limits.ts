@@ -115,5 +115,15 @@ export const limits = {
   "inkCoordinate": 1000000,
   "inkDurationMs": 3600000,
   "inkCandidateBytes": 2048,
-  "inkDeadlineSec": 10
+  "inkDeadlineSec": 10,
+  "avatarCount": 200,
+  "avatarNameChars": 80,
+  "avatarPictureBytes": 10485760,
+  "avatarPersonaChars": 16000,
+  "avatarProviderIdChars": 64,
+  "avatarVoiceIdChars": 128,
+  "avatarLanguageChars": 35,
+  "avatarSettingChars": 128,
+  "avatarPackagePathChars": 256,
+  "avatarProgressFrames": 1000
 } as const;

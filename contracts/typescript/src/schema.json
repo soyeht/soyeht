@@ -13169,6 +13169,517 @@
         "language_pack_missing",
         "model_not_installed"
       ]
+    },
+    "AvatarKind": {
+      "type": "string",
+      "enum": [
+        "preset",
+        "uploaded",
+        "generated"
+      ]
+    },
+    "AvatarBuildState": {
+      "type": "string",
+      "enum": [
+        "none",
+        "building",
+        "ready",
+        "failed"
+      ]
+    },
+    "AvatarBuildFailureKind": {
+      "type": "string",
+      "enum": [
+        "provider",
+        "frames",
+        "package",
+        "cancelled",
+        "interrupted"
+      ]
+    },
+    "AvatarVoice": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "The text-to-speech provider of the client's own catalogue (ADR 0166). The engine keeps the identifier and never a key: provider keys stay in the vault of the device that calls the provider."
+        },
+        "voiceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "One voice of that provider."
+        }
+      },
+      "required": [
+        "providerId",
+        "voiceId"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarHearing": {
+      "type": "object",
+      "properties": {
+        "providerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "The speech-to-text provider of the client's own catalogue (ADR 0166). Never a key."
+        },
+        "language": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 35,
+          "description": "A BCP 47 language tag; absent lets the provider choose."
+        }
+      },
+      "required": [
+        "providerId"
+      ],
+      "additionalProperties": true
+    },
+    "Avatar": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "$ref": "#/$defs/AvatarKind"
+        },
+        "sourceHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "The lowercase hexadecimal SHA-256 of the source picture, `source.png` of the avatar's folder."
+        },
+        "buildState": {
+          "$ref": "#/$defs/AvatarBuildState"
+        },
+        "failureKind": {
+          "$ref": "#/$defs/AvatarBuildFailureKind"
+        },
+        "packageHash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "description": "The lowercase hexadecimal SHA-256 of the ready package's manifest. Present only when `buildState` is `ready`."
+        },
+        "voice": {
+          "$ref": "#/$defs/AvatarVoice"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "When the avatar was made (RFC 3339, whole seconds)."
+        }
+      },
+      "required": [
+        "avatarId",
+        "name",
+        "kind",
+        "sourceHash",
+        "buildState",
+        "createdAt"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarBinding": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "hearing": {
+          "$ref": "#/$defs/AvatarHearing"
+        },
+        "voice": {
+          "$ref": "#/$defs/AvatarVoice"
+        },
+        "persona": {
+          "type": "string",
+          "maxLength": 16000,
+          "description": "How the avatar speaks and what the person asked of it, as plain text given to the agent when its pane starts (ADR 0166). Empty when the person wrote none. It is never written to a log."
+        },
+        "voiceOn": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "description": "The clients that have voice on for this workspace: a paired device's `deviceId`, and `local` for the person at the computer. A client reads whether its own entry is in the list."
+        }
+      },
+      "required": [
+        "workspaceId",
+        "avatarId",
+        "harness",
+        "persona",
+        "voiceOn"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarListParams": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": true
+    },
+    "AvatarListResult": {
+      "type": "object",
+      "properties": {
+        "avatars": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Avatar"
+          },
+          "description": "Every avatar of the library, oldest first."
+        },
+        "bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AvatarBinding"
+          },
+          "description": "The binding of every open workspace that has an avatar."
+        }
+      },
+      "required": [
+        "avatars",
+        "bindings"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarCreateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "kind": {
+          "$ref": "#/$defs/AvatarKind"
+        },
+        "picture": {
+          "$ref": "#/$defs/AttachmentRef"
+        },
+        "voice": {
+          "$ref": "#/$defs/AvatarVoice"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "picture",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarCreateResult": {
+      "type": "object",
+      "properties": {
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        }
+      },
+      "required": [
+        "avatar"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarRenameParams": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "avatarId",
+        "name",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarRenameResult": {
+      "type": "object",
+      "properties": {
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        }
+      },
+      "required": [
+        "avatar"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarDeleteParams": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "avatarId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarDeleteResult": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "removed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "avatarId",
+        "removed"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarAssignParams": {
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "harness": {
+          "$ref": "#/$defs/Id"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "effort": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "hearing": {
+          "$ref": "#/$defs/AvatarHearing"
+        },
+        "voice": {
+          "$ref": "#/$defs/AvatarVoice"
+        },
+        "persona": {
+          "type": "string",
+          "maxLength": 16000
+        },
+        "voiceOn": {
+          "type": "boolean",
+          "description": "Whether the caller's own client has voice on for this workspace. Absent leaves it as it was; the other clients' entries are never changed by this call."
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "workspaceId",
+        "avatarId",
+        "harness",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarAssignResult": {
+      "type": "object",
+      "properties": {
+        "binding": {
+          "$ref": "#/$defs/AvatarBinding"
+        }
+      },
+      "required": [
+        "binding"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarBuildParams": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "avatarId",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarBuildResult": {
+      "type": "object",
+      "properties": {
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        }
+      },
+      "required": [
+        "avatar"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarPackageReadParams": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "description": "A file of the package, relative to its folder, written with `/` and with no `.` or `..` part. The package's own manifest lists the others (ADR 0166)."
+        },
+        "offset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "length": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 262144
+        }
+      },
+      "required": [
+        "avatarId",
+        "file",
+        "offset"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarPackageReadResult": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "offset": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "size": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "chunk": {
+          "$ref": "#/$defs/AttachmentRef"
+        }
+      },
+      "required": [
+        "avatarId",
+        "file",
+        "offset",
+        "size",
+        "chunk"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarChangedEvent": {
+      "type": "object",
+      "properties": {
+        "eventId": {
+          "$ref": "#/$defs/Decimal"
+        },
+        "at": {
+          "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "avatar": {
+          "$ref": "#/$defs/Avatar"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/Id"
+        },
+        "binding": {
+          "$ref": "#/$defs/AvatarBinding"
+        }
+      },
+      "required": [
+        "eventId",
+        "at",
+        "avatarId"
+      ],
+      "additionalProperties": true
+    },
+    "AvatarBuildProgressEvent": {
+      "type": "object",
+      "properties": {
+        "avatarId": {
+          "$ref": "#/$defs/Id"
+        },
+        "done": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "total": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "avatarId",
+        "done",
+        "total"
+      ],
+      "additionalProperties": true
     }
   },
   "x-protocolVersion": {
@@ -13177,6 +13688,9 @@
   },
   "x-openEnums": [
     "AgentLoginPhase",
+    "AvatarBuildFailureKind",
+    "AvatarBuildState",
+    "AvatarKind",
     "EngineReachabilityReason",
     "ErrorKind",
     "HarnessEnvironmentIssue",
@@ -13199,6 +13713,7 @@
   "x-paneNonRouteIds": [
     "agent",
     "authMethodId",
+    "avatarId",
     "beatId",
     "before",
     "configId",
@@ -14596,6 +15111,69 @@
         "$ref": "#/$defs/InkRecognizeResult"
       },
       "mutation": false
+    },
+    "avatar.list": {
+      "params": {
+        "$ref": "#/$defs/AvatarListParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarListResult"
+      },
+      "mutation": false
+    },
+    "avatar.create": {
+      "params": {
+        "$ref": "#/$defs/AvatarCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarCreateResult"
+      },
+      "mutation": true
+    },
+    "avatar.rename": {
+      "params": {
+        "$ref": "#/$defs/AvatarRenameParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarRenameResult"
+      },
+      "mutation": true
+    },
+    "avatar.delete": {
+      "params": {
+        "$ref": "#/$defs/AvatarDeleteParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarDeleteResult"
+      },
+      "mutation": true
+    },
+    "avatar.assign": {
+      "params": {
+        "$ref": "#/$defs/AvatarAssignParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarAssignResult"
+      },
+      "mutation": true
+    },
+    "avatar.build": {
+      "params": {
+        "$ref": "#/$defs/AvatarBuildParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarBuildResult"
+      },
+      "mutation": true
+    },
+    "avatar.package.read": {
+      "params": {
+        "$ref": "#/$defs/AvatarPackageReadParams"
+      },
+      "result": {
+        "$ref": "#/$defs/AvatarPackageReadResult"
+      },
+      "mutation": false
     }
   },
   "x-events": {
@@ -15054,6 +15632,18 @@
         "$ref": "#/$defs/WritingChangedEvent"
       },
       "durable": true
+    },
+    "avatar.changed": {
+      "params": {
+        "$ref": "#/$defs/AvatarChangedEvent"
+      },
+      "durable": true
+    },
+    "avatar.build_progress": {
+      "params": {
+        "$ref": "#/$defs/AvatarBuildProgressEvent"
+      },
+      "durable": false
     }
   },
   "x-framing": {
@@ -15110,7 +15700,17 @@
     "inkCoordinate": "The largest absolute value of a stroke coordinate in an `ink.recognize` request, in the client's own units (the engine scales the writing, so the unit is the client's choice).",
     "inkDurationMs": "The longest a stroke point's time since the first point of the writing may be in an `ink.recognize` request, in milliseconds.",
     "inkCandidateBytes": "The longest text (in UTF-8 bytes) of one candidate the engine answers `ink.recognize` with; a longer one is cut at a character.",
-    "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`."
+    "inkDeadlineSec": "The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.",
+    "avatarCount": "The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.",
+    "avatarNameChars": "The longest avatar name (in characters).",
+    "avatarPictureBytes": "The largest source picture (a PNG) `avatar.create` takes.",
+    "avatarPersonaChars": "The longest persona text (in characters) of a workspace's avatar binding. Never written to a log.",
+    "avatarProviderIdChars": "The longest speech provider identifier (in characters) an avatar or a binding names.",
+    "avatarVoiceIdChars": "The longest voice identifier (in characters) of a speech provider.",
+    "avatarLanguageChars": "The longest language tag (in characters) of a binding's speech-to-text.",
+    "avatarSettingChars": "The longest model or effort name (in characters) of a binding; the length of an `Id`.",
+    "avatarPackagePathChars": "The longest file path (in characters) `avatar.package.read` takes, relative to the package folder.",
+    "avatarProgressFrames": "The most frames a build reports in `avatar.build_progress`."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -15228,7 +15828,17 @@
     "inkCoordinate": 1000000,
     "inkDurationMs": 3600000,
     "inkCandidateBytes": 2048,
-    "inkDeadlineSec": 10
+    "inkDeadlineSec": 10,
+    "avatarCount": 200,
+    "avatarNameChars": 80,
+    "avatarPictureBytes": 10485760,
+    "avatarPersonaChars": 16000,
+    "avatarProviderIdChars": 64,
+    "avatarVoiceIdChars": 128,
+    "avatarLanguageChars": 35,
+    "avatarSettingChars": 128,
+    "avatarPackagePathChars": 256,
+    "avatarProgressFrames": 1000
   },
   "x-settings": {
     "terminal.defaultCols": {

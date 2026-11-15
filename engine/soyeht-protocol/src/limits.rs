@@ -133,6 +133,26 @@ pub const INK_DURATION_MS: usize = 3600000;
 pub const INK_CANDIDATE_BYTES: usize = 2048;
 /// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
 pub const INK_DEADLINE_SEC: usize = 10;
+/// The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.
+pub const AVATAR_COUNT: usize = 200;
+/// The longest avatar name (in characters).
+pub const AVATAR_NAME_CHARS: usize = 80;
+/// The largest source picture (a PNG) `avatar.create` takes.
+pub const AVATAR_PICTURE_BYTES: usize = 10485760;
+/// The longest persona text (in characters) of a workspace's avatar binding. Never written to a log.
+pub const AVATAR_PERSONA_CHARS: usize = 16000;
+/// The longest speech provider identifier (in characters) an avatar or a binding names.
+pub const AVATAR_PROVIDER_ID_CHARS: usize = 64;
+/// The longest voice identifier (in characters) of a speech provider.
+pub const AVATAR_VOICE_ID_CHARS: usize = 128;
+/// The longest language tag (in characters) of a binding's speech-to-text.
+pub const AVATAR_LANGUAGE_CHARS: usize = 35;
+/// The longest model or effort name (in characters) of a binding; the length of an `Id`.
+pub const AVATAR_SETTING_CHARS: usize = 128;
+/// The longest file path (in characters) `avatar.package.read` takes, relative to the package folder.
+pub const AVATAR_PACKAGE_PATH_CHARS: usize = 256;
+/// The most frames a build reports in `avatar.build_progress`.
+pub const AVATAR_PROGRESS_FRAMES: usize = 1000;
 pub const FRAME_KIND_JSON: u8 = 1;
 pub const FRAME_KIND_TERMINAL: u8 = 2;
 pub const FRAME_KIND_ATTACHMENT: u8 = 3;

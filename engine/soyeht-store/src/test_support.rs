@@ -100,6 +100,22 @@ impl DatabaseProbe {
         Ok(())
     }
 
+    /// Puts an avatar in a build state that only the builder of a later slice reaches (ADR 0166),
+    /// with the failure kind or the package hash that state carries.
+    pub fn set_avatar_build(
+        &self,
+        avatar_id: &str,
+        state: &str,
+        failure_kind: Option<&str>,
+        package_hash: Option<&str>,
+    ) -> Result<()> {
+        self.connection.execute(
+            "UPDATE avatars SET build_state=?1, failure_kind=?2, package_hash=?3 WHERE id=?4",
+            params![state, failure_kind, package_hash, avatar_id],
+        )?;
+        Ok(())
+    }
+
     pub fn set_experiment_capture(&self, pane_id: &str, on: bool) -> Result<()> {
         let raw: String = self.connection.query_row(
             "SELECT payload FROM panes WHERE id=?1",

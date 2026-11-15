@@ -6620,6 +6620,252 @@ pub enum InkUnsupportedReason {
     #[serde(rename = "model_not_installed")]
     ModelNotInstalled,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AvatarKind {
+    #[serde(rename = "preset")]
+    Preset,
+    #[serde(rename = "uploaded")]
+    Uploaded,
+    #[serde(rename = "generated")]
+    Generated,
+    /// A value this build does not know (ADR 0161).
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AvatarBuildState {
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "building")]
+    Building,
+    #[serde(rename = "ready")]
+    Ready,
+    #[serde(rename = "failed")]
+    Failed,
+    /// A value this build does not know (ADR 0161).
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AvatarBuildFailureKind {
+    #[serde(rename = "provider")]
+    Provider,
+    #[serde(rename = "frames")]
+    Frames,
+    #[serde(rename = "package")]
+    Package,
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    #[serde(rename = "interrupted")]
+    Interrupted,
+    /// A value this build does not know (ADR 0161).
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarVoice {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    #[serde(rename = "voiceId")]
+    pub voice_id: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarHearing {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    #[serde(rename = "language", skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Avatar {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: AvatarKind,
+    #[serde(rename = "sourceHash")]
+    pub source_hash: String,
+    #[serde(rename = "buildState")]
+    pub build_state: AvatarBuildState,
+    #[serde(rename = "failureKind", skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<AvatarBuildFailureKind>,
+    #[serde(rename = "packageHash", skip_serializing_if = "Option::is_none")]
+    pub package_hash: Option<String>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarBinding {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "hearing", skip_serializing_if = "Option::is_none")]
+    pub hearing: Option<AvatarHearing>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "persona")]
+    pub persona: String,
+    #[serde(rename = "voiceOn")]
+    pub voice_on: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarListResult {
+    #[serde(rename = "avatars")]
+    pub avatars: Vec<Avatar>,
+    #[serde(rename = "bindings")]
+    pub bindings: Vec<AvatarBinding>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarCreateParams {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: AvatarKind,
+    #[serde(rename = "picture")]
+    pub picture: AttachmentRef,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarCreateResult {
+    #[serde(rename = "avatar")]
+    pub avatar: Avatar,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarRenameParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarRenameResult {
+    #[serde(rename = "avatar")]
+    pub avatar: Avatar,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarDeleteParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarDeleteResult {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "removed")]
+    pub removed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarAssignParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "hearing", skip_serializing_if = "Option::is_none")]
+    pub hearing: Option<AvatarHearing>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "persona", skip_serializing_if = "Option::is_none")]
+    pub persona: Option<String>,
+    #[serde(rename = "voiceOn", skip_serializing_if = "Option::is_none")]
+    pub voice_on: Option<bool>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarAssignResult {
+    #[serde(rename = "binding")]
+    pub binding: AvatarBinding,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarBuildParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarBuildResult {
+    #[serde(rename = "avatar")]
+    pub avatar: Avatar,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarPackageReadParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "file")]
+    pub file: String,
+    #[serde(rename = "offset")]
+    pub offset: Decimal,
+    #[serde(rename = "length", skip_serializing_if = "Option::is_none")]
+    pub length: Option<u32>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarPackageReadResult {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "file")]
+    pub file: String,
+    #[serde(rename = "offset")]
+    pub offset: Decimal,
+    #[serde(rename = "size")]
+    pub size: Decimal,
+    #[serde(rename = "chunk")]
+    pub chunk: AttachmentRef,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "avatar", skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<Avatar>,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
+    pub binding: Option<AvatarBinding>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarBuildProgressEvent {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "done")]
+    pub done: u32,
+    #[serde(rename = "total")]
+    pub total: u32,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -6927,6 +7173,20 @@ pub enum Request {
     PaneExperimentHook(PaneExperimentHookParams),
     #[serde(rename = "ink.recognize")]
     InkRecognize(InkRecognizeParams),
+    #[serde(rename = "avatar.list")]
+    AvatarList(AvatarListParams),
+    #[serde(rename = "avatar.create")]
+    AvatarCreate(AvatarCreateParams),
+    #[serde(rename = "avatar.rename")]
+    AvatarRename(AvatarRenameParams),
+    #[serde(rename = "avatar.delete")]
+    AvatarDelete(AvatarDeleteParams),
+    #[serde(rename = "avatar.assign")]
+    AvatarAssign(AvatarAssignParams),
+    #[serde(rename = "avatar.build")]
+    AvatarBuild(AvatarBuildParams),
+    #[serde(rename = "avatar.package.read")]
+    AvatarPackageRead(AvatarPackageReadParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -7576,6 +7836,43 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "InkRecognizeResult",
         false,
     ),
+    ("avatar.list", "AvatarListParams", "AvatarListResult", false),
+    (
+        "avatar.create",
+        "AvatarCreateParams",
+        "AvatarCreateResult",
+        true,
+    ),
+    (
+        "avatar.rename",
+        "AvatarRenameParams",
+        "AvatarRenameResult",
+        true,
+    ),
+    (
+        "avatar.delete",
+        "AvatarDeleteParams",
+        "AvatarDeleteResult",
+        true,
+    ),
+    (
+        "avatar.assign",
+        "AvatarAssignParams",
+        "AvatarAssignResult",
+        true,
+    ),
+    (
+        "avatar.build",
+        "AvatarBuildParams",
+        "AvatarBuildResult",
+        true,
+    ),
+    (
+        "avatar.package.read",
+        "AvatarPackageReadParams",
+        "AvatarPackageReadResult",
+        false,
+    ),
 ];
 pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.role.set", "paneId"),
@@ -7791,6 +8088,10 @@ pub enum EventName {
     WebAgentDriving,
     #[serde(rename = "writing.changed")]
     WritingChanged,
+    #[serde(rename = "avatar.changed")]
+    AvatarChanged,
+    #[serde(rename = "avatar.build_progress")]
+    AvatarBuildProgress,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -7871,6 +8172,8 @@ impl EventName {
             Self::WebConsoleCounts => "web.console_counts",
             Self::WebAgentDriving => "web.agent_driving",
             Self::WritingChanged => "writing.changed",
+            Self::AvatarChanged => "avatar.changed",
+            Self::AvatarBuildProgress => "avatar.build_progress",
         }
     }
 }
@@ -8260,6 +8563,16 @@ pub const EVENTS: &[EventDescriptor] = &[
         name: EventName::WritingChanged,
         params_type: "WritingChangedEvent",
         durable: true,
+    },
+    EventDescriptor {
+        name: EventName::AvatarChanged,
+        params_type: "AvatarChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::AvatarBuildProgress,
+        params_type: "AvatarBuildProgressEvent",
+        durable: false,
     },
 ];
 // Events with no `EventParams` type:
@@ -9056,6 +9369,23 @@ pub struct WritingChangedDraft {
 impl EventParams for WritingChangedDraft {
     const NAME: EventName = EventName::WritingChanged;
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AvatarChangedDraft {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "avatar", skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<Avatar>,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
+    pub binding: Option<AvatarBinding>,
+}
+impl EventParams for AvatarChangedDraft {
+    const NAME: EventName = EventName::AvatarChanged;
+}
+impl EventParams for AvatarBuildProgressEvent {
+    const NAME: EventName = EventName::AvatarBuildProgress;
+}
 pub mod method {
     pub const HELLO: &str = "hello";
     pub const STATE_SNAPSHOT: &str = "state.snapshot";
@@ -9209,6 +9539,13 @@ pub mod method {
     pub const WRITING_BEAT_DELETE: &str = "writing.beat.delete";
     pub const PANE_EXPERIMENT_HOOK: &str = "pane.experiment.hook";
     pub const INK_RECOGNIZE: &str = "ink.recognize";
+    pub const AVATAR_LIST: &str = "avatar.list";
+    pub const AVATAR_CREATE: &str = "avatar.create";
+    pub const AVATAR_RENAME: &str = "avatar.rename";
+    pub const AVATAR_DELETE: &str = "avatar.delete";
+    pub const AVATAR_ASSIGN: &str = "avatar.assign";
+    pub const AVATAR_BUILD: &str = "avatar.build";
+    pub const AVATAR_PACKAGE_READ: &str = "avatar.package.read";
 }
 pub mod method_family {
     pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
@@ -9337,6 +9674,8 @@ pub mod event {
     pub const WEB_CONSOLE_COUNTS: &str = "web.console_counts";
     pub const WEB_AGENT_DRIVING: &str = "web.agent_driving";
     pub const WRITING_CHANGED: &str = "writing.changed";
+    pub const AVATAR_CHANGED: &str = "avatar.changed";
+    pub const AVATAR_BUILD_PROGRESS: &str = "avatar.build_progress";
 }
 
 pub fn error_code(kind: &ErrorKind) -> i64 {

@@ -132,6 +132,26 @@ public enum ProtocolLimits {
     public static let inkCandidateBytes = 2048
     /// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
     public static let inkDeadlineSec = 10
+    /// The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.
+    public static let avatarCount = 200
+    /// The longest avatar name (in characters).
+    public static let avatarNameChars = 80
+    /// The largest source picture (a PNG) `avatar.create` takes.
+    public static let avatarPictureBytes = 10485760
+    /// The longest persona text (in characters) of a workspace's avatar binding. Never written to a log.
+    public static let avatarPersonaChars = 16000
+    /// The longest speech provider identifier (in characters) an avatar or a binding names.
+    public static let avatarProviderIdChars = 64
+    /// The longest voice identifier (in characters) of a speech provider.
+    public static let avatarVoiceIdChars = 128
+    /// The longest language tag (in characters) of a binding's speech-to-text.
+    public static let avatarLanguageChars = 35
+    /// The longest model or effort name (in characters) of a binding; the length of an `Id`.
+    public static let avatarSettingChars = 128
+    /// The longest file path (in characters) `avatar.package.read` takes, relative to the package folder.
+    public static let avatarPackagePathChars = 256
+    /// The most frames a build reports in `avatar.build_progress`.
+    public static let avatarProgressFrames = 1000
 }
 
 public enum ProtocolVersion {
