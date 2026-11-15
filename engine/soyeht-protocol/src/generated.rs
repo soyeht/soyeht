@@ -1629,8 +1629,12 @@ pub struct AgentListResult {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageParams {
-    #[serde(rename = "targetPaneId")]
-    pub target_pane_id: Id,
+    #[serde(rename = "targetPaneId", skip_serializing_if = "Option::is_none")]
+    pub target_pane_id: Option<Id>,
+    #[serde(rename = "targetName", skip_serializing_if = "Option::is_none")]
+    pub target_name: Option<String>,
+    #[serde(rename = "inReplyTo", skip_serializing_if = "Option::is_none")]
+    pub in_reply_to: Option<String>,
     #[serde(rename = "text")]
     pub text: String,
     #[serde(rename = "idempotencyKey")]
@@ -1642,6 +1646,8 @@ pub struct AgentMessageResult {
     pub prompt_id: Id,
     #[serde(rename = "queued")]
     pub queued: bool,
+    #[serde(rename = "messageId", skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct PermissionOption {

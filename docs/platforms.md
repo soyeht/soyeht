@@ -401,8 +401,8 @@ way as on the Mac. Each ACP session gets the engine's own MCP server
 `mcpServers`; the program connects to the engine through `soyeht_platform::local`
 (the Unix socket, or on Windows the loopback endpoint file), so nothing about it differs
 per system. A pane calls `list_agents` and `message_agent`; the engine queues the text,
-and the recipient's harness receives a peer prompt naming the sender and the reply route
-once its input is clean. The engine refuses to open an agent whose `soyeht-mcp` is not
+and the recipient's harness receives a peer prompt that starts with a one-line header naming the
+sender, the recipient and a message id once its input is clean. The engine refuses to open an agent whose `soyeht-mcp` is not
 installed next to the engine, so build the whole workspace (`cargo build --workspace`),
 not only `soyeht-engine`.
 

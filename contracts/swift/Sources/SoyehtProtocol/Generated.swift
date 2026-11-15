@@ -2056,11 +2056,15 @@ public struct AgentListResult: Codable, Sendable {
 }
 
 public struct AgentMessageParams: Codable, Sendable {
-    public var `targetPaneId`: Id
+    public var `targetPaneId`: Id?
+    public var `targetName`: String?
+    public var `inReplyTo`: String?
     public var `text`: String
     public var `idempotencyKey`: Id
-    public init(`targetPaneId`: Id, `text`: String, `idempotencyKey`: Id) {
+    public init(`targetPaneId`: Id? = nil, `targetName`: String? = nil, `inReplyTo`: String? = nil, `text`: String, `idempotencyKey`: Id) {
         self.`targetPaneId` = `targetPaneId`
+        self.`targetName` = `targetName`
+        self.`inReplyTo` = `inReplyTo`
         self.`text` = `text`
         self.`idempotencyKey` = `idempotencyKey`
     }
@@ -2069,9 +2073,11 @@ public struct AgentMessageParams: Codable, Sendable {
 public struct AgentMessageResult: Codable, Sendable {
     public var `promptId`: Id
     public var `queued`: Bool
-    public init(`promptId`: Id, `queued`: Bool) {
+    public var `messageId`: String?
+    public init(`promptId`: Id, `queued`: Bool, `messageId`: String? = nil) {
         self.`promptId` = `promptId`
         self.`queued` = `queued`
+        self.`messageId` = `messageId`
     }
 }
 

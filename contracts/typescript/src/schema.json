@@ -2947,6 +2947,16 @@
         "targetPaneId": {
           "$ref": "#/$defs/Id"
         },
+        "targetName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "inReplyTo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
         "text": {
           "type": "string",
           "minLength": 1,
@@ -2957,7 +2967,6 @@
         }
       },
       "required": [
-        "targetPaneId",
         "text",
         "idempotencyKey"
       ],
@@ -2971,6 +2980,11 @@
         },
         "queued": {
           "type": "boolean"
+        },
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
         }
       },
       "required": [
@@ -14960,6 +14974,7 @@
   "x-limitNotes": {
     "pairingCodeChars": "The characters of a pairing code, and of an engine's public key, in a pairing link: 32 bytes as URL-safe base64 without padding.",
     "pairingWindowSeconds": "How long a pairing code stays valid, and the longest a device waits for the person to allow access.",
+    "agentNameChars": "The longest name (in characters) the engine puts in the header of a message between agents, and the longest it compares when a message names its recipient. A longer name is cut.",
     "deviceNameBytes": "The longest name (in UTF-8 bytes) a device gives itself when it pairs. The engine shows it to the person who allows access.",
     "editorPathBytes": "The longest path a client links as a file reference in text (`path:line`). It bounds the clients' detector; the engine does not enforce it, and `file.open` takes the path the schema allows.",
     "inkStrokes": "The most strokes one `ink.recognize` request carries.",
@@ -14996,6 +15011,7 @@
     "agentMessagesPerWindow": 6,
     "agentMessageWindowSec": 60,
     "agentMessageBytes": 60000,
+    "agentNameChars": 40,
     "transcriptPageMessages": 200,
     "transcriptPageBytes": 524288,
     "transcriptMessageBytes": 262144,

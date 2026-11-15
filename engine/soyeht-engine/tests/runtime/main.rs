@@ -38,6 +38,7 @@ mod fuzz_support;
 mod adapter_acknowledgement;
 mod adapter_directory;
 mod agent_cli_choice;
+mod agent_message_names;
 mod attack_floods;
 mod attack_pairing;
 mod attack_pairing_code;
@@ -174,6 +175,24 @@ fn binding_hello(path: &std::path::Path, binding: &str) -> (Stream, Value) {
         panic!("binding hello response")
     };
     (socket, serde_json::from_slice(&response).unwrap())
+}
+
+/// A client acting as the agent pane `pane`, over the binding the engine issued it.
+fn agent_client(rig: &Rig, pane: &str) -> Client {
+    let store = Store::open(&rig.path).unwrap();
+    let runtime: Value = soyeht_store::agents::runtime(&store, pane)
+        .unwrap()
+        .unwrap();
+    let (socket, hello) = binding_hello(
+        &rig.path.join("engine.sock"),
+        runtime["binding"].as_str().unwrap(),
+    );
+    assert_eq!(hello["result"]["role"], "agent");
+    Client {
+        socket,
+        next: 1,
+        messages: vec![],
+    }
 }
 
 fn binding_request(socket: &mut Stream, id: u64, method: &str, params: Value) -> Value {
