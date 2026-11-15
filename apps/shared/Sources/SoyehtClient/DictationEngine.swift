@@ -54,6 +54,16 @@ public enum DictationAvailability: Equatable, Sendable {
   case available
   /// Why the engine cannot run on this device; shown next to its name in Preferences.
   case unavailable(String)
+
+  /// Why something that runs on `platforms` and reports this availability cannot run on
+  /// `platform`, or nil when it can.
+  func reason(on platform: DictationPlatform, supportedBy platforms: Set<DictationPlatform>)
+    -> String?
+  {
+    guard platforms.contains(platform) else { return "Not available on \(platform.title)" }
+    if case .unavailable(let reason) = self { return reason }
+    return nil
+  }
 }
 
 /// One speech engine the person can choose. The catalogue (`DictationEngineRegistry`) is the
@@ -73,6 +83,9 @@ public struct DictationEngine: Identifiable, Sendable {
   public let usesVocabulary: Bool
   /// Set when the engine needs a model installed before it can listen.
   public let model: DictationModelInfo?
+  /// Set when the engine is someone else's computer: Preferences says what it receives before
+  /// the first use.
+  public let cloud: CloudProviderInfo?
   /// Runtime check on top of `platforms`, for example an OS version or a chip.
   public let availability: @Sendable () -> DictationAvailability
   public let make: @MainActor @Sendable () -> SpeechRecognizing
@@ -81,6 +94,7 @@ public struct DictationEngine: Identifiable, Sendable {
     id: String, name: String, badge: String, summary: String,
     platforms: Set<DictationPlatform>, languages: [DictationLanguage],
     usesVocabulary: Bool = false, model: DictationModelInfo? = nil,
+    cloud: CloudProviderInfo? = nil,
     availability: @escaping @Sendable () -> DictationAvailability = { .available },
     make: @escaping @MainActor @Sendable () -> SpeechRecognizing
   ) {
@@ -92,15 +106,14 @@ public struct DictationEngine: Identifiable, Sendable {
     self.languages = languages
     self.usesVocabulary = usesVocabulary
     self.model = model
+    self.cloud = cloud
     self.availability = availability
     self.make = make
   }
 
   /// Why this engine cannot run on `platform`, or nil when it can.
   public func unavailableReason(on platform: DictationPlatform) -> String? {
-    guard platforms.contains(platform) else { return "Not available on \(platform.title)" }
-    if case .unavailable(let reason) = availability() { return reason }
-    return nil
+    availability().reason(on: platform, supportedBy: platforms)
   }
 
   /// The language tag to give the engine for a selection, or nil to let the engine choose

@@ -302,6 +302,25 @@ Do not edit the composer, Preferences or `DictationController` to add an engine:
 generated from the registry. System callbacks and audio taps are `@Sendable` and never
 inherit the main actor.
 
+## How to add a text-to-speech provider
+
+Voice providers are a catalogue too (ADR 0166, in the style of ADR 0083). A new provider is one
+file and one entry:
+
+1. Add one file with a `SpeechSynthesizing` implementation and its `SpeechSynthesisProvider`
+   descriptor (id, names, platforms, `voices`, `model` when it needs an install, `cloud` when it
+   is someone else's computer, `availability`, `make`). It goes in `apps/dictation/Sources/
+   SoyehtDictation/` when it needs a third-party package, else in `apps/shared`. A model uses
+   `DictationModelInfo` (size, license name, `commercialUse`, installer) and so
+   `DictationModelStore`; write no install state. An installed model loads from disk with no
+   network, and nothing downloads before the person presses Install.
+2. List the descriptor in `VoiceCatalogue.synthesis`.
+3. Add tests with a fake. Never call a real provider, play audio or open the microphone.
+
+A provider's key lives in a `ProviderKeyVault` (the system keychain in the app, a fake in tests):
+never in a setting, never in an error or a log line, and never sent to the engine. No library that
+links may be GPL (espeak-ng is), and a model whose license is not permissive is not offered.
+
 ## Design
 
 - Colors come only from the palette: `SoyehtThemeColors`/`MacTheme`, backed by
