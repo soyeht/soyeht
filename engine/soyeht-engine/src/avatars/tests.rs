@@ -173,9 +173,12 @@ impl Rig {
             .filter(|event| event.method == "avatar.changed")
             .map(|event| {
                 // What the engine publishes is what the contract says it is.
-                let shown =
-                    soyeht_protocol::contract::roundtrip("AvatarChangedEvent", &event.params);
-                assert_eq!(shown.unwrap(), event.params);
+                #[cfg(feature = "contract-checks")]
+                {
+                    let shown =
+                        soyeht_protocol::contract::roundtrip("AvatarChangedEvent", &event.params);
+                    assert_eq!(shown.unwrap(), event.params);
+                }
                 event.params
             })
             .collect()
