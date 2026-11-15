@@ -46,6 +46,12 @@ Each layer depends only on the layers listed above it.
    - `soyeht-ink`: handwriting recognition (ADR 0158): limits, the rasterizer and the recognizer
      trait, with Apple Vision on the Mac and a typed refusal elsewhere. It depends on
      `soyeht-protocol` and `soyeht-process` only.
+   - `soyeht-avatar`: the avatar of a workspace (ADR 0166): the avatar package format and its
+     validator, the H0 continuous mouth (five parameters with eased motion and coarticulation, and
+     the morph weights of nine lip contours; never a step between pictures), the audio-to-mouth
+     aligner and the acting layer. It has no Soyeht dependencies, no IO and no async runtime.
+     The Swift and desktop renderers pass the same vectors (`contracts/vectors/avatar-*.json`),
+     and `apps/desktop` and `soyeht-cli` (`soyeht avatar build`) may depend on it.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself, and the Mac app

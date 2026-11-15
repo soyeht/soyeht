@@ -49,6 +49,10 @@ impl SupervisorPort for Counting {
         response
     }
 
+    fn supports(&self, feature: &str) -> bool {
+        self.0.supports(feature)
+    }
+
     fn supervisor_id(&self) -> &str {
         self.0.supervisor_id()
     }

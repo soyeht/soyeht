@@ -9,7 +9,7 @@ pub(super) fn agent_message_schema() -> Value {
                 "targetName",
                 described(
                     id(),
-                    "The recipient's name: the name before the arrow of a message you received.",
+                    "The recipient's name, as list_agents shows it or as it stands before the arrow of a message you received.",
                 ),
             ),
             ("targetPaneId", id()),

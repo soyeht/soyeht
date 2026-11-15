@@ -863,10 +863,14 @@ export interface PromptItem {
   "agentMessage"?: AgentMessageSource;
 }
 
+export type AgentMessageKind = "agent" | "terminal" | "web" | (string & {});
+
 export interface AgentMessageSource {
   "paneId": Id;
   "name": string;
   "harness": string;
+  "kind"?: AgentMessageKind;
+  "workspaceName"?: string;
 }
 
 export interface AgentListParams {
