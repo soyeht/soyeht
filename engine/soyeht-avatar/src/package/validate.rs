@@ -47,8 +47,7 @@ pub enum ErrorKind {
     /// A number is out of its range: a position far outside the canvas, a texture coordinate
     /// outside the shape's cell, an alpha outside 0..=1.
     Value,
-    /// The eye frames or the resting mouths are not the ones a package carries, or lie outside the
-    /// canvas.
+    /// The eye frames are not the eight a package carries, or lie outside the canvas.
     Frames,
     /// The warp's places are outside the canvas or not shaped like places.
     Warp,
@@ -353,7 +352,9 @@ fn warp(p: &Package) -> Check {
     let chest = &k.chest;
     // A spread of the chest over 5 % of the distance from the centre is not breathing, and a
     // rise over 2 % of the picture's height is not either (the lab's are 0.6 % and 0.35 %).
+    // The left brow is left of the right one: the tilt of each runs from its outer to its inner end.
     let ok = inside(k.pivot)
+        && k.brows[0].center[0] < k.brows[1].center[0]
         && inside(k.zoom_center)
         && regions.iter().all(|r| region_ok(r, w, h))
         && 0.0 <= fade[0]

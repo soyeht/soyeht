@@ -1,8 +1,8 @@
 //! The range of every constant of the acting layer a package can set, each with its reason. The
 //! acting layer runs on whatever a package says, and a stranger's package must not be able to
 //! make the head leave the picture or a number leave the real line: a value of `1e308` makes the
-//! pose not a number, and `5000` moves the head 7000 pixels. Distances are in reference pixels (a
-//! 1024 pixel picture, see `REFERENCE_SIZE`), times in seconds, angles in degrees.
+//! pose not a number, and `5000` moves the head 7000 pixels. Distances are in reference pixels (the
+//! reference face, see `REFERENCE_HEAD`), times in seconds, angles in degrees.
 
 use serde_json::Value;
 

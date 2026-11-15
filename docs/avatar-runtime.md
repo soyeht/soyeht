@@ -60,8 +60,11 @@ It uses the voiced span and the silences only; it does not listen to the vowels.
 A digit, a symbol that is said (`%`, `+`, `/`) and a letter of a script the rules do not read
 (Japanese, Cyrillic under the English rules) each get a neutral syllable, so a reply full of
 numbers has a mouth that moves. When a clip has nothing to say while the audio is loud (an empty
-text, or a track with more sounds than speech can hold, which means the text does not belong to the
-audio), the runtime follows the level of the voice instead: a voice never plays over a shut mouth.
+text, or a text with more than 30 sounds a second of the audio it is placed on, which means the text
+does not belong to the audio: `Alignment::fits` is then false and its phonemes are empty), the
+runtime follows the level of the voice instead: a voice never plays over a shut mouth. The timings
+a TTS gives are never judged this way: a clip follows them at any speed, because it is the aligner
+that compares a text with audio, not the clip.
 
 ## The package
 
@@ -71,11 +74,12 @@ and `inner`, and the atlas of the nine mouth crops), the eight eye frames with t
 `warp` and optional acting constants.
 
 `warp` is where the pose applies on this face, in canvas pixels: the neck pivot, the zoom centre,
-the head, face, brow, jaw and cheek regions (a centre, two radii and the share of them that is full
+the head, face, brow (the left one left of the right one), jaw and cheek regions (a centre, two radii and the share of them that is full
 strength), where the head's influence fades over the neck, the brow tilt span, and the chest's rows,
 spread and rise. `Warp::source_point(pose, x, y)` is the one rule that uses them (a port of the
 lab's shader, with the numbers of one face replaced by the package's), so the renderers agree and a
-pose can be applied to another face.
+pose can be applied to another face. A point it returns can lie outside the canvas; the reader
+clamps it to the picture when it samples.
 
 The caller reads the folder; `Package::load` checks the document against the files it lists and
 returns a failure kind (stable, camelCase) and a JSON pointer, never a value. The limits are in
@@ -87,14 +91,21 @@ part, path names (plain ASCII, no reserved Windows name, no two names that diffe
 bidirectional override) and every number of the acting constants. A package is a file from a
 stranger: a constant that would make the pose absurd or not a number is refused.
 
-## The acting layer and the canvas
+## The acting layer and the size of the face
 
-The acting constants are written for a picture 1024 pixels tall (`REFERENCE_SIZE`). `Acting::new`
-takes the real canvas height and scales every length it returns (`head_*`, `face_*`, `brow_*`,
-`jaw`, `cheek`) by it over 1024; angles and the unitless `breath` and `zoom` do not scale. The
-runtime feeds the acting layer the chin drop of the lab, `opening * 4.6 * (0.8 + 0.2 * (1 -
-closure))`, after the mouth has stepped, and raises the accent of each word the audio reaches when
-the clip carries its word starts (`Clip::with_words`, `Alignment::words`).
+The acting constants are written for the lab's face: a head whose radii are 370 by 390 pixels
+(`REFERENCE_HEAD`), in a picture 1024 pixels tall. `Runtime::new(package, ...)` reads the head's
+radii the package carries and `Acting` scales every length it returns (`head_*`, `face_*`,
+`brow_*`, `jaw`, `cheek`) by the geometric mean of the ratios (`face_scale`); angles and the
+unitless `breath` and `zoom` do not scale. So the motion follows the face, not the canvas: a tall
+canvas with a small face gets small motions. The runtime feeds the acting layer the chin drop of
+the lab, `opening * 4.6 * (0.8 + 0.2 * (1 - closure))`, after the mouth has stepped, and raises the
+accent of each word the audio reaches when the clip carries its word starts (`Clip::with_words`,
+`Alignment::words`).
+
+A resting expression (listening, thinking) is held by `Mouth::hold`, which is not speech: it does
+not restart the silence rule, so leaving it goes to rest and not through the pressed lips of a
+pause.
 
 ## Inputs from the host
 
@@ -108,7 +119,7 @@ finite time is not heard. None of these leaves a state that is not a number.
 
 `contracts/vectors/avatar-mouth.json` (weights, the target track, the mouth's motion at each 1/60
 s, the aligner, the acting layer, the runtime, the warp) and `contracts/vectors/avatar-package.json`
-(the load rules). Other implementations agree with the numbers within the file's `tolerance`. Every
+(the load rules, and the blend and picture layers of the mouth mesh). Other implementations agree with the numbers within the file's `tolerance`. Every
 step is `dt = 1.0 / 60.0` as an IEEE double and the time of frame `i` is the double `i / 60.0`; the
 acting layer's clock is the sum of the `dt` in seconds as a double, and its random numbers are
 SplitMix64, so the same seed gives the same blinks and glances. A timer that lands exactly on a

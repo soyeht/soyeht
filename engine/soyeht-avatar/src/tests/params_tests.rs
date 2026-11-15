@@ -163,6 +163,19 @@ fn a_frame_is_one_convex_mix_and_its_picture_an_exact_weighted_average() {
                         assert!((all.iter().sum::<f64>() - 1.0).abs() < 1e-9);
                         for part in &package.mouth.parts {
                             let layers = part.layers(&all);
+                            // Every textured drawing that takes part is drawn: a picture that kept
+                            // only the heaviest drawing would fail here.
+                            for shape in part.shapes.iter().filter(|s| s.uvs.is_some()) {
+                                let id = Shape::ALL.iter().position(|s| s.id() == shape.id);
+                                let weight = id.map_or(0.0, |i| all[i]);
+                                let drawn = layers.iter().any(|l| l.shape.id() == shape.id);
+                                // 1e-4 is the weight below which a drawing takes no part.
+                                assert!(
+                                    weight <= 1e-4 || drawn,
+                                    "{} at {weight} is not drawn",
+                                    shape.id
+                                );
+                            }
                             let powers: Vec<f64> = layers
                                 .iter()
                                 .map(|l| all[l.shape.index()].powf(part.texture_power))

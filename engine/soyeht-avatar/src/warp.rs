@@ -24,7 +24,9 @@ fn influence(p: [f64; 2], r: &Region) -> f64 {
 impl Warp {
     /// Where the picture is read from to draw the point `(x, y)` of the canvas, with this pose:
     /// the point displaced by the head, the face, the brows, the jaw, the cheeks and the chest,
-    /// and the zoom.
+    /// and the zoom. The point it returns can lie outside the canvas (near an edge, with the head
+    /// turned or the zoom in): the reader clamps it to the picture when it samples, as a texture
+    /// does with clamp-to-edge.
     pub fn source_point(&self, pose: &Pose, x: f64, y: f64) -> [f64; 2] {
         let zoom = pose.zoom.max(1e-6);
         let p = [

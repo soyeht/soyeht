@@ -24,6 +24,11 @@ use letters::{Token, phonemize_word, tokens};
 use voiced::{Valley, find_voiced};
 use warp::{Boundary, Warp, match_boundaries};
 
+/// The most sounds a second of speech holds. The lab's real clips have 13 to 14 a second, fast
+/// speech about twice that; a text with more than this in the audio it is placed on is not that
+/// audio's text.
+const MAX_SOUNDS_PER_SECOND: f64 = 30.0;
+
 /// The share of a word's time that a consonant takes beside a vowel's 1.
 const CONSONANT_WEIGHT: f64 = 0.55;
 /// Tolerance for comparing a warped position with a silence's position (seconds).
@@ -43,6 +48,11 @@ pub struct Alignment {
     pub boundaries: usize,
     /// When each word of the text starts, for the accents of the acting layer.
     pub words: Vec<WordStart>,
+    /// False when the text has more sounds than speech can hold in this audio (more than
+    /// `MAX_SOUNDS_PER_SECOND`): the text does not belong to the audio, and the phonemes are left
+    /// empty, so the runtime follows the level of the voice. The timings a TTS gives are never
+    /// judged this way: this compares a text with audio, which only the aligner does.
+    pub fits: bool,
 }
 
 struct Word {
@@ -133,6 +143,7 @@ fn nothing() -> Alignment {
         matched: 0,
         boundaries: 0,
         words: Vec::new(),
+        fits: true,
     }
 }
 
@@ -142,6 +153,18 @@ pub fn align(text: &str, language: Language, env: &Envelope) -> Alignment {
     let (Some(voiced), false) = (find_voiced(env), words.is_empty()) else {
         return nothing();
     };
+    // A text with more sounds than speech holds in this audio is not this audio's text.
+    let sounds: usize = words
+        .iter()
+        .map(|w| w.phonemes.iter().filter(|p| **p != STRESS).count())
+        .sum();
+    if sounds as f64 > MAX_SOUNDS_PER_SECOND * (voiced.end - voiced.start).max(1.0) {
+        return Alignment {
+            span: Some((voiced.start, voiced.end)),
+            fits: false,
+            ..nothing()
+        };
+    }
     let silence: f64 = voiced.valleys.iter().map(Valley::duration).sum();
     let total = (voiced.end - voiced.start - silence).max(env.hop);
     let total_weight: f64 = words.iter().map(|w| w.weight).sum();
@@ -213,5 +236,6 @@ pub fn align(text: &str, language: Language, env: &Envelope) -> Alignment {
         matched: pairs.len(),
         boundaries: boundaries.len(),
         words: starts,
+        fits: true,
     }
 }

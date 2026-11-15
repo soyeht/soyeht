@@ -2,9 +2,11 @@
 //!
 //! Our own format (the owner's decision of 2026-11-04, ADR 0166); Live2D, Spine and Inochi2D are
 //! references only. The package holds the base picture, the mouth model (nine drawings' lip
-//! contours with one shared topology, in three parts: skin, lips, inner mouth), the eye and
-//! resting-mouth frames with their rectangles, the warp lattice of the head and the acting
-//! constants. Unknown fields are ignored, so a later minor version can add to it.
+//! contours with one shared topology, in three parts: skin, lips, inner mouth), the eye frames
+//! with their rectangles, the warp (where the pose applies on this face) and the acting
+//! constants, which include the mouth's resting expressions as parameters, not pictures. The
+//! format is unstable (0.x, see `VERSION`): a reader accepts one version exactly. Unknown fields
+//! are ignored.
 
 use serde::{Deserialize, Serialize};
 

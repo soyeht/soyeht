@@ -14,7 +14,7 @@ fn input(state: State, voice: bool) -> ActingInput {
 }
 
 fn run(seed: u64, seconds: f64, state: State, voice: bool) -> Vec<ActingFrame> {
-    let mut a = Acting::new(ActingTune::default(), seed, 1024.0);
+    let mut a = Acting::new(ActingTune::default(), seed, 1.0);
     (0..(seconds / DT) as usize)
         .map(|_| a.step(DT, input(state, voice)))
         .collect()
@@ -63,7 +63,7 @@ fn thinking_looks_up_and_away_and_listening_has_soft_eyes() {
 
 #[test]
 fn voice_makes_the_avatar_speak_and_silence_ends_it_after_half_a_second() {
-    let mut a = Acting::new(ActingTune::default(), 1, 1024.0);
+    let mut a = Acting::new(ActingTune::default(), 1, 1.0);
     for _ in 0..60 {
         a.step(DT, input(State::Idle, false));
     }
@@ -94,7 +94,7 @@ fn the_pose_stays_small_and_smooth() {
 
 #[test]
 fn a_question_lifts_the_brows_and_an_exclamation_accents() {
-    let mut a = Acting::new(ActingTune::default(), 2, 1024.0);
+    let mut a = Acting::new(ActingTune::default(), 2, 1.0);
     for _ in 0..30 {
         a.step(DT, input(State::Speaking, true));
     }

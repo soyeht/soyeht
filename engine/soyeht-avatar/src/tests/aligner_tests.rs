@@ -151,7 +151,7 @@ fn voice_of_a_sentence() -> Envelope {
 
 /// How much of the voice the mouth is open for, and its largest change in one frame.
 fn open_while_voiced(clip: Clip, env: &Envelope) -> (f64, f64) {
-    let mut runtime = Runtime::new(Tune::default(), ActingTune::default(), 1, 1024.0);
+    let mut runtime = Runtime::with_scale(Tune::default(), ActingTune::default(), 1, 1.0);
     runtime.set_clip(Some(clip));
     let frames = (env.db.len() as f64 * env.hop * 60.0) as usize;
     let (mut open, mut voiced, mut last, mut jump) = (0, 0, 0.0f64, 0.0f64);
@@ -222,14 +222,19 @@ fn empty_text_or_a_clip_with_nothing_to_say_falls_back_to_the_level_of_the_voice
 }
 
 #[test]
-fn text_much_longer_than_the_audio_is_a_fast_mouth_not_a_broken_one() {
+fn text_much_longer_than_the_audio_is_not_followed_and_the_mouth_follows_the_voice() {
     let env = Envelope {
         db: vec![-20.0; 50],
         hop: HOP,
     };
     let text = "mamãe bebe pão ".repeat(700);
     let a = align(&text, Language::PortugueseBrazil, &env);
-    assert!(a.phonemes.len() > 10_000);
+    // The text does not belong to this audio: the aligner says so and gives no sounds, and the
+    // mouth follows the level of the voice.
+    assert!(!a.fits && a.phonemes.is_empty() && a.span.is_some());
+    // Text that does belong to its audio fits, fast speech included.
+    let spoken = speech(PORTUGUESE, Language::PortugueseBrazil, 0.0);
+    assert!(align(PORTUGUESE, Language::PortugueseBrazil, &spoken.envelope).fits);
     let (open, jump) =
         open_while_voiced(Clip::new(&a.phonemes, Some(&env), &Tune::default()), &env);
     assert!(open > 0.5, "open {open}");

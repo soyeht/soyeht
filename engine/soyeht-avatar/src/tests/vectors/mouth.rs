@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::{FPS, TOLERANCE, check_group, numbers, read, render, round, updating, vectors_dir};
-use crate::acting::{Acting, ActingInput, Gaze, Lid, REFERENCE_SIZE, State};
+use crate::acting::{Acting, ActingInput, Gaze, Lid, REFERENCE_HEAD, State, face_scale};
 use crate::acting_tune::ActingTune;
 use crate::aligner::{Language, align};
 use crate::clip::Clip;
@@ -100,7 +100,14 @@ fn run_aligner(case: &Value) -> Value {
         .iter()
         .map(|w| json!({ "t": round(w.t), "word": w.word, "prevEndsClause": w.prev_ends_clause }))
         .collect();
-    json!({ "span": span, "matched": a.matched, "boundaries": a.boundaries, "phonemes": phoneme_values(&a.phonemes), "words": words })
+    json!({ "span": span, "fits": a.fits, "matched": a.matched, "boundaries": a.boundaries, "phonemes": phoneme_values(&a.phonemes), "words": words })
+}
+
+/// `headRadii` of a case: the horizontal and vertical radius of the head, in pixels (the reference
+/// face when absent).
+pub(super) fn radii_of(case: &Value) -> [f64; 2] {
+    let r = |i: usize| case["headRadii"][i].as_f64().unwrap_or(REFERENCE_HEAD[i]);
+    [r(0), r(1)]
 }
 
 pub(super) fn state_of(id: &str) -> State {
@@ -146,7 +153,7 @@ fn run_acting(case: &Value) -> Value {
     let mut acting = Acting::new(
         ActingTune::default(),
         case["seed"].as_u64().unwrap_or(0),
-        case["canvasHeight"].as_f64().unwrap_or(1024.0),
+        face_scale(radii_of(case)),
     );
     let every = case["sampleEvery"].as_u64().unwrap_or(30) as usize;
     let mut samples = Vec::new();
@@ -324,7 +331,7 @@ fn mouth_vectors() -> Value {
             case
         })
         .collect();
-    let mut half = json!({ "name": "the same day on a canvas half as tall (lengths halve)", "seed": 7, "canvasHeight": REFERENCE_SIZE / 2.0, "sampleEvery": 30, "scenes": scenes });
+    let mut half = json!({ "name": "the same day on a face half as large (lengths halve)", "seed": 7, "headRadii": [REFERENCE_HEAD[0] / 2.0, REFERENCE_HEAD[1] / 2.0], "sampleEvery": 30, "scenes": scenes });
     half["expected"] = run_acting(&half);
     acting.push(half);
     json!({
@@ -362,7 +369,7 @@ fn vectors_mouth_file_matches_the_runtime() {
     for case in file["aligner"].as_array().expect("aligner") {
         let expected = &case["expected"];
         let sounds = expected["phonemes"].as_array().map_or(0, Vec::len);
-        if case["text"].as_str().is_some_and(str::is_empty) {
+        if case["text"].as_str().is_some_and(str::is_empty) || expected["fits"] == json!(false) {
             assert_eq!(sounds, 0, "{}", case["name"]);
             continue;
         }

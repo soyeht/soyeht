@@ -3,9 +3,9 @@
 
 use serde_json::{Value, json};
 
-use super::mouth::{envelope_of, phoneme_values, phonemes_of, state_id, state_of};
+use super::mouth::{envelope_of, phoneme_values, phonemes_of, radii_of, state_id, state_of};
 use super::{FPS, numbers, round};
-use crate::acting::{Pose, REFERENCE_SIZE};
+use crate::acting::{Pose, REFERENCE_HEAD, face_scale};
 use crate::acting_tune::ActingTune;
 use crate::aligner::{Language, align};
 use crate::clip::{Clip, WordStart};
@@ -38,11 +38,11 @@ pub(super) fn run_runtime(case: &Value) -> Value {
     if !words.is_empty() {
         clip = clip.with_words(case["text"].as_str().unwrap_or(""), words);
     }
-    let mut runtime = Runtime::new(
+    let mut runtime = Runtime::with_scale(
         tune,
         ActingTune::default(),
         case["seed"].as_u64().unwrap_or(0),
-        case["canvasHeight"].as_f64().unwrap_or(1024.0),
+        face_scale(radii_of(case)),
     );
     runtime.set_clip(Some(clip));
     let (mut frame, mut audio_start) = (0usize, None);
@@ -79,13 +79,7 @@ pub(super) fn run_runtime(case: &Value) -> Value {
     json!({ "samples": samples })
 }
 
-fn runtime_case(
-    name: &str,
-    text: &str,
-    language: Language,
-    canvas_height: f64,
-    with_clip: bool,
-) -> Value {
+fn runtime_case(name: &str, text: &str, language: Language, face: f64, with_clip: bool) -> Value {
     let s = speech(text, language, 0.09);
     let aligned = align(text, language, &s.envelope);
     let words: Vec<Value> = aligned
@@ -103,7 +97,7 @@ fn runtime_case(
         "name": name,
         "text": text,
         "seed": 5,
-        "canvasHeight": canvas_height,
+        "headRadii": [REFERENCE_HEAD[0] * face, REFERENCE_HEAD[1] * face],
         "phonemes": phonemes,
         "words": if with_clip { words } else { vec![] },
         "envelope": { "hop": s.envelope.hop, "db": s.envelope.db },
@@ -124,21 +118,21 @@ pub(super) fn runtime_cases() -> Vec<Value> {
             "a clip with its words",
             "Olá, mamãe bebe pão.",
             Language::PortugueseBrazil,
-            1024.0,
+            1.0,
             true,
         ),
         runtime_case(
-            "the same on a canvas half as tall",
+            "the same on a face half as large",
             "Olá, mamãe bebe pão.",
             Language::PortugueseBrazil,
-            REFERENCE_SIZE / 2.0,
+            0.5,
             true,
         ),
         runtime_case(
             "a clip with nothing to say over a loud voice",
             "Bom dia, vamos papear.",
             Language::PortugueseBrazil,
-            1024.0,
+            1.0,
             false,
         ),
     ]

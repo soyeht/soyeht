@@ -91,55 +91,68 @@ fn constants_that_would_make_the_pose_absurd_or_not_a_number_are_refused() {
 }
 
 #[test]
-fn a_tune_with_every_constant_at_its_most_keeps_the_pose_finite_and_inside_the_picture() {
-    let mut tune = serde_json::to_value(ActingTune::default()).expect("json");
-    for (pointer, _, most, _) in BOUNDS {
-        let slot = tune.pointer_mut(pointer).expect("a field");
-        *slot = if slot.is_u64() {
-            json!(*most as u64)
-        } else {
-            json!(*most)
-        };
-    }
-    // Gaps and holds at their most make nothing happen; take the shortest of them too, so the
-    // layer is busy.
-    let busy = |t: &mut Value| {
-        for pointer in [
-            "/blink/gap/0",
-            "/blink/gap/1",
-            "/gaze/idleGap/0",
-            "/gaze/idleGap/1",
-            "/stress/minGap",
-            "/stress/wordGap",
-        ] {
-            let least = BOUNDS.iter().find(|b| b.0 == pointer).map_or(0.2, |b| b.1);
-            *t.pointer_mut(pointer).expect("a field") = json!(least);
+fn a_tune_with_every_constant_at_an_extreme_keeps_the_pose_finite_in_every_state() {
+    // Every constant at its most, and every constant at its least, with the gaps and holds at their
+    // least too so the layer is busy, through all four states: the pose is finite and small.
+    let busy = [
+        "/blink/gap/0",
+        "/blink/gap/1",
+        "/gaze/idleGap/0",
+        "/gaze/idleGap/1",
+        "/stress/minGap",
+        "/stress/wordGap",
+    ];
+    for extreme in ["most", "least"] {
+        let mut tune = serde_json::to_value(ActingTune::default()).expect("json");
+        for (pointer, least, most, _) in BOUNDS {
+            let value = if extreme == "most" && !busy.contains(pointer) {
+                *most
+            } else {
+                *least
+            };
+            let slot = tune.pointer_mut(pointer).expect("a field");
+            *slot = if slot.is_u64() {
+                json!(value as u64)
+            } else {
+                json!(value)
+            };
         }
-    };
-    busy(&mut tune);
-    let acting: ActingTune = serde_json::from_value(tune).expect("a tune");
-    let mut a = Acting::new(acting, 9, 1024.0);
-    let mut worst = 0.0f64;
-    for i in 0..3600 {
-        let voice = i % 120 < 90;
-        let f = a.step(
-            DT,
-            ActingInput {
-                state: State::Speaking,
-                voice,
-                db: voice.then_some(-20.0 + (i % 7) as f64 * 4.0),
-                words_known: false,
-                jaw: 4.0,
-            },
+        let acting: ActingTune = serde_json::from_value(tune).expect("a tune");
+        let mut a = Acting::new(acting, 9, 1.0);
+        let states = [
+            State::Idle,
+            State::Listening,
+            State::Thinking,
+            State::Speaking,
+        ];
+        let mut worst = 0.0f64;
+        for i in 0..4800 {
+            let state = states[(i / 150) % 4];
+            let voice = state == State::Speaking && i % 120 < 90;
+            let f = a.step(
+                DT,
+                ActingInput {
+                    state,
+                    voice,
+                    db: voice.then_some(-20.0 + (i % 7) as f64 * 4.0),
+                    words_known: false,
+                    jaw: 4.0,
+                },
+            );
+            if i % 200 == 0 {
+                a.word_start("sério?", 1, 2, true, "É sério?");
+            }
+            for v in pose_values(&f.pose) {
+                assert!(v.is_finite(), "{extreme}: frame {i}");
+                worst = worst.max(v.abs());
+            }
+        }
+        // Under a seventh of the 1024 pixel picture, however the constants are set.
+        assert!(
+            worst < 150.0,
+            "{extreme}: the largest pose value was {worst}"
         );
-        let p = f.pose;
-        for v in pose_values(&p) {
-            assert!(v.is_finite(), "frame {i}");
-            worst = worst.max(v.abs());
-        }
     }
-    // Under a seventh of the 1024 pixel picture, however the constants are set.
-    assert!(worst < 150.0, "the largest pose value was {worst}");
 }
 
 #[test]
@@ -206,7 +219,7 @@ fn a_mouth_that_is_handed_garbage_stays_finite_and_recovers() {
 fn one_frame_of_minus_infinity_decibels_does_not_end_the_accents() {
     // A silent buffer is -inf dB (log10 of 0). The level that follows must still be an accent.
     let run = |poison: bool| {
-        let mut a = Acting::new(ActingTune::default(), 3, 1024.0);
+        let mut a = Acting::new(ActingTune::default(), 3, 1.0);
         let mut peak = 0.0f64;
         for i in 0..600 {
             let db = if poison && i == 30 {
@@ -244,7 +257,7 @@ fn one_frame_of_minus_infinity_decibels_does_not_end_the_accents() {
 fn a_runtime_handed_garbage_stays_finite() {
     let s = speech(PORTUGUESE, Language::PortugueseBrazil, 0.05);
     let tune = Tune::default();
-    let mut rt = Runtime::new(tune.clone(), ActingTune::default(), 1, 1024.0);
+    let mut rt = Runtime::with_scale(tune.clone(), ActingTune::default(), 1, 1.0);
     rt.set_clip(Some(Clip::new(&s.phonemes, Some(&s.envelope), &tune)));
     for i in 0..400 {
         let (position, db, dt) = match i {

@@ -76,10 +76,23 @@ pub struct ActingInput {
     pub jaw: f64,
 }
 
-/// The height of the picture the acting constants are written for, in pixels. A tune is in the
-/// pixels of a picture this tall, and the acting layer scales the lengths it returns by the real
-/// canvas height over this, so one tune reads the same on a small picture and on a large one.
-pub const REFERENCE_SIZE: f64 = 1024.0;
+/// The radii of the head (horizontal, vertical) of the picture the acting constants are written
+/// for, in pixels: the lab's face, in a picture 1024 pixels tall. A tune is in the pixels of a face
+/// this size, and the acting layer scales the lengths it returns by the size of the real face (the
+/// head's radii the package carries, `face_scale`), so one tune reads the same on a small face and
+/// on a large one, whatever the canvas around it.
+pub const REFERENCE_HEAD: [f64; 2] = [370.0, 390.0];
+
+/// How much larger than the reference face a face with these head radii is: the geometric mean of
+/// the ratios of the radii. A radius that is not a positive number is the reference.
+pub fn face_scale(head_radii: [f64; 2]) -> f64 {
+    let ratio = (head_radii[0] / REFERENCE_HEAD[0]) * (head_radii[1] / REFERENCE_HEAD[1]);
+    if ratio.is_finite() && ratio > 0.0 {
+        ratio.sqrt().clamp(0.01, 16.0)
+    } else {
+        1.0
+    }
+}
 
 /// The most the host may ask the jaw to drop, in reference pixels (the lab's is 4.6 at the most).
 const MAX_JAW: f64 = 20.0;
@@ -141,7 +154,7 @@ struct Followers {
 
 pub struct Acting {
     tune: ActingTune,
-    /// Canvas height over `REFERENCE_SIZE`.
+    /// The size of the face over the reference face (`face_scale`).
     scale: f64,
     rng: Rng,
     f: Followers,
@@ -170,10 +183,10 @@ pub struct Acting {
 }
 
 impl Acting {
-    /// An acting layer for a picture `canvas_height` pixels tall.
-    pub fn new(tune: ActingTune, seed: u64, canvas_height: f64) -> Self {
-        let scale = if canvas_height.is_finite() && canvas_height > 0.0 {
-            (canvas_height / REFERENCE_SIZE).clamp(0.01, 16.0)
+    /// An acting layer for a face `scale` times the reference face (`face_scale`).
+    pub fn new(tune: ActingTune, seed: u64, scale: f64) -> Self {
+        let scale = if scale.is_finite() && scale > 0.0 {
+            scale.clamp(0.01, 16.0)
         } else {
             1.0
         };

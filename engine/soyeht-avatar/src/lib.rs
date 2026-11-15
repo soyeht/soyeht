@@ -39,7 +39,9 @@ mod warp;
 #[cfg(test)]
 mod tests;
 
-pub use acting::{Acting, ActingFrame, ActingInput, Eye, Gaze, Lid, Pose, REFERENCE_SIZE, State};
+pub use acting::{
+    Acting, ActingFrame, ActingInput, Eye, Gaze, Lid, Pose, REFERENCE_HEAD, State, face_scale,
+};
 pub use acting_tune::{
     ActingTune, BlinkTune, BreathTune, BrowTune, ExpressionTune, GazeTune, HeadTune, StressTune,
 };

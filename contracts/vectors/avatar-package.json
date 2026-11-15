@@ -965,6 +965,15 @@
     {
       "assets": {},
       "expect": "warp",
+      "name": "brows swapped, the left one right of the right one",
+      "patch": [
+        {"op":"replace","path":"/warp/brows/0/center","value":[115,61]},
+        {"op":"replace","path":"/warp/brows/1/center","value":[84,62]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
       "name": "a brow tilt span of nothing",
       "patch": [
         {"op":"replace","path":"/warp/browTiltSpan","value":0}
@@ -3631,5 +3640,261 @@
       ]
     }
   ],
-  "description": "The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits."
+  "description": "The mesh of the base package: `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+  "mesh": [
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"}
+            ],
+            "positions": [128.0,100.0,119.79899,102.82843,100.0,104.0,80.20101,102.82843,72.0,100.0,80.20101,97.17157,100.0,96.0,119.79899,97.17157,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"}
+            ],
+            "positions": [128.0,100.0,119.79899,102.82843,100.0,104.0,80.20101,102.82843,72.0,100.0,80.20101,97.17157,100.0,96.0,119.79899,97.17157,125.0,100.0,117.67767,100.70711,100.0,101.0,82.32233,100.70711,75.0,100.0,82.32233,99.29289,100.0,99.0,117.67767,99.29289]
+          },
+          {"id":"inner","layers":[],"positions":[125.0,100.0,117.67767,100.70711,100.0,101.0,82.32233,100.70711,75.0,100.0,82.32233,99.29289,100.0,99.0,117.67767,99.29289,100.0,100.0]}
+        ]
+      },
+      "name": "the rest drawing alone",
+      "weights": [1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [128.5,100.0,120.15254,112.30366,100.0,117.4,79.84746,112.30366,71.5,100.0,79.84746,87.69634,100.0,82.6,120.15254,87.69634,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [128.5,100.0,120.15254,112.30366,100.0,117.4,79.84746,112.30366,71.5,100.0,79.84746,87.69634,100.0,82.6,120.15254,87.69634,125.1,100.0,117.74838,109.89949,100.0,114.0,82.25162,109.89949,74.9,100.0,82.25162,90.10051,100.0,86.0,117.74838,90.10051]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [125.1,100.0,117.74838,109.89949,100.0,114.0,82.25162,109.89949,74.9,100.0,82.25162,90.10051,100.0,86.0,117.74838,90.10051,100.0,100.0]
+          }
+        ]
+      },
+      "name": "the A drawing alone",
+      "weights": [0.0,0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"closed_MBP"},
+              {"alpha":0.5,"shape":"A"}
+            ],
+            "positions": [128.9,100.0,120.43539,107.9196,100.0,111.2,79.56461,107.9196,71.1,100.0,79.56461,92.0804,100.0,88.8,120.43539,92.0804,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"closed_MBP"},
+              {"alpha":0.5,"shape":"A"}
+            ],
+            "positions": [128.9,100.0,120.43539,107.9196,100.0,111.2,79.56461,107.9196,71.1,100.0,79.56461,92.0804,100.0,88.8,120.43539,92.0804,124.7,100.0,117.46554,104.94975,100.0,107.0,82.53446,104.94975,75.3,100.0,82.53446,95.05025,100.0,93.0,117.46554,95.05025]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [124.7,100.0,117.46554,104.94975,100.0,107.0,82.53446,104.94975,75.3,100.0,82.53446,95.05025,100.0,93.0,117.46554,95.05025,100.0,100.0]
+          }
+        ]
+      },
+      "name": "half way between closed and A",
+      "weights": [0.0,0.5,0.5,0.0,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.33333,"shape":"closed_MBP"},
+              {"alpha":0.5,"shape":"A"},
+              {"alpha":0.4,"shape":"E"}
+            ],
+            "positions": [130.52,100.0,121.5809,107.21249,100.0,110.2,78.4191,107.21249,69.48,100.0,78.4191,92.78751,100.0,89.8,121.5809,92.78751,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.33333,"shape":"closed_MBP"},
+              {"alpha":0.5,"shape":"A"},
+              {"alpha":0.4,"shape":"E"}
+            ],
+            "positions": [130.52,100.0,121.5809,107.21249,100.0,110.2,78.4191,107.21249,69.48,100.0,78.4191,92.78751,100.0,89.8,121.5809,92.78751,127.2,100.0,119.2333,104.86489,100.0,106.88,80.7667,104.86489,72.8,100.0,80.7667,95.13511,100.0,93.12,119.2333,95.13511]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"},
+              {"alpha":0.57143,"shape":"E"}
+            ],
+            "positions": [127.2,100.0,119.2333,104.86489,100.0,106.88,80.7667,104.86489,72.8,100.0,80.7667,95.13511,100.0,93.12,119.2333,95.13511,100.0,100.0]
+          }
+        ]
+      },
+      "name": "three drawings",
+      "weights": [0.2,0.1,0.3,0.4,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"A"},
+              {"alpha":0.3,"shape":"E"}
+            ],
+            "positions": [130.03,100.0,121.23442,110.56418,100.0,114.94,78.76558,110.56418,69.97,100.0,78.76558,89.43582,100.0,85.06,121.23442,89.43582,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"A"},
+              {"alpha":0.3,"shape":"E"}
+            ],
+            "positions": [130.03,100.0,121.23442,110.56418,100.0,114.94,78.76558,110.56418,69.97,100.0,78.76558,89.43582,100.0,85.06,121.23442,89.43582,126.75,100.0,118.91511,108.24487,100.0,111.66,81.08489,108.24487,73.25,100.0,81.08489,91.75513,100.0,88.34,118.91511,91.75513]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"},
+              {"alpha":0.3,"shape":"E"}
+            ],
+            "positions": [126.75,100.0,118.91511,108.24487,100.0,111.66,81.08489,108.24487,73.25,100.0,81.08489,91.75513,100.0,88.34,118.91511,91.75513,100.0,100.0]
+          }
+        ]
+      },
+      "name": "A and E, the nearest ones dominate the skin",
+      "weights": [0.0,0.0,0.7,0.3,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [128.50005,100.0,120.15258,112.3036,100.0,117.39992,79.84742,112.3036,71.49995,100.0,79.84742,87.6964,100.0,82.60008,120.15258,87.6964,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [128.50005,100.0,120.15258,112.3036,100.0,117.39992,79.84742,112.3036,71.49995,100.0,79.84742,87.6964,100.0,82.60008,120.15258,87.6964,125.10006,100.0,117.74842,109.89944,100.0,113.99992,82.25158,109.89944,74.89995,100.0,82.25158,90.10056,100.0,86.00008,117.74842,90.10056]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "positions": [125.10006,100.0,117.74842,109.89944,100.0,113.99992,82.25158,109.89944,74.89995,100.0,82.25158,90.10056,100.0,86.00008,117.74842,90.10056,100.0,100.0]
+          }
+        ]
+      },
+      "name": "a weight under the threshold is blended but not drawn",
+      "weights": [0.0,0.0,0.99999,0.00001,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.5,"shape":"closed_MBP"},
+              {"alpha":0.33333,"shape":"A"},
+              {"alpha":0.25,"shape":"E"},
+              {"alpha":0.2,"shape":"I"},
+              {"alpha":0.16667,"shape":"O"},
+              {"alpha":0.14286,"shape":"U"},
+              {"alpha":0.125,"shape":"FV"},
+              {"alpha":0.11111,"shape":"LDT"}
+            ],
+            "positions": [128.42094,99.999,120.09635,106.61824,99.999,109.36002,79.90165,106.61824,71.57706,99.999,79.90165,93.37976,99.999,90.63798,120.09635,93.37976,139.9986,99.999,128.28299,121.21199,99.999,129.9987,71.71501,121.21199,59.9994,99.999,71.71501,78.78601,99.999,69.9993,128.28299,78.78601]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.5,"shape":"closed_MBP"},
+              {"alpha":0.33333,"shape":"A"},
+              {"alpha":0.25,"shape":"E"},
+              {"alpha":0.2,"shape":"I"},
+              {"alpha":0.16667,"shape":"O"},
+              {"alpha":0.14286,"shape":"U"},
+              {"alpha":0.125,"shape":"FV"},
+              {"alpha":0.11111,"shape":"LDT"}
+            ],
+            "positions": [128.42094,99.999,120.09635,106.61824,99.999,109.36002,79.90165,106.61824,71.57706,99.999,79.90165,93.37976,99.999,90.63798,120.09635,93.37976,124.35431,99.999,117.22081,103.7427,99.999,105.29339,82.77719,103.7427,75.64369,99.999,82.77719,96.2553,99.999,94.70461,117.22081,96.2553]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"},
+              {"alpha":0.5,"shape":"E"},
+              {"alpha":0.33333,"shape":"I"},
+              {"alpha":0.25,"shape":"O"},
+              {"alpha":0.2,"shape":"U"},
+              {"alpha":0.16667,"shape":"FV"},
+              {"alpha":0.14286,"shape":"LDT"}
+            ],
+            "positions": [124.35431,99.999,117.22081,103.7427,99.999,105.29339,82.77719,103.7427,75.64369,99.999,82.77719,96.2553,99.999,94.70461,117.22081,96.2553,99.999,99.999]
+          }
+        ]
+      },
+      "name": "all nine, evenly",
+      "weights": [0.11111,0.11111,0.11111,0.11111,0.11111,0.11111,0.11111,0.11111,0.11111]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"closed_MBP"}
+            ],
+            "positions": [129.3,100.0,120.71823,103.53553,100.0,105.0,79.28177,103.53553,70.7,100.0,79.28177,96.46447,100.0,95.0,120.71823,96.46447,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"closed_MBP"}
+            ],
+            "positions": [129.3,100.0,120.71823,103.53553,100.0,105.0,79.28177,103.53553,70.7,100.0,79.28177,96.46447,100.0,95.0,120.71823,96.46447,124.3,100.0,117.18269,100.0,100.0,100.0,82.81731,100.0,75.7,100.0,82.81731,100.0,100.0,100.0,117.18269,100.0]
+          },
+          {"id":"inner","layers":[],"positions":[124.3,100.0,117.18269,100.0,100.0,100.0,82.81731,100.0,75.7,100.0,82.81731,100.0,100.0,100.0,117.18269,100.0,100.0,100.0]}
+        ]
+      },
+      "name": "the closed drawing, whose inner mouth has no picture",
+      "weights": [0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    }
+  ]
 }

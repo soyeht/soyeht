@@ -2,11 +2,12 @@
 //! The host calls `step` once per frame with the position of the audio it is actually playing
 //! (the audio clock), and draws what comes back.
 
-use crate::acting::{Acting, ActingFrame, ActingInput, State};
+use crate::acting::{Acting, ActingFrame, ActingInput, State, face_scale};
 use crate::acting_tune::{ActingTune, ExpressionTune};
 use crate::clip::{Clip, energy_target};
 use crate::envelope::sanitize_db;
 use crate::mouth::Mouth;
+use crate::package::Package;
 use crate::params::{MorphWeights, Params};
 use crate::tune::Tune;
 
@@ -43,13 +44,19 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// A runtime for a picture `canvas_height` pixels tall, with the seed of its acting layer.
-    pub fn new(tune: Tune, acting: ActingTune, seed: u64, canvas_height: f64) -> Self {
+    /// A runtime for an avatar: the acting constants and the size of the face are the package's.
+    pub fn new(package: &Package, tune: Tune, seed: u64) -> Self {
+        let scale = face_scale(package.warp.head.radii);
+        Self::with_scale(tune, package.acting.clone(), seed, scale)
+    }
+
+    /// A runtime for a face `scale` times the reference face (`face_scale`).
+    pub(crate) fn with_scale(tune: Tune, acting: ActingTune, seed: u64, scale: f64) -> Self {
         Self {
             lead: tune.lead,
             expression: acting.expression.clone(),
             mouth: Mouth::new(tune),
-            acting: Acting::new(acting, seed, canvas_height),
+            acting: Acting::new(acting, seed, scale),
             clip: None,
             words_reached: 0,
         }
@@ -113,11 +120,12 @@ impl Runtime {
             db: a.db.map(sanitize_db),
             ..a
         });
-        let target = match audio {
-            Some(a) => self.speech_target(a),
-            None => self.expression_target(state),
+        let mouth = match (audio, self.expression_target(state)) {
+            (Some(a), _) => self.mouth.step(dt, self.speech_target(a)),
+            // An expression is not speech: it does not restart the silence.
+            (None, Some(expression)) => self.mouth.hold(dt, expression),
+            (None, None) => self.mouth.step(dt, None),
         };
-        let mouth = self.mouth.step(dt, target);
         self.word_accents(audio);
         // The chin follows the opening, and drops a little less when the lips are pressed.
         let jaw = mouth.o * JAW_PX * (0.8 + 0.2 * (1.0 - mouth.c));

@@ -166,6 +166,15 @@ pub(super) fn warp_cases() -> Vec<Value> {
             "/warp/brows/1/center",
             json!([300, 60]),
         ),
+        case(
+            "brows swapped, the left one right of the right one",
+            vec![
+                replace("/warp/brows/0/center", json!([115, 61])),
+                replace("/warp/brows/1/center", json!([84, 62])),
+            ],
+            json!({}),
+            "warp",
+        ),
         warp(
             "a brow tilt span of nothing",
             "/warp/browTiltSpan",

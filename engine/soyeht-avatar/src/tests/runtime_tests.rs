@@ -1,20 +1,22 @@
 use super::fixtures::{PORTUGUESE, speech};
-use crate::acting::{REFERENCE_SIZE, State};
+use super::fixtures::{assets, package_json};
+use crate::acting::{State, face_scale};
 use crate::acting_tune::ActingTune;
 use crate::aligner::{Language, align};
 use crate::clip::{Clip, WordStart, energy_target};
 use crate::envelope::{Envelope, HOP};
+use crate::package::Package;
 use crate::runtime::{Audio, Runtime};
 use crate::tune::Tune;
 
-fn runtime(canvas: f64) -> Runtime {
-    Runtime::new(Tune::default(), ActingTune::default(), 1, canvas)
+fn runtime(scale: f64) -> Runtime {
+    Runtime::with_scale(Tune::default(), ActingTune::default(), 1, scale)
 }
 
 #[test]
 fn the_runtime_follows_the_audio_clock() {
     let s = speech(PORTUGUESE, Language::PortugueseBrazil, 0.05);
-    let mut runtime = runtime(1024.0);
+    let mut runtime = runtime(1.0);
     runtime.set_clip(Some(Clip::new(
         &s.phonemes,
         Some(&s.envelope),
@@ -49,7 +51,7 @@ fn without_a_clip_the_level_alone_drives_the_opening() {
     let quiet = energy_target(-45.0).expect("voice");
     let loud = energy_target(-15.0).expect("voice");
     assert!(loud.o > quiet.o);
-    let mut runtime = runtime(1024.0);
+    let mut runtime = runtime(1.0);
     let mut last = 0.0;
     for _ in 0..30 {
         last = runtime
@@ -72,19 +74,37 @@ fn without_a_clip_the_level_alone_drives_the_opening() {
     assert!(last < 0.05, "opening {last}");
 }
 
+/// A runtime for the synthetic avatar with its head radii scaled by `k`.
+fn runtime_for_face(k: f64) -> (Runtime, f64) {
+    let mut doc = package_json();
+    let radii = doc["warp"]["head"]["radii"]
+        .as_array()
+        .expect("radii")
+        .clone();
+    let scaled: Vec<f64> = radii
+        .iter()
+        .map(|r| r.as_f64().unwrap_or(1.0) * k)
+        .collect();
+    doc["warp"]["head"]["radii"] = serde_json::json!(scaled);
+    let package = Package::load(&doc.to_string(), &assets()).expect("a package");
+    let scale = face_scale(package.warp.head.radii);
+    (Runtime::new(&package, Tune::default(), 1), scale)
+}
+
 #[test]
-fn the_chin_follows_the_mouth_and_lengths_scale_with_the_canvas() {
+fn the_chin_follows_the_mouth_and_lengths_scale_with_the_face_the_package_carries() {
     // The acting layer is fed the mouth's opening (the mouth steps first), and its lengths are
-    // pixels of the canvas: on a canvas half as tall the same performance is half as long.
+    // pixels of the face: with the head half as large, the same performance is half as long,
+    // whatever the canvas around it.
     let s = speech(PORTUGUESE, Language::PortugueseBrazil, 0.05);
-    let play = |canvas: f64| {
-        let mut r = runtime(canvas);
+    let play = |k: f64| {
+        let (mut r, scale) = runtime_for_face(k);
         r.set_clip(Some(Clip::new(
             &s.phonemes,
             Some(&s.envelope),
             &Tune::default(),
         )));
-        (0..300)
+        let frames: Vec<(f64, f64, f64)> = (0..300)
             .map(|i| {
                 let f = r.step(
                     1.0 / 60.0,
@@ -96,10 +116,13 @@ fn the_chin_follows_the_mouth_and_lengths_scale_with_the_canvas() {
                 );
                 (f.acting.pose.jaw, f.acting.pose.head_y, f.mouth.o)
             })
-            .collect::<Vec<_>>()
+            .collect();
+        (frames, scale)
     };
-    let (full, half) = (play(REFERENCE_SIZE), play(REFERENCE_SIZE / 2.0));
-    let widest = full.iter().map(|f| f.0).fold(0.0, f64::max);
+    let ((full, scale), (half, half_scale)) = (play(1.0), play(0.5));
+    assert!((half_scale * 2.0 - scale).abs() < 1e-12);
+    // In the pixels of the reference face the chin drops by up to the lab's 4.6.
+    let widest = full.iter().map(|f| f.0).fold(0.0, f64::max) / scale;
     assert!(
         widest > 2.0 && widest < 4.7,
         "the chin dropped {widest} pixels at the most"
@@ -110,9 +133,103 @@ fn the_chin_follows_the_mouth_and_lengths_scale_with_the_canvas() {
         assert!((f.0 * 0.5 - h.0).abs() < 1e-9 && (f.1 * 0.5 - h.1).abs() < 1e-9);
         assert!(
             (f.2 - h.2).abs() < 1e-12,
-            "the mouth does not depend on the canvas"
+            "the mouth does not depend on the face"
         );
     }
+}
+
+#[test]
+fn leaving_an_expression_goes_to_rest_and_not_through_pressed_lips() {
+    // An expression is not speech: it does not restart the silence rule. After a long listening
+    // the lips go back to rest, not to the closed drawing of a pause; and the thinking mouth is
+    // left without passing over its own closure.
+    let tune = ActingTune::default();
+    for (from, held) in [
+        (State::Listening, 0.0),
+        (State::Thinking, tune.expression.thinking.c),
+    ] {
+        let mut r = runtime(1.0);
+        for _ in 0..240 {
+            r.step(1.0 / 60.0, from, None);
+        }
+        let mut worst = 0.0f64;
+        for _ in 0..120 {
+            let f = r.step(1.0 / 60.0, State::Idle, None);
+            worst = worst.max(f.mouth.c);
+            assert!((f.weights.all().iter().sum::<f64>() - 1.0).abs() < 1e-9);
+        }
+        assert!(
+            worst <= held + 0.05,
+            "leaving {from:?}: the lips closed to {worst}"
+        );
+    }
+    // Speech that has just ended still closes the lips, as a pause does.
+    let mut r = runtime(1.0);
+    for i in 0..60 {
+        r.step(
+            1.0 / 60.0,
+            State::Speaking,
+            Some(Audio {
+                position: i as f64 / 60.0,
+                db: Some(-20.0),
+            }),
+        );
+    }
+    let mut closed = 0.0f64;
+    for _ in 0..30 {
+        closed = closed.max(r.step(1.0 / 60.0, State::Idle, None).mouth.c);
+    }
+    assert!(
+        closed > 0.5,
+        "the lips did not close after speech ({closed})"
+    );
+}
+
+#[test]
+fn timings_a_tts_gives_are_followed_at_any_speed() {
+    // The lab's real clips have 13 to 14 sounds a second, and 34 at two and a half times their
+    // speed. The synthetic speech has about 8, so 4.5 times its speed is the same density. Timings
+    // a TTS gives are what the voice says at any speed: the clip follows them, with no level to
+    // help.
+    const SPEEDUP: f64 = 4.5;
+    let s = speech(PORTUGUESE, Language::PortugueseBrazil, 0.0);
+    let sounds = s.phonemes.iter().filter(|p| p.t1 > p.t0).count() as f64;
+    let length = s.phonemes.last().map_or(1.0, |p| p.t1);
+    let compressed: Vec<crate::phoneme::Phoneme> = s
+        .phonemes
+        .iter()
+        .map(|p| crate::phoneme::Phoneme {
+            p: p.p,
+            t0: p.t0 / SPEEDUP,
+            t1: p.t1 / SPEEDUP,
+        })
+        .collect();
+    assert!(
+        sounds / (length / SPEEDUP) > 30.0,
+        "the compressed speech has {} sounds a second",
+        sounds / (length / SPEEDUP)
+    );
+    let mut r = runtime(1.0);
+    r.set_clip(Some(Clip::new(&compressed, None, &Tune::default())));
+    let frames = (length / SPEEDUP * 60.0) as usize + 30;
+    let (mut open, mut closed) = (0, 0);
+    for i in 0..frames {
+        let f = r.step(
+            1.0 / 60.0,
+            State::Speaking,
+            Some(Audio {
+                position: i as f64 / 60.0,
+                db: None,
+            }),
+        );
+        open += usize::from(f.mouth.o > 0.2);
+        closed += usize::from(f.mouth.c > 0.5);
+    }
+    assert!(
+        open as f64 > 0.2 * frames as f64,
+        "open in {open} of {frames} frames"
+    );
+    assert!(closed > 0, "no closure at all");
 }
 
 #[test]
@@ -121,7 +238,7 @@ fn a_clip_with_nothing_to_say_over_a_loud_voice_follows_the_level() {
         db: vec![-20.0; 100],
         hop: HOP,
     };
-    let mut r = runtime(1024.0);
+    let mut r = runtime(1.0);
     r.set_clip(Some(Clip::new(&[], Some(&env), &Tune::default())));
     let mut open = 0.0f64;
     for i in 0..120 {
@@ -151,7 +268,7 @@ fn the_runtime_raises_the_accent_of_a_word_the_audio_reaches() {
     }];
     let clip = || Clip::new(&[], None, &Tune::default()).with_words("Sério?", words.clone());
     let play = |with_words: bool| {
-        let mut r = runtime(1024.0);
+        let mut r = runtime(1.0);
         r.set_clip(Some(if with_words {
             clip()
         } else {
@@ -194,7 +311,7 @@ fn a_listening_or_thinking_avatar_holds_an_expression_with_the_mouth_it_has() {
     // swapped in, and the weights still sum to 1.
     let tune = ActingTune::default();
     let hold = |state: State| {
-        let mut r = runtime(1024.0);
+        let mut r = runtime(1.0);
         let mut last = r.step(1.0 / 60.0, state, None);
         for _ in 0..120 {
             last = r.step(1.0 / 60.0, state, None);

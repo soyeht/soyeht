@@ -1,8 +1,8 @@
 //! The numbers of the acting layer: the defaults are the lab's (`static/sabio-acting.js`, TUNE).
 //! A package may override any of them; a field it leaves out keeps the default. Times are
-//! seconds, angles are degrees, and distances are pixels of a picture `REFERENCE_SIZE` (1024)
-//! pixels tall: the acting layer scales them to the real canvas, so a tune does not depend on the
-//! size of the picture it is used with.
+//! seconds, angles are degrees, and distances are pixels of the reference face (`REFERENCE_HEAD`, the
+//! lab's, in a picture 1024 pixels tall): the acting layer scales them to the size of the real face,
+//! so a tune does not depend on the size of the picture or of the face it is used with.
 
 use serde::{Deserialize, Serialize};
 

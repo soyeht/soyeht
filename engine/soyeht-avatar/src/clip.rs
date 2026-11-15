@@ -17,17 +17,9 @@ pub struct WordStart {
     pub prev_ends_clause: bool,
 }
 
-/// The most targets a second of speech can hold. People say about fifteen sounds a second at
-/// speed; a track with more than twice that is a text that does not belong to its audio (a reply
-/// much longer than the voice that plays), and a mouth that tried to follow it would be a blur of
-/// closures.
-const MAX_TARGETS_PER_SECOND: f64 = 30.0;
-
 #[derive(Debug, Clone)]
 pub struct Clip {
     track: Vec<Target>,
-    /// The track is denser than speech can be: it is not followed.
-    unspeakable: bool,
     text: String,
     words: Vec<WordStart>,
 }
@@ -43,15 +35,8 @@ impl Clip {
             }
             None => build_track(phonemes, &|_, _| 1.0, tune),
         };
-        // The span of the speech, at least a second, so a short clip may hold a few sounds.
-        let span = match (track.first(), track.last()) {
-            (Some(first), Some(last)) => (last.t1 - first.t0).max(1.0),
-            _ => 1.0,
-        };
-        let unspeakable = track.len() as f64 > MAX_TARGETS_PER_SECOND * span;
         Self {
             track,
-            unspeakable,
             text: String::new(),
             words: Vec::new(),
         }
@@ -79,12 +64,8 @@ impl Clip {
         &self.text
     }
 
-    /// The mouth target at the clip time `t` (the position of the audio actually playing). A
-    /// clip with more sounds than speech can hold has none: the runtime then follows the level.
+    /// The mouth target at the clip time `t` (the position of the audio actually playing).
     pub fn target_at(&self, t: f64) -> Option<Params> {
-        if self.unspeakable {
-            return None;
-        }
         target_at(&self.track, t)
     }
 }

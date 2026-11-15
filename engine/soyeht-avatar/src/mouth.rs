@@ -83,6 +83,26 @@ impl Mouth {
             }
         };
         let relaxing = target.is_none() && self.silent >= tune.silence_rest;
+        self.advance(dt, goal, relaxing)
+    }
+
+    /// Advance by `dt` seconds holding an expression (the smile of a listening avatar): a target
+    /// of the mouth that is not speech. It does not restart the silence: the time since anything
+    /// was said keeps running, so leaving the expression goes to rest and not through the pressed
+    /// lips of a pause.
+    pub fn hold(&mut self, dt: f64, expression: Params) -> Params {
+        if !dt.is_finite() || expression.to_array().iter().any(|v| !v.is_finite()) {
+            return self.q;
+        }
+        let dt = dt.clamp(1e-4, 0.1);
+        self.silent += dt;
+        self.advance(dt, expression, false)
+    }
+
+    /// Move every parameter towards `goal`; `relaxing` is the slow return to rest after a long
+    /// silence.
+    fn advance(&mut self, dt: f64, goal: Params, relaxing: bool) -> Params {
+        let tune = &self.tune;
         let rest = Params::REST.to_array();
         let goal = goal.to_array();
         let mut out = [0.0; DIMS];
@@ -104,13 +124,13 @@ impl Mouth {
             out[k] = clamp01(state.value);
         }
         self.q = Params::from_array(out);
-        self.step_weights(dt);
+        self.step_weights(dt, relaxing);
         self.q
     }
 
-    fn step_weights(&mut self, dt: f64) {
+    fn step_weights(&mut self, dt: f64, relaxing: bool) {
         let goal = weights_from_params(self.q);
-        let smooth = if self.silent >= self.tune.silence_rest {
+        let smooth = if relaxing {
             self.tune.relax * 0.6
         } else {
             self.tune.weight_smooth
