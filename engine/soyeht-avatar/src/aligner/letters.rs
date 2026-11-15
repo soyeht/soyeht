@@ -16,6 +16,22 @@ pub enum Language {
     English,
 }
 
+/// Symbols that are said (and so have a syllable), not dropped like quotes and brackets.
+fn is_symbol(c: char) -> bool {
+    "%$€£¥+=/<>@&§°×÷^".contains(c)
+}
+
+/// A letter, digit, symbol or letter of another script that the letter rules do not read: it is
+/// said, so it gets a neutral syllable, and the mouth moves for it.
+fn is_unreadable(c: char) -> bool {
+    c.is_alphanumeric() || is_symbol(c)
+}
+
+/// A neutral syllable: a tongue consonant and a neutral vowel.
+fn neutral(seq: &mut Seq) {
+    seq.extend([('d', false), ('ə', false)]);
+}
+
 /// One piece of a text: a word, or a pause mark.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Token {
@@ -23,13 +39,14 @@ pub(crate) enum Token {
     Pause(char),
 }
 
-/// Split a text into words and pause marks. Everything that is neither a letter nor a pause mark
-/// separates words and is dropped.
+/// Split a text into words and pause marks. A word is a run of letters and digits; a symbol that
+/// is said (`%`, `+`, `/` ...) is a word of its own; everything else separates words and is
+/// dropped.
 pub(crate) fn tokens(text: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut word = String::new();
     for c in text.chars() {
-        if c.is_alphabetic() {
+        if c.is_alphanumeric() {
             word.push(c);
             continue;
         }
@@ -38,6 +55,8 @@ pub(crate) fn tokens(text: &str) -> Vec<Token> {
         }
         if is_pause(c) && c != '-' {
             out.push(Token::Pause(c));
+        } else if is_symbol(c) {
+            out.push(Token::Word(c.to_string()));
         }
     }
     if !word.is_empty() {
@@ -200,9 +219,12 @@ fn portuguese(chars: &[char]) -> Seq {
                     };
                     seq.push((p, false));
                 }
+                ('w', _) => seq.push(('w', false)),
+                ('y', _) => seq.push(('i', false)),
                 _ if "bpmfvtdnlrszkg".contains(c) => {
                     seq.push((if c == 'r' { 'ɾ' } else { c }, false))
                 }
+                _ if is_unreadable(c) => neutral(seq),
                 _ => {}
             }
             0
@@ -233,6 +255,7 @@ fn english(chars: &[char]) -> Seq {
             }
             'r' => seq.push(('ɹ', false)),
             _ if c.is_ascii_lowercase() => seq.push((c, false)),
+            _ if is_unreadable(c) => neutral(seq),
             _ => {}
         }
         0

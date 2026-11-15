@@ -1,4 +1,4 @@
-//! The acceptance of ADR 0166 for the mouth: the lab's checker limits, ported (ghost frames 0, the
+//! The acceptance of ADR 0166 for the mouth: the lab's checker limits, ported (the
 //! largest one-frame change at most 0.65, M/B/P closed at least 90 %, silences closed). The ADR
 //! adds that a checker pass is not evidence (the rejected H1 mouth passed it), so a person looks at
 //! a contact sheet of the whole clip too; these tests are the floor, not the verdict.
@@ -15,7 +15,6 @@ pub(super) fn package() -> Package {
 }
 
 fn assert_limits(name: &str, r: &Report) {
-    assert_eq!(r.ghost, checker::GHOST_FRAMES, "{name}: ghost frames");
     assert!(
         r.pop <= checker::POP,
         "{name}: largest one-frame change {} over {}",

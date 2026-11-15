@@ -3,9 +3,12 @@
 
 use std::collections::HashSet;
 
-use super::model::{
-    EYE_IDS, FORMAT, MAJOR_VERSION, MeshPart, Package, PartKind, Patch, REST_MOUTH_IDS,
+use super::acting_bounds;
+use super::limits::{
+    MAX_FILE_BYTES, MAX_FILES, MAX_NAME_BYTES, MAX_PATH_BYTES, MAX_PIXELS, MAX_SIDE,
+    MAX_TEXTURE_POWER, MAX_TOTAL_BYTES, MAX_TRIANGLES, MAX_VERTICES,
 };
+use super::model::{EYE_IDS, FORMAT, MeshPart, Package, PartKind, Patch, Region, VERSION, Warp};
 use crate::params::Shape;
 
 /// What the caller knows about a file of the package folder: its size in bytes and, when it is a
@@ -47,7 +50,7 @@ pub enum ErrorKind {
     /// The eye frames or the resting mouths are not the ones a package carries, or lie outside the
     /// canvas.
     Frames,
-    /// The warp lattice is empty, too fine or outside the canvas.
+    /// The warp's places are outside the canvas or not shaped like places.
     Warp,
     /// An acting constant is out of its range.
     Acting,
@@ -95,14 +98,6 @@ fn fail(kind: ErrorKind, at: impl Into<String>) -> Check {
     })
 }
 
-/// The largest side of the canvas and of any listed picture (pixels).
-const MAX_SIDE: u32 = 2048;
-const MAX_FILES: usize = 64;
-const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_VERTICES: usize = 3000;
-const MAX_TRIANGLES: usize = 6000;
-const MAX_LATTICE: u32 = 32;
 /// Slack for a texture coordinate at the edge of its cell.
 const UV_SLACK: f64 = 1e-3;
 
@@ -110,12 +105,8 @@ pub(super) fn validate(p: &Package, assets: &[AssetInfo]) -> Check {
     if p.format != FORMAT {
         return fail(ErrorKind::WrongFormat, "/format");
     }
-    let major = p
-        .version
-        .split('.')
-        .next()
-        .and_then(|m| m.parse::<u32>().ok());
-    if major != Some(MAJOR_VERSION) || p.version.split('.').count() != 2 {
+    // The format is unstable (0.x): the one version this crate reads, spelled exactly.
+    if p.version != VERSION {
         return fail(ErrorKind::UnsupportedVersion, "/version");
     }
     let size = p.canvas;
@@ -124,29 +115,51 @@ pub(super) fn validate(p: &Package, assets: &[AssetInfo]) -> Check {
     }
     files(p, assets)?;
     mouth(p)?;
-    frames(p)?;
-    lattice(p)?;
-    acting(p)
+    frames(p, &p.eyes, &EYE_IDS, "/eyes")?;
+    warp(p)?;
+    match acting_bounds::first_out_of_range(&p.acting) {
+        None => Ok(()),
+        Some(at) => fail(ErrorKind::Acting, format!("/acting{at}")),
+    }
 }
 
+/// Names Windows reserves, whatever the extension and the case.
+fn reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name).to_ascii_uppercase();
+    matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+        || (stem.len() == 4
+            && (stem.starts_with("COM") || stem.starts_with("LPT"))
+            && stem.ends_with(|c: char| ('1'..='9').contains(&c)))
+}
+
+/// A path inside the package folder that is the same on every system: lower-case `.png`, names of
+/// plain ASCII letters, digits, `.`, `_` and `-`, no empty, hidden or dot-only names, no name that
+/// ends in a dot (Windows drops it), no reserved Windows name. That also refuses a control
+/// character, a bidirectional override and a letter that only looks like another.
 fn plain_png_path(path: &str) -> bool {
-    path.ends_with(".png")
-        && !path.starts_with('/')
-        && !path.contains(['\\', ':', '\0'])
-        && path
-            .split('/')
-            .all(|s| !s.is_empty() && s != "." && s != "..")
+    let name_ok = |name: &str| {
+        !name.is_empty()
+            && name.len() <= MAX_NAME_BYTES
+            && name.starts_with(|c: char| c.is_ascii_alphanumeric())
+            && !name.ends_with('.')
+            && name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+            && !reserved_name(name)
+    };
+    path.len() <= MAX_PATH_BYTES && path.ends_with(".png") && path.split('/').all(name_ok)
 }
 
 fn files(p: &Package, assets: &[AssetInfo]) -> Check {
     if p.files.len() > MAX_FILES {
         return fail(ErrorKind::TooLarge, "/files");
     }
+    // Two names that differ only in case are one file on some systems.
     let mut seen = HashSet::new();
-    let mut total = 0u64;
+    let (mut total, mut pixels) = (0u64, 0u64);
     for (i, f) in p.files.iter().enumerate() {
         let at = format!("/files/{i}");
-        if !plain_png_path(&f.path) || !seen.insert(f.path.as_str()) {
+        if !plain_png_path(&f.path) || !seen.insert(f.path.to_ascii_lowercase()) {
             return fail(ErrorKind::File, at);
         }
         if f.width == 0 || f.height == 0 || f.width > MAX_SIDE || f.height > MAX_SIDE {
@@ -162,30 +175,26 @@ fn files(p: &Package, assets: &[AssetInfo]) -> Check {
             return fail(ErrorKind::AssetSize, at);
         }
         total += asset.bytes;
+        pixels += u64::from(f.width) * u64::from(f.height);
     }
-    if total > MAX_TOTAL_BYTES {
+    if total > MAX_TOTAL_BYTES || pixels > MAX_PIXELS {
         return fail(ErrorKind::TooLarge, "/files");
     }
-    let listed = |path: &str| p.files.iter().any(|f| f.path == path);
-    let named = std::iter::once(("/base".to_string(), &p.base))
-        .chain(std::iter::once((
-            "/mouth/atlas/file".to_string(),
-            &p.mouth.atlas.file,
-        )))
-        .chain(
-            p.eyes
-                .iter()
-                .enumerate()
-                .map(|(i, f)| (format!("/eyes/{i}/file"), &f.file)),
-        )
-        .chain(
-            p.rest_mouths
-                .iter()
-                .enumerate()
-                .map(|(i, f)| (format!("/restMouths/{i}/file"), &f.file)),
-        );
+    let listed = |path: &str| p.files.iter().find(|f| f.path == path);
+    // The base picture is the whole canvas.
+    match listed(&p.base) {
+        Some(base) if (base.width, base.height) == (p.canvas.width, p.canvas.height) => {}
+        Some(_) => return fail(ErrorKind::Canvas, "/base"),
+        None => return fail(ErrorKind::File, "/base"),
+    }
+    let named = std::iter::once(("/mouth/atlas/file".to_string(), &p.mouth.atlas.file)).chain(
+        p.eyes
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (format!("/eyes/{i}/file"), &f.file)),
+    );
     for (at, path) in named {
-        if !listed(path) {
+        if listed(path).is_none() {
             return fail(ErrorKind::File, at);
         }
     }
@@ -256,7 +265,7 @@ fn mesh_part(p: &Package, part: &MeshPart, at: &str) -> Check {
             return fail(ErrorKind::Value, format!("{at}/alphas"));
         }
     }
-    if !(1.0..=8.0).contains(&part.texture_power) {
+    if !(1.0..=MAX_TEXTURE_POWER).contains(&part.texture_power) {
         return fail(ErrorKind::Value, format!("{at}/texturePower"));
     }
     let (w, h) = (f64::from(p.canvas.width), f64::from(p.canvas.height));
@@ -301,12 +310,7 @@ fn mesh_part(p: &Package, part: &MeshPart, at: &str) -> Check {
     }
 }
 
-fn frames(p: &Package) -> Check {
-    check_frames(p, &p.eyes, &EYE_IDS, "/eyes")?;
-    check_frames(p, &p.rest_mouths, &REST_MOUTH_IDS, "/restMouths")
-}
-
-fn check_frames(p: &Package, frames: &[Patch], ids: &[&str], at: &str) -> Check {
+fn frames(p: &Package, frames: &[Patch], ids: &[&str], at: &str) -> Check {
     let found: HashSet<&str> = frames.iter().map(|f| f.id.as_str()).collect();
     if frames.len() != ids.len()
         || found.len() != ids.len()
@@ -328,40 +332,44 @@ fn check_frames(p: &Package, frames: &[Patch], ids: &[&str], at: &str) -> Check 
     Ok(())
 }
 
-fn lattice(p: &Package) -> Check {
-    let (l, [x, y, w, h]) = (&p.warp, p.warp.rect);
-    let fits = w > 0
-        && h > 0
-        && u64::from(x) + u64::from(w) <= u64::from(p.canvas.width)
-        && u64::from(y) + u64::from(h) <= u64::from(p.canvas.height);
-    if !fits || !(1..=MAX_LATTICE).contains(&l.cols) || !(1..=MAX_LATTICE).contains(&l.rows) {
-        return fail(ErrorKind::Warp, "/warp");
-    }
-    Ok(())
+fn region_ok(r: &Region, w: f64, h: f64) -> bool {
+    let [cx, cy] = r.center;
+    let [rx, ry] = r.radii;
+    (0.0..=w).contains(&cx)
+        && (0.0..=h).contains(&cy)
+        && rx > 0.0
+        && ry > 0.0
+        && rx <= w
+        && ry <= h
+        && (0.0..1.0).contains(&r.inner)
 }
 
-fn acting(p: &Package) -> Check {
-    let a = &p.acting;
-    let ordered = |r: [f64; 2]| r[0] > 0.0 && r[0] <= r[1] && r[1] <= 600.0;
-    let chance = |c: f64| (0.0..=1.0).contains(&c);
-    let ok = ordered(a.blink.gap)
-        && ordered(a.blink.gap_listening)
-        && ordered(a.gaze.idle_gap)
-        && ordered(a.gaze.hold_away)
-        && ordered(a.gaze.thinking_hold)
-        && chance(a.blink.double_chance)
-        && chance(a.blink.on_gaze_shift)
-        && chance(a.gaze.speaking_away_chance)
-        && chance(a.stress.chance)
-        && a.blink.seq.iter().all(|s| *s > 0.0 && *s <= 5.0)
-        && a.breath.period > 0.5
-        && a.breath.period_speaking > 0.5
-        && a.stress.min_gap >= 0.0
-        && a.stress.word_gap >= 0.0
-        && a.stress.db_over.is_finite();
+fn warp(p: &Package) -> Check {
+    let (w, h) = (f64::from(p.canvas.width), f64::from(p.canvas.height));
+    let k: &Warp = &p.warp;
+    let inside = |at: [f64; 2]| (0.0..=w).contains(&at[0]) && (0.0..=h).contains(&at[1]);
+    let regions = [&k.head, &k.face, &k.brows[0], &k.brows[1], &k.jaw, &k.cheek];
+    let fade = k.head_fade;
+    let chest = &k.chest;
+    // A spread of the chest over 5 % of the distance from the centre is not breathing, and a
+    // rise over 2 % of the picture's height is not either (the lab's are 0.6 % and 0.35 %).
+    let ok = inside(k.pivot)
+        && inside(k.zoom_center)
+        && regions.iter().all(|r| region_ok(r, w, h))
+        && 0.0 <= fade[0]
+        && fade[0] < fade[1]
+        && fade[1] <= h
+        && k.brow_tilt_span > 0.0
+        && k.brow_tilt_span <= w
+        && 0.0 <= chest.from
+        && chest.from < chest.to
+        && chest.to <= h
+        && (0.0..=w).contains(&chest.center_x)
+        && (0.0..=0.05).contains(&chest.spread)
+        && (0.0..=0.02 * h).contains(&chest.rise);
     if ok {
         Ok(())
     } else {
-        fail(ErrorKind::Acting, "/acting")
+        fail(ErrorKind::Warp, "/warp")
     }
 }

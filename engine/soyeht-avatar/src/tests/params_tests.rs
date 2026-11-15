@@ -1,3 +1,4 @@
+use super::mouth_limits::package;
 use crate::params::{Params, Shape, weights_from_params};
 use crate::phoneme::{Kind, Phoneme};
 use crate::track::{build_track, target_at};
@@ -141,4 +142,47 @@ fn nothing_is_said_outside_the_clip() {
     assert_eq!(target_at(&track, 0.0), None);
     assert!(target_at(&track, 0.25).is_some());
     assert_eq!(target_at(&track, 1.0), None);
+}
+
+#[test]
+fn a_frame_is_one_convex_mix_and_its_picture_an_exact_weighted_average() {
+    // The "one mouth" rule, held where it can fail: over a grid of the parameter space, the nine
+    // weights are never negative and sum to 1, and the layers of each part of the picture, drawn
+    // one over another, give each drawing exactly its weight (raised to the part's texture
+    // power) over the sum of the layers'. A blend that took a drawing's alpha wrong would break it.
+    let package = package();
+    let steps = [0.0, 0.25, 0.5, 0.75, 1.0];
+    let mut checked = 0;
+    for &o in &steps {
+        for &w in &steps {
+            for &r in &steps {
+                for &c in &steps {
+                    for &f in &steps {
+                        let all = weights_from_params(Params::new(o, w, r, c, f)).all();
+                        assert!(all.iter().all(|x| *x >= 0.0));
+                        assert!((all.iter().sum::<f64>() - 1.0).abs() < 1e-9);
+                        for part in &package.mouth.parts {
+                            let layers = part.layers(&all);
+                            let powers: Vec<f64> = layers
+                                .iter()
+                                .map(|l| all[l.shape.index()].powf(part.texture_power))
+                                .collect();
+                            let total: f64 = powers.iter().sum();
+                            let mut remaining = 1.0;
+                            let mut shares = vec![0.0; layers.len()];
+                            for (share, layer) in shares.iter_mut().zip(&layers).rev() {
+                                *share = remaining * layer.alpha;
+                                remaining *= 1.0 - layer.alpha;
+                            }
+                            for (share, power) in shares.iter().zip(&powers) {
+                                assert!((share - power / total).abs() < 1e-9);
+                            }
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 3125);
 }

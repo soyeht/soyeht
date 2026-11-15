@@ -9,9 +9,7 @@
     {"bytes":120,"path":"frames/down.png","size":[40,16]},
     {"bytes":120,"path":"frames/upleft.png","size":[40,16]},
     {"bytes":120,"path":"frames/soft.png","size":[40,16]},
-    {"bytes":120,"path":"frames/blink.png","size":[40,16]},
-    {"bytes":120,"path":"frames/smile.png","size":[40,16]},
-    {"bytes":120,"path":"frames/hm.png","size":[40,16]}
+    {"bytes":120,"path":"frames/blink.png","size":[40,16]}
   ],
   "base": {
     "base": "base.png",
@@ -36,9 +34,7 @@
       {"height":16,"path":"frames/down.png","width":40},
       {"height":16,"path":"frames/upleft.png","width":40},
       {"height":16,"path":"frames/soft.png","width":40},
-      {"height":16,"path":"frames/blink.png","width":40},
-      {"height":16,"path":"frames/smile.png","width":40},
-      {"height":16,"path":"frames/hm.png","width":40}
+      {"height":16,"path":"frames/blink.png","width":40}
     ],
     "format": "soyeht-avatar",
     "mouth": {
@@ -93,25 +89,35 @@
         }
       ]
     },
-    "restMouths": [
-      {"file":"frames/smile.png","id":"smile","rect":[10,150,40,16]},
-      {"file":"frames/hm.png","id":"hm","rect":[55,150,40,16]}
-    ],
-    "version": "1.0",
-    "warp": {"cols":6,"rect":[20,10,160,180],"rows":8}
+    "version": "0.1",
+    "warp": {
+      "browTiltSpan": 14,
+      "brows": [
+        {"center":[84,62],"inner":0.45,"radii":[15,5]},
+        {"center":[115,61],"inner":0.45,"radii":[15,5]}
+      ],
+      "cheek": {"center":[100,92],"inner":0.3,"radii":[37,11]},
+      "chest": {"centerX":100,"from":125,"rise":0.7,"spread":0.006,"to":156},
+      "face": {"center":[100,89],"inner":0.55,"radii":[40,42]},
+      "head": {"center":[100,75],"inner":0.74,"radii":[72,76]},
+      "headFade": [117,143],
+      "jaw": {"center":[100,106],"inner":0.5,"radii":[29,19]},
+      "pivot": [100,127],
+      "zoomCenter": [100,109]
+    }
   },
   "cases": [
     {"expect":"ok","name":"a valid package","patch":[]},
     {
       "expect": "ok",
-      "name": "a later minor version and a field it adds",
+      "name": "a field this version does not know is ignored",
       "patch": [
-        {"op":"replace","path":"/version","value":"1.9"},
         {
           "op": "replace",
           "path": "/extra",
           "value": {"x":1}
-        }
+        },
+        {"op":"replace","path":"/restMouths","value":[]}
       ]
     },
     {
@@ -126,20 +132,6 @@
       "name": "another format",
       "patch": [
         {"op":"replace","path":"/format","value":"other"}
-      ]
-    },
-    {
-      "expect": "unsupportedVersion",
-      "name": "another major version",
-      "patch": [
-        {"op":"replace","path":"/version","value":"2.0"}
-      ]
-    },
-    {
-      "expect": "unsupportedVersion",
-      "name": "a version with no minor",
-      "patch": [
-        {"op":"replace","path":"/version","value":"1"}
       ]
     },
     {
@@ -161,6 +153,132 @@
       "name": "a canvas that is too large",
       "patch": [
         {"op":"replace","path":"/canvas/width","value":5000}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.2\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0.2"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"1.0\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"1.0"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0."}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.x\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0.x"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"00.1\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"00.1"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.01\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0.01"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"+0.1\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"+0.1"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"-0.1\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"-0.1"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \" 0.1\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":" 0.1"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.1 \"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0.1 "}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"0.1.0\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"0.1.0"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"1\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"1"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"1.\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"1."}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"1.x\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"1.x"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"+1.0\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"+1.0"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"01.0\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"01.0"}
+      ]
+    },
+    {
+      "expect": "unsupportedVersion",
+      "name": "the version \"1.99999999999999999999\"",
+      "patch": [
+        {"op":"replace","path":"/version","value":"1.99999999999999999999"}
       ]
     },
     {
@@ -339,27 +457,6 @@
       ]
     },
     {
-      "expect": "frames",
-      "name": "a resting mouth missing",
-      "patch": [
-        {"op":"remove","path":"/restMouths/1"}
-      ]
-    },
-    {
-      "expect": "warp",
-      "name": "a warp lattice with no columns",
-      "patch": [
-        {"op":"replace","path":"/warp/cols","value":0}
-      ]
-    },
-    {
-      "expect": "warp",
-      "name": "a warp lattice outside the canvas",
-      "patch": [
-        {"op":"replace","path":"/warp/rect","value":[150,150,100,100]}
-      ]
-    },
-    {
       "expect": "acting",
       "name": "a blink gap in the wrong order",
       "patch": [
@@ -384,7 +481,3155 @@
           }
         }
       ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a/../b.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a path that leaves the folder",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a/../b.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a//b.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "an empty name",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a//b.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":".png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a name that is only an extension",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":".png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"dir/.hidden.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a hidden name",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"dir/.hidden.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"CON.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a Windows reserved name",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"CON.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"nul.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a Windows reserved name in lower case",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"nul.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"dir/Aux.v2.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a Windows reserved name with two extensions",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"dir/Aux.v2.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"com1.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a Windows reserved device number",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"com1.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"LPT9.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a Windows reserved printer number",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"LPT9.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"name..png","size":[4,4]}
+        ]
+      },
+      "expect": "ok",
+      "name": "a name with two dots",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"name..png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"dir./a.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a directory that ends in a dot",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"dir./a.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a b.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a space",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a b.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a‮gnp.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a right-to-left override",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a‮gnp.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"ａ.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a full-width letter",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"ａ.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a\u0001b.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a control character",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a\u0001b.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a.PNG","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "an upper-case extension",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a.PNG","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"a\\b.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a backslash",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"a\\b.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"c:/a.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a drive",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"c:/a.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"dir_1/a-2.png","size":[4,4]}
+        ]
+      },
+      "expect": "ok",
+      "name": "an underscore, a dash and digits",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"dir_1/a-2.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.png","size":[4,4]}
+        ]
+      },
+      "expect": "ok",
+      "name": "a name of the longest length",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a name one over the longest",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/bbbbbbb.png","size":[4,4]}
+        ]
+      },
+      "expect": "ok",
+      "name": "a path of the longest length",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/bbbbbbb.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/bbbbbbbb.png","size":[4,4]}
+        ]
+      },
+      "expect": "file",
+      "name": "a path one over the longest",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":4,"path":"aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/aaaaaaaa/bbbbbbbb.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"BASE.png","size":[200,200]}
+        ]
+      },
+      "expect": "file",
+      "name": "two names that differ only in case",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":200,"path":"BASE.png","width":200}
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a neck outside the canvas",
+      "patch": [
+        {"op":"replace","path":"/warp/pivot","value":[100,500]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a zoom centre outside the canvas",
+      "patch": [
+        {"op":"replace","path":"/warp/zoomCenter","value":[-1,100]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head with no radius",
+      "patch": [
+        {"op":"replace","path":"/warp/head/radii","value":[0,70]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head wider than the canvas",
+      "patch": [
+        {"op":"replace","path":"/warp/head/radii","value":[201,70]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head whose full part fills the radii",
+      "patch": [
+        {"op":"replace","path":"/warp/head/inner","value":1.0}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head whose full part is negative",
+      "patch": [
+        {"op":"replace","path":"/warp/head/inner","value":-0.1}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head fade in the wrong order",
+      "patch": [
+        {"op":"replace","path":"/warp/headFade","value":[140,120]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a head fade below the picture",
+      "patch": [
+        {"op":"replace","path":"/warp/headFade","value":[120,201]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a brow outside the canvas",
+      "patch": [
+        {"op":"replace","path":"/warp/brows/1/center","value":[300,60]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a brow tilt span of nothing",
+      "patch": [
+        {"op":"replace","path":"/warp/browTiltSpan","value":0}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a jaw with no radius",
+      "patch": [
+        {"op":"replace","path":"/warp/jaw/radii","value":[30,0]}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a chest that spreads too much",
+      "patch": [
+        {"op":"replace","path":"/warp/chest/spread","value":0.06}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a chest that rises too much",
+      "patch": [
+        {"op":"replace","path":"/warp/chest/rise","value":4.01}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "warp",
+      "name": "a chest fade in the wrong order",
+      "patch": [
+        {"op":"replace","path":"/warp/chest/from","value":160}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "a chest at the limits",
+      "patch": [
+        {"op":"replace","path":"/warp/chest/spread","value":0.05},
+        {"op":"replace","path":"/warp/chest/rise","value":4.0}
+      ]
+    },
+    {
+      "assets": {
+        "size": {"base.png":[16,16]}
+      },
+      "expect": "canvas",
+      "name": "a base picture that is not the canvas",
+      "patch": [
+        {"op":"replace","path":"/files/0/width","value":16},
+        {"op":"replace","path":"/files/0/height","value":16}
+      ]
+    },
+    {
+      "assets": {
+        "size": {"base.png":[2048,2048]}
+      },
+      "expect": "ok",
+      "name": "a canvas of the largest side",
+      "patch": [
+        {"op":"replace","path":"/canvas/width","value":2048},
+        {"op":"replace","path":"/canvas/height","value":2048},
+        {"op":"replace","path":"/files/0/width","value":2048},
+        {"op":"replace","path":"/files/0/height","value":2048}
+      ]
+    },
+    {
+      "assets": {
+        "size": {"base.png":[2048,2048]}
+      },
+      "expect": "canvas",
+      "name": "a canvas one past the largest side",
+      "patch": [
+        {"op":"replace","path":"/canvas/width","value":2049},
+        {"op":"replace","path":"/canvas/height","value":2048},
+        {"op":"replace","path":"/files/0/width","value":2048},
+        {"op":"replace","path":"/files/0/height","value":2048}
+      ]
+    },
+    {
+      "assets": {
+        "size": {"mouth_atlas.png":[2049,180]}
+      },
+      "expect": "assetSize",
+      "name": "a picture one past the largest side",
+      "patch": [
+        {"op":"replace","path":"/files/1/width","value":2049}
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"extra/f{n}.png","size":[4,4],"times":54}
+        ]
+      },
+      "expect": "ok",
+      "name": "the most files",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 54,
+          "value": {"height":4,"path":"extra/f{n}.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"extra/f{n}.png","size":[4,4],"times":55}
+        ]
+      },
+      "expect": "tooLarge",
+      "name": "one file over the most",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 55,
+          "value": {"height":4,"path":"extra/f{n}.png","width":4}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "bytes": {"base.png":4194304}
+      },
+      "expect": "ok",
+      "name": "a file of the most bytes",
+      "patch": []
+    },
+    {
+      "assets": {
+        "bytes": {"base.png":4194305}
+      },
+      "expect": "tooLarge",
+      "name": "a file one byte over the most",
+      "patch": []
+    },
+    {
+      "assets": {
+        "bytes": {"base.png":4194304,"mouth_atlas.png":4193344}
+      },
+      "expect": "ok",
+      "name": "all the files of the most bytes",
+      "patch": []
+    },
+    {
+      "assets": {
+        "bytes": {"base.png":4194304,"mouth_atlas.png":4193345}
+      },
+      "expect": "tooLarge",
+      "name": "all the files one byte over the most",
+      "patch": []
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"px0.png","size":[2048,2048]},
+          {"bytes":100,"path":"px1.png","size":[2048,2004]},
+          {"bytes":100,"path":"px2.png","size":[1792,1]}
+        ]
+      },
+      "expect": "ok",
+      "name": "pictures that decode to the most pixels",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":2048,"path":"px0.png","width":2048}
+        },
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":2004,"path":"px1.png","width":2048}
+        },
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":1,"path":"px2.png","width":1792}
+        }
+      ]
+    },
+    {
+      "assets": {
+        "add": [
+          {"bytes":100,"path":"px0.png","size":[2048,2048]},
+          {"bytes":100,"path":"px1.png","size":[2048,2004]},
+          {"bytes":100,"path":"px2.png","size":[1793,1]}
+        ]
+      },
+      "expect": "tooLarge",
+      "name": "pictures that decode to one pixel over",
+      "patch": [
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":2048,"path":"px0.png","width":2048}
+        },
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":2004,"path":"px1.png","width":2048}
+        },
+        {
+          "op": "append",
+          "path": "/files",
+          "times": 1,
+          "value": {"height":1,"path":"px2.png","width":1793}
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "a part with the most vertices",
+      "patch": [
+        {"op":"repeat","path":"/mouth/parts/0/shapes/0/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/0/uvs","pattern":[0.1667,0.1667],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/1/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/1/uvs","pattern":[0.5,0.1667],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/2/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/2/uvs","pattern":[0.8333,0.1667],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/3/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/3/uvs","pattern":[0.1667,0.5],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/4/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/4/uvs","pattern":[0.5,0.5],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/5/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/5/uvs","pattern":[0.8333,0.5],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/6/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/6/uvs","pattern":[0.1667,0.8333],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/7/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/7/uvs","pattern":[0.5,0.8333],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/8/positions","pattern":[100,100],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/8/uvs","pattern":[0.8333,0.8333],"times":3000},
+        {"op":"repeat","path":"/mouth/parts/0/alphas","pattern":[1.0],"times":3000}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "tooLarge",
+      "name": "a part with one vertex over the most",
+      "patch": [
+        {"op":"repeat","path":"/mouth/parts/0/shapes/0/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/0/uvs","pattern":[0.1667,0.1667],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/1/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/1/uvs","pattern":[0.5,0.1667],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/2/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/2/uvs","pattern":[0.8333,0.1667],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/3/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/3/uvs","pattern":[0.1667,0.5],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/4/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/4/uvs","pattern":[0.5,0.5],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/5/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/5/uvs","pattern":[0.8333,0.5],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/6/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/6/uvs","pattern":[0.1667,0.8333],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/7/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/7/uvs","pattern":[0.5,0.8333],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/8/positions","pattern":[100,100],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/shapes/8/uvs","pattern":[0.8333,0.8333],"times":3001},
+        {"op":"repeat","path":"/mouth/parts/0/alphas","pattern":[1.0],"times":3001}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "a part with the most triangles",
+      "patch": [
+        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,1,2],"times":6000}
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "tooLarge",
+      "name": "a part with one triangle over the most",
+      "patch": [
+        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,1,2],"times":6001}
+      ]
+    },
+    {"documentBytes":4194304,"expect":"ok","name":"a document of 4194304 bytes","patch":[]},
+    {"documentBytes":4194305,"expect":"tooLarge","name":"a document of 4194305 bytes","patch":[]},
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "every acting constant at its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.0,"gap":[0.2,0.2],"gapListening":[0.2,0.2],"onGazeShift":0.0,"seq":[0.01,0.01,0.01]},
+            "breath": {"amount":0.0,"period":1.0,"periodSpeaking":1.0},
+            "brow": {"idleFlick":0.0,"listening":0.0,"start":0.0,"stress":0.0,"thinking":0.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.0,"r":0.0,"w":0.0},
+              "thinking": {"c":0.0,"f":0.0,"o":0.0,"r":0.0,"w":0.0}
+            },
+            "gaze": {"holdAway":[0.05,0.05],"idleGap":[0.2,0.2],"speakingAwayChance":0.0,"thinkingHold":[0.2,0.2]},
+            "head": {"listenTilt":-15.0,"listenX":-50.0,"nodListen":0.0,"nodSpeak":0.0,"nodStart":0.0,"swayRot":0.0,"swayX":0.0,"swayY":0.0,"thinkTilt":-15.0,"thinkY":-50.0},
+            "stress": {"chance":0.0,"contentLen":1,"dbOver":1.0,"minGap":0.2,"wordGap":0.0}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "every acting constant at its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":1.0,"gap":[60.0,60.0],"gapListening":[60.0,60.0],"onGazeShift":1.0,"seq":[1.0,1.0,1.0]},
+            "breath": {"amount":2.0,"period":30.0,"periodSpeaking":30.0},
+            "brow": {"idleFlick":30.0,"listening":30.0,"start":30.0,"stress":30.0,"thinking":30.0},
+            "expression": {
+              "listening": {"c":1.0,"f":1.0,"o":1.0,"r":1.0,"w":1.0},
+              "thinking": {"c":1.0,"f":1.0,"o":1.0,"r":1.0,"w":1.0}
+            },
+            "gaze": {"holdAway":[10.0,10.0],"idleGap":[60.0,60.0],"speakingAwayChance":1.0,"thinkingHold":[60.0,60.0]},
+            "head": {"listenTilt":15.0,"listenX":50.0,"nodListen":40.0,"nodSpeak":40.0,"nodStart":40.0,"swayRot":5.0,"swayX":50.0,"swayY":50.0,"thinkTilt":15.0,"thinkY":50.0},
+            "stress": {"chance":1.0,"contentLen":64,"dbOver":40.0,"minGap":30.0,"wordGap":30.0}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "malformed",
+      "name": "a constant that is null",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "head": {"nodStart":null}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "the acting constants of a tune with fewer fields",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "head": {"nodStart":20.0}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "a gap range that runs backwards",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[5.0,2.0],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "ok",
+      "name": "a gap range of one value",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.0,2.0],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gap/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[-0.39999999999999997,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gap/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[60.6,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gap/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,-0.39999999999999997],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gap/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,60.6],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gapListening/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[-0.39999999999999997,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gapListening/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[60.6,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gapListening/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,-0.39999999999999997],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/gapListening/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,60.6],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/doubleChance under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":-0.01,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/doubleChance over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":1.01,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/onGazeShift under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":-0.01,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/onGazeShift over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":1.01,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.0,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[1.01,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.0,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,1.01,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/2 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.0]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/blink/seq/2 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,1.01]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/idleGap/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[-0.39999999999999997,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/idleGap/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[60.6,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/idleGap/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,-0.39999999999999997],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/idleGap/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,60.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/holdAway/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[-0.05,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/holdAway/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[10.1,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/holdAway/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,-0.05],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/holdAway/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,10.1],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/speakingAwayChance under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":-0.01,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/speakingAwayChance over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":1.01,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/thinkingHold/0 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[-0.39999999999999997,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/thinkingHold/0 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[60.6,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/thinkingHold/1 under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,-0.39999999999999997]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/gaze/thinkingHold/1 over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,60.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayRot under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":-0.05,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayRot over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":5.05,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayX under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":-0.5,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayX over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":50.5,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayY under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":-0.5,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/swayY over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":50.5,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/listenTilt under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-15.15,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/listenTilt over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":15.15,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/listenX under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":-50.5,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/listenX over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":50.5,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/thinkTilt under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":-15.15,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/thinkTilt over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":15.15,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/thinkY under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-50.5},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/thinkY over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":50.5},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodSpeak under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":-0.4,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodSpeak over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":40.4,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodStart under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":-0.4,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodStart over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":40.4,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodListen under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":-0.4,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/head/nodListen over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":40.4,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/stress under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":-0.3,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/stress over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":30.3,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/start under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":-0.3,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/start over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":30.3,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/thinking under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":-0.3},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/thinking over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":30.3},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/listening under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":-0.3,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/listening over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":30.3,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/idleFlick under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":-0.3,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/brow/idleFlick over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":30.3,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/period under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":0.7,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/period over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":30.3,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/periodSpeaking under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":0.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/periodSpeaking over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":30.3},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/amount under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":-0.02,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/breath/amount over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":2.02,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/dbOver under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":0.6,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/dbOver over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":40.4,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/minGap under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":-0.09999999999999998,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/minGap over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":30.3,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/contentLen under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":0,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/contentLen over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":65,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/chance under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":-0.01,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/chance over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":1.01,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/wordGap under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":-0.3}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/stress/wordGap over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":30.3}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/o under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":-0.01,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/o over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":1.01,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/w under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":-0.01},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/w over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":1.01},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/r under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":-0.01,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/r over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":1.01,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/c under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":-0.01,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/c over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":1.01,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/f under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":-0.01,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/listening/f over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":1.01,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/o under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":-0.01,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/o over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":1.01,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/w under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":-0.01}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/w over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":0.3,"w":1.01}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/r under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":-0.01,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/r over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":0.0,"o":0.0,"r":1.01,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/c under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":-0.01,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/c over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":1.01,"f":0.0,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/f under its least",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":-0.01,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
+    },
+    {
+      "assets": {},
+      "expect": "acting",
+      "name": "/expression/thinking/f over its most",
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/acting",
+          "value": {
+            "blink": {"doubleChance":0.14,"gap":[2.2,5.8],"gapListening":[3.2,7.5],"onGazeShift":0.35,"seq":[0.042,0.07,0.058]},
+            "breath": {"amount":1.0,"period":4.4,"periodSpeaking":3.7},
+            "brow": {"idleFlick":2.8,"listening":2.0,"start":4.8,"stress":5.0,"thinking":4.0},
+            "expression": {
+              "listening": {"c":0.0,"f":0.0,"o":0.05,"r":0.0,"w":0.7},
+              "thinking": {"c":0.6,"f":1.01,"o":0.0,"r":0.3,"w":0.35}
+            },
+            "gaze": {"holdAway":[0.45,1.3],"idleGap":[1.8,4.6],"speakingAwayChance":0.45,"thinkingHold":[1.2,2.6]},
+            "head": {"listenTilt":-2.1,"listenX":1.6,"nodListen":9.0,"nodSpeak":13.0,"nodStart":14.0,"swayRot":0.45,"swayX":1.4,"swayY":0.85,"thinkTilt":1.0,"thinkY":-1.4},
+            "stress": {"chance":0.75,"contentLen":6,"dbOver":7.0,"minGap":0.9,"wordGap":0.65}
+          }
+        }
+      ]
     }
   ],
-  "description": "The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` (replace or remove at a JSON pointer) to `base`, may change the assets (`assets`: `remove` paths, `size` and `bytes` by path), and expects `ok` or the kind of the first rule it breaks."
+  "description": "The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits."
 }

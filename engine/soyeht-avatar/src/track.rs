@@ -23,6 +23,9 @@ pub struct Target {
     pub p: char,
 }
 
+/// How many targets before the current one may hold a closure that is still closing.
+const CLOSURE_LOOKBACK: usize = 32;
+
 /// A loudness gain of a time window relative to the voice: about 0.55 (soft) to 1.1 (loud).
 pub type Level<'a> = &'a dyn Fn(f64, f64) -> f64;
 
@@ -73,24 +76,32 @@ fn vowel_target(item: &Item, level: Level, tune: &Tune) -> Option<Params> {
     Some(q)
 }
 
-/// The nearest vowel target on one side of `index`, not crossing a pause.
-fn neighbour(items: &[Item], index: usize, forward: bool) -> Option<Params> {
-    let mut k = index;
-    loop {
-        k = if forward { k + 1 } else { k.checked_sub(1)? };
-        let item = items.get(k)?;
+/// For each item, the target of the nearest vowel after it, not crossing a pause. One pass from
+/// the end: a token of thousands of consonants costs a pass, not a pass per consonant.
+fn next_vowels(items: &[Item]) -> Vec<Option<Params>> {
+    let mut out = vec![None; items.len()];
+    let mut next = None;
+    for (slot, item) in out.iter_mut().zip(items).rev() {
+        *slot = next;
         if item.kind == Kind::Pause {
-            return None;
-        }
-        if let Some(q) = item.q {
-            return Some(q);
+            next = None;
+        } else if item.q.is_some() {
+            next = item.q;
         }
     }
+    out
 }
 
-fn consonant_target(items: &[Item], index: usize, tune: &Tune) -> Params {
-    let before = neighbour(items, index, false);
-    let after = neighbour(items, index, true).or(before);
+/// The target of a tongue or throat consonant: the lips follow the neighbouring vowels. Every
+/// item before `index` already has its target (a vowel's, or a consonant's from this pass), and
+/// the nearest one before counts unless it is a pause; `next` is the nearest vowel after.
+fn consonant_target(items: &[Item], index: usize, next: Option<Params>, tune: &Tune) -> Params {
+    let before = index
+        .checked_sub(1)
+        .map(|k| &items[k])
+        .filter(|item| item.kind != Kind::Pause)
+        .and_then(|item| item.q);
+    let after = next.or(before);
     let near = before.or(after);
     let p = items[index].p;
     let mut q = match near {
@@ -131,7 +142,8 @@ pub fn build_track(phonemes: &[Phoneme], level: Level, tune: &Tune) -> Vec<Targe
             stress = true;
             continue;
         }
-        if is_skipped(ph.p) {
+        // A phoneme with no time (not a number, or ending before it starts) is not heard.
+        if is_skipped(ph.p) || !ph.t0.is_finite() || !ph.t1.is_finite() || ph.t1 < ph.t0 {
             continue;
         }
         let kind = classify(ph.p, ph.t1 - ph.t0, stress, tune);
@@ -153,6 +165,7 @@ pub fn build_track(phonemes: &[Phoneme], level: Level, tune: &Tune) -> Vec<Targe
             item.q = vowel_target(item, level, tune);
         }
     }
+    let next = next_vowels(&items);
     for i in 0..items.len() {
         if items[i].q.is_some() {
             continue;
@@ -161,7 +174,7 @@ pub fn build_track(phonemes: &[Phoneme], level: Level, tune: &Tune) -> Vec<Targe
             Kind::Bilabial => Params::new(0.0, 0.45, 0.0, 1.0, 0.0),
             Kind::Labiodental => Params::new(0.15, 0.7, 0.0, 0.0, 1.0),
             Kind::Pause => Params::new(0.0, 0.5, 0.0, tune.pause_closure, 0.0),
-            _ => consonant_target(&items, i, tune),
+            _ => consonant_target(&items, i, next[i], tune),
         };
         items[i].q = Some(q);
     }
@@ -191,8 +204,9 @@ pub fn build_track(phonemes: &[Phoneme], level: Level, tune: &Tune) -> Vec<Targe
 /// next one starts. `None` means nothing is being said now (silence, or outside the clip).
 pub fn target_at(track: &[Target], t: f64) -> Option<Params> {
     let found = track.partition_point(|it| it.t0 <= t).checked_sub(1)?;
-    // A closure that overlaps the next start keeps priority until its own end.
-    for k in (0..found).rev() {
+    // A closure that overlaps the next start keeps priority until its own end. Speech has a dozen
+    // phonemes in 0.2 s; a track with thousands there is not speech, and is not searched.
+    for k in (0..found).rev().take(CLOSURE_LOOKBACK) {
         if track[found].t0 - track[k].t0 >= 0.2 {
             break;
         }

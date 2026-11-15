@@ -12,15 +12,18 @@ use crate::acting_tune::ActingTune;
 
 /// The `format` every package carries.
 pub const FORMAT: &str = "soyeht-avatar";
-/// The major version this crate reads. A change of the major version is a change of what a
-/// package means; a minor version only adds.
-pub const MAJOR_VERSION: u32 = 1;
+/// The version this crate reads, and the only one. The format is **unstable** (0.x): it has not
+/// yet been consumed by a renderer (slices 4 and 5 of ADR 0166) or written by the build command
+/// (slice 9b), and any of them may change it. Until then a new minor version may break an old
+/// one, so a reader accepts exactly this string. The first stable version will be 1.0, and from
+/// then on a later minor version only adds fields.
+pub const VERSION: &str = "0.1";
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Package {
     pub format: String,
-    /// `major.minor`.
+    /// Exactly `VERSION`.
     pub version: String,
     /// The size of the avatar's picture in pixels; every rectangle and position is in it.
     pub canvas: Size,
@@ -29,11 +32,12 @@ pub struct Package {
     /// The base picture (the rest state: open eyes, resting mouth).
     pub base: String,
     pub mouth: MouthModel,
-    /// The seven eye frames and the blink frame, by id (see `EYE_IDS`).
+    /// The seven eye frames and the blink frame, by id (see `EYE_IDS`). The resting expressions of
+    /// the mouth (a listening smile, a thinking "hm") are not pictures: they are targets of the
+    /// continuous mouth, in the acting constants (`ActingTune::expression`).
     pub eyes: Vec<Patch>,
-    /// The resting mouths of listening (`smile`) and thinking (`hm`).
-    pub rest_mouths: Vec<Patch>,
-    pub warp: Lattice,
+    /// Where on this face the pose is applied.
+    pub warp: Warp,
     #[serde(default)]
     pub acting: ActingTune,
 }
@@ -61,12 +65,57 @@ pub struct Patch {
     pub rect: [u32; 4],
 }
 
-/// The warp lattice of the head: a grid of `cols` by `rows` cells over `rect`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Lattice {
-    pub rect: [u32; 4],
-    pub cols: u32,
-    pub rows: u32,
+/// A soft ellipse of influence on the canvas: full strength inside `inner` (a share of the
+/// radii) and falling smoothly to nothing at the radii.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Region {
+    /// `x, y` of the centre, in canvas pixels.
+    pub center: [f64; 2],
+    /// Horizontal and vertical radius, in canvas pixels.
+    pub radii: [f64; 2],
+    /// The share of the radii (0 to under 1) inside which the influence is full.
+    pub inner: f64,
+}
+
+/// Where the pose of the acting layer applies on this face: the places a displacement of the
+/// picture is centred on. They belong to the picture (a neck is where it is), so they are in the
+/// package, in canvas pixels; `Warp::source_point` is the one rule that uses them, and the
+/// renderers share it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Warp {
+    /// The neck: the head rotates about this point.
+    pub pivot: [f64; 2],
+    /// The picture's zoom is centred here.
+    pub zoom_center: [f64; 2],
+    /// The head (hair, face, ears), which moves and rotates as one.
+    pub head: Region,
+    /// Rows of the picture, `from` to `to`, over which the head's influence fades out (the neck:
+    /// the collar stays put).
+    pub head_fade: [f64; 2],
+    /// The face features (eyes, nose, mouth), which move a little more than the head's outline.
+    pub face: Region,
+    /// The left and right brow, each lifted as a soft blob.
+    pub brows: [Region; 2],
+    /// The distance along the brow over which its inner end lifts more than the outer one.
+    pub brow_tilt_span: f64,
+    /// The lower face, which drops with the jaw.
+    pub jaw: Region,
+    /// The cheeks, which lift with a smile.
+    pub cheek: Region,
+    pub chest: Chest,
+}
+
+/// The chest and shoulders, which breathe: below `from` the picture rises by `rise` pixels at the
+/// full breath and widens by `spread` of the distance from `center_x`, fully at `to`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Chest {
+    pub from: f64,
+    pub to: f64,
+    pub center_x: f64,
+    pub spread: f64,
+    pub rise: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -142,5 +191,3 @@ pub struct ShapeMesh {
 pub const EYE_IDS: [&str; 8] = [
     "half", "left", "right", "up", "down", "upleft", "soft", "blink",
 ];
-/// The resting mouths every package carries.
-pub const REST_MOUTH_IDS: [&str; 2] = ["smile", "hm"];

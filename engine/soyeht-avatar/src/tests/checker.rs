@@ -2,21 +2,21 @@
 //!
 //! The lab measured pixels of a rendered mouth. Here the "picture" is the blended geometry of the
 //! mouth mesh, and distances are measured on it, with 1.0 the distance between the closed drawing
-//! and the A drawing. The pixel checks (the seam of the morph boundary, a smeared corner) belong
-//! to the renderers; the ghost check is the structural form of the same rule: a frame is a
-//! convex combination of the nine contours and nothing else, so there is never a second mouth.
+//! and the A drawing. The pixel checks (the seam of the morph boundary, a smeared corner, the
+//! ghost frames of a dissolve) belong to the renderers: the crate has no pictures to dissolve. What
+//! holds the "one mouth" rule here is `params_tests` (a frame is one convex mix of the nine
+//! contours and its picture an exact weighted average of them), not a per-frame check that could
+//! only pass.
 
 use crate::clip::Clip;
 use crate::envelope::Envelope;
-use crate::mesh::Layer;
 use crate::mouth::Mouth;
 use crate::package::Package;
-use crate::params::{MorphWeights, SHAPES, Shape};
+use crate::params::{SHAPES, Shape};
 use crate::phoneme::Phoneme;
 use crate::tune::Tune;
 
 /// The lab's limits (`LIMITS` of `check_mouth.py`).
-pub(super) const GHOST_FRAMES: usize = 0;
 pub(super) const POP: f64 = 0.65;
 pub(super) const POP_CLOSURE: f64 = 0.70;
 pub(super) const REVERSALS_PER_SECOND: f64 = 7.0;
@@ -28,7 +28,6 @@ pub(super) const CLOSED_SILENCE: f64 = 0.90;
 pub(super) const LAB_FPS: f64 = 24.0;
 
 pub(super) struct Report {
-    pub ghost: usize,
     pub pop: f64,
     pub pop_closure: f64,
     pub reversals: f64,
@@ -64,35 +63,6 @@ pub(super) fn distance(a: &[f64], b: &[f64]) -> f64 {
     sum / (a.len() / 2) as f64
 }
 
-/// A frame is a ghost when it is not one convex combination of the nine contours, or when its
-/// picture layers are not an exact weighted average.
-fn is_ghost(weights: &MorphWeights, package: &Package) -> bool {
-    let all = weights.all();
-    let sum: f64 = all.iter().sum();
-    let convex = all.iter().all(|w| *w >= 0.0) && (sum - 1.0).abs() < 1e-9;
-    let layers_ok = package.mouth.parts.iter().all(|part| {
-        // The layers are drawn over one another; the share of each in the result must be its
-        // weight (raised to the part's texture power) over the sum of the layers' weights.
-        let layers: Vec<Layer> = part.layers(&all);
-        let powers: Vec<f64> = layers
-            .iter()
-            .map(|l| all[l.shape.index()].powf(part.texture_power))
-            .collect();
-        let total: f64 = powers.iter().sum();
-        let mut remaining = 1.0;
-        let mut shares = vec![0.0; layers.len()];
-        for (share, layer) in shares.iter_mut().zip(&layers).rev() {
-            *share = remaining * layer.alpha;
-            remaining *= 1.0 - layer.alpha;
-        }
-        shares
-            .iter()
-            .zip(&powers)
-            .all(|(s, p)| (s - p / total).abs() < 1e-9)
-    });
-    !(convex && layers_ok)
-}
-
 /// Run the mouth over a clip made from `driven` at `fps` and measure the limits against what
 /// is really said (`truth`) and the voice `envelope`. The clip starts after half a second of
 /// silence and the run ends 1.6 seconds after the last phoneme.
@@ -109,7 +79,6 @@ pub(super) fn talk(
     let length = truth.last().map_or(0.0, |p| p.t1) + 1.6;
     let frames = ((lead_in + length) * fps) as usize;
     let mut mouth = Mouth::new(tune.clone());
-    let mut ghost = 0;
     let mut geoms = Vec::with_capacity(frames);
     for i in 0..frames {
         let t = i as f64 / fps - lead_in;
@@ -120,7 +89,6 @@ pub(super) fn talk(
         };
         mouth.step(1.0 / fps, target);
         let weights = mouth.weights();
-        ghost += usize::from(is_ghost(&weights, package));
         geoms.push(geometry(package, &weights.all()));
     }
     let closed_shape = geometry(package, &pure(Shape::ClosedMbp));
@@ -204,7 +172,6 @@ pub(super) fn talk(
     }
 
     Report {
-        ghost,
         pop: max_of(false),
         pop_closure: max_of(true),
         reversals: reversals(&openness, &env, fps),

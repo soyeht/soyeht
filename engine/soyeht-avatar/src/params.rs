@@ -84,10 +84,6 @@ impl Shape {
         }
     }
 
-    pub(crate) fn index(self) -> usize {
-        Shape::ALL.iter().position(|s| *s == self).unwrap_or(0)
-    }
-
     /// Where this drawing sits in the parameter space.
     pub fn anchor(self) -> Params {
         match self {
@@ -146,20 +142,18 @@ impl MorphWeights {
 /// Parameters to morph weights: inverse-distance weights with a compact, continuous support.
 pub fn weights_from_params(q: Params) -> MorphWeights {
     let qa = q.to_array();
-    let inverse: Vec<f64> = Shape::ALL
-        .iter()
-        .map(|s| {
-            let anchor = s.anchor().to_array();
-            let d2: f64 = (0..DIMS)
-                .map(|k| ((qa[k] - anchor[k]) * SCALE[k]).powi(2))
-                .sum();
-            1.0 / d2.sqrt().max(1e-3).powf(POWER)
-        })
-        .collect();
-    let mut sorted = inverse.clone();
+    let mut inverse = [0.0; SHAPES];
+    for (slot, shape) in inverse.iter_mut().zip(Shape::ALL) {
+        let anchor = shape.anchor().to_array();
+        let d2: f64 = (0..DIMS)
+            .map(|k| ((qa[k] - anchor[k]) * SCALE[k]).powi(2))
+            .sum();
+        *slot = 1.0 / d2.sqrt().max(1e-3).powf(POWER);
+    }
+    let mut sorted = inverse;
     sorted.sort_by(|a, b| b.total_cmp(a));
     let cut = sorted[KEEP - 1];
-    let raw: Vec<f64> = inverse.iter().map(|v| (v - cut).max(0.0)).collect();
+    let raw = inverse.map(|v| (v - cut).max(0.0));
     let sum: f64 = raw.iter().sum();
     let sum = if sum == 0.0 { 1.0 } else { sum };
     let mut visemes = [0.0; VISEMES];

@@ -8,8 +8,47 @@ use crate::tests::fixtures::{assets, package_json};
 
 // ---------------------------------------------------------------------------- package cases
 
+/// Replace `{n}` in every string of a value with `n`.
+fn numbered(value: &Value, n: usize) -> Value {
+    match value {
+        Value::String(s) => Value::String(s.replace("{n}", &n.to_string())),
+        Value::Array(a) => Value::Array(a.iter().map(|v| numbered(v, n)).collect()),
+        Value::Object(o) => {
+            Value::Object(o.iter().map(|(k, v)| (k.clone(), numbered(v, n))).collect())
+        }
+        other => other.clone(),
+    }
+}
+
+/// Apply one patch. `replace` sets (and adds a missing member of an object), `remove` deletes,
+/// `append` pushes `times` copies of `value` onto an array (`{n}` in a string is the copy's
+/// number), and `repeat` sets an array to `pattern` repeated `times`.
 fn apply(doc: &mut Value, patch: &Value) {
     let path = patch["path"].as_str().unwrap_or("");
+    let times = patch["times"].as_u64().unwrap_or(1) as usize;
+    match patch["op"].as_str() {
+        Some("append") => {
+            if let Some(Value::Array(a)) = doc.pointer_mut(path) {
+                a.extend((0..times).map(|n| numbered(&patch["value"], n)));
+            }
+            return;
+        }
+        Some("repeat") => {
+            let pattern = patch["pattern"].as_array().cloned().unwrap_or_default();
+            if let Some(target) = doc.pointer_mut(path) {
+                *target = Value::Array(
+                    pattern
+                        .iter()
+                        .cycle()
+                        .take(pattern.len() * times)
+                        .cloned()
+                        .collect(),
+                );
+            }
+            return;
+        }
+        _ => {}
+    }
     let (parent, key) = path.rsplit_once('/').unwrap_or(("", path));
     let Some(target) = doc.pointer_mut(parent) else {
         return;
@@ -35,12 +74,25 @@ fn apply(doc: &mut Value, patch: &Value) {
     }
 }
 
-fn replace(path: &str, value: Value) -> Value {
+pub(super) fn replace(path: &str, value: Value) -> Value {
     json!({ "op": "replace", "path": path, "value": value })
 }
 
-fn remove(path: &str) -> Value {
+pub(super) fn remove(path: &str) -> Value {
     json!({ "op": "remove", "path": path })
+}
+
+/// Versions that are not `0.1`, each spelled a way a loose reader might accept.
+fn version_string_cases() -> Vec<Value> {
+    [
+        "0.2", "1.0", "0", "0.", "0.x", "00.1", "0.01", "+0.1", "-0.1", " 0.1", "0.1 ", "0.1.0", "1",
+        "1.", "1.x", "+1.0", "01.0", "1.99999999999999999999",
+    ]
+    .iter()
+    .map(|v| {
+        json!({ "name": format!("the version {v:?}"), "patch": [replace("/version", json!(v))], "expect": "unsupportedVersion" })
+    })
+    .collect()
 }
 
 fn version_cases() -> Vec<Value> {
@@ -48,10 +100,10 @@ fn version_cases() -> Vec<Value> {
     vec![
         case("a valid package", vec![], "ok"),
         case(
-            "a later minor version and a field it adds",
+            "a field this version does not know is ignored",
             vec![
-                replace("/version", "1.9".into()),
                 replace("/extra", json!({ "x": 1 })),
+                replace("/restMouths", json!([])),
             ],
             "ok",
         ),
@@ -64,16 +116,6 @@ fn version_cases() -> Vec<Value> {
             "another format",
             vec![replace("/format", "other".into())],
             "wrongFormat",
-        ),
-        case(
-            "another major version",
-            vec![replace("/version", "2.0".into())],
-            "unsupportedVersion",
-        ),
-        case(
-            "a version with no minor",
-            vec![replace("/version", "1".into())],
-            "unsupportedVersion",
         ),
         case(
             "a canvas that is not a size",
@@ -235,21 +277,6 @@ fn frame_cases() -> Vec<Value> {
             "frames",
         ),
         case(
-            "a resting mouth missing",
-            vec![remove("/restMouths/1")],
-            "frames",
-        ),
-        case(
-            "a warp lattice with no columns",
-            vec![replace("/warp/cols", 0.into())],
-            "warp",
-        ),
-        case(
-            "a warp lattice outside the canvas",
-            vec![replace("/warp/rect", json!([150, 150, 100, 100]))],
-            "warp",
-        ),
-        case(
             "a blink gap in the wrong order",
             vec![replace(
                 "/acting",
@@ -267,28 +294,54 @@ fn frame_cases() -> Vec<Value> {
 
 /// The cases, grouped by what they break: `expect` is `ok` or an `ErrorKind`.
 fn package_cases() -> Vec<Value> {
-    [version_cases(), file_cases(), mesh_cases(), frame_cases()].concat()
+    [
+        version_cases(),
+        version_string_cases(),
+        file_cases(),
+        mesh_cases(),
+        frame_cases(),
+        super::package_limits::path_cases(),
+        super::package_limits::warp_cases(),
+        super::package_limits::limit_cases(),
+        super::package_limits::acting_cases(),
+    ]
+    .concat()
 }
 
 fn assets_of(base: &[AssetInfo], change: &Value) -> Vec<AssetInfo> {
     let removed: Vec<&str> = change["remove"]
         .as_array()
         .map_or(vec![], |a| a.iter().filter_map(Value::as_str).collect());
-    base.iter()
+    let size_of = |v: &Value| {
+        v.as_array()
+            .and_then(|s| Some((s.first()?.as_u64()? as u32, s.get(1)?.as_u64()? as u32)))
+    };
+    let mut out: Vec<AssetInfo> = base
+        .iter()
         .filter(|a| !removed.contains(&a.path.as_str()))
         .map(|a| {
             let mut a = a.clone();
             if let Some(size) = change["size"].get(&a.path) {
-                a.size = size
-                    .as_array()
-                    .and_then(|s| Some((s.first()?.as_u64()? as u32, s.get(1)?.as_u64()? as u32)));
+                a.size = size_of(size);
             }
             if let Some(bytes) = change["bytes"].get(&a.path).and_then(Value::as_u64) {
                 a.bytes = bytes;
             }
             a
         })
-        .collect()
+        .collect();
+    // `add`: files the caller has beyond the base's, `times` copies each, `{n}` the copy's number.
+    for entry in change["add"].as_array().map_or(&[][..], Vec::as_slice) {
+        for n in 0..entry["times"].as_u64().unwrap_or(1) as usize {
+            let entry = numbered(entry, n);
+            out.push(AssetInfo {
+                path: entry["path"].as_str().unwrap_or("").to_string(),
+                bytes: entry["bytes"].as_u64().unwrap_or(0),
+                size: size_of(&entry["size"]),
+            });
+        }
+    }
+    out
 }
 
 fn asset_values(list: &[AssetInfo]) -> Value {
@@ -315,7 +368,15 @@ fn package_outcome(base: &Value, assets: &[AssetInfo], case: &Value) -> String {
         apply(&mut doc, patch);
     }
     let assets = assets_of(assets, &case["assets"]);
-    match Package::load(&doc.to_string(), &assets) {
+    let mut text = doc.to_string();
+    // `documentBytes`: blanks follow the JSON until the document is exactly that many bytes.
+    if let Some(bytes) = case["documentBytes"].as_u64() {
+        text.extend(std::iter::repeat_n(
+            ' ',
+            (bytes as usize).saturating_sub(text.len()),
+        ));
+    }
+    match Package::load(&text, &assets) {
         Ok(_) => "ok".to_string(),
         Err(e) => e.kind.as_str().to_string(),
     }
@@ -324,7 +385,7 @@ fn package_outcome(base: &Value, assets: &[AssetInfo], case: &Value) -> String {
 fn package_vectors() -> Value {
     let base_assets = assets();
     json!({
-        "description": "The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` (replace or remove at a JSON pointer) to `base`, may change the assets (`assets`: `remove` paths, `size` and `bytes` by path), and expects `ok` or the kind of the first rule it breaks.",
+        "description": "The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
         "base": package_json(),
         "assets": asset_values(&base_assets),
         "cases": package_cases(),

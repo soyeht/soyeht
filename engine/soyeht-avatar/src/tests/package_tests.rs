@@ -11,12 +11,17 @@ fn the_synthetic_package_loads() {
 }
 
 #[test]
-fn a_field_a_later_minor_version_adds_is_ignored() {
+fn a_field_this_version_does_not_know_is_ignored_and_another_version_is_not_read() {
     let mut doc = package_json();
-    doc["version"] = "1.4".into();
     doc["futureThing"] = serde_json::json!({ "x": 1 });
     doc["mouth"]["parts"][0]["newField"] = 3.into();
     assert!(Package::load(&doc.to_string(), &assets()).is_ok());
+    // The format is unstable (0.x): the version is read exactly, and no other is.
+    for version in ["0.2", "0.0", "1.0", "0.1.0", "00.1", "+0.1", "0.1 "] {
+        doc["version"] = version.into();
+        let err = Package::load(&doc.to_string(), &assets()).expect_err(version);
+        assert_eq!(err.kind, ErrorKind::UnsupportedVersion, "{version}");
+    }
 }
 
 #[test]

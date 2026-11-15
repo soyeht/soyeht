@@ -34,22 +34,23 @@ mod runtime;
 mod smooth;
 mod track;
 mod tune;
+mod warp;
 
 #[cfg(test)]
 mod tests;
 
-pub use acting::{Acting, ActingFrame, ActingInput, Eye, Gaze, Lid, Pose, State};
+pub use acting::{Acting, ActingFrame, ActingInput, Eye, Gaze, Lid, Pose, REFERENCE_SIZE, State};
 pub use acting_tune::{
-    ActingTune, BlinkTune, BreathTune, BrowTune, GazeTune, HeadTune, StressTune,
+    ActingTune, BlinkTune, BreathTune, BrowTune, ExpressionTune, GazeTune, HeadTune, StressTune,
 };
 pub use aligner::{Alignment, Language, align};
-pub use clip::{Clip, energy_target};
+pub use clip::{Clip, WordStart, energy_target};
 pub use envelope::{Envelope, HOP};
 pub use mesh::Layer;
 pub use mouth::Mouth;
 pub use package::{
-    AssetInfo, Atlas, EYE_IDS, ErrorKind, FORMAT, FileDecl, Lattice, MAJOR_VERSION, MeshPart,
-    MouthModel, Package, PackageError, PartKind, Patch, REST_MOUTH_IDS, ShapeMesh, Size, png_size,
+    AssetInfo, Atlas, Chest, EYE_IDS, ErrorKind, FORMAT, FileDecl, MeshPart, MouthModel, Package,
+    PackageError, PartKind, Patch, Region, ShapeMesh, Size, VERSION, Warp, png_size,
 };
 pub use params::{MorphWeights, Params, Shape, weights_from_params};
 pub use phoneme::{Kind, Phoneme};

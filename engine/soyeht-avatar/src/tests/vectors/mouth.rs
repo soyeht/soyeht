@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 
 use super::{FPS, TOLERANCE, check_group, numbers, read, render, round, updating, vectors_dir};
-use crate::acting::{Acting, ActingInput, Gaze, Lid, State};
+use crate::acting::{Acting, ActingInput, Gaze, Lid, REFERENCE_SIZE, State};
 use crate::acting_tune::ActingTune;
 use crate::aligner::{Language, align};
 use crate::clip::Clip;
@@ -11,7 +11,7 @@ use crate::envelope::Envelope;
 use crate::mouth::Mouth;
 use crate::params::{Params, Shape, weights_from_params};
 use crate::phoneme::Phoneme;
-use crate::tests::fixtures::{ENGLISH, PORTUGUESE, speech};
+use crate::tests::fixtures::{ENGLISH, PORTUGUESE, pose_values, speech};
 use crate::tune::Tune;
 
 fn params_of(v: &Value) -> Params {
@@ -19,7 +19,7 @@ fn params_of(v: &Value) -> Params {
     Params::new(n("o"), n("w"), n("r"), n("c"), n("f"))
 }
 
-fn phonemes_of(v: &Value) -> Vec<Phoneme> {
+pub(super) fn phonemes_of(v: &Value) -> Vec<Phoneme> {
     let list = v.as_array().map_or(&[][..], Vec::as_slice);
     list.iter()
         .map(|p| Phoneme {
@@ -33,7 +33,7 @@ fn phonemes_of(v: &Value) -> Vec<Phoneme> {
         .collect()
 }
 
-fn phoneme_values(list: &[Phoneme]) -> Value {
+pub(super) fn phoneme_values(list: &[Phoneme]) -> Value {
     Value::Array(
         list.iter()
             .map(|p| json!({ "p": p.p.to_string(), "t0": round(p.t0), "t1": round(p.t1) }))
@@ -41,7 +41,7 @@ fn phoneme_values(list: &[Phoneme]) -> Value {
     )
 }
 
-fn envelope_of(v: &Value) -> Option<Envelope> {
+pub(super) fn envelope_of(v: &Value) -> Option<Envelope> {
     let hop = v["hop"].as_f64()?;
     let db = v["db"]
         .as_array()?
@@ -95,15 +95,29 @@ fn run_aligner(case: &Value) -> Value {
         &envelope,
     );
     let span = a.span.map_or(Value::Null, |(s, e)| numbers(&[s, e]));
-    json!({ "span": span, "matched": a.matched, "boundaries": a.boundaries, "phonemes": phoneme_values(&a.phonemes) })
+    let words: Vec<Value> = a
+        .words
+        .iter()
+        .map(|w| json!({ "t": round(w.t), "word": w.word, "prevEndsClause": w.prev_ends_clause }))
+        .collect();
+    json!({ "span": span, "matched": a.matched, "boundaries": a.boundaries, "phonemes": phoneme_values(&a.phonemes), "words": words })
 }
 
-fn state_of(id: &str) -> State {
+pub(super) fn state_of(id: &str) -> State {
     match id {
         "listening" => State::Listening,
         "thinking" => State::Thinking,
         "speaking" => State::Speaking,
         _ => State::Idle,
+    }
+}
+
+pub(super) fn state_id(s: State) -> &'static str {
+    match s {
+        State::Idle => "idle",
+        State::Listening => "listening",
+        State::Thinking => "thinking",
+        State::Speaking => "speaking",
     }
 }
 
@@ -129,7 +143,11 @@ fn lid_id(l: Lid) -> &'static str {
 /// `scenes`: `[{state, voice, db, seconds}]`, stepped at 60 fps; the pose is sampled every
 /// `sampleEvery` frames.
 fn run_acting(case: &Value) -> Value {
-    let mut acting = Acting::new(ActingTune::default(), case["seed"].as_u64().unwrap_or(0));
+    let mut acting = Acting::new(
+        ActingTune::default(),
+        case["seed"].as_u64().unwrap_or(0),
+        case["canvasHeight"].as_f64().unwrap_or(1024.0),
+    );
     let every = case["sampleEvery"].as_u64().unwrap_or(30) as usize;
     let mut samples = Vec::new();
     let mut frame = 0usize;
@@ -140,27 +158,13 @@ fn run_acting(case: &Value) -> Value {
             voice,
             db: voice.then(|| scene["db"].as_f64().unwrap_or(-20.0)),
             words_known: false,
-            jaw: 0.0,
+            jaw: scene["jaw"].as_f64().unwrap_or(0.0),
         };
         for _ in 0..(scene["seconds"].as_f64().unwrap_or(0.0) * FPS).round() as usize {
             let f = acting.step(1.0 / FPS, input);
             frame += 1;
             if frame.is_multiple_of(every) {
-                let p = f.pose;
-                let pose = [
-                    p.rot,
-                    p.head_x,
-                    p.head_y,
-                    p.face_x,
-                    p.face_y,
-                    p.brow_l,
-                    p.brow_r,
-                    p.brow_tilt,
-                    p.jaw,
-                    p.cheek,
-                    p.breath,
-                    p.zoom,
-                ];
+                let pose = pose_values(&f.pose);
                 samples.push(json!({ "pose": numbers(&pose), "gaze": gaze_id(f.eye.gaze), "lid": lid_id(f.eye.lid), "soft": f.eye.soft }));
             }
         }
@@ -194,15 +198,19 @@ fn dynamics_case(name: &str, text: &str, language: Language, gap: f64, seconds: 
     case
 }
 
-fn aligner_case(name: &str, text: &str, language: &str, gap: f64) -> Value {
-    let s = speech(text, language_of(language), gap);
-    let mut case = json!({ "name": name, "text": text, "language": language, "envelope": { "hop": s.envelope.hop, "db": s.envelope.db } });
+fn aligner_case(name: &str, text: &str, language: &str, envelope: &Envelope) -> Value {
+    let mut case = json!({ "name": name, "text": text, "language": language, "envelope": { "hop": envelope.hop, "db": envelope.db } });
     case["expected"] = run_aligner(&case);
     case
 }
 
-fn mouth_vectors() -> Value {
-    let weights: Vec<Value> = [
+/// The voice of a text in a language, with `gap` seconds of silence between words.
+fn voice(text: &str, language: &str, gap: f64) -> Envelope {
+    speech(text, language_of(language), gap).envelope
+}
+
+fn weight_cases() -> Vec<Value> {
+    [
         ("rest", Params::REST),
         ("each anchor: A", Shape::A.anchor()),
         ("each anchor: closed", Shape::ClosedMbp.anchor()),
@@ -222,7 +230,11 @@ fn mouth_vectors() -> Value {
         case["expected"] = run_weights(&case);
         case
     })
-    .collect();
+    .collect()
+}
+
+fn mouth_vectors() -> Value {
+    let weights = weight_cases();
     let dynamics = vec![
         dynamics_case(
             "portuguese with closures",
@@ -246,31 +258,65 @@ fn mouth_vectors() -> Value {
             3.0,
         ),
     ];
+    // The voice of a Portuguese sentence, for text the rules cannot read.
+    let sentence = voice("Olá, mamãe bebe pão.", "pt-BR", 0.09);
+    let spoken = |name: &str, text: &str, language: &str, gap: f64| {
+        aligner_case(name, text, language, &voice(text, language, gap))
+    };
     let aligner = vec![
-        aligner_case(
+        spoken(
             "portuguese with gaps between words",
             "Olá, mamãe bebe pão.",
             "pt-BR",
             0.09,
         ),
-        aligner_case(
+        spoken(
             "portuguese words run together",
             "Bom dia, vamos papear.",
             "pt-BR",
             0.0,
         ),
-        aligner_case("english", "Maybe tomorrow, please.", "en", 0.05),
-        aligner_case("a long sentence", PORTUGUESE, "pt-BR", 0.09),
-        aligner_case("english sentences", ENGLISH, "en", 0.0),
+        spoken("english", "Maybe tomorrow, please.", "en", 0.05),
+        spoken("a long sentence", PORTUGUESE, "pt-BR", 0.09),
+        spoken("english sentences", ENGLISH, "en", 0.0),
+        // Text the letter rules cannot read, over the voice of a Portuguese sentence: every sound
+        // of it gets time, as a neutral syllable.
+        aligner_case("a number", "2024", "pt-BR", &sentence),
+        aligner_case(
+            "a date and a time",
+            "São 15:30 de 12/10/2026.",
+            "pt-BR",
+            &sentence,
+        ),
+        aligner_case("Japanese", "こんにちは、元気ですか", "pt-BR", &sentence),
+        aligner_case(
+            "Russian read as English",
+            "Привет, как дела?",
+            "en",
+            &sentence,
+        ),
+        aligner_case(
+            "symbols",
+            "Custa R$ 1.250,00, 30% a menos.",
+            "pt-BR",
+            &sentence,
+        ),
+        aligner_case("empty text", "", "pt-BR", &sentence),
+        aligner_case(
+            "text much longer than the audio",
+            &"mamãe bebe pão ".repeat(12),
+            "pt-BR",
+            &sentence,
+        ),
     ];
     let scenes = json!([
         { "state": "idle", "voice": false, "seconds": 3.0 },
         { "state": "listening", "voice": false, "seconds": 3.0 },
         { "state": "thinking", "voice": false, "seconds": 3.0 },
-        { "state": "speaking", "voice": true, "db": -22.0, "seconds": 4.0 },
+        { "state": "speaking", "voice": true, "db": -22.0, "jaw": 3.0, "seconds": 4.0 },
         { "state": "idle", "voice": false, "seconds": 3.0 },
     ]);
-    let acting: Vec<Value> = [7u64, 12345]
+    let mut acting: Vec<Value> = [7u64, 12345]
         .iter()
         .map(|seed| {
             let mut case = json!({ "name": format!("a day in the life, seed {seed}"), "seed": seed, "sampleEvery": 30, "scenes": scenes });
@@ -278,14 +324,19 @@ fn mouth_vectors() -> Value {
             case
         })
         .collect();
+    let mut half = json!({ "name": "the same day on a canvas half as tall (lengths halve)", "seed": 7, "canvasHeight": REFERENCE_SIZE / 2.0, "sampleEvery": 30, "scenes": scenes });
+    half["expected"] = run_acting(&half);
+    acting.push(half);
     json!({
-        "description": "The mouth runtime of soyeht-avatar (ADR 0166). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence, and the mouth steps by 1/60 s. aligner: a text, its language and the envelope of the audio in, the timed phonemes out. acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53) and scenes in, the pose of the head and the eye frame every 30 frames out. Parameters and weights agree within `tolerance`; the rest agree exactly.",
+        "description": "The mouth runtime of soyeht-avatar (ADR 0166). The format is unstable (0.x) until the renderers have consumed it. Every step is by dt = 1.0 / 60.0 as an IEEE double, and the time of frame i is the double i / 60.0 (the acting layer's clock is the sum of the dt, in seconds, as a double: a timer that lands on a frame boundary depends on that arithmetic). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence. aligner: a text, its language and the envelope of the audio in, the timed phonemes and word starts out (a letter or digit the rules cannot read gets a neutral syllable, `d` and `ə`). acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53), a canvas height (default 1024; lengths scale by it over 1024) and scenes (`jaw` in reference pixels) in, the pose of the head and the eye frame every 30 frames out. runtime: a clip with its words, a seed, a canvas height and a script in; the mouth, the jaw and the first brow every 6 frames out (the mouth steps first, the jaw is `o * 4.6 * (0.8 + 0.2 * (1 - c))`, a clip with nothing to say over a loud voice follows the level, and a listening or thinking avatar holds its expression). warp: a package's warp, a pose and points in, the point each is read from out. Parameters and weights agree within `tolerance`; the rest agree exactly.",
         "tolerance": TOLERANCE,
         "fps": FPS,
         "weights": weights,
         "dynamics": dynamics,
         "aligner": aligner,
         "acting": acting,
+        "runtime": super::runtime::runtime_cases(),
+        "warp": super::runtime::warp_cases(),
     })
 }
 
@@ -304,19 +355,24 @@ fn vectors_mouth_file_matches_the_runtime() {
     check_group(&file, "dynamics", run_dynamics);
     check_group(&file, "aligner", run_aligner);
     check_group(&file, "acting", run_acting);
-    // A guard on the file itself: an aligner case whose envelope is silent would pass for nothing.
+    check_group(&file, "runtime", super::runtime::run_runtime);
+    check_group(&file, "warp", super::runtime::run_warp);
+    // A guard on the file itself: an aligner case with a voiced envelope and a text must have
+    // sounds, or it would pass for nothing; only the empty text has none.
     for case in file["aligner"].as_array().expect("aligner") {
-        assert!(
-            case["expected"]["phonemes"]
-                .as_array()
-                .is_some_and(|p| p.len() > 5),
-            "{}",
-            case["name"]
-        );
-        assert!(
-            case["expected"]["matched"].as_u64().unwrap_or(0) >= 1,
-            "{}",
-            case["name"]
-        );
+        let expected = &case["expected"];
+        let sounds = expected["phonemes"].as_array().map_or(0, Vec::len);
+        if case["text"].as_str().is_some_and(str::is_empty) {
+            assert_eq!(sounds, 0, "{}", case["name"]);
+            continue;
+        }
+        assert!(sounds > 5, "{}", case["name"]);
+        if expected["boundaries"].as_u64().unwrap_or(0) > 0 {
+            assert!(
+                expected["matched"].as_u64().unwrap_or(0) >= 1,
+                "{}",
+                case["name"]
+            );
+        }
     }
 }

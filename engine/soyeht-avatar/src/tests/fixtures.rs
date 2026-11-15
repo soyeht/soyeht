@@ -104,8 +104,8 @@ fn part(
     value
 }
 
-const PATCH_IDS: [&str; 10] = [
-    "half", "left", "right", "up", "down", "upleft", "soft", "blink", "smile", "hm",
+const PATCH_IDS: [&str; 8] = [
+    "half", "left", "right", "up", "down", "upleft", "soft", "blink",
 ];
 const PATCH_SIZE: (u32, u32) = (40, 16);
 
@@ -138,7 +138,7 @@ pub(super) fn package_json() -> Value {
     inner_part["hideWhenEmpty"] = json!(true);
     json!({
         "format": "soyeht-avatar",
-        "version": "1.0",
+        "version": "0.1",
         "canvas": { "width": CANVAS, "height": CANVAS },
         "files": files,
         "base": "base.png",
@@ -150,9 +150,22 @@ pub(super) fn package_json() -> Value {
                 inner_part,
             ],
         },
-        "eyes": patches(&PATCH_IDS[..8], 30),
-        "restMouths": patches(&PATCH_IDS[8..], 150),
-        "warp": { "rect": [20, 10, 160, 180], "cols": 6, "rows": 8 },
+        "eyes": patches(&PATCH_IDS, 30),
+        "warp": {
+            "pivot": [100, 127],
+            "zoomCenter": [100, 109],
+            "head": { "center": [100, 75], "radii": [72, 76], "inner": 0.74 },
+            "headFade": [117, 143],
+            "face": { "center": [100, 89], "radii": [40, 42], "inner": 0.55 },
+            "brows": [
+                { "center": [84, 62], "radii": [15, 5], "inner": 0.45 },
+                { "center": [115, 61], "radii": [15, 5], "inner": 0.45 },
+            ],
+            "browTiltSpan": 14,
+            "jaw": { "center": [100, 106], "radii": [29, 19], "inner": 0.5 },
+            "cheek": { "center": [100, 92], "radii": [37, 11], "inner": 0.3 },
+            "chest": { "from": 125, "to": 156, "centerX": 100, "spread": 0.006, "rise": 0.7 },
+        },
     })
 }
 
@@ -272,4 +285,29 @@ pub(super) const ENGLISH: &str = "Hello, my name is Maria. Please bring the big 
 /// Whether a phoneme is a lip closure.
 pub(super) fn is_closure(p: &Phoneme) -> bool {
     matches!(p.p, 'p' | 'b' | 'm') && p.t1 - p.t0 >= 0.03
+}
+
+impl Shape {
+    /// The place of the drawing in the order of the nine weights.
+    pub(super) fn index(self) -> usize {
+        Shape::ALL.iter().position(|s| *s == self).unwrap_or(0)
+    }
+}
+
+/// The twelve numbers of a pose, in the order of the vector files.
+pub(super) fn pose_values(p: &crate::acting::Pose) -> [f64; 12] {
+    [
+        p.rot,
+        p.head_x,
+        p.head_y,
+        p.face_x,
+        p.face_y,
+        p.brow_l,
+        p.brow_r,
+        p.brow_tilt,
+        p.jaw,
+        p.cheek,
+        p.breath,
+        p.zoom,
+    ]
 }

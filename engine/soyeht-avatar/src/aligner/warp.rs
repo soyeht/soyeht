@@ -20,46 +20,96 @@ const MIN_TOLERANCE: f64 = 0.12;
 /// ... and as a share of the mean word duration.
 const TOLERANCE_SHARE: f64 = 0.35;
 
+/// A best score and the candidate that gave it.
+type Best = (f64, Option<usize>);
+
+/// A Fenwick tree of running maxima over silence indices: the best chain that ends before index
+/// `j`.
+struct PrefixMax(Vec<Best>);
+
+impl PrefixMax {
+    fn new(len: usize) -> Self {
+        Self(vec![(0.0, None); len + 1])
+    }
+
+    fn update(&mut self, at: usize, best: Best) {
+        let mut k = at + 1;
+        while k < self.0.len() {
+            if best.0 > self.0[k].0 {
+                self.0[k] = best;
+            }
+            k += k.isolate_lowest_one();
+        }
+    }
+
+    /// The best over the indices `0..at`.
+    fn query(&self, at: usize) -> Best {
+        let (mut k, mut out) = (at, (0.0, None));
+        while k > 0 {
+            if self.0[k].0 > out.0 {
+                out = self.0[k];
+            }
+            k -= k.isolate_lowest_one();
+        }
+        out
+    }
+}
+
 /// Pair boundaries with silences (`positions`, in voiced time), both increasing. The result lists
 /// `(boundary index, silence index)` in order. `mean_word` is the mean duration of a word.
+///
+/// Only a boundary and a silence within the tolerance can be paired, so the candidates are few
+/// (each boundary has the handful of silences near it) and the best chain is found over them with
+/// a Fenwick tree: the work grows with the number of candidates, not with the product of the
+/// number of words and the number of silences.
 pub(crate) fn match_boundaries(
     boundaries: &[Boundary],
     positions: &[f64],
     mean_word: f64,
 ) -> Vec<(usize, usize)> {
     let tolerance = MIN_TOLERANCE.max(TOLERANCE_SHARE * mean_word);
-    let score = |i: usize, j: usize| -> Option<f64> {
-        let d = (boundaries[i].at - positions[j]).abs();
-        (d <= tolerance).then(|| {
-            1.0 - d / tolerance
-                + if boundaries[i].strong {
-                    STRONG_BONUS
-                } else {
-                    0.0
-                }
-        })
-    };
-    let (n, m) = (boundaries.len(), positions.len());
-    let mut best = vec![vec![0.0f64; m + 1]; n + 1];
-    for i in 1..=n {
-        for j in 1..=m {
-            let skip = best[i - 1][j].max(best[i][j - 1]);
-            best[i][j] = score(i - 1, j - 1).map_or(skip, |s| skip.max(best[i - 1][j - 1] + s));
+    // (boundary, silence, score), in order of boundary and then silence.
+    let mut candidates: Vec<(usize, usize, f64)> = Vec::new();
+    for (i, b) in boundaries.iter().enumerate() {
+        let near = positions.partition_point(|p| *p < b.at - tolerance);
+        for (j, p) in positions.iter().enumerate().skip(near) {
+            let d = (b.at - p).abs();
+            if *p > b.at + tolerance {
+                break;
+            }
+            let bonus = if b.strong { STRONG_BONUS } else { 0.0 };
+            candidates.push((i, j, 1.0 - d / tolerance + bonus));
         }
     }
-    let mut pairs = Vec::new();
-    let (mut i, mut j) = (n, m);
-    while i > 0 && j > 0 {
-        let here = best[i][j];
-        if here == best[i - 1][j] {
-            i -= 1;
-        } else if here == best[i][j - 1] {
-            j -= 1;
-        } else {
-            pairs.push((i - 1, j - 1));
-            i -= 1;
-            j -= 1;
+    let mut chain: Vec<Best> = Vec::with_capacity(candidates.len());
+    let mut tree = PrefixMax::new(positions.len());
+    let mut group_start = 0;
+    while group_start < candidates.len() {
+        let boundary = candidates[group_start].0;
+        let group_end = candidates[group_start..]
+            .iter()
+            .position(|c| c.0 != boundary)
+            .map_or(candidates.len(), |n| group_start + n);
+        // A chain through this boundary extends one that ended at an earlier boundary and an
+        // earlier silence: the tree holds only the earlier boundaries until the group is done.
+        for (_, j, score) in &candidates[group_start..group_end] {
+            let (before, parent) = tree.query(*j);
+            chain.push((before + score, parent));
         }
+        for k in group_start..group_end {
+            tree.update(candidates[k].1, (chain[k].0, Some(k)));
+        }
+        group_start = group_end;
+    }
+    let mut at = chain
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.0.total_cmp(&b.1.0))
+        .map(|(k, _)| k);
+    let mut pairs = Vec::new();
+    while let Some(k) = at {
+        pairs.push((candidates[k].0, candidates[k].1));
+        at = chain[k].1;
     }
     pairs.reverse();
     pairs

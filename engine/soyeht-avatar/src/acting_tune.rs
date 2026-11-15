@@ -1,8 +1,12 @@
 //! The numbers of the acting layer: the defaults are the lab's (`static/sabio-acting.js`, TUNE).
 //! A package may override any of them; a field it leaves out keeps the default. Times are
-//! seconds, distances are pixels of the avatar's canvas, angles are degrees.
+//! seconds, angles are degrees, and distances are pixels of a picture `REFERENCE_SIZE` (1024)
+//! pixels tall: the acting layer scales them to the real canvas, so a tune does not depend on the
+//! size of the picture it is used with.
 
 use serde::{Deserialize, Serialize};
+
+use crate::params::Params;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -13,6 +17,7 @@ pub struct ActingTune {
     pub brow: BrowTune,
     pub breath: BreathTune,
     pub stress: StressTune,
+    pub expression: ExpressionTune,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -152,6 +157,26 @@ impl Default for StressTune {
             content_len: 6,
             chance: 0.75,
             word_gap: 0.65,
+        }
+    }
+}
+
+/// The expression of the resting mouth, as targets of the continuous mouth (not as pictures: a
+/// mouth drawing is never swapped in). While nothing is said, a listening avatar holds a slight
+/// smile and a thinking one a pressed, slightly pursed "hm"; the mouth morphs there and back like
+/// everywhere else.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ExpressionTune {
+    pub listening: Params,
+    pub thinking: Params,
+}
+
+impl Default for ExpressionTune {
+    fn default() -> Self {
+        Self {
+            listening: Params::new(0.05, 0.7, 0.0, 0.0, 0.0),
+            thinking: Params::new(0.0, 0.35, 0.3, 0.6, 0.0),
         }
     }
 }

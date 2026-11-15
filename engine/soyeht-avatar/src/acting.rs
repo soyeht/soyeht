@@ -8,6 +8,7 @@
 //! implementation. Every number worth tuning is in `ActingTune`.
 
 use crate::acting_tune::ActingTune;
+use crate::envelope::sanitize_db;
 use crate::rng::Rng;
 use crate::smooth::{Follow, Kick, ease};
 
@@ -75,7 +76,16 @@ pub struct ActingInput {
     pub jaw: f64,
 }
 
-/// The pose the warp draws: pixels of the avatar's canvas and degrees.
+/// The height of the picture the acting constants are written for, in pixels. A tune is in the
+/// pixels of a picture this tall, and the acting layer scales the lengths it returns by the real
+/// canvas height over this, so one tune reads the same on a small picture and on a large one.
+pub const REFERENCE_SIZE: f64 = 1024.0;
+
+/// The most the host may ask the jaw to drop, in reference pixels (the lab's is 4.6 at the most).
+const MAX_JAW: f64 = 20.0;
+
+/// The pose the warp draws. Lengths (`head_*`, `face_*`, `brow_*`, `jaw`, `cheek`) are pixels of
+/// the avatar's canvas; `rot` is degrees; `breath` is 0 to 1.4 and `zoom` about 1, both unitless.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Pose {
     pub rot: f64,
@@ -131,6 +141,8 @@ struct Followers {
 
 pub struct Acting {
     tune: ActingTune,
+    /// Canvas height over `REFERENCE_SIZE`.
+    scale: f64,
     rng: Rng,
     f: Followers,
     nod: Kick,
@@ -158,7 +170,13 @@ pub struct Acting {
 }
 
 impl Acting {
-    pub fn new(tune: ActingTune, seed: u64) -> Self {
+    /// An acting layer for a picture `canvas_height` pixels tall.
+    pub fn new(tune: ActingTune, seed: u64, canvas_height: f64) -> Self {
+        let scale = if canvas_height.is_finite() && canvas_height > 0.0 {
+            (canvas_height / REFERENCE_SIZE).clamp(0.01, 16.0)
+        } else {
+            1.0
+        };
         let mut rng = Rng::new(seed);
         let gaze_at = rng.range_of(tune.gaze.idle_gap);
         let blink_at = rng.range_of(tune.blink.gap);
@@ -182,6 +200,7 @@ impl Acting {
         };
         Self {
             tune,
+            scale,
             rng,
             f,
             nod: Kick::new(3.4, 0.45),
@@ -426,9 +445,22 @@ impl Acting {
         }
     }
 
-    /// Advance by `dt` seconds.
+    /// Advance by `dt` seconds. A host can hand over anything: a step that is not a finite number
+    /// is a step of no time, a level that is not a number or is `-inf` (a silent buffer) is the
+    /// floor, and a jaw that is not a number is none.
     pub fn step(&mut self, dt: f64, io: ActingInput) -> ActingFrame {
-        let dt = dt.clamp(0.0, 0.1);
+        let dt = if dt.is_finite() {
+            dt.clamp(0.0, 0.1)
+        } else {
+            0.0
+        };
+        let db = io.db.map(sanitize_db);
+        let jaw = if io.jaw.is_finite() {
+            io.jaw.clamp(0.0, MAX_JAW)
+        } else {
+            0.0
+        };
+        let io = ActingInput { db, jaw, ..io };
         self.clock += dt;
         self.sway_t += dt;
         if io.voice {
@@ -634,17 +666,18 @@ impl Acting {
             f.cheek.step(dt),
         );
         let (nx, ny) = (f.nx.step(dt), f.ny.step(dt));
+        let px = self.scale;
         let pose = Pose {
             rot: rot + sway_rot + nodr * 0.12 + nodv * 0.05 + nx * 0.35,
-            head_x: hx + sway_x + nx * 2.2,
-            head_y: hy + sway_y + nodv * 0.9 + ny * 1.2,
-            face_x: fx + sway_x * 0.8 + nx * 3.2,
-            face_y: fy + nodv * 0.7 - br * 0.4 + ny * 1.8,
-            brow_l,
-            brow_r,
-            brow_tilt: tilt,
-            jaw,
-            cheek,
+            head_x: (hx + sway_x + nx * 2.2) * px,
+            head_y: (hy + sway_y + nodv * 0.9 + ny * 1.2) * px,
+            face_x: (fx + sway_x * 0.8 + nx * 3.2) * px,
+            face_y: (fy + nodv * 0.7 - br * 0.4 + ny * 1.8) * px,
+            brow_l: brow_l * px,
+            brow_r: brow_r * px,
+            brow_tilt: tilt * px,
+            jaw: jaw * px,
+            cheek: cheek * px,
             breath: (br * self.tune.breath.amount + ch * 0.05).clamp(0.0, 1.4),
             zoom: 1.0 + 0.003 * br + 0.0015 * (t * tau / 11.0).sin(),
         };

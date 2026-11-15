@@ -34,7 +34,12 @@ const THRESHOLD_RANGE_DB: (f64, f64) = (-55.0, -35.0);
 pub(crate) fn find_voiced(env: &Envelope) -> Option<Voiced> {
     let threshold =
         (env.reference_db() - BELOW_REFERENCE_DB).clamp(THRESHOLD_RANGE_DB.0, THRESHOLD_RANGE_DB.1);
-    let voiced: Vec<bool> = env.db.iter().map(|v| *v > threshold).collect();
+    if !env.is_usable() {
+        return None;
+    }
+    let voiced: Vec<bool> = (0..env.db.len())
+        .map(|i| env.level(i) > threshold)
+        .collect();
     let first = voiced.iter().position(|v| *v)?;
     let last = voiced.iter().rposition(|v| *v)?;
     let mut valleys = Vec::new();

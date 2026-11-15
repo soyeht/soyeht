@@ -17,6 +17,7 @@ mod warp;
 
 pub use letters::Language;
 
+use crate::clip::WordStart;
 use crate::envelope::Envelope;
 use crate::phoneme::{Phoneme, STRESS, is_pause, vowel};
 use letters::{Token, phonemize_word, tokens};
@@ -40,9 +41,12 @@ pub struct Alignment {
     /// `boundaries`.
     pub matched: usize,
     pub boundaries: usize,
+    /// When each word of the text starts, for the accents of the acting layer.
+    pub words: Vec<WordStart>,
 }
 
 struct Word {
+    text: String,
     phonemes: Vec<char>,
     weight: f64,
     pause: Option<char>,
@@ -67,6 +71,7 @@ fn words(text: &str, language: Language) -> Vec<Word> {
                 let weight = phonemes.iter().map(|p| weight(*p)).sum();
                 if weight > 0.0 {
                     out.push(Word {
+                        text: w,
                         phonemes,
                         weight,
                         pause: None,
@@ -83,49 +88,64 @@ fn words(text: &str, language: Language) -> Vec<Word> {
     out
 }
 
-/// Voiced time to clip time: the silences before the point are put back. `after` says whether a
-/// silence that starts exactly at the point is before it (the start of the next word) or after it
-/// (the end of the word).
-fn to_clip(span_start: f64, valleys: &[(f64, Valley)], y: f64, after: bool) -> f64 {
-    let gone: f64 = valleys
-        .iter()
-        .filter(|(pos, _)| {
-            if after {
-                *pos <= y + EPSILON
-            } else {
-                *pos < y - EPSILON
-            }
-        })
-        .map(|(_, v)| v.duration())
-        .sum();
-    span_start + y + gone
+/// The silences of the voiced span, with where each one sits in voiced time (the time with the
+/// silences taken out) and how much silence lies before it.
+struct Valleys {
+    all: Vec<Valley>,
+    positions: Vec<f64>,
+    /// `before[k]` is the total duration of the first `k` silences.
+    before: Vec<f64>,
+}
+
+impl Valleys {
+    fn new(span_start: f64, valleys: &[Valley]) -> Self {
+        let mut positions = Vec::with_capacity(valleys.len());
+        let mut before = vec![0.0];
+        for v in valleys {
+            let gone = before.last().copied().unwrap_or(0.0);
+            positions.push((v.start - span_start) - gone);
+            before.push(gone + v.duration());
+        }
+        Self {
+            all: valleys.to_vec(),
+            positions,
+            before,
+        }
+    }
+
+    /// Voiced time to clip time: the silences before the point are put back. `after` says whether
+    /// a silence that starts exactly at the point is before it (the start of the next word) or
+    /// after it (the end of the word).
+    fn to_clip(&self, span_start: f64, y: f64, after: bool) -> f64 {
+        let count = if after {
+            self.positions.partition_point(|pos| *pos <= y + EPSILON)
+        } else {
+            self.positions.partition_point(|pos| *pos < y - EPSILON)
+        };
+        span_start + y + self.before[count]
+    }
+}
+
+fn nothing() -> Alignment {
+    Alignment {
+        phonemes: Vec::new(),
+        span: None,
+        matched: 0,
+        boundaries: 0,
+        words: Vec::new(),
+    }
 }
 
 /// Align `text` to the audio `env`.
 pub fn align(text: &str, language: Language, env: &Envelope) -> Alignment {
     let words = words(text, language);
     let (Some(voiced), false) = (find_voiced(env), words.is_empty()) else {
-        return Alignment {
-            phonemes: Vec::new(),
-            span: None,
-            matched: 0,
-            boundaries: 0,
-        };
+        return nothing();
     };
     let silence: f64 = voiced.valleys.iter().map(Valley::duration).sum();
     let total = (voiced.end - voiced.start - silence).max(env.hop);
     let total_weight: f64 = words.iter().map(|w| w.weight).sum();
-    // Where each silence is in voiced time (the time with the silences taken out).
-    let mut gone = 0.0;
-    let valleys: Vec<(f64, Valley)> = voiced
-        .valleys
-        .iter()
-        .map(|v| {
-            let at = (v.start - voiced.start) - gone;
-            gone += v.duration();
-            (at, *v)
-        })
-        .collect();
+    let valleys = Valleys::new(voiced.start, &voiced.valleys);
     // Where the text puts the end of each word but the last.
     let mut cumulative = 0.0;
     let boundaries: Vec<Boundary> = words[..words.len() - 1]
@@ -138,39 +158,46 @@ pub fn align(text: &str, language: Language, env: &Envelope) -> Alignment {
             }
         })
         .collect();
-    let positions: Vec<f64> = valleys.iter().map(|(at, _)| *at).collect();
-    let pairs = match_boundaries(&boundaries, &positions, total / words.len() as f64);
+    let pairs = match_boundaries(&boundaries, &valleys.positions, total / words.len() as f64);
     let mut knots = vec![(0.0, 0.0)];
     knots.extend(
         pairs
             .iter()
-            .map(|(i, j)| (boundaries[*i].at, positions[*j])),
+            .map(|(i, j)| (boundaries[*i].at, valleys.positions[*j])),
     );
     knots.push((total, total));
     let warp = Warp::new(knots);
-    let matched_valley = |word: usize| {
-        pairs
-            .iter()
-            .find(|(i, _)| *i == word)
-            .map(|(_, j)| valleys[*j].1)
-    };
+    // The silence each word's end was paired with.
+    let mut paired: Vec<Option<usize>> = vec![None; words.len()];
+    for (i, j) in &pairs {
+        paired[*i] = Some(*j);
+    }
 
     let mut phonemes = Vec::new();
+    let mut starts = Vec::with_capacity(words.len());
     let mut word_start = 0.0;
     for (index, word) in words.iter().enumerate() {
         let word_end = word_start + total * word.weight / total_weight;
         let mut spent = 0.0;
+        let first = phonemes.len();
         for p in &word.phonemes {
             let x0 = word_start + (word_end - word_start) * spent / word.weight;
             spent += weight(*p);
             let x1 = word_start + (word_end - word_start) * spent / word.weight;
-            let t0 = to_clip(voiced.start, &valleys, warp.apply(x0), true);
-            let t1 = to_clip(voiced.start, &valleys, warp.apply(x1), false).max(t0);
+            let t0 = valleys.to_clip(voiced.start, warp.apply(x0), true);
+            let t1 = valleys.to_clip(voiced.start, warp.apply(x1), false).max(t0);
             phonemes.push(Phoneme { p: *p, t0, t1 });
         }
+        starts.push(WordStart {
+            t: phonemes.get(first).map_or(voiced.start, |p| p.t0),
+            word: word.text.clone(),
+            prev_ends_clause: index
+                .checked_sub(1)
+                .is_some_and(|k| words[k].pause.is_some()),
+        });
         if let Some(pause) = word.pause.filter(|p| is_pause(*p)) {
-            let (t0, t1) = match matched_valley(index) {
-                Some(v) => (v.start, v.end),
+            let (t0, t1) = match paired.get(index).copied().flatten() {
+                Some(j) => (valleys.all[j].start, valleys.all[j].end),
                 None => {
                     let end = phonemes.last().map_or(voiced.end, |p| p.t1);
                     (end, end)
@@ -185,5 +212,6 @@ pub fn align(text: &str, language: Language, env: &Envelope) -> Alignment {
         span: Some((voiced.start, voiced.end)),
         matched: pairs.len(),
         boundaries: boundaries.len(),
+        words: starts,
     }
 }

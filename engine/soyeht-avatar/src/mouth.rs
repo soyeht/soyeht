@@ -7,9 +7,7 @@
 //! path in this crate that picks a drawing; the only output is parameters and weights.
 //! Ported from `createMouth` of `rig/runtime/mouth.js` (Apache-2.0, the same authors).
 
-use crate::params::{
-    DIMS, MorphWeights, Params, SHAPES, Shape, VISEMES, clamp01, weights_from_params,
-};
+use crate::params::{DIMS, MorphWeights, Params, VISEMES, clamp01, weights_from_params};
 use crate::smooth::Follow;
 use crate::tune::Tune;
 
@@ -18,7 +16,8 @@ use crate::tune::Tune;
 pub struct Mouth {
     tune: Tune,
     dims: [Follow; DIMS],
-    weights: [Follow; SHAPES],
+    /// The eight viseme weights; the rest weight is what is left, so it needs no follower.
+    weights: [Follow; VISEMES],
     /// Seconds since something was last said. Infinite at the start: the lips stay at rest and do
     /// not close before the first word.
     silent: f64,
@@ -29,7 +28,7 @@ impl Mouth {
     pub fn new(tune: Tune) -> Self {
         let rest = Params::REST.to_array();
         let dims = std::array::from_fn(|k| Follow::new(rest[k], 0.1));
-        let weights = std::array::from_fn(|k| Follow::new(if k == 0 { 1.0 } else { 0.0 }, 0.1));
+        let weights = std::array::from_fn(|_| Follow::new(0.0, 0.1));
         Self {
             tune,
             dims,
@@ -47,15 +46,22 @@ impl Mouth {
     /// The morph weights after the last step.
     pub fn weights(&self) -> MorphWeights {
         let mut visemes = [0.0; VISEMES];
-        for (slot, follow) in visemes.iter_mut().zip(&self.weights[1..]) {
+        for (slot, follow) in visemes.iter_mut().zip(&self.weights) {
             *slot = follow.value.max(0.0);
         }
         MorphWeights { visemes }
     }
 
     /// Advance by `dt` seconds towards `target` (`None` is silence) and return the new parameters.
+    ///
+    /// A host can hand over anything: a step whose `dt` is not a finite number is skipped, and a
+    /// target with a non-finite parameter is silence. The state never becomes non-finite.
     pub fn step(&mut self, dt: f64, target: Option<Params>) -> Params {
+        if !dt.is_finite() {
+            return self.q;
+        }
         let dt = dt.clamp(1e-4, 0.1);
+        let target = target.filter(|t| t.to_array().iter().all(|v| v.is_finite()));
         let tune = &self.tune;
         let goal = match target {
             Some(goal) => {
@@ -109,9 +115,7 @@ impl Mouth {
         } else {
             self.tune.weight_smooth
         };
-        let rest_goal = 1.0 - goal.visemes.iter().sum::<f64>();
-        self.weights[Shape::Rest.index()].step_toward(rest_goal, smooth, dt);
-        for (follow, target) in self.weights[1..].iter_mut().zip(goal.visemes) {
+        for (follow, target) in self.weights.iter_mut().zip(goal.visemes) {
             follow.step_toward(target, smooth, dt);
         }
     }
