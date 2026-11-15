@@ -31,6 +31,16 @@ impl State {
         Ok(vec![send(command)])
     }
 
+    /// The person confirmed the tailnet change a pairing was refused for.
+    pub fn confirm_tailnet(&mut self) -> Vec<Effect> {
+        let connected = self.connection == Connection::Connected;
+        self.pairing
+            .confirm_tailnet(connected)
+            .map(send)
+            .into_iter()
+            .collect()
+    }
+
     /// The person chose to revoke a device: the question comes first, and the engine is asked what
     /// the device made, so that the question can offer to close it.
     pub fn ask_to_revoke(&mut self, device_id: &str) -> Vec<Effect> {

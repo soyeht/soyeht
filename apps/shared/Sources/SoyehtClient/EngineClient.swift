@@ -434,7 +434,7 @@ public final class EngineClient {
       try applyWebEvent(eventName, params)
     case .settingsChanged: try applySettingsChanged(params.decoded(SettingsChangedEvent.self))
     case .engineReachabilityChanged: try applyReachability(params)
-    case .authChallenge, .pairResult, .engineUpdating, .engineRestarted,
+    case .authChallenge, .pairResult, .devicePairTailnetChanged, .engineUpdating, .engineRestarted,
       .ptydReconnected, .ptydLost, .paneConfigChanging, .paneConfigChanged, .projectTrustChanged:
       break
     case .writingChanged: try applyWritingEvent(params)

@@ -325,11 +325,11 @@ fn hides_text(c: char) -> bool {
         )
 }
 
-/// A tailnet node's name as the person reads it in the notice of a device added. The name is
-/// whatever the node's owner gave it, so it is shown under the device name's rules instead of being
+/// A tailnet's or a node's name as the person reads it, in the notice of a device added and in a
+/// tailnet change they are asked to confirm. The name is whatever its owner gave it, so it is shown under the device name's rules instead of being
 /// refused: what a person cannot read is dropped, and the rest is held to the device name's
 /// length. A name with nothing left is none.
-pub(crate) fn readable_node_name(name: &str) -> Option<String> {
+pub(crate) fn readable_name(name: &str) -> Option<String> {
     let mut readable = String::new();
     for c in name.chars().filter(|c| !hides_text(*c)) {
         if readable.len() + c.len_utf8() > limits::DEVICE_NAME_BYTES {

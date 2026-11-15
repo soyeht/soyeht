@@ -133,6 +133,9 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "StreamGapEvent" => decode_encode::<StreamGapEvent>(name, value),
         "DevicePairRequestedEvent" => decode_encode::<DevicePairRequestedEvent>(name, value),
         "DevicePairedEvent" => decode_encode::<DevicePairedEvent>(name, value),
+        "DevicePairTailnetChangedEvent" => {
+            decode_encode::<DevicePairTailnetChangedEvent>(name, value)
+        }
         "DeviceRevokedEvent" => decode_encode::<DeviceRevokedEvent>(name, value),
         "PairResultEvent" => decode_encode::<PairResultEvent>(name, value),
         "EngineUpdatingEvent" => decode_encode::<EngineUpdatingEvent>(name, value),
