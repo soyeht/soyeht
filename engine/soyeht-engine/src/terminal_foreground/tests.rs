@@ -358,7 +358,8 @@ fn agent_list_names_the_terminals_that_run_a_harness_and_leaves_the_others_out()
     let listed = rig.agent_list(&sender);
 
     let items = listed["items"].as_array().unwrap();
-    let described: Vec<(&str, &str)> = items
+    // The panes of one workspace are listed by their ids, so the order is not what is checked.
+    let mut described: Vec<(&str, &str)> = items
         .iter()
         .map(|item| {
             (
@@ -367,10 +368,10 @@ fn agent_list_names_the_terminals_that_run_a_harness_and_leaves_the_others_out()
             )
         })
         .collect();
-    assert_eq!(
-        described,
-        [(running.as_str(), "terminal"), ("peer", "agent")]
-    );
+    described.sort_unstable();
+    let mut expected = [(running.as_str(), "terminal"), ("peer", "agent")];
+    expected.sort_unstable();
+    assert_eq!(described, expected);
     let terminal = items.iter().find(|item| item["paneId"] == running).unwrap();
     assert_eq!(terminal["harness"], "Cursor Agent");
     assert_eq!(terminal["name"], "busy");

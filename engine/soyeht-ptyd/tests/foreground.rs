@@ -57,12 +57,15 @@ fn a_terminal_reports_the_program_it_runs_and_an_unknown_one_is_left_out() {
             .unwrap_or_default();
         // A program that has only just been started may show its file before its arguments (Linux
         // reads them from different places), so a Unix program counts once it has both.
+        // On Unix the program may be a multicall binary run under the command's name (`argv[0]`).
         let running = ours.iter().any(|program| {
+            let named = |path: &str| {
+                let path = path.to_ascii_lowercase();
+                path.ends_with(wanted) || path.ends_with(&format!("{wanted}.exe"))
+            };
             (cfg!(windows) || !program.arguments.is_empty())
-                && program.executable.as_deref().is_some_and(|path| {
-                    let path = path.to_ascii_lowercase();
-                    path.ends_with(wanted) || path.ends_with(&format!("{wanted}.exe"))
-                })
+                && (program.executable.as_deref().is_some_and(named)
+                    || program.arguments.first().is_some_and(|first| named(first)))
         });
         if running {
             break ours;
