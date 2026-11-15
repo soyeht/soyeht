@@ -126,15 +126,12 @@ impl Pairing {
     }
 
     /// The person confirmed. With `close_panes` the panes the device made are closed after it is
-    /// revoked; only the ones the engine listed are, and none when it has not.
+    /// revoked, as the engine then lists them. Only the question that offered it can ask for it:
+    /// one with no panes listed (or not yet) asks for none.
     pub fn confirm_revoke(&mut self, close_panes: bool) -> Option<Command> {
         let device_id = self.revoking.take()?;
-        let close_panes = match (&self.revoking_panes, close_panes) {
-            (DevicePanes::Listed(panes), true) => {
-                panes.iter().map(|pane| pane.pane_id.clone()).collect()
-            }
-            _ => Vec::new(),
-        };
+        let close_panes = close_panes
+            && matches!(&self.revoking_panes, DevicePanes::Listed(panes) if !panes.is_empty());
         Some(Command::Revoke {
             device_id,
             close_panes,

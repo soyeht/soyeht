@@ -329,7 +329,9 @@ fn revoke_question(
         };
         buttons = buttons.child(pressable(
             button("revoke-confirm".into(), confirm.0, &confirm.1, palette),
-            true,
+            // The label says whether panes close with it, which is not known until they are
+            // listed: it does not change under the cursor.
+            panes != DevicePanes::Loading,
             cx,
             |this, cx| ui::confirm_revoke(this, true, cx),
         ));

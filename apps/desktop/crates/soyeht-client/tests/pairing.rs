@@ -385,6 +385,14 @@ fn asked_to_revoke(name: &str, panes: Value) -> Rig {
     rig
 }
 
+/// The person revokes `d1` and chooses to close its panes; the engine revokes it.
+fn revoke_and_close(rig: &mut Rig) {
+    let effects = rig.state.confirm_revoke(true);
+    rig.dispatch(effects);
+    let revoke = rig.remote.expect("device.revoke");
+    rig.remote.reply(&revoke, json!({"deviceId": "d1"}));
+}
+
 fn pane(id: &str, name: &str) -> Value {
     json!({"paneId": id, "workspaceId": "w1", "name": name, "cwd": "/work", "mode": "terminal",
         "state": "idle", "source": "none", "confidence": 0.0, "phrase": "", "generation": 1,
@@ -392,7 +400,8 @@ fn pane(id: &str, name: &str) -> Value {
 }
 
 #[test]
-fn the_panes_a_device_made_are_closed_after_it_is_revoked_when_the_person_chooses_to() {
+fn the_panes_a_device_has_when_it_is_revoked_are_closed_and_not_the_ones_the_question_listed() {
+    // The question listed p1 and p2; by the time the device is revoked it has made p3 and p2 is gone.
     let panes = json!([pane("p1", "shell"), pane("p2", "logs")]);
     let mut rig = asked_to_revoke("pair-revoke-panes", panes);
     let effects = rig.state.confirm_revoke(true);
@@ -400,13 +409,20 @@ fn the_panes_a_device_made_are_closed_after_it_is_revoked_when_the_person_choose
     // The device first: what it made is closed only once it can make no more.
     let revoke = rig.remote.expect("device.revoke");
     rig.remote.reply(&revoke, json!({"deviceId": "d1"}));
-    for id in ["p1", "p2"] {
+    // Its panes are listed again, since it may have made some after the question listed them.
+    let again = rig.remote.expect("device.panes.list");
+    assert_eq!(again["params"]["deviceId"], "d1");
+    rig.remote.reply(
+        &again,
+        json!({"items": [pane("p1", "shell"), pane("p3", "new")]}),
+    );
+    for id in ["p1", "p3"] {
         let close = rig.remote.expect("pane.close");
         assert_eq!(close["params"]["paneId"], id);
         if id == "p1" {
             rig.remote.reply(&close, json!({"paneId": id}));
         } else {
-            answer_error(&mut rig.remote, &close, &ErrorKind::NotFound, "gone");
+            answer_error(&mut rig.remote, &close, &ErrorKind::PaneBusy, "busy");
         }
     }
     rig.settle(|state| state.pairing.revoke_failure().is_some());
@@ -414,6 +430,36 @@ fn the_panes_a_device_made_are_closed_after_it_is_revoked_when_the_person_choose
     let failure = rig.state.pairing.revoke_failure().unwrap();
     assert!(failure.contains("1 of its panes"), "{failure}");
     assert!(rig.state.pairing.devices()[0].revoked);
+    rig.finish();
+}
+
+#[test]
+fn a_pane_that_is_gone_when_it_is_closed_is_closed_and_a_list_that_fails_is_said() {
+    let mut rig = asked_to_revoke("pair-revoke-gone", json!([pane("p1", "shell")]));
+    revoke_and_close(&mut rig);
+    let again = rig.remote.expect("device.panes.list");
+    rig.remote
+        .reply(&again, json!({"items": [pane("p1", "shell")]}));
+    // The pane closed by itself in the meantime: the close says it is not found, which is done.
+    let close = rig.remote.expect("pane.close");
+    answer_error(&mut rig.remote, &close, &ErrorKind::NotFound, "gone");
+    rig.settle(|state| state.pairing.devices()[0].revoked);
+    assert!(rig.state.pairing.revoke_failure().is_none());
+    rig.finish();
+
+    // The panes of a revoked device that cannot be listed are not closed, and the person is told.
+    let mut rig = asked_to_revoke("pair-revoke-nolist", json!([pane("p1", "shell")]));
+    revoke_and_close(&mut rig);
+    let again = rig.remote.expect("device.panes.list");
+    answer_error(&mut rig.remote, &again, &ErrorKind::DiskFull, "no");
+    rig.settle(|state| state.pairing.revoke_failure().is_some());
+    assert!(
+        rig.state
+            .pairing
+            .revoke_failure()
+            .unwrap()
+            .contains("could not be listed")
+    );
     rig.finish();
 }
 

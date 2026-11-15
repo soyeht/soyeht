@@ -491,12 +491,12 @@ fn a_request_is_taken_for_the_device_when_it_is_paired_and_a_revoked_one_is_mark
         pairing.confirm_revoke(false),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     pairing.apply(Event::Revoked {
         device_id: "d1".to_owned(),
-        left_open: 0,
+        left_open: Some(0),
     });
     assert!(pairing.devices()[0].revoked);
     pairing.ask_to_revoke("d1");

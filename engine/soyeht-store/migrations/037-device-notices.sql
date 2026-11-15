@@ -3,8 +3,9 @@
 -- the migration, which checks it is not there yet); it is null for a pane made by the person at
 -- the computer, an agent or a task, and for every pane made before this version. A viewer is the
 -- id of a paired device or `local` for the person at the computer; `seen_unix` is the `addedAt`
--- of the newest device that viewer dismissed the notice for. Only an engine that asks for the
--- person's code writes marks; every other engine leaves the table empty.
+-- of the newest device that viewer dismissed the notice for. A mark is written by a call to
+-- `device.notice.dismiss`, which every engine accepts; only an engine that asks for the person's
+-- code dates devices, so on any other there is nothing to dismiss and the table stays empty in use.
 CREATE INDEX IF NOT EXISTS panes_by_creator ON panes(created_by) WHERE created_by IS NOT NULL;
 CREATE TABLE IF NOT EXISTS device_notice_marks (
   viewer TEXT PRIMARY KEY CHECK(length(viewer) BETWEEN 1 AND 128),

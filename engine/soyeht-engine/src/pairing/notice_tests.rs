@@ -233,3 +233,72 @@ async fn the_panes_of_a_device_with_none_is_an_empty_list() {
         .unwrap();
     assert_eq!(listed["items"], json!([]));
 }
+
+#[tokio::test]
+async fn a_device_dismissing_the_notice_moves_its_own_mark_and_nobody_else_s() {
+    let mut rig = Rig::new(Approval::PersonsCode);
+    let app = rig.connect(true, false);
+    let first = paired(&mut rig, &app, 48, "First phone");
+    move_clock(&mut rig, 5);
+    rig.peers.set_node(phone_address(), Some("node-second"));
+    let second = paired(&mut rig, &app, 49, "Second phone");
+    move_clock(&mut rig, 10);
+    rig.peers.set_node(phone_address(), Some("node-third"));
+    let third = paired(&mut rig, &app, 50, "Third phone");
+    let first_phone = as_device(&mut rig, first["deviceId"].as_str().unwrap());
+    let second_phone = as_device(&mut rig, second["deviceId"].as_str().unwrap());
+    assert_eq!(
+        noticed(&mut rig, &first_phone),
+        ["Second phone", "Third phone"]
+    );
+    assert_eq!(noticed(&mut rig, &second_phone), ["Third phone"]);
+    // The first phone dismisses through everything it was shown.
+    rig.call(
+        &first_phone,
+        "device.notice.dismiss",
+        json!({"through": third["addedAt"]}),
+    )
+    .unwrap();
+    assert!(noticed(&mut rig, &first_phone).is_empty());
+    // The second phone and the person at the computer are told as before.
+    assert_eq!(noticed(&mut rig, &second_phone), ["Third phone"]);
+    assert_eq!(
+        noticed(&mut rig, &app),
+        ["First phone", "Second phone", "Third phone"]
+    );
+    // Dismissing for the person at the computer does not move the phones' marks either.
+    rig.call(
+        &app,
+        "device.notice.dismiss",
+        json!({"through": third["addedAt"]}),
+    )
+    .unwrap();
+    assert!(noticed(&mut rig, &app).is_empty());
+    assert_eq!(noticed(&mut rig, &second_phone), ["Third phone"]);
+}
+
+#[tokio::test]
+async fn an_agent_and_a_chief_are_refused_the_dismissal_and_it_moves_no_mark() {
+    let mut rig = Rig::new(Approval::PersonsCode);
+    let app = rig.connect(true, false);
+    paired(&mut rig, &app, 51, "First phone");
+    for role in [Role::Agent, Role::Chief] {
+        let (outbox, _receiver) = crate::outbox::channel();
+        let connection = rig.core.connect(false, false, outbox).unwrap();
+        rig.core.clients.get_mut(&connection).unwrap().scope = format!("scope-{role:?}");
+        rig.core.clients.get_mut(&connection).unwrap().actor = Some(Actor {
+            role: role.clone(),
+            client: "program".into(),
+            device_id: None,
+            pane_id: None,
+        });
+        let answer = rig.call(
+            &connection,
+            "device.notice.dismiss",
+            json!({"through": "2999-01-01T00:00:00Z"}),
+        );
+        assert_eq!(kind(&answer), ErrorKind::ForbiddenRole, "{role:?}");
+    }
+    // Nothing was dismissed: the person is still told.
+    assert_eq!(noticed(&mut rig, &app), ["First phone"]);
+}

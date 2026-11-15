@@ -7,7 +7,7 @@ use soyeht_protocol::{
     DeviceNoticeDismissParams, DeviceNoticeDismissResult, DeviceNoticeListParams,
     DeviceNoticeListResult, DevicePairDecideParams, DevicePairDecideResult, DevicePairStartParams,
     DevicePairStartResult, DevicePanesListParams, DevicePanesListResult, DeviceRevokeParams,
-    DeviceRevokeResult, PaneCloseParams, Request, approval_code,
+    DeviceRevokeResult, ErrorKind, PaneCloseParams, Request, approval_code,
 };
 
 /// The six digits the person typed for a request. They are the person's own action (ADR 0164), so
@@ -42,11 +42,13 @@ pub enum Command {
         approve: bool,
         code: Option<TypedCode>,
     },
-    /// Revoke a device and then close `close_panes`, the panes it made that the person chose to
-    /// close: revoking does not stop what a device's terminals started (ADR 0164).
+    /// Revoke a device and, when `close_panes`, close the panes it made: revoking does not stop
+    /// what a device's terminals started (ADR 0164). The panes are listed again once the device is
+    /// revoked, since it may have made some after the question listed them; its connection is
+    /// closed by then, so that list is final.
     Revoke {
         device_id: String,
-        close_panes: Vec<String>,
+        close_panes: bool,
     },
     /// Ask which devices were added since the notice was last dismissed.
     LoadNotice,
@@ -81,6 +83,25 @@ impl Command {
             },
         }
     }
+}
+
+/// Closes the panes `device_id` has open now, and how many would not close; `None` when they
+/// could not be listed. A pane that is gone already is closed, not a failure.
+fn close_panes_of(rpc: &Rpc, device_id: &str) -> Option<usize> {
+    let listed = rpc
+        .call(&Request::DevicePanesList(DevicePanesListParams {
+            device_id: device_id.to_owned(),
+        }))
+        .ok()?; // ignored: a list that cannot be had is told to the person as such (`None`)
+    let panes: DevicePanesListResult = serde_json::from_value(listed).ok()?;
+    let refused = panes.items.iter().filter(|pane| {
+        let closed = rpc.call(&Request::PaneClose(PaneCloseParams {
+            pane_id: pane.pane_id.clone(),
+            idempotency_key: key(),
+        }));
+        closed.is_err_and(|error| Refusal::of(&error).kind != Some(ErrorKind::NotFound))
+    });
+    Some(refused.count())
 }
 
 /// Carries `command` out on the connection that is up. The window a start opens belongs to this
@@ -129,16 +150,11 @@ pub fn run(rpc: &Rpc, command: &Command) -> Result<Option<ClientEvent>> {
                 }))?)?;
             // The device is revoked whatever happens to its panes: each one that cannot be closed
             // is counted, and the person is told how many are still open.
-            let left_open = close_panes
-                .iter()
-                .filter(|pane_id| {
-                    rpc.call(&Request::PaneClose(PaneCloseParams {
-                        pane_id: (*pane_id).clone(),
-                        idempotency_key: key(),
-                    }))
-                    .is_err()
-                })
-                .count();
+            let left_open = if *close_panes {
+                close_panes_of(rpc, &revoked.device_id)
+            } else {
+                Some(0)
+            };
             Event::Revoked {
                 device_id: revoked.device_id,
                 left_open,

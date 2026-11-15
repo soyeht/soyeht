@@ -110,14 +110,14 @@ fn the_question_before_a_revocation_asks_for_the_panes_and_closes_only_those_it_
         keep.confirm_revoke(false),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     assert_eq!(
         pairing.confirm_revoke(true),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec!["p1".to_owned(), "p2".to_owned()]
+            close_panes: true
         })
     );
     // A list the engine could not give leaves the person able to revoke, and closes nothing.
@@ -131,7 +131,7 @@ fn the_question_before_a_revocation_asks_for_the_panes_and_closes_only_those_it_
         pairing.confirm_revoke(true),
         Some(Command::Revoke {
             device_id: "d1".to_owned(),
-            close_panes: vec![]
+            close_panes: false
         })
     );
     // An engine that does not ask for the code does not list panes, and offers none to close.
@@ -153,7 +153,7 @@ fn panes_that_would_not_close_are_said_once_the_device_is_revoked() {
     );
     pairing.apply(Event::Revoked {
         device_id: "d1".to_owned(),
-        left_open: 2,
+        left_open: Some(2),
     });
     assert!(pairing.devices()[0].revoked);
     assert_eq!(
@@ -240,4 +240,18 @@ fn confirming_a_tailnet_change_asks_for_a_new_window_with_the_confirmation_and_o
     })));
     assert!(matches!(pairing.phase(), Phase::Refused(_)), "{ticket}");
     assert!(pairing.tailnet_changed());
+}
+
+#[test]
+fn panes_that_could_not_be_listed_after_the_revocation_are_said() {
+    let mut pairing = adopted(true);
+    pairing.adopt(&[json!("pairing-code")], vec![device("d1")], &[], true);
+    pairing.apply(Event::Revoked {
+        device_id: "d1".to_owned(),
+        left_open: None,
+    });
+    assert_eq!(
+        pairing.revoke_failure(),
+        Some("The device was revoked, but its panes could not be listed to close them.")
+    );
 }
