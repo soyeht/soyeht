@@ -64,8 +64,9 @@ Each layer depends only on the layers listed above it.
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
-   dictation engines that need third-party dependencies, and the catalogue of
-   engines (ADR 0083).
+   dictation engines and the text-to-speech providers that need third-party
+   dependencies (Nemotron, Kokoro), and the catalogues of both
+   (`DictationCatalogue`, `VoiceCatalogue`; ADR 0083, ADR 0166).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling. The Mac
    creates and injects every observable environment object once, in `SoyehtMacApp.swift`
@@ -307,6 +308,26 @@ Dictation engines are a catalogue (ADR 0083). A new engine is one file and one e
 Do not edit the composer, Preferences or `DictationController` to add an engine: they are
 generated from the registry. System callbacks and audio taps are `@Sendable` and never
 inherit the main actor.
+
+## How to add a text-to-speech provider
+
+Voice providers are a catalogue too (ADR 0166, in the style of ADR 0083). A new provider is one
+file and one entry:
+
+1. Add one file with a `SpeechSynthesizing` implementation and its `SpeechSynthesisProvider`
+   descriptor (id, names, platforms, `license` with its `commercialUse` flag, `voices`, `model` when
+   it needs an install, `cloud` when it is someone else's computer and what it receives,
+   `availability`, `make`). It goes in `apps/dictation/Sources/
+   SoyehtDictation/` when it needs a third-party package, else in `apps/shared`. A model uses
+   `DictationModelInfo` (size, license name, `commercialUse`, installer) and so
+   `DictationModelStore`; write no install state. An installed model loads from disk with no
+   network, and nothing downloads before the person presses Install.
+2. List the descriptor in `VoiceCatalogue.synthesis`.
+3. Add tests with a fake. Never call a real provider, play audio or open the microphone.
+
+A provider's key lives in a `ProviderKeyVault` (the system keychain in the app, a fake in tests):
+never in a setting, never in an error or a log line, and never sent to the engine. No library that
+links may be GPL (espeak-ng is), and a model whose license is not permissive is not offered.
 
 ## Design
 
