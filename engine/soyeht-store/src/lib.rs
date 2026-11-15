@@ -11,6 +11,7 @@ pub mod editor_tabs;
 mod english_values;
 pub mod harness_sign_in;
 pub mod languages;
+pub mod pairing_nodes;
 pub mod project_trust;
 pub mod push;
 mod resting;

@@ -393,6 +393,7 @@ export interface PaneExperimentExportResult {
 
 export interface DevicePairStartParams {
   "idempotencyKey": Id;
+  "confirmTailnet"?: boolean;
 }
 
 export interface DevicePairStartResult {
@@ -401,6 +402,7 @@ export interface DevicePairStartResult {
   "uri": string;
   "qr"?: string;
   "reachability"?: EngineReachability;
+  "tailnetChanged"?: boolean;
 }
 
 export interface DevicePairDecideParams {

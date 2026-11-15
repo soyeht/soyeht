@@ -9,10 +9,14 @@ use super::*;
 use ed25519_dalek::SigningKey;
 
 const MARKER: &str = "test-pairing-approval";
+/// The phone of these tests connects from loopback; this marker makes the engine's peer rules see
+/// it as a node of the tailnet (`attack_pairing_peers` shows the rules themselves).
+const PEERS_MARKER: &str = "test-pairing-peers";
 
 fn persons_code_rig() -> Rig {
     let rig = Rig::new();
     fs::write(rig.path.join(MARKER), "persons-code").unwrap();
+    fs::write(rig.path.join(PEERS_MARKER), "phone").unwrap();
     rig
 }
 
@@ -303,14 +307,14 @@ fn a_fifth_window_closes_the_oldest_and_a_device_name_cannot_reorder_text() {
 }
 
 #[test]
-fn without_the_marker_this_engine_keeps_refusing_as_before_and_offers_no_code() {
-    // The same program as a shipped engine would be, but for its hooks: no marker, no mode.
-    // On a system that attests nothing (Linux, Windows) the local human is refused; on macOS
-    // an unsigned program is.
+fn without_the_marker_this_engine_follows_the_rule_of_its_system() {
+    // The same program as a shipped engine would be, but for its hooks: no marker, no mode. On
+    // macOS an unsigned program cannot be the app and the local human is refused; on Linux the
+    // person's code is the rule; on Windows nothing can attest the app yet.
     let rig = Rig::new();
+    fs::write(rig.path.join(MARKER), "system").unwrap();
     let mut local = rig.client();
-    let refused = local.request("device.pair.start", json!({"idempotencyKey":"w"}));
-    assert_eq!(kind(&refused), "forbidden_role", "{refused}");
+    let started = local.request("device.pair.start", json!({"idempotencyKey":"w"}));
     let (_, parts) = local.snapshot();
     let capabilities: Vec<Value> = parts
         .iter()
@@ -318,11 +322,17 @@ fn without_the_marker_this_engine_keeps_refusing_as_before_and_offers_no_code() 
         .flat_map(|part| part["data"].as_array().unwrap().clone())
         .collect();
     assert!(!capabilities.is_empty());
-    assert!(!capabilities.iter().any(|name| name == "pairing-code"));
-    #[cfg(target_os = "linux")]
-    {
+    let offers_code = capabilities.iter().any(|name| name == "pairing-code");
+    if cfg!(target_os = "linux") {
+        assert!(started.get("error").is_none(), "{started}");
+        assert!(offers_code);
+    } else {
+        assert_eq!(kind(&started), "forbidden_role", "{started}");
+        assert!(!offers_code);
+    }
+    if cfg!(windows) {
         assert!(
-            refused["error"]["message"]
+            started["error"]["message"]
                 .as_str()
                 .unwrap()
                 .contains("cannot yet prove itself")

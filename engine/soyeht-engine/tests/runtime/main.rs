@@ -42,6 +42,7 @@ mod agent_message_names;
 mod attack_floods;
 mod attack_pairing;
 mod attack_pairing_code;
+mod attack_pairing_peers;
 mod attack_paths;
 mod attack_process;
 mod attack_web;

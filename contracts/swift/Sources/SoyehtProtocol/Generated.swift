@@ -957,8 +957,10 @@ public struct PaneExperimentExportResult: Codable, Sendable {
 
 public struct DevicePairStartParams: Codable, Sendable {
     public var `idempotencyKey`: Id
-    public init(`idempotencyKey`: Id) {
+    public var `confirmTailnet`: Bool?
+    public init(`idempotencyKey`: Id, `confirmTailnet`: Bool? = nil) {
         self.`idempotencyKey` = `idempotencyKey`
+        self.`confirmTailnet` = `confirmTailnet`
     }
 }
 
@@ -968,12 +970,14 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `uri`: String
     public var `qr`: String?
     public var `reachability`: EngineReachability?
-    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil) {
+    public var `tailnetChanged`: Bool?
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil, `tailnetChanged`: Bool? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
         self.`qr` = `qr`
         self.`reachability` = `reachability`
+        self.`tailnetChanged` = `tailnetChanged`
     }
 }
 

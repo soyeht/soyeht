@@ -798,6 +798,8 @@ pub struct PaneExperimentExportResult {
 pub struct DevicePairStartParams {
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
+    #[serde(rename = "confirmTailnet", skip_serializing_if = "Option::is_none")]
+    pub confirm_tailnet: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairStartResult {
@@ -811,6 +813,8 @@ pub struct DevicePairStartResult {
     pub qr: Option<String>,
     #[serde(rename = "reachability", skip_serializing_if = "Option::is_none")]
     pub reachability: Option<EngineReachability>,
+    #[serde(rename = "tailnetChanged", skip_serializing_if = "Option::is_none")]
+    pub tailnet_changed: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DevicePairDecideParams {

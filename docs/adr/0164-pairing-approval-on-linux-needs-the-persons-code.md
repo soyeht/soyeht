@@ -52,7 +52,7 @@ by a failed attestation:
   refusing, with the refusal and the log line it has today (`engine_cannot_attest`).
 - **`PersonsCode`** on Linux: the rules below.
 - **`Refused`** on Windows, as ADR 0162 has it, until its app proves itself with Authenticode. The
-  same positive rules would work there without `SO_BINDTODEVICE`, but they would be weaker, the
+  same positive rules would work there, but they would be weaker, the
   certificate is on its way, and a second Windows rule set to retire later is not worth it. This ADR
   recommends declaring Windows pairing out of scope until Authenticode. The desktop pairing view is
   shared and follows the capability, so it shows "cannot pair yet" on Windows as it will on any
@@ -122,10 +122,9 @@ no stored answer) and again in `pair.prove`:
 
 1. **The connection was accepted by a tailnet listener.** `Connected` records which listener accepted
    it (the local endpoint, loopback, a fixed `--listen` address, or a tailnet listener). The others
-   get no pairing. On Linux the tailnet listener is bound with `SO_BINDTODEVICE` to the tailnet
-   interface, so a local program that connects to the tailnet address arrives through the loopback
-   interface and is not accepted at all (to be verified on the Linux VM, including that the follower
-   that rebinds on address changes keeps it).
+   get no pairing. The tailnet listener is bound to the tailnet address and nothing else: binding it
+   to the interface by name (`SO_BINDTODEVICE`) was tried and dropped (see "What slice 3 found"),
+   so what keeps a local program out is item 3.
 2. **The peer is what `TcpStream::peer_addr()` says**, canonicalised (`to_canonical()`, so
    `::ffff:127.0.0.1` is loopback). Never a header: nothing in `X-Forwarded-For`, `Forwarded` or a
    PROXY line is read. The WebSocket handshake carries no identity.
@@ -143,10 +142,13 @@ no stored answer) and again in `pair.prove`:
    unprivileged user may call `whois` on a default install is to be verified on the Linux VM.
 5. **The tailnet identity has not changed.** The engine pins the tailnet (`CurrentTailnet`) and this
    node's key when it first serves a pairing, and refuses `pair.begin` once either differs, until the
-   person has been shown the change in the desktop app and confirmed it. This **raises a cost only**:
-   the confirmation is a local call, so a program that knows it can make it. It makes the lazy attack
-   (`tailscale up` into a tailnet of the attacker's, which a user who is the operator may do without a
-   password) show up in the app instead of passing silently.
+   person has confirmed it with a local call. This **raises a cost only**: the confirmation is a
+   local call, so a program that knows it can make it. It makes the lazy attack (`tailscale up` into
+   a tailnet of the attacker's, which a user who is the operator may do without a password) stop the
+   pairing and leave an `engine.pair_refused` line (`tailnet_changed`) instead of passing silently.
+   In slice 3 the change is **logged and refused, not shown**: the app learns of it only from
+   `tailnetChanged` in the answer of `device.pair.start`, and the visible notice comes with the
+   "device added" detection of slice 4.
 6. **The node is not a device's node, by node identity and not by IP.** The store keeps the set of
    node ids from which each device's authenticated `hello` came (a table, written only in
    `PersonsCode` mode; the same `whois`, which does not block the `hello` when it fails: the node is
@@ -373,20 +375,75 @@ Soyeht on the phone); a new phone with a Mac sees no field and shows the old scr
 6. Android keeps its core (the shared Rust pairing code carries the new field and an event for the
    code); its screen waits for its own release.
 
+## What slice 3 found and changed
+
+Slice 3 (the peer rules in the engine) was verified natively on Linux (Ubuntu, kernel 7.0, aarch64),
+with a real `getifaddrs` and a veth pair named `tailscale0` in
+an unprivileged user and network namespace (`unshare -Urn`), against a daemon that answers as the
+local API of `tailscaled` does.
+
+- **`SO_BINDTODEVICE` does not refuse a local connection to the tailnet address, and it breaks
+  when the interface is made again.** The listener bound to the interface that holds the address
+  accepted a program of this computer that connected to that address, from that same address: the
+  local table routes the address to its own interface, so the kernel delivers the loopback
+  connection as arriving through it. And a listener bound by interface name stops taking every
+  connection when `tailscaled` restarts or is upgraded and makes `tailscale0` again with the same
+  name and address: the interface index changes, while the follower, which watches the set of
+  addresses, sees no change and never binds again, so all phone access would die until the engine
+  restarts. The binding was dropped, and the listener is bound to the address as before. The weight
+  of keeping this computer's own programs out is on item 3: the peer's address is not any address of
+  this machine. A local program's connection to the tailnet address has that address as its
+  source, and a source address of another range is not a Tailscale one; a program cannot bind a
+  Tailscale source address that the machine does not hold and still receive the answers. A host
+  of another network that sends frames for the tailnet address through another interface is
+  refused by item 3 as well, because its source is not a Tailscale address.
+- **The optional bind probe of item 3 is not made.** With `ip_nonlocal_bind` set, a bind to any
+  address succeeds and every peer would be refused. The list of interfaces covers the case, and the
+  list includes interfaces that are down.
+- **The lookup is not done at `accept` but at the call**, off the Core lock (`Outcome::Offload`), for
+  each `pair.begin`, each `pair.prove` and each tailnet `hello` of a device. What costs nothing runs
+  first and refuses without asking the system: the listener and the range, then the window code of
+  a `pair.begin` or the request of a `pair.prove`. The machine's own addresses and identity are
+  believed for two seconds; at most four lookups run at once and the rest are refused at once; a
+  daemon that did not answer is left alone for five seconds. A device's `hello` waits at most one
+  second for its node (the client's greeting timeout is five), and goes on without it.
+- **The local API socket is trusted only when root owns it**: the socket and its folder must belong
+  to root, nobody else may write the folder, and on Linux the process at the other end must run as
+  root; connecting waits no longer than the request's own deadline.
+- **A device's node is recorded when the request is approved**, from the node of its `pair.begin`,
+  and not only at its first `hello`, so a phone that has not reconnected yet already cannot pair
+  another device.
+- **The tailnet change is confirmed by `device.pair.start {confirmTailnet: true}`**, and the app
+  learns that a refusal waits from `tailnetChanged` in the answer of the same call. Both are
+  optional fields; the engine remembers the identity it saw in memory, so a confirmation with
+  nothing refused does nothing. A live signal to a sheet that is already open (an event) belongs to
+  the desktop view.
+- **The store gains two tables** (`device_nodes`, `pairing_tailnet`; schema version 36). The Mac
+  migrates its database like any other: the tables stay empty there. An engine older than the
+  database refuses to start (contract 07), so going back to a build before this one
+  needs the backup the migration makes.
+- **Unprivileged access to the `whois` of the daemon** was not exercised against a real
+  `tailscaled`, which neither Linux host has; the local API's read calls are open to every local
+  account, as the nginx authentication helper of Tailscale relies on, and the client is checked
+  against a daemon that speaks HTTP over the same kind of socket. The first real run is the
+  owner's, and a daemon that refuses fails closed with a message that says Tailscale could not be
+  asked.
+
 ## Slices
 
 | # | Slice | Size |
 |---|---|---|
 | 1 | Contract: `approvalCode`, `addedAt`, `node`, capability, error code, `texts`, the vector file, generated code, contract 08 §2.2 and §2.4, the status lines of ADR 0128, 0162, 0163, README, `docs/platforms.md`, `docs/apps-android.md` | S, 0.5 day |
 | 2 | Engine, mode and code: `pairing::Approval` by platform, the code newtype (zeroized), attempts, receipt without the code, the table above, `pairing_code_invalid`, window cap and binding, name sanitising, "Denied on the computer", the `Hooks` method, non-dumpable | M, 2.5 days |
-| 3 | Engine, the peer rules: listener mark on `Connected`, `SO_BINDTODEVICE` on Linux, canonical peer, tailnet ranges, fresh `getifaddrs`, the `PairingPeers` port, a LocalAPI `whois` client off the Core lock, the tailnet pin and its confirmation, the node table and migration, the 24-hour revoked rule, binding a request to its node, the refusal log line. Needs the Linux VM | L, 3.5 days |
+| 3 | Engine, the peer rules: listener mark on `Connected`, canonical peer, tailnet ranges, `getifaddrs` at most two seconds old, the `PairingPeers` port, a LocalAPI `whois` client off the Core lock, the tailnet pin and its confirmation, the node table and migration, the 24-hour revoked rule, binding a request to its node, the refusal log line. Needs the Linux VM | L, 3.5 days |
 | 4 | Detection and revoke: `addedAt` and `node` on the list and notice, the durable "device added" notice on phones and desktop, the revoke dialog's pane list and close | M, 2 days |
 | 5 | Desktop pairing view: the sheet, the QR (no encoder today; a permissive-licence crate through the ADR 0149 review), the request row, the field, the device list, the tailnet refusals, `soyeht-client` calls and a `Progress` event for the code in `device::pair` | L, 4 days |
 | 6 | Shared Swift and iOS: `PairingSession` reads the code, `PairingCopy` and the view show it, the notice; the Android core passes the field through | S, 1 day |
 | 7 | Tests and docs, alongside 2 to 6; `docs/agent-acceptances.md`, `docs/dev-local.md`, `docs/security-testing.md` | M, 2 days |
 | 8 | Optional, pending the owner: polkit confirmation | M, 3 days |
 
-Slices 1 to 4 are one engine change and need the second-agent review (pairing, protocol, store,
+Slices 1 to 3 are in the engine (the mode and the code, then the peer rules, with which Linux selects
+`PersonsCode` by itself). Slices 1 to 4 are one engine change and need the second-agent review (pairing, protocol, store,
 dependencies, security). The order is 1, 2, 3, 4, then 5 and 6 in parallel.
 
 Tests:
@@ -404,8 +461,9 @@ Tests:
   machine's is refused; the other family of a paired node is refused; a replayed `pair.begin` from a
   local peer is refused; a revoked device's node is refused for 24 hours and allowed after; a
   forwarded header is ignored; `whois` unavailable fails closed; a changed tailnet is refused until
-  confirmed; `pair.prove` from another node than `pair.begin` is refused. On the Linux VM, the
-  `SO_BINDTODEVICE` listener does not accept a local connection to the tailnet address.
+  confirmed; `pair.prove` from another node than `pair.begin` is refused. On the Linux VM, a
+  local connection to the tailnet address arrives from the machine's own address, and a tailnet
+  interface made again with the same address leaves the listener taking connections.
 - Windows: the three methods and the pairing stay refused, with the message.
 - No leak: a whole pairing, then a scan of every frame a local connection received, the database
   file, the receipts and the log for the approval code.

@@ -53,6 +53,9 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
             "../../migrations/035-adapter-acknowledgements.sql"
         ))?;
     }
+    if version < 36 {
+        tx.execute_batch(include_str!("../../migrations/036-pairing-nodes.sql"))?;
+    }
     Ok(())
 }
 
