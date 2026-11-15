@@ -1,6 +1,6 @@
 use crate::{Error, Result, engine::EnginePort, tools::Service};
 use serde_json::{Value, json};
-use soyeht_protocol::ndjson::Decoder;
+use soyeht_protocol::{handshake::PANE_BINDING_NOT_CURRENT, ndjson::Decoder};
 use std::{
     io::{BufRead, Write},
     path::Path,
@@ -31,9 +31,16 @@ pub fn instructions(skills: &Path) -> String {
     with_skills(PANE_TOOLS, skills)
 }
 
-/// [`instructions`] for a terminal pane.
-pub fn terminal_instructions(skills: &Path) -> String {
-    with_skills(TERMINAL_TOOLS, skills)
+/// What a harness in a terminal pane is told about this server. It carries no skills part: the
+/// skills of ADR 0075 are for agent panes, and ADR 0165 gives a terminal harness only the two
+/// messaging tools.
+pub fn terminal_instructions() -> String {
+    TERMINAL_TOOLS.to_owned()
+}
+
+/// [`instructions`] for a terminal pane whose binding the engine refused.
+pub fn not_current_instructions() -> String {
+    format!("This server offers no tools: {PANE_BINDING_NOT_CURRENT}.")
 }
 
 /// [`instructions`] for a server outside a Soyeht pane.

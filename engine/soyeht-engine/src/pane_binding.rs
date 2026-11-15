@@ -10,8 +10,12 @@
 //!   connections that presented it are refused at their next request.
 //! - A start asked again for the same instance key gets the same binding, which the supervisor
 //!   needs: it hands back the process the first start made, with the environment that start sent.
-//! - The engine keeps nothing about it. A restart of the engine verifies the bindings of the
-//!   panes that outlived it, and the store holds no secret of a pane that anyone could read back.
+//! - The engine's database holds no binding. The tag is recomputed from the key of the engine
+//!   and the pane's instance key and generation, which the store holds, so a restart of the
+//!   engine verifies the bindings of the panes that outlived it. The binding itself is kept
+//!   where the process is: the supervisor records the environment of every process it holds in
+//!   its registry file (`ptyd-registry.json`, readable by its owner only), so the bindings of
+//!   the running terminal panes are in that file, and in the environment of each process.
 //!
 //! The binding names its pane in the clear (`PANE.TAG`), so a check is one keyed hash and not one
 //! per pane.

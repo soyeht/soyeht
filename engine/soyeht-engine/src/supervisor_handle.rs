@@ -27,7 +27,7 @@ use crate::{
 };
 use soyeht_ptyd::{
     client::IO_TIMEOUT,
-    wire::{Request, Response},
+    wire::{FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
     sync::{
@@ -61,6 +61,8 @@ pub struct Supervisor {
     connection: Arc<Connection>,
     id: Arc<str>,
     generation: u32,
+    /// Whether the supervisor accepts the pane binding in a terminal's environment.
+    pane_binding: bool,
 }
 
 impl Supervisor {
@@ -68,6 +70,7 @@ impl Supervisor {
         Self {
             id: Arc::from(port.supervisor_id()),
             generation: port.supervisor_generation(),
+            pane_binding: port.supports(FEATURE_PANE_BINDING),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -81,6 +84,11 @@ impl Supervisor {
 
     pub fn supervisor_generation(&self) -> u32 {
         self.generation
+    }
+
+    /// Whether a terminal started through this link may carry its pane binding (ADR 0165).
+    pub(crate) fn takes_pane_binding(&self) -> bool {
+        self.pane_binding
     }
 
     /// Whether a call left the stream in an unknown state. Such a handle only fails.

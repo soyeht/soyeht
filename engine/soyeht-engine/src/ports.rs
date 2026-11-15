@@ -49,6 +49,11 @@ pub trait SupervisorPort: Send {
     fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response>;
     fn supervisor_id(&self) -> &str;
     fn supervisor_generation(&self) -> u32;
+    /// Whether the supervisor listed `feature` in its welcome. A link that was not made by a
+    /// welcome (a test double) lists none.
+    fn supports(&self, _feature: &str) -> bool {
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +130,10 @@ impl SupervisorPort for SupervisorClient {
 
     fn supervisor_generation(&self) -> u32 {
         self.supervisor_generation
+    }
+
+    fn supports(&self, feature: &str) -> bool {
+        self.features.iter().any(|listed| listed == feature)
     }
 }
 

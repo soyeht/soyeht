@@ -1,4 +1,4 @@
-use soyeht_protocol::RpcError;
+use soyeht_protocol::{RpcError, handshake::PANE_BINDING_NOT_CURRENT};
 use std::{fmt, io};
 
 #[derive(Debug)]
@@ -16,6 +16,7 @@ pub enum Error {
     MissingDataDirectory,
     MissingBinding,
     MissingPaneBinding,
+    PaneBindingNotCurrent,
     Service(soyeht_service::Error),
     EngineUnavailable(Box<Error>),
 }
@@ -56,6 +57,7 @@ impl fmt::Display for Error {
                 "this program is not attached to a Soyeht pane: SOYEHT_PANE_BINDING is not set; \
 start it from a Soyeht terminal pane",
             ),
+            Self::PaneBindingNotCurrent => formatter.write_str(PANE_BINDING_NOT_CURRENT),
             Self::Service(error) => write!(formatter, "service: {error}"),
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the engine: {error}")

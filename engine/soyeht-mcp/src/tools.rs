@@ -299,6 +299,10 @@ impl Service<Detached> {
     }
 }
 
+/// What `message_agent` says in a terminal pane: that pane cannot receive yet, so an answer would
+/// have nowhere to arrive (ADR 0165, until the inbox of slice 5).
+const TERMINAL_MESSAGE_DESCRIPTION: &str = "Queue a message for an agent pane of any workspace, named by targetName or by targetPaneId (exactly one). A name two panes carry is an error that lists them. Delivery waits for the recipient's clean input. This terminal pane cannot receive messages yet, so no answer will arrive here: send what is needed and do not wait for a reply.";
+
 /// Whose tools a server offers.
 enum Scope {
     /// An agent pane of a workspace, with the tools of its role.
@@ -313,6 +317,13 @@ enum Scope {
 }
 
 impl Scope {
+    fn describe<'a>(&self, tool: &'a Tool) -> &'a str {
+        match self {
+            Self::Terminal if tool.method == method::AGENT_MESSAGE => TERMINAL_MESSAGE_DESCRIPTION,
+            _ => tool.description,
+        }
+    }
+
     fn offers(&self, tool: &Tool) -> bool {
         match self {
             Self::Pane(_) => true,
@@ -348,7 +359,7 @@ impl<P: EnginePort> Service<P> {
         let tools = TOOLS
             .iter()
             .filter(|tool| self.scope.offers(tool) && allowed(self.engine.role(), tool.audience))
-            .map(|tool| json!({"name":tool.name,"description":tool.description,"inputSchema":schema_for(tool, self.engine.role())}))
+            .map(|tool| json!({"name":tool.name,"description":self.scope.describe(tool),"inputSchema":schema_for(tool, self.engine.role())}))
             .collect::<Vec<_>>();
         json!({"tools":tools})
     }

@@ -265,17 +265,23 @@ Read from the code, the tests and the history of that branch (200 commits in two
 
 For every terminal pane (a plain shell included, because the person types `claude` whenever they like)
 the engine makes a binding when the pane's process starts and puts it in the process's environment
-(`Spawn.env`, which the supervisor already carries and now allows for a terminal, supervisor protocol
-7; on Windows, the environment block of the pane's process) as `SOYEHT_PANE_BINDING`. It is
-`PANE.TAG`: the pane's id, then a keyed hash (HMAC-SHA-256, with a key derived from the engine's own
-key) of the pane's id, the key of its process instance and its generation. **The engine derives it and
-stores nothing**: a start asked again for one instance key gets the same binding, which the supervisor
-needs because it hands back the process the first start made, and a restart of the engine verifies the
-bindings of the panes that outlived it. An earlier draft kept a SHA-256 of a random binding in the
-store; it could not tell a start repeated after a lost answer from a new process. The binding **ends
-when the pane's process is replaced** (a restart, a recovery, a harness switch): the instance key and
-the generation change, so the old binding no longer verifies, and a connection that holds it is
-refused at its next request. A stale binding gets `unauthorized`.
+(`Spawn.env`, which the supervisor already carries; it allows the variable for a terminal when it
+lists the `pane-binding` feature in its welcome, and the engine leaves it out of a start sent to a
+supervisor that does not, so an update never stops a running terminal and a pane that an older
+supervisor started is simply not attached; on Windows, the environment block of the pane's process) as
+`SOYEHT_PANE_BINDING`. It is `PANE.TAG`: the pane's id, then a keyed hash (HMAC-SHA-256, with a key
+derived from the engine's own key) of the pane's id, the key of its process instance and its
+generation. **The engine derives it and puts none in its database**: the tag is recomputed from the
+engine's key and the instance key and generation the store holds. A start asked again for one
+instance key gets the same binding, which the supervisor needs because it hands back the process the
+first start made, and a restart of the engine verifies the bindings of the panes that outlived it.
+An earlier draft kept a SHA-256 of a random binding in the store; it could not tell a start repeated
+after a lost answer from a new process. **The supervisor does keep it**: it records the environment
+of each process in its registry file (`ptyd-registry.json`, readable by its owner only), so the
+bindings of the running terminals are in that file. The binding **ends when the pane's process is
+replaced** (a restart, a recovery, a harness switch): the instance key and the generation change, so
+the old binding no longer verifies, and a connection that holds it is refused at its next request. A
+stale binding gets `unauthorized`.
 
 A connection that presents it is granted the `agent` role for the messaging methods (list, message,
 status, inbox of its own pane), for its own pane only. Task tools stay with the ACP agents in
@@ -329,8 +335,13 @@ connection screen says so. The spike gates every promise to send.
   workspace**, grouped by workspace with the sender's own first, each with `name`, `paneId`,
   `workspace`, `kind` (`agent`, `terminal` or `web`), the harness, whether it can receive now and the
   reason if not, and whether it can reply (a connected `soyeht-mcp`). `message_agent` takes a
-  `targetName` (compared without case, accents or surrounding space) or the pane id. **Two matches
-  answer `invalid_params` with the candidates** (workspace and id), never the first. The tool
+  `targetName` (compared without case, accents or surrounding space) or the pane id. A name that exactly one agent pane of the
+  sender's own workspace carries is that pane, as before names reached other workspaces; only when the
+  own workspace has none or several do the other workspaces count. **Several matches then answer
+  `invalid_params` with the candidates** (workspace and id), never the first. In slice 1 a web page
+  is not a candidate for a name (a page named like an agent would make the agent ambiguous, with an
+  id that is then refused): a name no agent carries but a page or a terminal pane does answers
+  `not_found` with that pane's reason. The tool
   descriptions teach the model the old app's rule: for a communication request with names, call
   `list_agents` first; route matches to `message_agent`; never stand in an internal subagent for a
   matched pane; report an unmatched name instead of creating a pane; never claim a reply that has not

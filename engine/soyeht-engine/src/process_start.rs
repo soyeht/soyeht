@@ -91,6 +91,12 @@ impl Core {
         // start of a process goes through here (ADR 0143).
         crate::agents::adapter_consent::require_spawn(&self.store, &config.argv)?;
         let supervisor = self.supervisor()?;
+        let mut config = config;
+        if !supervisor.takes_pane_binding() {
+            // A supervisor from before the binding refuses the variable, and the terminal is
+            // worth more than its attachment: it runs, and is not attached to a Soyeht pane.
+            config.env.remove(PANE_BINDING_ENV);
+        }
         let turn = self.turn(after);
         let adapter_directory =
             crate::agents::adapter_directory::to_prepare(&self.directory, &config.cwd);
@@ -356,6 +362,68 @@ mod tests {
 
     fn asked(asked: &Asked) -> Vec<String> {
         asked.lock().unwrap().clone()
+    }
+
+    /// A supervisor that lists the pane binding feature, or does not, and keeps the environment of
+    /// every start it is asked for.
+    struct Featured {
+        inner: Box<dyn SupervisorPort>,
+        listed: bool,
+    }
+
+    impl SupervisorPort for Featured {
+        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+            self.inner.request(request)
+        }
+
+        fn supervisor_id(&self) -> &str {
+            self.inner.supervisor_id()
+        }
+
+        fn supervisor_generation(&self) -> u32 {
+            self.inner.supervisor_generation()
+        }
+
+        fn supports(&self, feature: &str) -> bool {
+            self.listed && feature == soyeht_ptyd::wire::FEATURE_PANE_BINDING
+        }
+    }
+
+    /// The environments of the starts a pane makes on a supervisor that lists the feature or not.
+    fn started_environment(listed: bool) -> std::collections::BTreeMap<String, String> {
+        let (mut core, directory, _, _) = core_with_unstarted_pane(Vec::new());
+        core.background = Background::default();
+        let environments = Arc::new(Mutex::new(Vec::new()));
+        let kept = Arc::clone(&environments);
+        core.link_supervisor(Box::new(Featured {
+            inner: Box::new(Answering(move |request| match request {
+                Request::Spawn(config) => {
+                    kept.lock().unwrap().push(config.env.clone());
+                    Ok(Response::Instance(instance_of(config)))
+                }
+                _ => Ok(Response::Ok),
+            })),
+            listed,
+        }));
+        core.spawn(PANE).unwrap();
+        apply_until_done(&mut core, START);
+        // The supervisor took the start whatever it listed, and the pane has its process.
+        assert_eq!(
+            core.panes[PANE].stored.instance_id.as_deref(),
+            Some("process-of-p-key")
+        );
+        let environment = environments.lock().unwrap().remove(0);
+        crate::test_paths::remove_after(core, directory);
+        environment
+    }
+
+    #[test]
+    fn a_terminal_gets_its_binding_only_from_a_supervisor_that_lists_the_feature() {
+        let with = started_environment(true);
+        let binding = &with[PANE_BINDING_ENV];
+        assert!(binding.starts_with("p-pane."), "{binding}");
+        // An older supervisor would refuse the variable and the terminal would not start.
+        assert!(!started_environment(false).contains_key(PANE_BINDING_ENV));
     }
 
     #[test]

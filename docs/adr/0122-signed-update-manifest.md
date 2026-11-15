@@ -172,8 +172,6 @@ holds every pty, so terminals, harness processes and language servers die with i
    The version is `soyeht_ptyd::wire::VERSION`, which `soyeht-ptyd --protocol-version` prints:
    ADR 0160 raised it from 5 to 6 because an engine that proves itself to the supervisor cannot
    talk to one that does not ask, so that release is a supervisor change for this rule.
-   ADR 0165 raises it from 6 to 7 because a terminal's environment carries its pane binding, which
-   a supervisor of version 6 refuses, so that release is a supervisor change for this rule too.
 4. The order is: verify the package (`sha256`, `size`), install the apps, restart the engine,
    and only then, if confirmed, the supervisor. A failure before the engine restarts leaves the
    old installation running.

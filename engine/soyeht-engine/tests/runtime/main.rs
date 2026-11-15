@@ -62,6 +62,7 @@ mod task_attempts;
 mod task_dispatch;
 mod terminal_hooks_and_phone;
 mod terminal_replay_and_capture;
+#[cfg(unix)]
 mod terminal_sender;
 mod workspace_and_writing;
 mod workspace_trust;

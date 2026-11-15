@@ -83,6 +83,17 @@ fn names(service: &Service<FakeEngine>) -> Vec<String> {
 fn a_terminal_pane_can_look_up_and_message_agents_and_nothing_else() {
     let mut service = Service::terminal(agent_engine());
     assert_eq!(names(&service), ["list_agents", "message_agent"]);
+    // The pane cannot receive yet: the tool does not promise an answer, and the pane's own
+    // description (below) does.
+    let listed = service.list();
+    let description = listed["tools"][1]["description"].as_str().unwrap();
+    assert!(
+        description.contains("no answer will arrive"),
+        "{description}"
+    );
+    let pane = Service::new(agent_engine(), context(false)).list();
+    let pane_description = pane["tools"][1]["description"].as_str().unwrap();
+    assert!(!pane_description.contains("no answer will arrive"));
 
     service.call("list_agents", json!({})).unwrap();
     service

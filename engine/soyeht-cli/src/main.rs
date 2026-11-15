@@ -13,7 +13,7 @@ use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
 use soyeht_protocol::{
-    data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
+    ErrorKind, data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
 };
 use std::path::PathBuf;
 
@@ -92,13 +92,25 @@ fn run() -> Result<Output> {
         Client::connect_bound(&directory, &binding)
     } else if args.first().is_some_and(|arg| arg == "message") {
         // Sent from a terminal pane, which speaks for itself through the binding in its
-        // environment (ADR 0165).
-        let binding = std::env::var(PANE_BINDING_ENV).map_err(|_| Error::MissingPaneBinding)?;
-        Client::connect_bound(&directory, &binding)
+        // environment (ADR 0165); an empty variable is no binding.
+        let binding = match std::env::var(PANE_BINDING_ENV) {
+            Ok(binding) if !binding.is_empty() => binding,
+            _ => return Err(Error::MissingPaneBinding),
+        };
+        Client::connect_bound(&directory, &binding).map_err(|error| match error {
+            Error::Remote(refused) if refused.data.kind == ErrorKind::Unauthorized => {
+                Error::PaneBindingNotCurrent
+            }
+            other => other,
+        })
     } else {
         Client::connect(&directory)
     };
-    let mut client = connected.map_err(|error| Error::EngineUnavailable(Box::new(error)))?;
+    // An engine that answered is reachable, whatever it answered.
+    let mut client = connected.map_err(|error| match error {
+        Error::Remote(_) | Error::PaneBindingNotCurrent => error,
+        other => Error::EngineUnavailable(Box::new(other)),
+    })?;
     commands::execute(&mut client, &args).map(Output::Json)
 }
 

@@ -14,6 +14,7 @@ use soyeht_protocol::{
     event, limits, method,
 };
 use soyeht_store::agents;
+use std::collections::BTreeMap;
 
 pub(crate) fn handles(method: &str) -> bool {
     matches!(
@@ -37,7 +38,7 @@ const LISTED: usize = 8;
 const WEB_PANE_REASON: &str = "This page has no recorded creator to receive messages";
 
 /// Why a message to a terminal pane is refused: delivery into a terminal is not built yet.
-const TERMINAL_PANE_REASON: &str = "Messages to a terminal pane are not available";
+const TERMINAL_PANE_REASON: &str = "A terminal pane cannot receive messages yet";
 
 pub(crate) fn queued(
     pane: &str,
@@ -287,22 +288,32 @@ impl Core {
         }
     }
 
-    /// The pane `name` names, in any workspace. When two panes carry the name, a reply
-    /// (`in_reply_to`, the id of a message `sender` has open) goes to the pane that sent that
-    /// message; the id is only a hint and a stale or unknown one decides nothing.
+    /// The pane `name` names. A name that exactly one agent pane of the sender's own workspace
+    /// carries is that pane, as it was before names reached other workspaces; when the own
+    /// workspace has none or several, the agent panes of every workspace count, and several are an
+    /// error that lists them. When two panes carry the name, a reply (`in_reply_to`, the id of a
+    /// message `sender` has open) goes to the pane that sent that message; the id is only a hint
+    /// and a stale or unknown one decides nothing. A name no agent pane carries may still be a
+    /// terminal pane or a web page, which says why it takes no message.
     fn peer_by_name(&self, sender: &Pane, name: &str, in_reply_to: Option<&str>) -> Result<String> {
         let wanted = text_reduction::folded(name);
-        let matches: Vec<&Pane> = self
-            .peers_of(sender)
-            .filter(|pane| text_reduction::folded(&pane.name) == wanted)
+        let carries = |pane: &&Pane| text_reduction::folded(&pane.name) == wanted;
+        let matches: Vec<&Pane> = self.peers_of(sender).filter(carries).collect();
+        let own: Vec<&Pane> = matches
+            .iter()
+            .copied()
+            .filter(|pane| pane.workspace_id == sender.workspace_id)
             .collect();
-        match matches.as_slice() {
-            [] => Err(errors::not_found(format!(
-                "No agent pane is named {}",
-                text_reduction::name(name)
-            ))),
-            [pane] => Ok(pane.pane_id.clone()),
-            several => self
+        match (own.as_slice(), matches.as_slice()) {
+            ([pane], _) | ([], [pane]) => Ok(pane.pane_id.clone()),
+            (_, []) => Err(errors::not_found(
+                match self.unreceiving_panes(sender).find(carries) {
+                    Some(pane) if pane.mode == PaneMode::Web => WEB_PANE_REASON.to_owned(),
+                    Some(_) => TERMINAL_PANE_REASON.to_owned(),
+                    None => format!("No agent pane is named {}", text_reduction::name(name)),
+                },
+            )),
+            (_, several) => self
                 .reply_sender(sender, in_reply_to, several)
                 .ok_or_else(|| errors::invalid(self.ambiguous_name(name, several))),
         }
@@ -329,17 +340,24 @@ impl Core {
             .map(|pane| pane.pane_id.clone())
     }
 
-    /// The panes `sender` may address by name: the other open agent panes of every workspace, and
-    /// the web pages, which a name can reach so that the answer says why a page takes no message.
+    /// The panes `sender` may address by name: the other open agent panes of every workspace.
     pub(crate) fn peers_of<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
+        self.open_panes_of(sender)
+            .filter(|pane| pane.mode == PaneMode::Agent)
+    }
+
+    /// The other open panes a name can reach but that take no message: terminals and web pages.
+    fn unreceiving_panes<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
+        self.open_panes_of(sender)
+            .filter(|pane| matches!(pane.mode, PaneMode::Terminal | PaneMode::Web))
+    }
+
+    fn open_panes_of<'a>(&'a self, sender: &'a Pane) -> impl Iterator<Item = &'a Pane> {
         self.panes
             .values()
             .filter(|pane| !pane.stored.closed)
             .map(|pane| &pane.stored.pane)
-            .filter(move |pane| {
-                matches!(pane.mode, PaneMode::Agent | PaneMode::Web)
-                    && pane.pane_id != sender.pane_id
-            })
+            .filter(move |pane| pane.pane_id != sender.pane_id)
     }
 
     /// The name of a workspace as a message shows it.
@@ -352,26 +370,30 @@ impl Core {
     /// What `agent.list` answers `sender`: the agent panes it may message, in every workspace,
     /// its own workspace first, each with its harness and the workspace it is in.
     pub(crate) fn peer_listing(&self, sender: &Pane) -> Value {
-        let mut items: Vec<(bool, String, String, AgentMessageSource)> = self
-            .peers_of(sender)
-            .filter(|pane| pane.mode == PaneMode::Agent)
-            .filter_map(|pane| {
-                let running = self.agents.get(&pane.pane_id)?;
-                let workspace = self.workspace_label(&pane.workspace_id);
-                Some((
-                    pane.workspace_id != sender.workspace_id,
-                    text_reduction::folded(&workspace),
-                    pane.workspace_id.clone(),
-                    AgentMessageSource {
-                        pane_id: pane.pane_id.clone(),
-                        name: text_reduction::name(&pane.name),
-                        harness: text_reduction::name(&running.state.launch.name),
-                        kind: Some(AgentMessageKind::Agent),
-                        workspace_name: Some(workspace),
-                    },
-                ))
-            })
-            .collect();
+        // One read of the store per workspace, not per pane: this runs under the Core lock.
+        let mut labels: BTreeMap<&str, String> = BTreeMap::new();
+        let mut items: Vec<(bool, String, String, AgentMessageSource)> = Vec::new();
+        for pane in self.peers_of(sender) {
+            let Some(running) = self.agents.get(&pane.pane_id) else {
+                continue;
+            };
+            let workspace = labels
+                .entry(pane.workspace_id.as_str())
+                .or_insert_with(|| self.workspace_label(&pane.workspace_id))
+                .clone();
+            items.push((
+                pane.workspace_id != sender.workspace_id,
+                text_reduction::folded(&workspace),
+                pane.workspace_id.clone(),
+                AgentMessageSource {
+                    pane_id: pane.pane_id.clone(),
+                    name: text_reduction::name(&pane.name),
+                    harness: text_reduction::name(&running.state.launch.name),
+                    kind: Some(AgentMessageKind::Agent),
+                    workspace_name: Some(workspace),
+                },
+            ));
+        }
         // Stable: the panes of one workspace keep their order.
         items.sort_by(|left, right| (left.0, &left.1, &left.2).cmp(&(right.0, &right.1, &right.2)));
         let items: Vec<AgentMessageSource> = items.into_iter().map(|item| item.3).collect();

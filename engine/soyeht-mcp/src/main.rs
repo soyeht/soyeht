@@ -7,8 +7,9 @@ use soyeht_mcp::{
     tools::{Service, TaskContext},
 };
 use soyeht_protocol::{
+    ErrorKind,
     data_directory::resolve,
-    handshake::PANE_BINDING_ENV,
+    handshake::{PANE_BINDING_ENV, PANE_BINDING_NOT_CURRENT},
     profile::{ENGINE_SOCKET, SELECTION_ENV},
 };
 use std::{io, path::PathBuf};
@@ -157,12 +158,26 @@ fn run_terminal(data_dir: Option<PathBuf>) -> Result<()> {
             .1
         }
     };
-    let client = Client::connect(&data_dir.join(ENGINE_SOCKET), &binding)?;
+    let client = match Client::connect(&data_dir.join(ENGINE_SOCKET), &binding) {
+        Ok(client) => client,
+        // The engine answered and refused: the pane's process was replaced, or this is another
+        // profile's engine. Say so to the person and to the model, and do not fail.
+        Err(Error::Remote(refused)) if refused.data.kind == ErrorKind::Unauthorized => {
+            eprintln!("soyeht-mcp: {PANE_BINDING_NOT_CURRENT}");
+            return server::serve(
+                io::stdin().lock(),
+                io::stdout().lock(),
+                Service::outside(),
+                &server::not_current_instructions(),
+            );
+        }
+        Err(error) => return Err(error),
+    };
     server::serve(
         io::stdin().lock(),
         io::stdout().lock(),
         Service::terminal(client),
-        &server::terminal_instructions(&soyeht_skills::home::user_store(&data_dir)),
+        &server::terminal_instructions(),
     )
 }
 

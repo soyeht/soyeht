@@ -71,9 +71,11 @@ These are stated, not hidden, and are revisited after launch:
   a binding in the environment of every terminal pane's process, and a connection that presents
   it may list and message agent panes as that pane, and nothing else. Every process the pane
   runs has it, the commands a harness's shell tool starts included, and a process of the same
-  user can read the environment of another. The binding ends when the pane's process is
-  replaced. The harm is bounded by the attribution (a message names the pane it comes from) and
-  by the rate limit of 6 messages a minute per sender and recipient.
+  user can read the environment of another. The supervisor records the environment of every
+  process it holds in its registry file (`ptyd-registry.json`, readable by its owner only), so
+  that file holds the bindings of the running terminals. The binding ends when the pane's process
+  is replaced. The harm is bounded by the attribution (a message names the pane it comes from)
+  and by the rate limit of 6 messages a minute per sender and recipient.
 - **A message between agents is text another agent read somewhere.** The engine attributes it,
   names its sender and its recipient in a one-line header whose names the sender cannot forge,
   removes the characters that hide or reorder text, and limits the rate, but it does not judge

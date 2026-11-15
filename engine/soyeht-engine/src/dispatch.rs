@@ -325,7 +325,6 @@ impl Core {
             .actor
             .as_ref()
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
-        requires_signed_ui(method, client.signed_ui)?;
         if let Some(bound) = &client.terminal_instance {
             // A terminal pane's binding speaks for the process it was made for, and for
             // messaging only (ADR 0165); the task and web families stay with the agent panes.
@@ -336,6 +335,7 @@ impl Core {
                 ));
             }
         }
+        requires_signed_ui(method, client.signed_ui)?;
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method_family::TASK.contains(&method)
             && !method_family::WEB.contains(&method)

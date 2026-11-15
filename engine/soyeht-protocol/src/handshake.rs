@@ -15,6 +15,10 @@ use serde_json::Value;
 /// inside the pane, send its value as the `binding` of their `hello`.
 pub const PANE_BINDING_ENV: &str = "SOYEHT_PANE_BINDING";
 
+/// What a program in a terminal pane says when the engine refuses its binding: the process the
+/// binding was made for is gone (the pane restarted), or the engine is another profile's.
+pub const PANE_BINDING_NOT_CURRENT: &str = "this pane's binding is not current, or belongs to another Soyeht profile; start the harness again in the pane";
+
 /// The engine's first message, decoded; anything else is not an engine of this protocol.
 pub fn expect_challenge(message: &Value) -> Result<AuthChallengeEvent> {
     if message["method"].as_str() != Some(EventName::AuthChallenge.as_str()) {
