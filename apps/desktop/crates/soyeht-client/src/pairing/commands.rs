@@ -74,6 +74,8 @@ pub fn run(rpc: &Rpc, command: &Command) -> Result<Option<ClientEvent>> {
             let started: DevicePairStartResult = serde_json::from_value(rpc.call(
                 &Request::DevicePairStart(DevicePairStartParams {
                     idempotency_key: key(),
+                    // The tailnet-change confirmation is a later slice of ADR 0164.
+                    confirm_tailnet: None,
                 }),
             )?)?;
             Event::Started {
