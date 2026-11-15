@@ -81,8 +81,13 @@ impl Core {
             (None, Some(page)) => NormalizedUrl::parse(page.entry_url())?,
             (None, None) => return Err(errors::internal("Web open has no address")),
         };
-        if !incognito && self.web_open_is_agent(connection) {
-            return self.web_open_routed(connection, request_id, params, &workspace, (&url, page));
+        if self.web_open_is_agent(connection) && page.is_some() {
+            // A project page has no session to ask about, so an agent's pane is made with its address
+            // already set, as a person's is: the host holds the page to its origin from the first
+            // load. Without a host there is nothing to show the page, and the call says so.
+            self.web_host_connection()?;
+        } else if !incognito && self.web_open_is_agent(connection) {
+            return self.web_open_routed(connection, request_id, params, &workspace, &url);
         }
         let result = self.persist_web_pane(
             connection,
@@ -126,7 +131,7 @@ impl Core {
         request_id: Value,
         params: &Value,
         workspace: &soyeht_protocol::Workspace,
-        (url, page): (&NormalizedUrl, Option<ProjectPage>),
+        url: &NormalizedUrl,
     ) -> Result<Outcome> {
         self.web_host_connection()?;
         let key = errors::param_str(params, "idempotencyKey")?;
@@ -146,14 +151,13 @@ impl Core {
                 name: None,
                 url: None,
                 incognito: false,
-                project_path: page.as_ref().map(ProjectPage::project_path),
+                project_path: None,
             },
         )?;
         let pane_id = result["paneId"]
             .as_str()
             .ok_or_else(|| errors::internal("Web open result has no pane"))?
             .to_owned();
-        self.attach_project_page(&result, page);
         let command = open_navigation(&pane_id, url, key);
         if let Err(error) =
             self.queue_web_command(connection, request_id, method::WEB_OPEN, params, command)

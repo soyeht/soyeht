@@ -362,3 +362,209 @@ async fn a_pane_that_holds_a_project_page_does_not_navigate_to_another_origin() 
     crate::test_paths::remove_after(core, state);
     fs::remove_dir_all(root).unwrap();
 }
+
+/// A core with a host and an agent bound to a pane of its own, in a workspace on `root`.
+struct Agented {
+    core: Core,
+    state: std::path::PathBuf,
+    _host: (String, Receiver),
+    agent: String,
+    _agent_receiver: Receiver,
+    workspace: String,
+}
+
+async fn agented(root: &Path, with_host: bool) -> Agented {
+    let state = temp_root();
+    let mut core = Core::open(&state).unwrap();
+    let host = if with_host {
+        connect_local(&mut core, "project-page-host", json!(["web_host"])).await
+    } else {
+        (String::new(), crate::outbox::channel().1)
+    };
+    let (agent, agent_receiver) = connect_local(&mut core, "project-page-agent", json!([])).await;
+    let workspace = create_workspace(&mut core, &agent, root);
+    let known = reply(
+        &mut core,
+        &agent,
+        request(
+            3,
+            "web.open",
+            json!({"workspaceId":workspace,"url":"example.com","idempotencyKey":"known"}),
+        ),
+    )["paneId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    crate::web::test_support::bind_agent(&mut core, &agent, &known, &state);
+    Agented {
+        core,
+        state,
+        _host: host,
+        agent,
+        _agent_receiver: agent_receiver,
+        workspace,
+    }
+}
+
+/// The page an AGENT opens is held to its origin from the first load: its pane is made with the
+/// address already set, so a host that reads the pane record has the limit before anything loads,
+/// and no navigation is sent to the host for the page to take its address from.
+#[tokio::test]
+async fn an_agent_opens_a_project_page_with_its_address_set_before_the_host_loads_anything() {
+    let root = temp_root();
+    write(&root, "cards.html", "cards");
+    let Agented {
+        mut core,
+        state,
+        _host: (_, mut host_receiver),
+        agent,
+        workspace,
+        ..
+    } = agented(&root, true).await;
+    let opened = core.dispatch(
+        &agent,
+        request(
+            4,
+            "web.open",
+            json!({"path":"cards.html","idempotencyKey":"open-page"}),
+        ),
+    );
+    let Ok(Outcome::Reply(opened)) = opened else {
+        panic!("an agent's project page opens at once, not after a navigation")
+    };
+    let pane = opened["paneId"].as_str().unwrap().to_owned();
+    let stored = &core.panes[&pane].stored.pane;
+    let url = stored.url.clone().expect("the address is set at creation");
+    assert!(
+        url.starts_with("http://127.0.0.1:") && url.ends_with("/cards.html"),
+        "{url}"
+    );
+    assert_eq!(stored.project_path.as_deref(), Some("cards.html"));
+    assert_eq!(stored.workspace_id, workspace);
+    assert_eq!(ask(&url, get).await.1, b"cards");
+    // No navigation went to the host: the page took no address from a command, and no session
+    // question was asked about 127.0.0.1.
+    assert!(nothing_sent(&mut host_receiver).await);
+    // The same file focuses it again, for the agent as for a person.
+    let again = reply(
+        &mut core,
+        &agent,
+        request(
+            5,
+            "web.open",
+            json!({"path":"cards.html","idempotencyKey":"open-again"}),
+        ),
+    );
+    assert_eq!(again["paneId"], json!(pane));
+    crate::test_paths::remove_after(core, state);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[tokio::test]
+async fn an_agent_gets_the_missing_host_error_and_leaves_no_page_when_no_host_can_show_it() {
+    let root = temp_root();
+    write(&root, "cards.html", "cards");
+    let Agented {
+        mut core,
+        state,
+        agent,
+        ..
+    } = agented(&root, false).await;
+    let before = core.web.pages.pages.len();
+    let Err(error) = core.dispatch(
+        &agent,
+        request(
+            4,
+            "web.open",
+            json!({"path":"cards.html","idempotencyKey":"no-host"}),
+        ),
+    ) else {
+        panic!("no host, no page")
+    };
+    assert_eq!(errors::kind(&error), ErrorKind::WebHostUnavailable);
+    assert_eq!(core.web.pages.pages.len(), before);
+    crate::test_paths::remove_after(core, state);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// A host that reports an address of another origin for a project page is not believed: the pane
+/// keeps the address it had.
+#[tokio::test]
+async fn a_host_report_of_another_origin_for_a_project_page_is_refused() {
+    let root = temp_root();
+    let Hosted {
+        mut core,
+        state,
+        host,
+        host_receiver: _host_receiver,
+        pane,
+        _caller_receiver,
+        ..
+    } = hosted_page(&root).await;
+    let url = core.panes[&pane].stored.pane.url.clone().unwrap();
+    let report = |id: u64, url: &str, generation: &str| {
+        request(
+            id,
+            "web.host.navigated",
+            json!({"paneId":pane,"navigationGeneration":generation,"url":url,
+                "title":"Page","idempotencyKey":format!("navigated-{id}")}),
+        )
+    };
+    for (id, foreign) in [
+        (10, "http://127.0.0.1:1/leak?d=secret"),
+        (11, "https://example.com/"),
+        (12, "http://localhost:1/"),
+    ] {
+        let Err(error) = core.dispatch(&host, report(id, foreign, "2")) else {
+            panic!("{foreign} was believed")
+        };
+        assert_eq!(
+            errors::kind(&error),
+            ErrorKind::NavigationRefused,
+            "{foreign}"
+        );
+        assert_eq!(
+            core.panes[&pane].stored.pane.url.as_deref(),
+            Some(url.as_str())
+        );
+    }
+    let same = url.replace("cards.html", "other.html");
+    let accepted = reply(&mut core, &host, report(13, &same, "3"));
+    assert_eq!(accepted, json!({"accepted":true}));
+    assert_eq!(
+        core.panes[&pane].stored.pane.url.as_deref(),
+        Some(same.as_str())
+    );
+    crate::test_paths::remove_after(core, state);
+    fs::remove_dir_all(root).unwrap();
+}
+
+/// The page asks for a file that is not there yet; when its agent writes it the page is reloaded.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_file_the_page_asked_for_before_it_existed_reloads_the_page_when_it_appears() {
+    let root = temp_root();
+    write(&root, "index.html", "page");
+    let (_pages, page) = super::tests::started(&root, "index.html");
+    let entry = page.entry_url().to_owned();
+    let later = entry.replace("index.html", "later.json");
+    assert_eq!(
+        super::tests::status(&ask(&later, get).await.0),
+        "HTTP/1.1 404 Not Found"
+    );
+    let seen = Arc::clone(&page.changes);
+    let mut reloaded = false;
+    for _ in 0..40 {
+        // The watch starts on its own thread: write until it has seen the file.
+        write(&root, "later.json", "{}");
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        if seen.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            reloaded = true;
+            break;
+        }
+    }
+    assert!(
+        reloaded,
+        "a file that appeared after the page asked for it did not reload it"
+    );
+    fs::remove_dir_all(root).unwrap();
+}

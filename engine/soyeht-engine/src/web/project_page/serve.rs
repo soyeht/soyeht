@@ -220,7 +220,15 @@ async fn reply_to(head: &[u8], site: &Site) -> Reply {
     let (path, body) = match found {
         Found::File { path, body } => (path, body),
         Found::TooLarge => return Reply::plain(413, "Content Too Large"),
-        Found::Missing => return Reply::plain(404, "Not Found"),
+        Found::Missing => {
+            // The page may be asking for a file its agent has not written yet: when it appears, the
+            // page is reloaded.
+            let wanted = parts
+                .iter()
+                .fold(site.root.clone(), |path, part| path.join(part));
+            site.served.gave(&wanted);
+            return Reply::plain(404, "Not Found");
+        }
     };
     if path == site.document {
         site.served.loaded(&path);

@@ -348,11 +348,12 @@ fn event(kind: EventKind, path: &Path) -> notify::Result<Event> {
 
 /// The paces of reloads, in the milliseconds of a clock the test moves.
 #[test]
-fn a_page_that_keeps_changing_is_reloaded_at_a_growing_interval_and_a_quiet_one_at_once() {
+fn a_page_that_keeps_changing_is_reloaded_at_a_capped_interval_and_the_next_save_is_not_kept_waiting()
+ {
     let mut pacer = watch::Pacer::default();
     let mut reloads = Vec::new();
-    // A file appended to every 100 ms for 20 s: 200 changes.
-    for step in 0..2000_i64 {
+    // A file appended to every 100 ms for 20 s (200 changes), then six quiet seconds to settle.
+    for step in 0..2600_i64 {
         let now = step * 10;
         if now % 100 == 0 && now < 20_000 {
             pacer.note(now);
@@ -361,10 +362,25 @@ fn a_page_that_keeps_changing_is_reloaded_at_a_growing_interval_and_a_quiet_one_
             reloads.push(now);
         }
     }
-    assert!(reloads.len() <= 7, "{reloads:?}");
+    // One about every two seconds once the gap has grown, for 200 changes.
+    assert!(reloads.len() <= 14, "{reloads:?}");
     let gaps: Vec<i64> = reloads.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    assert!(gaps[0] >= 500, "{gaps:?}");
     assert!(gaps.windows(2).all(|pair| pair[1] >= pair[0]), "{gaps:?}");
-    assert!(gaps[0] >= 500 && gaps.last().unwrap() >= &4000, "{gaps:?}");
+    // The gap stops growing at the cap, so a save is never held longer than that.
+    assert!(gaps.iter().all(|gap| *gap <= 2_000 + 10), "{gaps:?}");
+    // A save 5 s after the last reload of the burst is on screen as soon as it settles ...
+    let last = *reloads.last().unwrap();
+    pacer.note(last + 5_000);
+    assert!(!pacer.fire(last + 5_010));
+    assert!(
+        pacer.fire(last + 5_100),
+        "a save after a burst was kept waiting"
+    );
+    // ... and the gap started again, so a save right after it waits for the base gap only.
+    pacer.note(last + 5_300);
+    assert!(!pacer.fire(last + 5_400));
+    assert!(pacer.fire(last + 5_600));
     // A change after a quiet while is reloaded as soon as it settles, and the gap starts again.
     let mut pacer = watch::Pacer::default();
     pacer.note(0);

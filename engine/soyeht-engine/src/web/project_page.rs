@@ -99,6 +99,9 @@ impl PageFile {
     }
 }
 
+/// How many files a page is followed for.
+const SERVED_FILES_MAX: usize = 1_000;
+
 /// The files a page's server gave since the page last loaded: the ones a change reloads it for.
 #[derive(Default)]
 pub(super) struct Served {
@@ -114,11 +117,13 @@ impl Served {
         files.insert(document.to_path_buf());
     }
 
+    /// A file was given, or was asked for and is not there yet: when it changes, or appears, the
+    /// page is reloaded. A page that asks for ever more names is not followed past the bound.
     fn gave(&self, file: &Path) {
-        self.files
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(file.to_path_buf());
+        let mut files = self.files.lock().unwrap_or_else(PoisonError::into_inner);
+        if files.len() < SERVED_FILES_MAX {
+            files.insert(file.to_path_buf());
+        }
     }
 
     fn any_of(&self, paths: &[PathBuf]) -> bool {

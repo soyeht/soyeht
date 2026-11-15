@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtProtocol
 
 /// Where a web pane that shows a project file as a page may go (contract 11, section 5b). The
 /// rule is `soyeht_protocol::web::same_origin`; both pass `contracts/vectors/project-page-origin.json`.
@@ -86,6 +87,52 @@ public enum ProjectPageOrigin {
     return (0...(bytes.count - needle.count)).first {
       bytes[$0..<($0 + needle.count)].elementsEqual(needle)
     }
+  }
+}
+
+/// Whether a web pane may load an address (contract 11, section 5b). A pane that shows a project
+/// file as a page is held to the origin of its own address from its first load: "no address yet"
+/// means nothing may load, not "no limit".
+public enum ProjectPageNavigation {
+  /// Whether the pane may load `target`. `pageAddress` is the address the engine holds for the
+  /// pane, and `hasTargetFrame` is false for a navigation that opens a new window. For a pane that
+  /// is not a project page this is always true: the caller keeps its own scheme policy.
+  public static func allows(
+    isProjectPage: Bool, pageAddress: String?, target: String, isMainFrame: Bool,
+    hasTargetFrame: Bool
+  ) -> Bool {
+    guard isProjectPage else { return true }
+    guard let pageAddress, hasTargetFrame else { return false }
+    return isMainFrame
+      ? ProjectPageOrigin.sameOrigin(page: pageAddress, target: target)
+      : ProjectPageOrigin.allowsFrame(page: pageAddress, target: target)
+  }
+}
+
+/// Who a web command acts for, read from the `_soyehtAccess` object the engine adds to its args.
+public enum WebCommandAccess {
+  /// Whether a person asked: the command of a human session, unless it is the engine's own
+  /// background reload (`background: true` on a `reload` of a `navigate`, as the reload of a
+  /// project page), which selects, raises and focuses nothing (contract 11, section 7). The
+  /// flag counts for nothing else: a click that carries it is still a person's act.
+  public static func isPersons(_ command: WebCommandParams) -> Bool {
+    guard case .object(let values) = command.args,
+      case .object(let access)? = values["_soyehtAccess"],
+      case .string("human")? = access["session"]
+    else { return false }
+    return !(isBackground(access) && isReload(command, values))
+  }
+
+  private static func isBackground(_ access: [String: JsonValue]) -> Bool {
+    if case .bool(true)? = access["background"] { return true }
+    return false
+  }
+
+  private static func isReload(_ command: WebCommandParams, _ args: [String: JsonValue]) -> Bool {
+    guard command.command == .navigate,
+      case .string(let action)? = args["action"]
+    else { return false }
+    return action == WebNavigationAction.reload.rawValue
   }
 }
 

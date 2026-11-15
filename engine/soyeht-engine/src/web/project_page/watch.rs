@@ -25,12 +25,13 @@ use tokio::sync::Notify;
 
 /// The shortest time between two reloads of a page that has just been reloaded.
 const BASE_GAP_MS: i64 = 500;
-/// The longest the gap grows to while changes keep coming.
-const MAX_GAP_MS: i64 = 30_000;
+/// The longest the gap grows to while changes keep coming: a save after a build or a burst of
+/// edits is on screen within this, and no page is reloaded more than about once in it.
+const MAX_GAP_MS: i64 = 2_000;
 
 /// When a burst of changes becomes a reload: once it has settled (`Burst`), and no sooner than the
-/// gap after the last reload. The gap doubles while a reload follows the one before it within two
-/// gaps, and is back at its start after a quiet while.
+/// gap after the last reload. The gap doubles, up to [`MAX_GAP_MS`], while a reload follows the one
+/// before it within two gaps, and is back at its start when a change arrives after a quiet gap.
 #[derive(Default)]
 pub(super) struct Pacer {
     burst: Burst,
@@ -43,12 +44,16 @@ impl Pacer {
         self.burst.note(now);
     }
 
+    /// The gap in force: the start's, until a reload has made it grow.
+    fn gap(&self) -> i64 {
+        self.gap_ms.max(BASE_GAP_MS)
+    }
+
     /// When the pending burst is to be reloaded, if there is one.
     pub(super) fn due_ms(&self) -> Option<i64> {
-        self.burst.due_ms().map(|due| {
-            self.last_ms
-                .map_or(due, |last| due.max(last + self.gap_ms.max(BASE_GAP_MS)))
-        })
+        self.burst
+            .due_ms()
+            .map(|due| self.last_ms.map_or(due, |last| due.max(last + self.gap())))
     }
 
     /// Whether the page is to be reloaded now; if it is, the burst is spent.
@@ -57,7 +62,7 @@ impl Pacer {
             return false;
         }
         self.burst.end();
-        let gap = self.gap_ms.max(BASE_GAP_MS);
+        let gap = self.gap();
         self.gap_ms = match self.last_ms {
             Some(last) if now - last < 2 * gap => (gap * 2).min(MAX_GAP_MS),
             _ => BASE_GAP_MS,

@@ -24,7 +24,7 @@ Security.
   read-only to the pane on the loopback interface, and the page reloads when a file it loaded changes. The page's
   script can read every file below the file's folder that has no part starting with a dot (a file at the project
   root exposes the whole project to it). It runs sandboxed, with no cookies and no storage, can fetch nothing but
-  those files, and the pane cannot navigate away from it. The page is served again when the engine restarts.
+  those files (WebRTC and DNS lookups are not covered), and the pane cannot navigate away from it. The page is served again when the engine restarts.
 
 ### Removed
 

@@ -153,11 +153,11 @@ pub struct Host {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Access {
     session: Session,
-    /// The engine's own command (the reload of a project page, contract 11, section 5b): no act of
-    /// a person. This host does nothing for a person's command but skip the hand-off check (it
-    /// selects no pane, raises no window and moves no focus), so a background command does that
-    /// much and no more: it never marks the pane as the person's, and it goes even while the
-    /// person has the pane.
+    /// The engine's own reload of a project page (contract 11, section 5b), and no other command:
+    /// no act of a person. This host does nothing for a person's command but skip the hand-off
+    /// check (it selects no pane, raises no window and moves no focus), so a background command
+    /// does that much and no more: it never marks the pane as the person's, and it goes even
+    /// while the person has the pane.
     background: bool,
 }
 
@@ -215,7 +215,7 @@ impl Host {
         let Access {
             session,
             background,
-        } = access(&params.args, page.incognito())?;
+        } = access(&params.command, &params.args, page.incognito())?;
         // An agent drives only a pane the person has not taken; the engine's own command is no
         // agent's and no person's, so it is not asked.
         if session != Session::Human && !background {
@@ -285,15 +285,11 @@ impl Host {
     }
 }
 
-fn access(args: &Value, incognito: bool) -> Result<Access, HostError> {
+fn access(command: &WebCommandKind, args: &Value, incognito: bool) -> Result<Access, HostError> {
     let note = args.get(ACCESS_KEY);
     let mode = note
         .and_then(|access| access.get("session"))
         .and_then(Value::as_str);
-    let background = note
-        .and_then(|access| access.get("background"))
-        .and_then(Value::as_bool)
-        == Some(true);
     let session = match mode {
         Some("human") => Session::Human,
         Some("incognito") if incognito => Session::Incognito,
@@ -301,6 +297,14 @@ fn access(args: &Value, incognito: bool) -> Result<Access, HostError> {
         Some("granted") if !incognito => Session::Granted,
         _ => return Err(HostError::Internal("The web command access is invalid.")),
     };
+    // The note counts for one command only: the engine's own reload of a project page. On any
+    // other command it is ignored, so the command is what its session says it is.
+    let background = note
+        .and_then(|access| access.get("background"))
+        .and_then(Value::as_bool)
+        == Some(true)
+        && matches!(command, WebCommandKind::Navigate)
+        && matches!(target(args), Ok(Target::Reload));
     // The engine sends its own command with the session of a person, with no agent to ask about.
     if background && session != Session::Human {
         return Err(HostError::Internal("The web command access is invalid."));

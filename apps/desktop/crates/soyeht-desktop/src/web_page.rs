@@ -53,12 +53,15 @@ pub(crate) struct WebPage {
 }
 
 /// The origin a pane that shows a project file as a page may not leave: the address the engine
-/// holds for it (contract 11, section 5b). An ordinary pane has none.
+/// holds for it (contract 11, section 5b). An ordinary pane has none. A project pane always has
+/// one: while the engine has recorded no address yet the limit allows nothing, so that the page is
+/// held before its first load as it is after it.
 fn limit_of(pane: &Pane) -> Option<PageLimit> {
     pane.project_path.as_ref()?;
-    pane.url
-        .as_deref()
-        .map(|url| PageLimit::new(url, same_origin))
+    Some(PageLimit::new(
+        pane.url.as_deref().unwrap_or_default(),
+        same_origin,
+    ))
 }
 
 /// Whether the engine has served a project page again, at an address with another origin than the
@@ -126,6 +129,8 @@ impl WebPage {
         let limit = limit_of(pane);
         let limited = limit.is_some();
         self.view.limit_to_page(limit);
+        // A project pane with no address yet is held to nothing and has nowhere to go; once the
+        // engine records one, the limit above is its origin and the page goes there.
         let Some(url) = pane.url.as_deref().filter(|_| limited) else {
             return;
         };
@@ -512,13 +517,30 @@ mod tests {
     }
 
     #[test]
-    fn only_a_pane_that_shows_a_project_file_with_an_address_is_limited() {
+    fn only_a_pane_that_shows_a_project_file_is_limited_and_with_no_address_to_nothing() {
         let url = "http://127.0.0.1:5000/0123/index.html";
         let limit = limit_of(&pane(Some(url), Some("site/index.html"))).unwrap();
         assert!(limit.allows("http://127.0.0.1:5000/0123/other.html"));
         assert!(!limit.allows("http://127.0.0.1:5001/0123/index.html"));
+        assert!(limit.allows_frame("about:blank") && limit.allows_frame("data:text/html,x"));
+        // An ordinary pane has no limit, with an address or without.
         assert!(limit_of(&pane(Some(url), None)).is_none());
-        assert!(limit_of(&pane(None, Some("site/index.html"))).is_none());
+        assert!(limit_of(&pane(None, None)).is_none());
+        // A project pane the engine has not given an address yet is limited, and to nothing: not
+        // the address it will have, not a frame the page makes.
+        let none_yet = limit_of(&pane(None, Some("site/index.html"))).unwrap();
+        for uri in [
+            url,
+            "http://127.0.0.1:5000/",
+            "https://example.com/",
+            "about:blank",
+            "about:srcdoc",
+            "data:text/html,x",
+            "blob:http://127.0.0.1:5000/7a1c",
+        ] {
+            assert!(!none_yet.allows(uri), "{uri}");
+            assert!(!none_yet.allows_frame(uri), "{uri}");
+        }
     }
 
     #[test]
@@ -547,6 +569,10 @@ mod tests {
             "http://127.0.0.1:5000/0123/index.html",
             Some(again)
         ));
+        // A project pane whose address the engine records later, while the page shows nothing yet,
+        // is sent there.
+        assert!(served_again(served, "", None));
+        assert!(served_again(served, "about:blank", None));
         // A pane that was not limited before and shows another origin is sent to its address.
         assert!(served_again(served, "https://example.com/", None));
     }

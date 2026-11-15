@@ -13,7 +13,9 @@
 //! it goes only to the page's own origin, and its frames may also hold what the page itself made
 //! (`about:blank`, `about:srcdoc`, `data:` and `blob:`). The rule that two addresses have one origin
 //! is not written here: the window hands over `soyeht_protocol::web::same_origin`, so that this
-//! crate stays free of the protocol and there is still one rule.
+//! crate stays free of the protocol and there is still one rule. A limit with no page address yet
+//! (the engine has not recorded the pane's address) allows nothing, not even the frames a page makes:
+//! the page has not loaded, so there is no origin to hold it to and nothing may load but the page.
 
 use std::sync::Arc;
 
@@ -35,6 +37,8 @@ impl std::fmt::Debug for PageLimit {
 
 impl PageLimit {
     /// A limit to the origin of `page`; `same_origin(page, target)` says whether `target` has it.
+    /// An empty `page` is a page with no address yet: the limit then allows nothing, so that a view
+    /// is held before its first load as it is after it.
     pub fn new(page: &str, same_origin: fn(&str, &str) -> bool) -> Self {
         Self {
             page: page.into(),
@@ -44,13 +48,18 @@ impl PageLimit {
 
     /// Whether the top level of the view may go to `uri`: its own origin and no other.
     pub fn allows(&self, uri: &str) -> bool {
-        allows(uri) && (self.same_origin)(&self.page, uri)
+        self.has_address() && allows(uri) && (self.same_origin)(&self.page, uri)
     }
 
     /// Whether a frame of the page may load `uri`: the page's origin, and what the page itself
     /// makes, which has no address of its own to go to.
     pub fn allows_frame(&self, uri: &str) -> bool {
-        self.allows(uri) || made_by_the_page(uri)
+        self.allows(uri) || (self.has_address() && made_by_the_page(uri))
+    }
+
+    /// Whether the page has an address: before it has, nothing it could make exists either.
+    fn has_address(&self) -> bool {
+        !self.page.is_empty()
     }
 }
 
@@ -306,6 +315,43 @@ mod tests {
         for empty in ["data:", "blob:", "about:", "about:config"] {
             assert!(!limit.allows_frame(empty), "{empty}");
         }
+    }
+
+    /// A page the engine has not given an address yet: nothing may load, at the top level or in a
+    /// frame, whatever the address is and whatever a page would make of it.
+    #[test]
+    fn a_limit_with_no_page_address_allows_nothing() {
+        let none_yet = PageLimit::new("", same_host);
+        for uri in [
+            "http://127.0.0.1:5000/token/index.html",
+            "http://127.0.0.1:5000/",
+            "https://example.com/",
+            "about:blank",
+            "about:srcdoc",
+            "data:text/html,<p>x</p>",
+            "blob:http://127.0.0.1:5000/7a1c",
+            "file:///etc/passwd",
+            "",
+        ] {
+            assert!(!none_yet.allows(uri), "{uri}");
+            assert!(!none_yet.allows_frame(uri), "{uri}");
+            assert!(!frame_may_load(Some(&none_yet), uri), "{uri}");
+            assert!(!top_level_may_load(Some(&none_yet), uri), "{uri}");
+            assert!(!request_may_open(Some(&none_yet), uri), "{uri}");
+        }
+        // The first blank page is kept, and a page that is anywhere else is taken off.
+        assert_eq!(
+            top_level(Some(&none_yet), "about:blank", false),
+            TopLevel::Keep
+        );
+        assert_eq!(
+            top_level(Some(&none_yet), "https://example.com/", false),
+            TopLevel::Blank
+        );
+        assert_eq!(
+            top_level(Some(&none_yet), "https://example.com/", true),
+            TopLevel::GoBack
+        );
     }
 
     #[test]
