@@ -29,6 +29,12 @@ impl Role {
 /// A feature a supervisor lists in its welcome. An engine that does not find it does not use it.
 pub const FEATURE_WATCH: &str = "watch";
 
+/// A supervisor that lists this accepts `SOYEHT_PANE_BINDING` in the environment of a terminal
+/// (ADR 0165). An older one refuses the variable as one the engine may not set, so the engine
+/// leaves it out of a start it sends to a supervisor that does not list the feature: the
+/// terminal runs, and is not attached to a Soyeht pane.
+pub const FEATURE_PANE_BINDING: &str = "pane-binding";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessKind {

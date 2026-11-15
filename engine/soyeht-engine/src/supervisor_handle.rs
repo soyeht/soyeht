@@ -26,8 +26,8 @@ use crate::{
     ports::{SupervisorPort, call_supervisor},
 };
 use soyeht_ptyd::{
-    client::IO_TIMEOUT,
-    wire::{Request, Response},
+    client::{Client, IO_TIMEOUT},
+    wire::{FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
     sync::{
@@ -55,12 +55,33 @@ struct Connection {
     broken: AtomicBool,
 }
 
+/// The real link, which lists what its supervisor's welcome said it can do.
+impl SupervisorPort for Client {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        Client::request(self, request)
+    }
+
+    fn supervisor_id(&self) -> &str {
+        &self.supervisor_id
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        self.supervisor_generation
+    }
+
+    fn supports(&self, feature: &str) -> bool {
+        self.features.iter().any(|listed| listed == feature)
+    }
+}
+
 /// The connection to the supervisor. Clones share it.
 #[derive(Clone)]
 pub struct Supervisor {
     connection: Arc<Connection>,
     id: Arc<str>,
     generation: u32,
+    /// Whether the supervisor accepts the pane binding in a terminal's environment.
+    pane_binding: bool,
 }
 
 impl Supervisor {
@@ -68,6 +89,7 @@ impl Supervisor {
         Self {
             id: Arc::from(port.supervisor_id()),
             generation: port.supervisor_generation(),
+            pane_binding: port.supports(FEATURE_PANE_BINDING),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -81,6 +103,11 @@ impl Supervisor {
 
     pub fn supervisor_generation(&self) -> u32 {
         self.generation
+    }
+
+    /// Whether a terminal started through this link may carry its pane binding (ADR 0165).
+    pub(crate) fn takes_pane_binding(&self) -> bool {
+        self.pane_binding
     }
 
     /// Whether a call left the stream in an unknown state. Such a handle only fails.

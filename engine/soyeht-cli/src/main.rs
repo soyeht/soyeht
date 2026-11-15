@@ -12,7 +12,9 @@ mod uninstall_commands;
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::{data_directory::resolve, profile::SELECTION_ENV};
+use soyeht_protocol::{
+    data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
+};
 use std::path::PathBuf;
 
 /// What a command prints: the JSON every command answers with, or a text meant to be read or
@@ -88,10 +90,22 @@ fn run() -> Result<Output> {
     } else if bound {
         let binding = std::env::var("SOYEHT_MCP_BINDING").map_err(|_| Error::MissingBinding)?;
         Client::connect_bound(&directory, &binding)
+    } else if args.first().is_some_and(|arg| arg == "message") {
+        // Sent from a terminal pane, which speaks for itself through the binding in its
+        // environment (ADR 0165); an empty variable is no binding.
+        let binding = match std::env::var(PANE_BINDING_ENV) {
+            Ok(binding) if !binding.is_empty() => binding,
+            _ => return Err(Error::MissingPaneBinding),
+        };
+        Client::connect_bound(&directory, &binding).map_err(Error::for_pane_binding)
     } else {
         Client::connect(&directory)
     };
-    let mut client = connected.map_err(|error| Error::EngineUnavailable(Box::new(error)))?;
+    // An engine that answered is reachable, whatever it answered.
+    let mut client = connected.map_err(|error| match error {
+        Error::Remote(_) | Error::PaneBindingNotCurrent => error,
+        other => Error::EngineUnavailable(Box::new(other)),
+    })?;
     commands::execute(&mut client, &args).map(Output::Json)
 }
 

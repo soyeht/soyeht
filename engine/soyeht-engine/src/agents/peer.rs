@@ -115,6 +115,8 @@ fn parse(text: &str) -> Option<(AgentMessageSource, &str)> {
                 pane_id: format!("m:{id}"),
                 name: from.into(),
                 harness: String::new(),
+                kind: None,
+                workspace_name: None,
             },
             body,
         )
@@ -140,6 +142,8 @@ fn parse_legacy(text: &str) -> Option<(AgentMessageSource, &str)> {
             pane_id: pane_id.into(),
             name: name.into(),
             harness: harness.into(),
+            kind: None,
+            workspace_name: None,
         },
         body,
     ))
@@ -168,6 +172,8 @@ mod tests {
             pane_id: "5d0f3a52-1111-4222-8333-444444444444".into(),
             name: name.into(),
             harness: "Claude Agent".into(),
+            kind: None,
+            workspace_name: None,
         }
     }
 

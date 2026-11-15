@@ -4,6 +4,7 @@ use crate::{
     errors::{self, Result},
     model::{self, Connected},
     outbox::Outbox,
+    pane_binding::{Bound, identify, require_current},
     ports::StorePort,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -106,6 +107,7 @@ impl Core {
                 attachments: AttachmentAssembler::new(
                     limits::PROMPT_ATTACHMENT_TOTAL_BYTES.max(limits::WEB_SCREENSHOT_BYTES),
                 )?,
+                terminal_instance: None,
             },
         );
         Ok(id)
@@ -211,13 +213,19 @@ impl Core {
         }
         let nonce = client.nonce;
         let mut engine_proof = None;
+        let mut terminal_instance = None;
         let (role, device_id, pane_id, scope) = if let Some(binding) = hello.binding.as_deref() {
             if !local {
                 return Err(errors::unauthorized(
                     "Agent bindings are accepted only on the local socket",
                 ));
             }
-            let (role, pane) = self.agent_identity(binding)?;
+            let Bound {
+                role,
+                pane,
+                terminal,
+            } = identify(&self.engine_key, &self.agents, &self.panes, binding)?;
+            terminal_instance = terminal;
             (role, None, Some(pane.clone()), format!("agent:{pane}"))
         } else if local {
             // The listener has already verified the connecting operating-system uid.
@@ -254,6 +262,7 @@ impl Core {
         client.scope = scope;
         client.actor = Some(actor);
         client.web_host = wants_web_host;
+        client.terminal_instance = terminal_instance;
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: version,
@@ -283,28 +292,6 @@ impl Core {
             ));
         }
         Ok(())
-    }
-
-    fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
-        let mut found = None;
-        for (pane, running) in self.agents.iter() {
-            let active = self
-                .panes
-                .get(pane)
-                .is_some_and(|saved| !saved.stored.closed);
-            if active && running.state.binding.matches(candidate) {
-                if found.is_some() {
-                    return Err(errors::internal("Agent binding is not unique"));
-                }
-                let role = match running.state.mcp_role {
-                    Role::Agent => Role::Agent,
-                    Role::Chief => Role::Chief,
-                    _ => return Err(errors::internal("Agent checkpoint has an invalid role")),
-                };
-                found = Some((role, pane.clone()));
-            }
-        }
-        found.ok_or_else(|| errors::unauthorized("Unknown agent binding"))
     }
 
     fn subscribe_events(&mut self, connection: &str, params: &Value) -> Result<Value> {
@@ -338,6 +325,16 @@ impl Core {
             .actor
             .as_ref()
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
+        if let Some(bound) = &client.terminal_instance {
+            // A terminal pane's binding speaks for the process it was made for, and for
+            // messaging only (ADR 0165); the task and web families stay with the agent panes.
+            require_current(&self.panes, bound)?;
+            if !matches!(method, method::AGENT_LIST | method::AGENT_MESSAGE) {
+                return Err(errors::forbidden_role(
+                    "Agent binding method is not allowed",
+                ));
+            }
+        }
         requires_signed_ui(method, client.signed_ui)?;
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method_family::TASK.contains(&method)

@@ -6,6 +6,7 @@ use crate::{
     pty::{self, MAX_DIMENSION, Resizer},
     wire::{ProcessKind, Spawn},
 };
+use soyeht_protocol::handshake::PANE_BINDING_ENV;
 use std::fs::File;
 use std::path::Path;
 use std::process::Command;
@@ -93,12 +94,14 @@ fn inherited() -> impl Iterator<Item = &'static str> {
 /// process may be given it (ADR 0137); a terminal has no use for it.
 pub const CLAUDE_CODE_EXECUTABLE: &str = "CLAUDE_CODE_EXECUTABLE";
 
-/// Whether the engine may set `name` for a process of `kind`.
+/// Whether the engine may set `name` for a process of `kind`. A terminal is given its binding
+/// (ADR 0165); nothing else carries one.
 fn engine_may_set(name: &str, kind: &ProcessKind) -> bool {
     matches!(
         name,
         "PATH" | "LANG" | "LC_ALL" | "TERM" | "COLORTERM" | "SHELL" | "PS1"
     ) || (name == CLAUDE_CODE_EXECUTABLE && *kind == ProcessKind::PipesAcp)
+        || (name == PANE_BINDING_ENV && *kind == ProcessKind::Pty)
 }
 
 pub fn command(config: &Spawn) -> Result<Command> {
@@ -146,6 +149,18 @@ mod tests {
         for kind in [ProcessKind::Pty, ProcessKind::PipesLsp] {
             assert!(matches!(
                 claude(kind),
+                Err(Error::EnvironmentVariableNotAllowed)
+            ));
+        }
+    }
+
+    #[test]
+    fn only_a_terminal_is_given_a_pane_binding() {
+        let binding = |kind| command(&spawn_of(kind, PANE_BINDING_ENV)).map(|_| ());
+        assert!(binding(ProcessKind::Pty).is_ok());
+        for kind in [ProcessKind::PipesAcp, ProcessKind::PipesLsp] {
+            assert!(matches!(
+                binding(kind),
                 Err(Error::EnvironmentVariableNotAllowed)
             ));
         }
