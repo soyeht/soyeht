@@ -232,3 +232,69 @@ fn text_and_names_reach_the_queue_reduced_and_one_line() {
     let listed = agent_client(&rig, &target).call("agent.list", json!({}));
     assert_eq!(listed["items"][0]["name"], "Claude x Boss m:0000 boss");
 }
+
+#[test]
+fn a_reply_goes_to_the_pane_that_wrote_even_when_the_own_workspace_has_one_of_that_name() {
+    let rig = Rig::new();
+    let (mut human, replier) = rig.agent();
+    let workspace = human.pane(&replier)["workspaceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (_, local_twin) = rig.agent_in_workspace(&workspace);
+    let other_folder = rig.path.join("elsewhere");
+    fs::create_dir_all(&other_folder).unwrap();
+    let other = create_workspace(&mut human, "Elsewhere", &other_folder, "elsewhere");
+    let (_, writer) = rig.agent_in_workspace(&other);
+    for pane in [&replier, &local_twin, &writer] {
+        human.call(
+            "pane.draft",
+            json!({"paneId":pane,"active":true,"idempotencyKey":format!("hold-{pane}")}),
+        );
+    }
+    rename(&mut human, &replier, "Codex");
+    rename(&mut human, &local_twin, "Claude");
+    rename(&mut human, &writer, "Claude");
+
+    // The Claude of the other workspace writes to Codex, which holds the message open.
+    let asked = send(
+        &mut agent_client(&rig, &writer),
+        json!({"targetName":"Codex"}),
+        "question",
+        "ask",
+    );
+    let id = asked["result"]["messageId"].as_str().unwrap().to_owned();
+    let mut replier_client = agent_client(&rig, &replier);
+
+    // Without the id, the name is the one of Codex's own workspace, as it always was.
+    let local = send(
+        &mut replier_client,
+        json!({"targetName":"Claude"}),
+        "no id",
+        "local",
+    );
+    assert_eq!(local["result"]["queued"], true, "{local}");
+    assert_eq!(queue(&mut human, &local_twin).len(), 1);
+    assert!(queue(&mut human, &writer).is_empty());
+
+    // With the id of the message it answers, the reply goes to the pane that wrote it, in the
+    // other workspace, though a pane of the same name is in Codex's own.
+    let reply = send(
+        &mut replier_client,
+        json!({"targetName":"Claude","inReplyTo":id}),
+        "answer",
+        "reply",
+    );
+    assert_eq!(reply["result"]["queued"], true, "{reply}");
+    let queued = queue(&mut human, &writer);
+    assert_eq!(queued.len(), 1);
+    assert_eq!(queued[0]["text"], "answer");
+    assert_eq!(queue(&mut human, &local_twin).len(), 1);
+}
+
+fn queue(human: &mut Client, pane: &str) -> Vec<Value> {
+    human.call("pane.queue.list", json!({"paneId":pane,"limit":64}))["items"]
+        .as_array()
+        .unwrap()
+        .clone()
+}

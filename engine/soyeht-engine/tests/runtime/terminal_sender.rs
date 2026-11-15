@@ -323,11 +323,14 @@ fn a_terminal_binding_speaks_for_messaging_only_and_for_its_own_process() {
         assert!(refused.get("result").is_none(), "{method}: {refused}");
         // The handshake is done and pairing is for a device, so those are refused before the role
         // is asked; everything else is the role's to refuse.
-        if *method != soyeht_protocol::method::HELLO
-            && !soyeht_protocol::method_family::PAIR.contains(method)
+        let expected = if *method == soyeht_protocol::method::HELLO
+            || soyeht_protocol::method_family::PAIR.contains(method)
         {
-            assert_eq!(kind(&refused), "forbidden_role", "{method}: {refused}");
-        }
+            "unauthorized"
+        } else {
+            "forbidden_role"
+        };
+        assert_eq!(kind(&refused), expected, "{method}: {refused}");
     }
     assert!(queue(&mut scene.human, &scene.first).is_empty());
     // A made-up binding, another pane's, and one with the right pane and a wrong tag are refused.

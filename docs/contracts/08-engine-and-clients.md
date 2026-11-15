@@ -450,12 +450,13 @@ localId, generation, seq, complete`,
 `agent.message {targetPaneId | targetName, inReplyTo?, text, idempotencyKey}` →
 `{promptId, queued, messageId}` (an agent pane, or a terminal pane with its binding, queues a
 prompt in an agent pane of any workspace, contract 04 R17; exactly one of `targetPaneId` and `targetName` names the
-recipient, a name is compared without case, accents or surrounding space, and a name that exactly
-one agent pane of the sender's own workspace carries is that pane; when the own workspace has none
-or several, the agent panes of every workspace count, and several are `invalid_params` that lists
-them, unless `inReplyTo` names a message the sender has open, which routes to the pane that sent it;
-`inReplyTo` is the `m:ID` of the message being answered and is only a hint, so a stale or unknown
-one is ignored; a web page and a terminal pane are never candidates for a name, and a name or an id
+recipient, a name is compared without case, accents or surrounding space; `inReplyTo` is the `m:ID`
+of the message being answered, and when it names a message the sender has open, the reply goes to
+the pane that sent that message, whatever workspace that pane is in and whatever panes of that name
+the sender's own workspace holds; otherwise a name that exactly one agent pane of the sender's own
+workspace carries is that pane, and when the own workspace has none or several, the agent panes of
+every workspace count and several are `invalid_params` that lists them; `inReplyTo` is only a hint,
+so a stale or unknown one is ignored; a web page and a terminal pane are never candidates for a name, and a name or an id
 that is one is `not_found` with the reason: a page has no recorded creator to receive messages, and
 a terminal pane cannot receive messages yet) and `agent.list` (the agent panes of every workspace
 that the caller can message, its own workspace first, each as `{paneId, name, harness, kind,

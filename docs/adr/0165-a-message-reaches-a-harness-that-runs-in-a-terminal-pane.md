@@ -335,7 +335,9 @@ connection screen says so. The spike gates every promise to send.
   workspace**, grouped by workspace with the sender's own first, each with `name`, `paneId`,
   `workspace`, `kind` (`agent`, `terminal` or `web`), the harness, whether it can receive now and the
   reason if not, and whether it can reply (a connected `soyeht-mcp`). `message_agent` takes a
-  `targetName` (compared without case, accents or surrounding space) or the pane id. A name that exactly one agent pane of the
+  `targetName` (compared without case, accents or surrounding space) or the pane id. A reply (`inReplyTo`, the id of a message the sender
+  has open) goes first to the pane that wrote that message, in whatever workspace, whatever panes of
+  that name the sender's own workspace holds. Otherwise a name that exactly one agent pane of the
   sender's own workspace carries is that pane, as before names reached other workspaces; only when the
   own workspace has none or several do the other workspaces count. **Several matches then answer
   `invalid_params` with the candidates** (workspace and id), never the first. In slice 1 a web page

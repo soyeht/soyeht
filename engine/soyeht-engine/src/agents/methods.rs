@@ -288,17 +288,20 @@ impl Core {
         }
     }
 
-    /// The pane `name` names. A name that exactly one agent pane of the sender's own workspace
-    /// carries is that pane, as it was before names reached other workspaces; when the own
-    /// workspace has none or several, the agent panes of every workspace count, and several are an
-    /// error that lists them. When two panes carry the name, a reply (`in_reply_to`, the id of a
-    /// message `sender` has open) goes to the pane that sent that message; the id is only a hint
-    /// and a stale or unknown one decides nothing. A name no agent pane carries may still be a
-    /// terminal pane or a web page, which says why it takes no message.
+    /// The pane `name` names. A reply (`in_reply_to`, the id of a message `sender` has open) goes
+    /// first to the pane that sent that message, among every pane of that name in every workspace;
+    /// the id is only a hint and a stale or unknown one decides nothing. Otherwise a name that
+    /// exactly one agent pane of the sender's own workspace carries is that pane, as it was before
+    /// names reached other workspaces; when the own workspace has none or several, the agent panes
+    /// of every workspace count, and several are an error that lists them. A name no agent pane
+    /// carries may still be a terminal pane or a web page, which says why it takes no message.
     fn peer_by_name(&self, sender: &Pane, name: &str, in_reply_to: Option<&str>) -> Result<String> {
         let wanted = text_reduction::folded(name);
         let carries = |pane: &&Pane| text_reduction::folded(&pane.name) == wanted;
         let matches: Vec<&Pane> = self.peers_of(sender).filter(carries).collect();
+        if let Some(replied) = self.reply_sender(sender, in_reply_to, &matches) {
+            return Ok(replied);
+        }
         let own: Vec<&Pane> = matches
             .iter()
             .copied()
@@ -313,9 +316,7 @@ impl Core {
                     None => format!("No agent pane is named {}", text_reduction::name(name)),
                 },
             )),
-            (_, several) => self
-                .reply_sender(sender, in_reply_to, several)
-                .ok_or_else(|| errors::invalid(self.ambiguous_name(name, several))),
+            (_, several) => Err(errors::invalid(self.ambiguous_name(name, several))),
         }
     }
 

@@ -17,7 +17,7 @@ pub const PANE_BINDING_ENV: &str = "SOYEHT_PANE_BINDING";
 
 /// What a program in a terminal pane says when the engine refuses its binding: the process the
 /// binding was made for is gone (the pane restarted), or the engine is another profile's.
-pub const PANE_BINDING_NOT_CURRENT: &str = "this pane's binding is not current, or belongs to another Soyeht profile; start the harness again in the pane";
+pub const PANE_BINDING_NOT_CURRENT: &str = "this pane's binding is not current, or belongs to another Soyeht profile; open a new terminal pane in Soyeht and run it again there";
 
 /// The engine's first message, decoded; anything else is not an engine of this protocol.
 pub fn expect_challenge(message: &Value) -> Result<AuthChallengeEvent> {
