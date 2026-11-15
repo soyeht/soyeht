@@ -2,8 +2,9 @@
 import Foundation
 
 /// Text to speech with the system voices. It renders the speech to samples through
-/// `AVSpeechSynthesizer.write`: nothing is played here, and no permission is asked. The word and
-/// phoneme marks the system reports become the speech's timings.
+/// `AVSpeechSynthesizer.write`: nothing is played here, and no permission is asked. Word and
+/// phoneme marks, when the system sends them, become the speech's timings; the built-in voices
+/// tried on the Mac sent none, so the conversion is tested with constructed marks only.
 @MainActor public final class AppleSpeechSynthesizer: SpeechSynthesizing {
   nonisolated public init() {}
 

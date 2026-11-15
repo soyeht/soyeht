@@ -42,7 +42,7 @@ public enum KokoroEngine {
     voices: { voices },
     model: DictationModelInfo(
       sizeDescription: "about 333 MB", licenseName: license.name, licenseURL: license.url,
-      commercialUse: license.commercialUse,
+      commercialUse: license.commercialUse == true,
       install: { report in try await KokoroModelHolder.shared.install(report: report) },
       isInstalled: { KokoroModelHolder.shared.isInstalled },
       remove: { try KokoroModelHolder.shared.remove() }),

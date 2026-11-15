@@ -65,7 +65,16 @@ public struct CloudSpeechConfiguration: Codable, Equatable, Identifiable, Sendab
     if !transcribes && !speaks {
       return "Name a model the provider uses to transcribe or to speak."
     }
+    if speaks && voices.isEmpty {
+      return "Name at least one voice for speech, or leave the speech model empty."
+    }
     return nil
+  }
+
+  /// What is sent leaves this computer over plain HTTP, readable on the way. A key never does
+  /// (`problem` refuses it); this is the recording or the text sent to a server that takes none.
+  var sentUnencrypted: Bool {
+    baseURL.scheme?.lowercased() == "http" && !Self.isLoopback(baseURL.host ?? "")
   }
 
   var host: String { baseURL.host ?? "" }

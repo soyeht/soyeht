@@ -27,13 +27,14 @@ extension SpeechSynthesisProvider {
       summary: "Speaks through \(configuration.host). Your text is sent there.",
       platforms: Set(DictationPlatform.allCases),
       license: ProviderLicense(
-        name: "The provider's terms", url: configuration.termsURL, commercialUse: true),
+        name: "The provider's terms", url: configuration.termsURL),
       voices: {
         configuration.voices.map { SpeechVoice(id: $0, name: $0, language: "und") }
       },
       cloud: CloudProviderInfo(
         host: configuration.host, sends: [.text], termsURL: configuration.termsURL,
-        requiresKey: configuration.requiresKey),
+        requiresKey: configuration.requiresKey,
+        sentUnencrypted: configuration.sentUnencrypted),
       availability: { configuration.availability(vault) },
       make: { CloudSpeechSynthesizer(requests: requests) })
   }
@@ -59,7 +60,8 @@ extension DictationEngine {
       usesVocabulary: true,
       cloud: CloudProviderInfo(
         host: configuration.host, sends: [.audio, .vocabulary], termsURL: configuration.termsURL,
-        requiresKey: configuration.requiresKey),
+        requiresKey: configuration.requiresKey,
+        sentUnencrypted: configuration.sentUnencrypted),
       availability: { configuration.availability(vault) },
       make: { CloudSpeechRecognizer(requests: requests) })
   }

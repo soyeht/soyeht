@@ -9,6 +9,8 @@ public enum CloudSpeechError: Error, LocalizedError, Equatable, Sendable {
   /// The provider answered with a redirect, which is never followed.
   case redirected
   case responseTooLarge
+  /// The provider did not finish answering within the deadline of the request.
+  case timedOut
   case badResponse
   /// The provider does not offer what was asked: it has no model for it.
   case notOffered
@@ -23,6 +25,7 @@ public enum CloudSpeechError: Error, LocalizedError, Equatable, Sendable {
     case .redirected:
       "The provider's address redirects to another one. Enter the address the provider gives for its API; a recording, a text or a key is never sent to a different one."
     case .responseTooLarge: "The provider's answer is too large."
+    case .timedOut: "The provider did not answer in time."
     case .badResponse: "The provider's answer could not be read."
     case .notOffered: "This provider does not offer that."
     }

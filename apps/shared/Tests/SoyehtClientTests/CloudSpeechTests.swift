@@ -275,7 +275,9 @@ private func text(_ data: Data?) -> String { String(decoding: data ?? Data(), as
   #expect(speech.cloud?.termsURL?.absoluteString == "https://speech.example.com/terms")
   #expect(dictation.cloud?.termsURL == speech.cloud?.termsURL)
   #expect(speech.license.url == speech.cloud?.termsURL)
-  #expect(speech.license.commercialUse)
+  // The provider's terms are not known, so nothing is said about commercial use.
+  #expect(speech.license.commercialUse == nil)
+  #expect(!(speech.cloud?.sentUnencrypted ?? true))
   #expect(speech.requiresInstall == false)
   #expect(speech.voices().map(\.id) == ["river", "stone"])
   #expect(dictation.usesVocabulary)
@@ -303,4 +305,31 @@ private func text(_ data: Data?) -> String { String(decoding: data ?? Data(), as
     SpeechSynthesisProvider.cloud(
       cloudConfiguration(base: "http://speech.example.com/v1"), vault: MemoryProviderKeyVault()))
   #expect(provider.unavailableReason(on: .mac)?.contains("https") == true)
+}
+
+@Test func aSpeakingProviderWithNoVoiceIsAProblemUpFront() {
+  var configuration = cloudConfiguration()
+  configuration.voices = []
+  #expect(
+    configuration.problem == "Name at least one voice for speech, or leave the speech model empty.")
+  #expect(
+    SpeechSynthesisProvider.cloud(
+      configuration, vault: MemoryProviderKeyVault(["cloud.example": "k"]))?
+      .unavailableReason(on: .mac) == configuration.problem)
+  // Without the speech model the voices are not needed.
+  configuration.speechModel = nil
+  #expect(configuration.problem == nil)
+}
+
+@Test func aServerReachedOverPlainHTTPAcrossTheNetworkIsMarkedAsSendingInClear() throws {
+  let vault = MemoryProviderKeyVault()
+  let lan = cloudConfiguration(requiresKey: false, base: "http://192.168.1.20:8880/v1")
+  #expect(lan.sentUnencrypted)
+  let speech = try #require(SpeechSynthesisProvider.cloud(lan, vault: vault))
+  let dictation = try #require(DictationEngine.cloud(lan, vault: vault))
+  #expect(speech.cloud?.sentUnencrypted == true)
+  #expect(dictation.cloud?.sentUnencrypted == true)
+  // On this computer nothing leaves it, and HTTPS is encrypted.
+  #expect(!cloudConfiguration(requiresKey: false, base: "http://localhost:8880/v1").sentUnencrypted)
+  #expect(!cloudConfiguration().sentUnencrypted)
 }

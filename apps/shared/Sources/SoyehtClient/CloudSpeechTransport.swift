@@ -7,34 +7,52 @@ public protocol SpeechHTTPTransport: Sendable {
 }
 
 /// The real network, for one provider: no cache, no cookies, no stored credentials, a deadline
-/// for the whole request, a limit on the answer's size, and no redirect followed. The address is
+/// for the whole request that grows with the size of what is uploaded, a limit on the answer's
+/// size, and no redirect followed. The address is
 /// one the person entered, so a recording, a text or a key is never sent anywhere else.
 ///
 /// It owns one session for its life and closes it when it goes away.
 public final class URLSessionSpeechTransport: SpeechHTTPTransport, @unchecked Sendable {
   /// A speech answer is a few megabytes; a transcript is a few kilobytes.
   static let maximumResponseBytes = 16 << 20
-  /// A request, its upload and its answer, from start to end.
-  static let totalSeconds: TimeInterval = 180
+  /// The deadline of a request, its upload and its answer, from start to end, is `baseSeconds`
+  /// plus one second for every `uploadBytesPerSecond` of the body (an uplink of 64 KiB/s, about
+  /// half a megabit, is assumed at the least), and never more than `ceilingSeconds`. A ten-minute
+  /// recording is about 19 MB and so gets about seven minutes; a text, two.
+  static let baseSeconds: TimeInterval = 120
+  static let uploadBytesPerSecond = 64 << 10
+  static let ceilingSeconds: TimeInterval = 3_600
+
+  static func deadline(
+    forBodyBytes bytes: Int, baseSeconds: TimeInterval = URLSessionSpeechTransport.baseSeconds
+  ) -> TimeInterval {
+    min(ceilingSeconds, baseSeconds + Double(bytes) / Double(uploadBytesPerSecond))
+  }
   /// How long the connection may be silent.
   static let idleSeconds: TimeInterval = 60
 
   private let session: URLSession
   private let maximumResponseBytes: Int
+  private let baseSeconds: TimeInterval
 
   public convenience init() {
-    self.init(configuration: .ephemeral, maximumResponseBytes: nil)
+    self.init(configuration: .ephemeral, maximumResponseBytes: nil, baseSeconds: nil)
   }
 
   /// A session made from `configuration`, with the limits above applied on top of it. A test
   /// passes one with its own `protocolClasses`.
-  init(configuration: URLSessionConfiguration, maximumResponseBytes: Int?) {
+  init(
+    configuration: URLSessionConfiguration, maximumResponseBytes: Int?,
+    baseSeconds: TimeInterval? = nil
+  ) {
     self.maximumResponseBytes = maximumResponseBytes ?? Self.maximumResponseBytes
+    self.baseSeconds = baseSeconds ?? Self.baseSeconds
     configuration.urlCache = nil
     configuration.httpCookieStorage = nil
     configuration.urlCredentialStorage = nil
     configuration.timeoutIntervalForRequest = Self.idleSeconds
-    configuration.timeoutIntervalForResource = Self.totalSeconds
+    // The session's own limit is only the ceiling: each request is held to its own deadline.
+    configuration.timeoutIntervalForResource = Self.ceilingSeconds
     session = URLSession(
       configuration: configuration, delegate: RefuseRedirects(), delegateQueue: nil)
   }
@@ -45,6 +63,21 @@ public final class URLSessionSpeechTransport: SpeechHTTPTransport, @unchecked Se
   deinit { session.invalidateAndCancel() }
 
   public func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+    let seconds = Self.deadline(
+      forBodyBytes: request.httpBody?.count ?? 0, baseSeconds: baseSeconds)
+    return try await withThrowingTaskGroup(of: (Data, HTTPURLResponse).self) { group in
+      group.addTask { try await self.receive(request) }
+      group.addTask {
+        try await Task.sleep(for: .seconds(seconds))
+        throw CloudSpeechError.timedOut
+      }
+      defer { group.cancelAll() }
+      guard let answer = try await group.next() else { throw CloudSpeechError.badResponse }
+      return answer
+    }
+  }
+
+  private func receive(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     let (bytes, response) = try await session.bytes(for: request)
     guard let http = response as? HTTPURLResponse else { throw CloudSpeechError.badResponse }
     let limit = maximumResponseBytes

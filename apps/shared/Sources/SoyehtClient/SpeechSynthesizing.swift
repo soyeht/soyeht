@@ -69,8 +69,11 @@ public struct SpeechTiming: Equatable, Sendable {
 public struct SynthesizedSpeech: Equatable, Sendable {
   public let samples: [Float]
   public let sampleRate: Int
-  /// The provider's own word or phoneme timings, in order, or nil when it reports none: the
-  /// system voices report them, the cloud and local models do not.
+  /// The provider's own word or phoneme timings, in order, or nil. Nil is the normal case for
+  /// every provider: the cloud and local models report none, and none of the built-in system
+  /// voices delivered marks on the Mac that was measured. A non-nil value from the system path
+  /// is not yet confirmed against a real voice (nor the unit of its `byteSampleOffset`), so the
+  /// caller falls back to finding the timings in the audio itself (the aligner).
   public let timings: [SpeechTiming]?
 
   public init(samples: [Float], sampleRate: Int, timings: [SpeechTiming]? = nil) {

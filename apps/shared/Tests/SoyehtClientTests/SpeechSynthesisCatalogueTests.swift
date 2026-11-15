@@ -151,10 +151,11 @@ private final class FakeVoiceModel: @unchecked Sendable {
 }
 
 @Test func everyProviderCarriesItsLicenseAndWhetherItAllowsCommercialUse() {
-  #expect(SpeechSynthesisProvider.apple.license.commercialUse)
+  #expect(SpeechSynthesisProvider.apple.license.commercialUse == true)
   #expect(!SpeechSynthesisProvider.apple.license.name.isEmpty)
   let researchOnly = ProviderLicense(name: "Research use only", commercialUse: false)
-  #expect(!researchOnly.commercialUse)
+  #expect(researchOnly.commercialUse == false)
+  #expect(ProviderLicense(name: "The provider's terms").commercialUse == nil)
 }
 
 @Test func aPaceOutsideWhatProvidersTakeIsClamped() {

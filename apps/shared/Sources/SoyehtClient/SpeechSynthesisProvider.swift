@@ -20,26 +20,32 @@ public struct CloudProviderInfo: Sendable {
   public let termsURL: URL?
   /// Whether the provider wants an API key before it answers.
   public let requiresKey: Bool
+  /// What is sent leaves this computer in clear: the address is plain HTTP to another machine,
+  /// so the recording or the text can be read on the way. A screen says so.
+  public let sentUnencrypted: Bool
 
   public init(
-    host: String, sends: Set<CloudPayload>, termsURL: URL? = nil, requiresKey: Bool = true
+    host: String, sends: Set<CloudPayload>, termsURL: URL? = nil, requiresKey: Bool = true,
+    sentUnencrypted: Bool = false
   ) {
     self.host = host
     self.sends = sends
     self.termsURL = termsURL
     self.requiresKey = requiresKey
+    self.sentUnencrypted = sentUnencrypted
   }
 }
 
 /// The license a provider, or the service it reaches, is under: what the voice screen shows
 /// before the first use. `commercialUse` is false for research-only terms, and the screen then
-/// labels the choice plainly. It is data: nothing enforces it.
+/// labels the choice plainly; nil means the terms are not known, and the screen does not say
+/// either. It is data: nothing enforces it.
 public struct ProviderLicense: Equatable, Sendable {
   public let name: String
   public let url: URL?
-  public let commercialUse: Bool
+  public let commercialUse: Bool?
 
-  public init(name: String, url: URL? = nil, commercialUse: Bool) {
+  public init(name: String, url: URL? = nil, commercialUse: Bool? = nil) {
     self.name = name
     self.url = url
     self.commercialUse = commercialUse

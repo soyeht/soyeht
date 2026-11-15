@@ -11,6 +11,8 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     var headers: [String: String] = [:]
     var body = Data()
     var redirectTo: URL?
+    /// Never answers: the request stays open until its deadline.
+    var hangs = false
   }
 
   private static let lock = NSLock()
@@ -45,6 +47,7 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
       client?.urlProtocol(self, didFailWithError: URLError(.cannotFindHost))
       return
     }
+    if reply.hangs { return }
     if let target = reply.redirectTo {
       client?.urlProtocol(
         self, wasRedirectedTo: URLRequest(url: target), redirectResponse: response)
@@ -59,10 +62,13 @@ final class StubURLProtocol: URLProtocol, @unchecked Sendable {
   override func stopLoading() {}
 }
 
-private func transport(limit: Int? = nil) -> URLSessionSpeechTransport {
+private func transport(
+  limit: Int? = nil, baseSeconds: TimeInterval? = nil
+) -> URLSessionSpeechTransport {
   let configuration = URLSessionConfiguration.ephemeral
   configuration.protocolClasses = [StubURLProtocol.self]
-  return URLSessionSpeechTransport(configuration: configuration, maximumResponseBytes: limit)
+  return URLSessionSpeechTransport(
+    configuration: configuration, maximumResponseBytes: limit, baseSeconds: baseSeconds)
 }
 
 private func post(_ host: String) -> URLRequest {
@@ -80,7 +86,7 @@ private func post(_ host: String) -> URLRequest {
 
 @Test func theSessionHasADeadlineForTheWholeRequestAndKeepsNothing() {
   let configuration = transport().sessionConfiguration
-  #expect(configuration.timeoutIntervalForResource == URLSessionSpeechTransport.totalSeconds)
+  #expect(configuration.timeoutIntervalForResource == URLSessionSpeechTransport.ceilingSeconds)
   #expect(configuration.timeoutIntervalForRequest == URLSessionSpeechTransport.idleSeconds)
   #expect(configuration.urlCache == nil)
   #expect(configuration.httpCookieStorage == nil)
@@ -138,4 +144,21 @@ private func post(_ host: String) -> URLRequest {
     try await requests.transcribe([0], language: nil, vocabulary: [])
   }
   #expect(StubURLProtocol.requests(to: "other.redirect.test").isEmpty)
+}
+
+@Test func theDeadlineGrowsWithWhatIsUploadedUpToACeiling() {
+  // 120 s, plus one second for every 64 KiB of the body, and never more than an hour.
+  #expect(URLSessionSpeechTransport.deadline(forBodyBytes: 0) == 120)
+  #expect(URLSessionSpeechTransport.deadline(forBodyBytes: 64 << 10) == 121)
+  // Ten minutes of 16 kHz 16-bit audio: about 19.2 MB, so about seven minutes.
+  let recording = URLSessionSpeechTransport.deadline(forBodyBytes: 19_200_000)
+  #expect(recording > 400 && recording < 430)
+  #expect(URLSessionSpeechTransport.deadline(forBodyBytes: Int.max / 2) == 3_600)
+}
+
+@Test func aRequestThatNeverAnswersEndsAtItsDeadlineAndSaysSo() async {
+  StubURLProtocol.answer(host: "silent.transport.test", with: .init(hangs: true))
+  await #expect(throws: CloudSpeechError.timedOut) {
+    try await transport(baseSeconds: 0.3).send(post("silent.transport.test"))
+  }
 }
