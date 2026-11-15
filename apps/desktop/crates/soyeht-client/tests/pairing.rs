@@ -530,6 +530,51 @@ fn an_engine_older_than_the_notice_is_not_blamed_and_another_failure_is_said() {
 }
 
 #[test]
+fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent_only_then() {
+    let mut rig = Rig::connected("pair-tailnet", &["pairing-code"], json!([]));
+    let effects = rig.state.open_pairing();
+    rig.dispatch(effects);
+    let start = rig.remote.expect("device.pair.start");
+    // A window opened without the confirmation, which the engine says is blocked by a change.
+    assert!(start["params"].get("confirmTailnet").is_none(), "{start}");
+    rig.remote.reply(
+        &start,
+        json!({"code": "CODE", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK,
+            "tailnetChanged": true, "tailnetName": "other.example", "tailnetPin": "pin-1"}),
+    );
+    rig.settle(|state| state.pairing.tailnet_changed());
+    // The person confirms: a new window is asked for with `confirmTailnet`.
+    let effects = rig.state.confirm_tailnet();
+    rig.dispatch(effects);
+    let confirm = rig.remote.expect("device.pair.start");
+    assert_eq!(confirm["params"]["confirmTailnet"], true);
+    // It names the change the person was shown, and a second press while it is awaited sends nothing.
+    assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-1");
+    assert!(rig.state.confirm_tailnet().is_empty());
+    rig.remote.reply(
+        &confirm,
+        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
+    );
+    rig.settle(|state| !state.pairing.tailnet_changed());
+    assert!(matches!(rig.state.pairing.phase(), Phase::Showing(_)));
+    // Nothing waits any more, so a second press sends nothing.
+    assert!(rig.state.confirm_tailnet().is_empty());
+    rig.finish();
+}
+
+#[test]
+fn an_open_sheet_hears_of_a_changed_tailnet_from_the_engine() {
+    let mut rig = Rig::connected("pair-tailnet-event", &["pairing-code"], json!([]));
+    rig.open("2999-01-01T00:00:00Z");
+    rig.remote.send(&notification(
+        "device.pair_tailnet_changed",
+        json!({"tailnetChanged": true}),
+    ));
+    rig.settle(|state| state.pairing.tailnet_changed());
+    rig.finish();
+}
+
+#[test]
 fn a_request_that_waits_in_the_snapshot_is_listed_and_can_be_denied() {
     let (listener, path) = listen("pair-snapshot");
     let (engine, inbox) = Engine::start(path.clone());

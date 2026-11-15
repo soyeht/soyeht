@@ -570,6 +570,7 @@ impl State {
             EventName::DevicePairRequested
             | EventName::DevicePaired
             | EventName::DeviceRevoked
+            | EventName::DevicePairTailnetChanged
             | EventName::PairResult => {
                 self.pairing.notified(&name, params)?;
                 Vec::new()

@@ -10,7 +10,7 @@
 //! the daemon answer. [`SystemPeers`] is the shipped answer (`system_peers`): `getifaddrs` and the local API of
 //! `tailscaled`.
 
-use crate::pairing_approval::readable_node_name;
+use crate::pairing_approval::readable_name;
 use serde::Deserialize;
 use soyeht_protocol::pairing_link::permitted_address;
 use std::{io, net::IpAddr};
@@ -118,9 +118,9 @@ pub(crate) fn parse_whois(body: &[u8], address: IpAddr) -> io::Result<Node> {
     {
         return Err(invalid());
     }
-    let name = readable_node_name(&node.computed_name).or_else(|| {
+    let name = readable_name(&node.computed_name).or_else(|| {
         let first = node.full_name.split('.').next().unwrap_or_default();
-        readable_node_name(first)
+        readable_name(first)
     });
     Ok(Node {
         id: node.stable_id,

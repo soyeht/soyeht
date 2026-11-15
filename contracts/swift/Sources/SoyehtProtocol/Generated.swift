@@ -962,9 +962,11 @@ public struct PaneExperimentExportResult: Codable, Sendable {
 public struct DevicePairStartParams: Codable, Sendable {
     public var `idempotencyKey`: Id
     public var `confirmTailnet`: Bool?
-    public init(`idempotencyKey`: Id, `confirmTailnet`: Bool? = nil) {
+    public var `confirmTailnetPin`: String?
+    public init(`idempotencyKey`: Id, `confirmTailnet`: Bool? = nil, `confirmTailnetPin`: String? = nil) {
         self.`idempotencyKey` = `idempotencyKey`
         self.`confirmTailnet` = `confirmTailnet`
+        self.`confirmTailnetPin` = `confirmTailnetPin`
     }
 }
 
@@ -975,13 +977,17 @@ public struct DevicePairStartResult: Codable, Sendable {
     public var `qr`: String?
     public var `reachability`: EngineReachability?
     public var `tailnetChanged`: Bool?
-    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil, `tailnetChanged`: Bool? = nil) {
+    public var `tailnetName`: String?
+    public var `tailnetPin`: String?
+    public init(`code`: String, `expiresAt`: String, `uri`: String, `qr`: String? = nil, `reachability`: EngineReachability? = nil, `tailnetChanged`: Bool? = nil, `tailnetName`: String? = nil, `tailnetPin`: String? = nil) {
         self.`code` = `code`
         self.`expiresAt` = `expiresAt`
         self.`uri` = `uri`
         self.`qr` = `qr`
         self.`reachability` = `reachability`
         self.`tailnetChanged` = `tailnetChanged`
+        self.`tailnetName` = `tailnetName`
+        self.`tailnetPin` = `tailnetPin`
     }
 }
 
@@ -1559,6 +1565,17 @@ public struct DevicePairedEvent: Codable, Sendable {
         self.`at` = `at`
         self.`actor` = `actor`
         self.`device` = `device`
+    }
+}
+
+public struct DevicePairTailnetChangedEvent: Codable, Sendable {
+    public var `tailnetChanged`: Bool
+    public var `tailnetName`: String?
+    public var `tailnetPin`: String?
+    public init(`tailnetChanged`: Bool, `tailnetName`: String? = nil, `tailnetPin`: String? = nil) {
+        self.`tailnetChanged` = `tailnetChanged`
+        self.`tailnetName` = `tailnetName`
+        self.`tailnetPin` = `tailnetPin`
     }
 }
 
@@ -8080,6 +8097,7 @@ public enum EventName: String, Codable, Sendable, CaseIterable {
     case devicePairRequested = "device.pair_requested"
     case devicePaired = "device.paired"
     case deviceRevoked = "device.revoked"
+    case devicePairTailnetChanged = "device.pair_tailnet_changed"
     case pairResult = "pair.result"
     case engineUpdating = "engine.updating"
     case engineRestarted = "engine.restarted"
@@ -8168,6 +8186,7 @@ public let eventRegistry: [EventName: EventDescriptor] = [
     .devicePairRequested: EventDescriptor(paramsType: "DevicePairRequestedEvent", durable: true),
     .devicePaired: EventDescriptor(paramsType: "DevicePairedEvent", durable: true),
     .deviceRevoked: EventDescriptor(paramsType: "DeviceRevokedEvent", durable: true),
+    .devicePairTailnetChanged: EventDescriptor(paramsType: "DevicePairTailnetChangedEvent", durable: false),
     .pairResult: EventDescriptor(paramsType: "PairResultEvent", durable: false),
     .engineUpdating: EventDescriptor(paramsType: "EngineUpdatingEvent", durable: true),
     .engineRestarted: EventDescriptor(paramsType: "EngineRestartedEvent", durable: true),
