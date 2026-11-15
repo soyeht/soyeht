@@ -1436,6 +1436,10 @@
         "confirmTailnet": {
           "type": "boolean",
           "description": "True when the person confirms the tailnet change that a pairing was refused for (ADR 0164): the engine pins the identity it saw. Only an engine that asks for the person's code (`pairing-code`) reads it, and only from the local human."
+        },
+        "confirmTailnetPin": {
+          "type": "string",
+          "description": "With `confirmTailnet`: the `tailnetPin` of the change the person was shown. The engine pins the identity it refused only when it is still the one this names, and otherwise refuses the call with `transition_refused` and pins nothing, so that a person never confirms a change they have not seen. Without it the engine pins whatever it refused last."
         }
       },
       "required": [
@@ -1465,6 +1469,14 @@
         "tailnetChanged": {
           "type": "boolean",
           "description": "True while a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (`confirmTailnet`; ADR 0164). Absent otherwise."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "With `tailnetChanged`: the name of the tailnet the refused pairing saw, as Tailscale names it, with what a person cannot read dropped and held to the device name's length. It is a name its owner chose, so it is shown for the person to compare and never trusted."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "With `tailnetChanged`: an opaque name for the identity (tailnet and node key) that a confirmation would pin; the app sends it back as `confirmTailnetPin`."
         }
       },
       "required": [
@@ -2373,6 +2385,27 @@
         "eventId",
         "at",
         "device"
+      ],
+      "additionalProperties": true
+    },
+    "DevicePairTailnetChangedEvent": {
+      "type": "object",
+      "properties": {
+        "tailnetChanged": {
+          "type": "boolean",
+          "description": "True: a pairing was refused because the tailnet or this computer's node differs from what the first pairing pinned, and the person has not confirmed it (ADR 0164). It is the same fact `tailnetChanged` of the answer to `device.pair.start` states, told to a window that is already open."
+        },
+        "tailnetName": {
+          "type": "string",
+          "description": "The name of the tailnet the refused pairing saw (`tailnetName` of the answer to `device.pair.start`)."
+        },
+        "tailnetPin": {
+          "type": "string",
+          "description": "An opaque name for the identity a confirmation would pin (`tailnetPin` of the answer to `device.pair.start`)."
+        }
+      },
+      "required": [
+        "tailnetChanged"
       ],
       "additionalProperties": true
     },
@@ -14609,6 +14642,12 @@
         "$ref": "#/$defs/DeviceRevokedEvent"
       },
       "durable": true
+    },
+    "device.pair_tailnet_changed": {
+      "params": {
+        "$ref": "#/$defs/DevicePairTailnetChangedEvent"
+      },
+      "durable": false
     },
     "pair.result": {
       "params": {

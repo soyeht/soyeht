@@ -1171,6 +1171,13 @@
     }
   },
   {
+    "name": "DevicePairTailnetChangedEvent",
+    "type": "DevicePairTailnetChangedEvent",
+    "value": {
+      "tailnetChanged": true
+    }
+  },
+  {
     "name": "PushPlatform",
     "type": "PushPlatform",
     "value": "apns"
@@ -3077,6 +3084,17 @@
           "fingerprint": "example",
           "revoked": true
         }
+      }
+    }
+  },
+  {
+    "name": "event:device.pair_tailnet_changed",
+    "type": "NotificationEnvelope",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "device.pair_tailnet_changed",
+      "params": {
+        "tailnetChanged": true
       }
     }
   },
