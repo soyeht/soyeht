@@ -293,6 +293,7 @@ step gate_scripts both post-merge:unit uv run python -m unittest discover -s scr
 step gate_scripts both post-merge-editor:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_editor.py'
 step gate_scripts both post-merge-flakes:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_flakes.py'
 step gate_scripts both post-merge-remote:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_remote.py'
+step gate_scripts both post-merge-halves:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_halves.py'
 step gate_scripts both post-merge-load:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_load.py'
 step gate_scripts both post-merge-waiver:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_waiver.py'
 step gate_scripts both post-merge-prerequisites:unit uv run python -m unittest discover -s scripts -p 'test_post_merge_prerequisites.py'
