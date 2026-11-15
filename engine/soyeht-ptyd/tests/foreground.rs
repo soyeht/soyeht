@@ -3,7 +3,7 @@
 
 use soyeht_ptyd::{
     client::Client,
-    wire::{Foreground, Request, Response},
+    wire::{FEATURE_FOREGROUND, Foreground, Request, Response},
 };
 use std::{
     thread,
@@ -95,6 +95,17 @@ fn a_terminal_reports_the_program_it_runs_and_an_unknown_one_is_left_out() {
     close(&mut client, &instance);
     // Closed, the terminal is no longer asked about.
     assert!(foreground_of(&mut client, &[&instance.instance_id]).is_empty());
+}
+
+#[test]
+fn the_welcome_lists_the_foreground_feature_so_an_engine_may_ask() {
+    let (_daemon, client) = Daemon::start();
+    assert!(
+        client
+            .features
+            .iter()
+            .any(|name| name == FEATURE_FOREGROUND)
+    );
 }
 
 #[test]

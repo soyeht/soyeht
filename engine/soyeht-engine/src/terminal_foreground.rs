@@ -23,7 +23,7 @@ use crate::{
     tick_due::Next,
 };
 use soyeht_protocol::{Pane, PaneMode, PaneState, TerminalHarness};
-use soyeht_ptyd::wire::{MAX_FOREGROUND, Program, Request, Response};
+use soyeht_ptyd::wire::{FEATURE_FOREGROUND, MAX_FOREGROUND, Program, Request, Response};
 use std::{
     sync::{Arc, Mutex},
     time::Duration,
@@ -153,12 +153,19 @@ impl Core {
         Ok(targets)
     }
 
-    fn start_scan(&mut self, targets: Vec<Target>) -> Result<Scan> {
-        Ok(Scan {
-            supervisor: self.supervisor()?,
+    /// A scan of `targets`, or `None` when the supervisor that is running does not list the
+    /// `foreground` feature (it was started before this engine): the terminals then have no
+    /// harness, and the engine asks nothing it cannot answer.
+    fn start_scan(&mut self, targets: Vec<Target>) -> Result<Option<Scan>> {
+        let supervisor = self.supervisor()?;
+        if !supervisor.has_feature(FEATURE_FOREGROUND) {
+            return Ok(None);
+        }
+        Ok(Some(Scan {
+            supervisor,
             targets,
             versions: Arc::clone(&self.foreground().versions),
-        })
+        }))
     }
 
     /// The tick's scan: starts one when an app watches, a terminal is open and the period is up.
@@ -178,7 +185,10 @@ impl Core {
         if targets.is_empty() {
             return Ok(());
         }
-        let scan = self.start_scan(targets)?;
+        let Some(scan) = self.start_scan(targets)? else {
+            self.foreground_mut().watching = false;
+            return Ok(());
+        };
         let used = scan.supervisor.clone();
         self.spawn_background(
             SCAN_JOB.into(),
@@ -253,7 +263,9 @@ impl Core {
         if targets.is_empty() {
             return Ok(Outcome::Reply(self.peer_listing(&sender)));
         }
-        let scan = self.start_scan(targets)?;
+        let Some(scan) = self.start_scan(targets)? else {
+            return Ok(Outcome::Reply(self.peer_listing(&sender)));
+        };
         let used = scan.supervisor.clone();
         Ok(Outcome::Offload(
             Offload::new(

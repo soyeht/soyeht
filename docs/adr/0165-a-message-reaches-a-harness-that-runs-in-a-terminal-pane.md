@@ -695,7 +695,7 @@ same file.
   `agentMessageBytes` is reused.
 - No new error code: `not_found`, `invalid_params` (ambiguous name), `pane_busy`, `rate_limited`,
   `forbidden_role` (#169), `unauthorized` (a stale binding).
-- Supervisor protocol 7 (ADR 0122): `Foreground`, and a guarded input. The pane's environment uses
+- Supervisor welcome features (ADR 0122): `Foreground` (`foreground`), and a guarded input. The pane's environment uses
   `Spawn.env`, which exists.
 - CLI: `soyeht message`, `soyeht inbox read`, `soyeht harness connect|disconnect|status`. Contract 08
   (section 2's table: a terminal pane's binding; the known limitation), contract 04 R17, contract 17

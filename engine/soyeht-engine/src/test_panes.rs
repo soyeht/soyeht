@@ -190,6 +190,27 @@ impl<F: FnMut(Request) -> soyeht_ptyd::Result<Response> + Send> SupervisorPort f
     }
 }
 
+/// A supervisor port that lists `features` in its welcome and otherwise is the one it wraps.
+pub(crate) struct Featured(pub(crate) Box<dyn SupervisorPort>, pub(crate) Vec<String>);
+
+impl SupervisorPort for Featured {
+    fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
+        self.0.request(request)
+    }
+
+    fn supervisor_id(&self) -> &str {
+        self.0.supervisor_id()
+    }
+
+    fn supervisor_generation(&self) -> u32 {
+        self.0.supervisor_generation()
+    }
+
+    fn features(&self) -> Vec<String> {
+        self.1.clone()
+    }
+}
+
 /// The answer of a supervisor whose process has produced no output since `from_seq`.
 pub(crate) fn quiet_read(from_seq: u64) -> Response {
     Response::Output(soyeht_ptyd::wire::Output {

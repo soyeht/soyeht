@@ -3035,7 +3035,7 @@
     "AgentMessageKind": {
       "type": "string",
       "enum": ["agent", "terminal", "web"],
-      "description": "What the pane of an `agent.list` item is: an agent pane Soyeht opened (`agent`), or a terminal pane that runs a known harness (`terminal`). The engine may send other values later (`web`)."
+      "description": "What the pane of an `agent.list` item is: an agent pane Soyeht opened (`agent`), or a terminal pane that runs a known harness (`terminal`). A listed terminal can be told apart and named, but `agent.message` does not reach it yet (it answers `not_found`, as for any pane that is not an agent pane). The engine may send other values later (`web`)."
     },
     "TerminalHarness": {
       "type": "object",

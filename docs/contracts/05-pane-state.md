@@ -75,7 +75,7 @@ processes are not the pane's). The pane then carries `terminalHarness` with `id`
 `name` and, when `--version` could be read, `version`. It is absent while the foreground is a shell or anything else,
 and `pane.updated` carries every change of it.
 
-**What the supervisor reports.** `Foreground` (supervisor protocol 7) lists, for terminals the engine names, the programs
+**What the supervisor reports.** `Foreground` (the `foreground` feature of the supervisor's welcome; an engine sends it only to a supervisor that lists it, and a supervisor that does not leaves every terminal without a harness) lists, for terminals the engine names, the programs
 in their foreground, each with its pid, executable path and `argv`. On macOS and Linux it is the leader of the terminal's
 foreground process group (`tcgetpgrp`); on Windows, which has no foreground group in a pseudo console, it is the
 processes of the pane's job in tree order (a parent before its children, a parent id counting only when that process is

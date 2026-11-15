@@ -49,6 +49,11 @@ pub trait SupervisorPort: Send {
     fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response>;
     fn supervisor_id(&self) -> &str;
     fn supervisor_generation(&self) -> u32;
+    /// What the supervisor listed in its welcome that it can do beyond the first protocol. A
+    /// request that is not in the first protocol is sent only when its feature is here.
+    fn features(&self) -> Vec<String> {
+        Vec::new()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,6 +130,10 @@ impl SupervisorPort for SupervisorClient {
 
     fn supervisor_generation(&self) -> u32 {
         self.supervisor_generation
+    }
+
+    fn features(&self) -> Vec<String> {
+        self.features.clone()
     }
 }
 

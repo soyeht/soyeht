@@ -6,10 +6,7 @@ use std::collections::BTreeMap;
 ///
 /// 6: a connection first proves that it can read the supervisor's secret (ADR 0160), so an engine
 /// of this build cannot talk to a supervisor of version 5 or the other way round.
-///
-/// 7: `Foreground`, the programs a terminal runs in its foreground (ADR 0165), so an engine of
-/// this build asks a question a supervisor of version 6 does not know.
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 6;
 
 /// What a connection is for. The default is the request connection, the only one older engines and
 /// supervisors know, so a hello without a role is the one of today.
@@ -31,6 +28,9 @@ impl Role {
 
 /// A feature a supervisor lists in its welcome. An engine that does not find it does not use it.
 pub const FEATURE_WATCH: &str = "watch";
+/// The supervisor answers `Foreground` (ADR 0165). It is a feature and not a version, so a running
+/// supervisor of this protocol that does not list it keeps working after an engine update.
+pub const FEATURE_FOREGROUND: &str = "foreground";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

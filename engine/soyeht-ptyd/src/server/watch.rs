@@ -8,7 +8,7 @@
 use super::{Live, State, lock, refuse, send};
 use crate::{
     Result,
-    wire::{FEATURE_WATCH, Readable, Request, Response, VERSION, Watched},
+    wire::{FEATURE_FOREGROUND, FEATURE_WATCH, Readable, Request, Response, VERSION, Watched},
     wire_kind,
 };
 use soyeht_platform::{local::Stream, log};
@@ -150,7 +150,7 @@ pub(super) fn welcome(state: &State) -> Response {
         version: VERSION,
         supervisor_id: state.supervisor_id.clone(),
         supervisor_generation: state.registry.supervisor_generation,
-        features: vec![FEATURE_WATCH.into()],
+        features: vec![FEATURE_WATCH.into(), FEATURE_FOREGROUND.into()],
     }
 }
 

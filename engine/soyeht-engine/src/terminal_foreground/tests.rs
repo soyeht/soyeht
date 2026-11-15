@@ -7,11 +7,13 @@ use crate::{
     panes::persist_new_pane,
     ports::StorePort,
     supervisor_link::tests::Manual,
-    test_panes::{Answering, core_with_workspace, insert_agent_pane, insert_terminal_pane},
+    test_panes::{
+        Answering, Featured, core_with_workspace, insert_agent_pane, insert_terminal_pane,
+    },
 };
 use serde_json::{Value, json};
 use soyeht_protocol::{Actor, Role, method};
-use soyeht_ptyd::wire::Foreground;
+use soyeht_ptyd::wire::{FEATURE_FOREGROUND, Foreground};
 use std::{
     path::Path,
     sync::atomic::{AtomicI64, AtomicUsize, Ordering},
@@ -44,7 +46,12 @@ impl Programs {
         self.asked.load(Ordering::SeqCst)
     }
 
+    /// A supervisor of this build, which lists the `foreground` feature.
     fn supervisor(&self) -> Box<dyn crate::ports::SupervisorPort> {
+        Box::new(Featured(self.answering(), vec![FEATURE_FOREGROUND.into()]))
+    }
+
+    fn answering(&self) -> Box<dyn crate::ports::SupervisorPort> {
         let programs = self.clone();
         Box::new(Answering(move |request| match request {
             Request::Foreground { instance_ids } => {
@@ -176,6 +183,13 @@ impl Rig {
             panic!("expected a reply");
         };
         value
+    }
+
+    /// `agent.list` names no pane and the supervisor was asked nothing.
+    fn assert_nothing_listed(&mut self, sender: &str) {
+        let listed = self.agent_list(sender);
+        assert!(listed["items"].as_array().unwrap().is_empty());
+        assert_eq!(self.programs.asked(), 0);
     }
 
     fn finish(self) {
@@ -380,9 +394,7 @@ fn agent_list_leaves_out_the_terminals_of_other_workspaces() {
         &instance,
         vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
     );
-    let listed = rig.agent_list(&sender);
-    assert!(listed["items"].as_array().unwrap().is_empty());
-    assert_eq!(rig.programs.asked(), 0);
+    rig.assert_nothing_listed(&sender);
     rig.finish();
 }
 
@@ -399,5 +411,28 @@ fn a_list_scan_remembers_the_workspace_it_was_limited_to() {
         scanned.map(|(scope, _)| scope),
         Some(Some(WORKSPACE.into()))
     );
+    rig.finish();
+}
+
+#[test]
+fn a_supervisor_that_does_not_list_the_feature_is_never_asked() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    rig.programs.set(
+        &instance,
+        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
+    );
+    // A supervisor that was running before this engine: its welcome lists no features.
+    rig.core.link_supervisor(rig.programs.answering());
+    rig.core.advance_foreground().unwrap();
+    assert_eq!(rig.programs.asked(), 0);
+    assert_eq!(rig.harness_of(&pane), None);
+    assert!(
+        !rig.core.foreground().watching,
+        "the tick does not wake for it"
+    );
+    let sender = rig.agent_binding("chief");
+    rig.assert_nothing_listed(&sender);
     rig.finish();
 }

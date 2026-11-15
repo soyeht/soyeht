@@ -61,6 +61,7 @@ pub struct Supervisor {
     connection: Arc<Connection>,
     id: Arc<str>,
     generation: u32,
+    features: Arc<[String]>,
 }
 
 impl Supervisor {
@@ -68,6 +69,7 @@ impl Supervisor {
         Self {
             id: Arc::from(port.supervisor_id()),
             generation: port.supervisor_generation(),
+            features: port.features().into(),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -77,6 +79,11 @@ impl Supervisor {
 
     pub fn supervisor_id(&self) -> &str {
         &self.id
+    }
+
+    /// Whether the supervisor listed `feature` in its welcome.
+    pub(crate) fn has_feature(&self, feature: &str) -> bool {
+        self.features.iter().any(|listed| listed == feature)
     }
 
     pub fn supervisor_generation(&self) -> u32 {
