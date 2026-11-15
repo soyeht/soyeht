@@ -8,7 +8,7 @@ use std::{
 use uuid::Uuid;
 
 use crate::{
-    args::{invalid, rpc},
+    args::{Flags, invalid, rpc},
     editor_commands, task_commands,
 };
 
@@ -36,6 +36,7 @@ task release WORKSPACE TASK [OPTIONS] | task request-review WORKSPACE TASK [OPTI
 task complete WORKSPACE TASK SUMMARY [OPTIONS] | task move WORKSPACE TASK STATE REASON\n\
 task unblock WORKSPACE TASK [OPTIONS] | task worktree-clean WORKSPACE TASK\n\
 loop set PANE PROMPT INTERVAL_SECONDS MAX_ROUNDS STOP_WHEN ENABLED\n\
+message TARGET TEXT [--reply-to MESSAGE_ID]\n\
 file open WORKSPACE PATH [OPTIONS] | file read FILE [OPTIONS] | file write FILE REVISION START_LINE START_COLUMN END_LINE END_COLUMN TEXT\n\
 file history FILE [OPTIONS] | file revert FILE VERSION REVISION | file search WORKSPACE QUERY [OPTIONS]\n\
 file symbols FILE REVISION | file diff FILE REVISION | usage list | usage refresh [PROVIDER]\n\
@@ -45,7 +46,31 @@ Task update uses the same editable text, priority and dependency options.\n\
 Task complete accepts --contract-changes JSON and --out-of-scope-edits JSON arrays.\n\
 Executor commands accept --pane ID --generation N --attempt N together.\n\
 Use --bound to read SOYEHT_MCP_BINDING from the pane environment for agent-only calls.\n\
+message names a pane by its name or its id and reads SOYEHT_PANE_BINDING, which a Soyeht terminal pane has.\n\
 Mutating commands accept --idempotency-key KEY as the final option for safe retries.";
+
+/// `message TARGET TEXT`: TARGET is a pane id or a pane's name, which the engine resolves in every
+/// workspace. `--reply-to` is the `m:ID` of the message being answered, which tells the engine
+/// which of two panes of one name to answer.
+fn message(
+    client: &mut Client,
+    target: &str,
+    text: &str,
+    rest: &[&str],
+    key: &str,
+) -> Result<Value> {
+    let flags = Flags::parse(rest, &["--reply-to"])?;
+    let mut params = json!({"text":text,"idempotencyKey":key});
+    if Uuid::parse_str(target).is_ok() {
+        params["targetPaneId"] = json!(target);
+    } else {
+        params["targetName"] = json!(target);
+        if let Some(id) = flags.get("--reply-to") {
+            params["inReplyTo"] = json!(id);
+        }
+    }
+    rpc::<AgentMessageResult>(client, method::AGENT_MESSAGE, params)
+}
 
 fn options(rest: &[&str], allowed: &[(&str, &str)]) -> Result<Value> {
     let mut value = json!({});
@@ -167,6 +192,7 @@ pub fn execute(client: &mut Client, args: &[String]) -> Result<Value> {
         ["usage", rest @ ..] => editor_commands::execute_usage(client, rest, &key),
         ["task", rest @ ..] => task_commands::execute_task(client, rest, &key),
         ["loop", rest @ ..] => task_commands::execute_loop(client, rest, &key),
+        ["message", target, text, rest @ ..] => message(client, target, text, rest, &key),
         _ => Err(invalid(USAGE)),
     }
 }

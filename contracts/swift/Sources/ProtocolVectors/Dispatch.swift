@@ -163,6 +163,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ConfigOption": return try codec(SoyehtProtocol.ConfigOption.self, data)
         case "ConfigOperation": return try codec(SoyehtProtocol.ConfigOperation.self, data)
         case "PromptItem": return try codec(SoyehtProtocol.PromptItem.self, data)
+        case "AgentMessageKind": return try codec(SoyehtProtocol.AgentMessageKind.self, data)
         case "AgentMessageSource": return try codec(SoyehtProtocol.AgentMessageSource.self, data)
         case "AgentListParams": return try codec(SoyehtProtocol.AgentListParams.self, data)
         case "AgentListResult": return try codec(SoyehtProtocol.AgentListResult.self, data)

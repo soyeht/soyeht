@@ -275,7 +275,7 @@ fn runtime_rig_slot_keeps_owner_failure_visible_and_recovers_the_queue() {
 }
 
 #[test]
-fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
+fn agent_messages_are_queued_labeled_and_rate_limited_per_direction_in_every_workspace() {
     let rig = Rig::new();
     let (mut human, sender) = rig.agent();
     let workspace = human.pane(&sender)["workspaceId"]
@@ -338,16 +338,33 @@ fn agent_messages_are_scoped_queued_labeled_and_rate_limited_per_direction() {
             .iter()
             .all(|item| !item["text"].as_str().unwrap().contains("seventh"))
     );
+    // A pane of another workspace is addressed like one of this workspace (ADR 0165): no policy
+    // keeps agents apart, the limit above is the only one.
     let other_workspace = create_workspace(&mut human, "Other", &rig.path, "other-agent-workspace");
     let (_, outsider) = rig.agent_in_workspace(&other_workspace);
-    let forbidden = agent.request(
+    human.call(
+        "pane.draft",
+        json!({"paneId":outsider,"active":true,"idempotencyKey":"hold-outsider"}),
+    );
+    let listed = agent.call("agent.list", json!({}));
+    assert!(
+        listed["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["paneId"] == outsider && item["workspaceName"] == "Other")
+    );
+    let across = agent.call(
         "agent.message",
         json!({
-            "targetPaneId":outsider,"text":"must stay local",
+            "targetPaneId":outsider,"text":"across workspaces",
             "idempotencyKey":"cross-workspace-agent-message"
         }),
     );
-    assert_eq!(forbidden["error"]["data"]["kind"], "not_found");
+    assert_eq!(across["queued"], true);
+    let queue = human.call("pane.queue.list", json!({"paneId":outsider,"limit":64}));
+    assert_eq!(queue["items"][0]["text"], "across workspaces");
+    assert_eq!(queue["items"][0]["agentMessage"]["workspaceName"], "Test");
     let mut recipient = agent_client(&rig, &target);
     assert_eq!(
         recipient.call(

@@ -2030,14 +2030,52 @@ public struct PromptItem: Codable, Sendable {
     }
 }
 
+public enum AgentMessageKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterable {
+    case `agent`
+    case `terminal`
+    case `web`
+    /// A value a later engine sends: shown as it comes, never an error.
+    case unknown(String)
+    public static let allCases: [AgentMessageKind] = [.`agent`, .`terminal`, .`web`]
+    /// Never fails: a value this build does not know is `unknown`.
+    public init?(rawValue: String) {
+        switch rawValue {
+        case "agent": self = .`agent`
+        case "terminal": self = .`terminal`
+        case "web": self = .`web`
+        default: self = .unknown(rawValue)
+        }
+    }
+    public var rawValue: String {
+        switch self {
+        case .`agent`: "agent"
+        case .`terminal`: "terminal"
+        case .`web`: "web"
+        case .unknown(let value): value
+        }
+    }
+    public init(from decoder: any Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        self = AgentMessageKind(rawValue: text) ?? .unknown(text)
+    }
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+}
+
 public struct AgentMessageSource: Codable, Sendable {
     public var `paneId`: Id
     public var `name`: String
     public var `harness`: String
-    public init(`paneId`: Id, `name`: String, `harness`: String) {
+    public var `kind`: AgentMessageKind?
+    public var `workspaceName`: String?
+    public init(`paneId`: Id, `name`: String, `harness`: String, `kind`: AgentMessageKind? = nil, `workspaceName`: String? = nil) {
         self.`paneId` = `paneId`
         self.`name` = `name`
         self.`harness` = `harness`
+        self.`kind` = `kind`
+        self.`workspaceName` = `workspaceName`
     }
 }
 

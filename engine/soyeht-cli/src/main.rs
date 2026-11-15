@@ -12,7 +12,9 @@ mod uninstall_commands;
 use commands::USAGE;
 use serde_json::{Value, json};
 use soyeht_cli::{Client, Error, Result};
-use soyeht_protocol::{data_directory::resolve, profile::SELECTION_ENV};
+use soyeht_protocol::{
+    data_directory::resolve, handshake::PANE_BINDING_ENV, profile::SELECTION_ENV,
+};
 use std::path::PathBuf;
 
 /// What a command prints: the JSON every command answers with, or a text meant to be read or
@@ -87,6 +89,11 @@ fn run() -> Result<Output> {
         Client::connect_hook(&directory)
     } else if bound {
         let binding = std::env::var("SOYEHT_MCP_BINDING").map_err(|_| Error::MissingBinding)?;
+        Client::connect_bound(&directory, &binding)
+    } else if args.first().is_some_and(|arg| arg == "message") {
+        // Sent from a terminal pane, which speaks for itself through the binding in its
+        // environment (ADR 0165).
+        let binding = std::env::var(PANE_BINDING_ENV).map_err(|_| Error::MissingPaneBinding)?;
         Client::connect_bound(&directory, &binding)
     } else {
         Client::connect(&directory)

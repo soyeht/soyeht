@@ -26,6 +26,7 @@ use crate::{
     supervisor_handle::{DEADLINE, Supervisor, Turn},
 };
 use serde_json::Value;
+use soyeht_protocol::{PaneMode, handshake::PANE_BINDING_ENV};
 use soyeht_ptyd::wire::{Instance, ProcessKind, Response, Spawn};
 
 /// How a start ended, as the code that asked for it sees it under the lock.
@@ -178,16 +179,23 @@ impl Core {
             Some(session) => Some(session.spawn.clone()),
             None => StorePort::pane_launch(&self.store, id).map_err(errors::storage)?,
         };
+        let mut env = launch
+            .as_ref()
+            .map(|launch| launch.env.clone())
+            .unwrap_or_default();
+        if pane.pane.mode == PaneMode::Terminal {
+            // The pane's binding, for `soyeht-mcp` and `soyeht message` started in it (ADR 0165).
+            env.insert(PANE_BINDING_ENV.into(), self.terminal_binding(pane));
+        }
         Ok(Spawn {
             instance_key: pane.instance_key.clone(),
             generation: pane.pane.generation,
             kind: ProcessKind::Pty,
             cwd: pane.pane.cwd.clone(),
             argv: launch
-                .as_ref()
-                .map(|l| l.argv.clone())
+                .map(|launch| launch.argv)
                 .unwrap_or_else(soyeht_ptyd::shell::default_login_shell),
-            env: launch.map(|l| l.env).unwrap_or_default(),
+            env,
             cols: pane.pane.cols as u16,
             rows: pane.pane.rows as u16,
         })

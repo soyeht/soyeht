@@ -15,6 +15,7 @@ pub enum Error {
     MissingArgument,
     MissingDataDirectory,
     MissingBinding,
+    MissingPaneBinding,
     Service(soyeht_service::Error),
     EngineUnavailable(Box<Error>),
 }
@@ -51,6 +52,10 @@ impl fmt::Display for Error {
             Self::MissingBinding => {
                 formatter.write_str("SOYEHT_MCP_BINDING is required with --bound")
             }
+            Self::MissingPaneBinding => formatter.write_str(
+                "this program is not attached to a Soyeht pane: SOYEHT_PANE_BINDING is not set; \
+start it from a Soyeht terminal pane",
+            ),
             Self::Service(error) => write!(formatter, "service: {error}"),
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the engine: {error}")

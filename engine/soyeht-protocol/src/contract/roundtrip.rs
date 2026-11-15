@@ -166,6 +166,7 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "ConfigOption" => decode_encode::<ConfigOption>(name, value),
         "ConfigOperation" => decode_encode::<ConfigOperation>(name, value),
         "PromptItem" => decode_encode::<PromptItem>(name, value),
+        "AgentMessageKind" => decode_encode::<AgentMessageKind>(name, value),
         "AgentMessageSource" => decode_encode::<AgentMessageSource>(name, value),
         "AgentListParams" => decode_encode::<AgentListParams>(name, value),
         "AgentListResult" => decode_encode::<AgentListResult>(name, value),

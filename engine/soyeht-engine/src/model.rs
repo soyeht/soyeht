@@ -58,6 +58,17 @@ pub struct Connected {
     pub pair_request: Option<String>,
     pub web_host: bool,
     pub attachments: AttachmentAssembler,
+    /// The process (instance key and generation) of the terminal pane whose binding this
+    /// connection presented. The connection speaks for that process only: once the pane runs
+    /// another one, its requests are refused (ADR 0165).
+    pub terminal_instance: Option<TerminalInstance>,
+}
+
+/// The process of a terminal pane, as the store knows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalInstance {
+    pub instance_key: String,
+    pub generation: u32,
 }
 
 /// With `contract-checks`, an event or a result the contract does not describe is an

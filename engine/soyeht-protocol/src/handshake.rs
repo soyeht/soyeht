@@ -10,6 +10,11 @@ use crate::{
 };
 use serde_json::Value;
 
+/// The environment variable that carries a terminal pane's binding (ADR 0165): the engine puts it
+/// in the environment of the pane's process, and `soyeht-mcp` and `soyeht message`, started
+/// inside the pane, send its value as the `binding` of their `hello`.
+pub const PANE_BINDING_ENV: &str = "SOYEHT_PANE_BINDING";
+
 /// The engine's first message, decoded; anything else is not an engine of this protocol.
 pub fn expect_challenge(message: &Value) -> Result<AuthChallengeEvent> {
     if message["method"].as_str() != Some(EventName::AuthChallenge.as_str()) {

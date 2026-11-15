@@ -265,10 +265,17 @@ Read from the code, the tests and the history of that branch (200 commits in two
 
 For every terminal pane (a plain shell included, because the person types `claude` whenever they like)
 the engine makes a binding when the pane's process starts and puts it in the process's environment
-(`Spawn.env`, which the supervisor already carries; on Windows, the environment block of the pane's
-process), with the pane's id. It keeps the binding's SHA-256 only. The binding **ends when the pane's
-process is replaced** (a restart, a harness switch): it is tied to the pane's instance key and
-generation, and a new process gets a new one. A stale binding gets `unauthorized`.
+(`Spawn.env`, which the supervisor already carries and now allows for a terminal, supervisor protocol
+7; on Windows, the environment block of the pane's process) as `SOYEHT_PANE_BINDING`. It is
+`PANE.TAG`: the pane's id, then a keyed hash (HMAC-SHA-256, with a key derived from the engine's own
+key) of the pane's id, the key of its process instance and its generation. **The engine derives it and
+stores nothing**: a start asked again for one instance key gets the same binding, which the supervisor
+needs because it hands back the process the first start made, and a restart of the engine verifies the
+bindings of the panes that outlived it. An earlier draft kept a SHA-256 of a random binding in the
+store; it could not tell a start repeated after a lost answer from a new process. The binding **ends
+when the pane's process is replaced** (a restart, a recovery, a harness switch): the instance key and
+the generation change, so the old binding no longer verifies, and a connection that holds it is
+refused at its next request. A stale binding gets `unauthorized`.
 
 A connection that presents it is granted the `agent` role for the messaging methods (list, message,
 status, inbox of its own pane), for its own pane only. Task tools stay with the ACP agents in
@@ -765,7 +772,7 @@ Sizes are an agent's working days: S 1, M 2 to 3, L 4 to 6. The first two are sm
 |---|---|---|---|
 | 0 | **Spike**: the probe MCP server and shell-tool probe on Claude, Codex, OpenCode and Cursor started in a pane (environment, parents, controlling terminal), the ConPTY paste-marker probe, `--version` and foreground shapes of the real binaries. Gates every promise to send | M | |
 | 0b | **`native_text`, the short header and the text reduction**: the compact `[from → to · m:ID]` header with the name rule, the removal of invisible code points on every channel, the forged-route fix and its tests; SECURITY.md and contract 08 state the known limitation | S | |
-| 1 | **Sender and names**: the pane binding at spawn on three systems (hash in the store, ended with the process), identity for terminal panes, `soyeht-mcp` terminal mode with a long-lived connection, `soyeht message`, names across workspaces with ambiguity, `kind`, the web-pane rule; the fallbacks the spike chose | M | 0 |
+| 1 | **Sender and names** (built): the pane binding at spawn on three systems (derived, ended with the process), identity for terminal panes, `soyeht-mcp` terminal mode with a long-lived connection, `soyeht message`, names across workspaces with ambiguity, `kind`, the web-pane rule; the fallbacks the spike chose | M | 0 |
 | 2 | **Foreground and listing**: `Foreground` (supervisor 7), matching on path, `argv[0]` and script, the Windows job tree, `agent.list` with terminals and web panes, `Pane.terminalHarness`, version read and cache | M | 0 |
 | 3 | **Observation and decision**: the terminal model off the lock with its own paste-mode tracking, the profile type with Claude's profile, the pure decision function, the guarded input and the echo check, vectors from synthetic screens, ConPTY handling | L | 2 |
 | 4 | **Calibration**: the collection scenarios on four real harnesses on three systems, the 1000-screen vectors, the paste-size runs, the thresholds, the other three profiles, held to the bar | L | 3, the recorder |

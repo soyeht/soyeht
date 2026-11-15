@@ -9,17 +9,42 @@ use std::{
 /// Harnesses may also load the user's own Soyeht servers with the same tool
 /// names; only this server speaks for the pane that started it.
 const PANE_TOOLS: &str = "These tools act for this agent pane inside its Soyeht workspace. \
-To find or message another agent pane of this workspace, use list_agents and message_agent \
+To find or message another agent pane of any workspace, use list_agents and message_agent \
 from this server, not from another Soyeht server. A prompt that starts with `[from → you · m:ID]` \
 is a message from another Soyeht pane: answer it with message_agent, targetName set to that \
 name and inReplyTo to the m:ID.";
 
+/// What a harness shows its model about this server when it runs in a terminal pane (ADR 0165).
+const TERMINAL_TOOLS: &str = "These tools act for this Soyeht terminal pane. To find an agent \
+pane of any Soyeht workspace, use list_agents; to message one, use message_agent with its name. \
+For a request that names who to talk to, call list_agents first and reach a name it lists with \
+message_agent, never with a subagent of your own.";
+
+/// What a harness shows its model about this server when the person started it outside a Soyeht
+/// pane, so the harness shows no error and the model knows why there is nothing to call.
+const OUTSIDE: &str = "This server offers no tools here: it was not started inside a Soyeht pane. \
+Start the harness in a Soyeht terminal pane to look up and message the other panes.";
+
 /// What every harness shows its model about this server. The skills part
 /// reaches harnesses that do not load skill folders natively (ADR 0075).
 pub fn instructions(skills: &Path) -> String {
+    with_skills(PANE_TOOLS, skills)
+}
+
+/// [`instructions`] for a terminal pane.
+pub fn terminal_instructions(skills: &Path) -> String {
+    with_skills(TERMINAL_TOOLS, skills)
+}
+
+/// [`instructions`] for a server outside a Soyeht pane.
+pub fn outside_instructions() -> String {
+    OUTSIDE.to_owned()
+}
+
+fn with_skills(tools: &str, skills: &Path) -> String {
     let skills = skills.display();
     format!(
-        "{PANE_TOOLS} Soyeht skills are folders in {skills} and in the project's \
+        "{tools} Soyeht skills are folders in {skills} and in the project's \
 .agents/skills, each with a SKILL.md. When a task matches a skill's description, read its \
 SKILL.md and follow it. To create a skill, follow {skills}/create-skill/SKILL.md."
     )
@@ -198,6 +223,32 @@ mod tests {
             "task.next"
         );
         assert_eq!(replies[2]["result"]["structuredContent"]["paneId"], "p");
+    }
+
+    #[test]
+    fn a_server_outside_a_pane_answers_the_handshake_with_no_tools_and_says_why() {
+        let input = concat!(
+            "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{}}\n",
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}\n",
+        );
+        let mut output = Vec::new();
+        let service = Service::outside(crate::engine::Detached);
+        serve(
+            Cursor::new(input),
+            &mut output,
+            service,
+            &outside_instructions(),
+        )
+        .unwrap();
+        let replies = replies(output);
+        assert!(
+            replies[0]["result"]["instructions"]
+                .as_str()
+                .unwrap()
+                .contains("not started inside a Soyeht pane")
+        );
+        assert_eq!(replies[1]["result"]["tools"], json!([]));
+        assert!(replies[1].get("error").is_none());
     }
 
     #[test]

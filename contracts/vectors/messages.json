@@ -4445,8 +4445,15 @@
     "value": {
       "paneId": "00000000-0000-4000-8000-000000000001",
       "name": "Research",
-      "harness": "Codex"
+      "harness": "Codex",
+      "kind": "agent",
+      "workspaceName": "Soyeht"
     }
+  },
+  {
+    "name": "AgentMessageKind",
+    "type": "AgentMessageKind",
+    "value": "terminal"
   },
   {
     "name": "AgentListParams",

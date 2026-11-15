@@ -21,6 +21,20 @@ pub trait EnginePort {
     }
 }
 
+/// What a server started outside a Soyeht pane has in place of a connection: nothing, and its
+/// scope offers no tool that would ask.
+pub struct Detached;
+
+impl EnginePort for Detached {
+    fn role(&self) -> &Role {
+        &Role::Agent
+    }
+
+    fn request(&mut self, _method: &str, _params: Value) -> Result<Value> {
+        Err(Error::ToolForbidden)
+    }
+}
+
 pub struct EngineAttachment {
     pub reference: AttachmentRef,
     pub bytes: Vec<u8>,

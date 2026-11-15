@@ -1612,6 +1612,19 @@ pub struct PromptItem {
     pub agent_message: Option<AgentMessageSource>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum AgentMessageKind {
+    #[serde(rename = "agent")]
+    Agent,
+    #[serde(rename = "terminal")]
+    Terminal,
+    #[serde(rename = "web")]
+    Web,
+    /// A value this build does not know (ADR 0161).
+    #[cfg(feature = "open-enums")]
+    #[serde(other, skip_serializing)]
+    Unknown,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentMessageSource {
     #[serde(rename = "paneId")]
     pub pane_id: Id,
@@ -1619,6 +1632,10 @@ pub struct AgentMessageSource {
     pub name: String,
     #[serde(rename = "harness")]
     pub harness: String,
+    #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
+    pub kind: Option<AgentMessageKind>,
+    #[serde(rename = "workspaceName", skip_serializing_if = "Option::is_none")]
+    pub workspace_name: Option<String>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AgentListParams {}

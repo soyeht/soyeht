@@ -6,7 +6,11 @@ use std::collections::BTreeMap;
 ///
 /// 6: a connection first proves that it can read the supervisor's secret (ADR 0160), so an engine
 /// of this build cannot talk to a supervisor of version 5 or the other way round.
-pub const VERSION: u32 = 6;
+///
+/// 7: a terminal's environment may carry its pane binding (ADR 0165), which a supervisor of version
+/// 6 refuses as a variable the engine may not set, so an engine of this build cannot start a
+/// terminal on one.
+pub const VERSION: u32 = 7;
 
 /// What a connection is for. The default is the request connection, the only one older engines and
 /// supervisors know, so a hello without a role is the one of today.

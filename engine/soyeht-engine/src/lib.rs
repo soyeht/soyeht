@@ -35,6 +35,7 @@ mod operation_log;
 pub mod outbox;
 pub mod pairing;
 pub mod pairing_approval;
+mod pane_binding;
 pub mod pane_observations;
 mod pane_restore;
 pub mod panes;

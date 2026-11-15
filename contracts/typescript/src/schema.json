@@ -2900,6 +2900,15 @@
       ],
       "additionalProperties": true
     },
+    "AgentMessageKind": {
+      "type": "string",
+      "enum": [
+        "agent",
+        "terminal",
+        "web"
+      ],
+      "description": "What the pane of an `agent.list` item or of the sender of a message is: an agent pane Soyeht opened (`agent`) or a terminal pane (`terminal`, ADR 0165). The engine may send other values later (`web`)."
+    },
     "AgentMessageSource": {
       "type": "object",
       "properties": {
@@ -2911,6 +2920,13 @@
         },
         "harness": {
           "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/AgentMessageKind"
+        },
+        "workspaceName": {
+          "type": "string",
+          "description": "The name of the workspace the pane is in, reduced to one line like the pane's own name. `agent.list` answers every workspace, so it says where each pane is."
         }
       },
       "required": [
@@ -13081,6 +13097,7 @@
   },
   "x-openEnums": [
     "AgentLoginPhase",
+    "AgentMessageKind",
     "EngineReachabilityReason",
     "ErrorKind",
     "HarnessEnvironmentIssue",

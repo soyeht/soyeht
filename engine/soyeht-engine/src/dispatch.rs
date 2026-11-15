@@ -2,7 +2,7 @@ use crate::{
     auth,
     core::Core,
     errors::{self, Result},
-    model::{self, Connected},
+    model::{self, Connected, TerminalInstance},
     outbox::Outbox,
     ports::StorePort,
 };
@@ -80,6 +80,14 @@ fn uses_native_rpc_result(method: &str) -> bool {
     )
 }
 
+/// The pane a binding speaks for.
+struct BoundPane {
+    role: Role,
+    pane: String,
+    /// For a terminal pane, the process the binding belongs to.
+    terminal: Option<TerminalInstance>,
+}
+
 impl Core {
     pub fn connect(&mut self, local: bool, signed_ui: bool, outbox: Outbox) -> Result<String> {
         let id = Uuid::new_v4().to_string();
@@ -105,6 +113,7 @@ impl Core {
                 attachments: AttachmentAssembler::new(
                     limits::PROMPT_ATTACHMENT_TOTAL_BYTES.max(limits::WEB_SCREENSHOT_BYTES),
                 )?,
+                terminal_instance: None,
             },
         );
         Ok(id)
@@ -210,14 +219,22 @@ impl Core {
         }
         let nonce = client.nonce;
         let mut engine_proof = None;
+        let mut terminal_instance = None;
         let (role, device_id, pane_id, scope) = if let Some(binding) = hello.binding.as_deref() {
             if !local {
                 return Err(errors::unauthorized(
                     "Agent bindings are accepted only on the local socket",
                 ));
             }
-            let (role, pane) = self.agent_identity(binding)?;
-            (role, None, Some(pane.clone()), format!("agent:{pane}"))
+            let identity = self.agent_identity(binding)?;
+            terminal_instance = identity.terminal;
+            let pane = identity.pane;
+            (
+                identity.role,
+                None,
+                Some(pane.clone()),
+                format!("agent:{pane}"),
+            )
         } else if local {
             // The listener has already verified the connecting operating-system uid.
             let uid = soyeht_platform::user::id()?;
@@ -253,6 +270,7 @@ impl Core {
         client.scope = scope;
         client.actor = Some(actor);
         client.web_host = wants_web_host;
+        client.terminal_instance = terminal_instance;
         serde_json::to_value(Welcome {
             engine_version: env!("CARGO_PKG_VERSION").into(),
             protocol_version: version,
@@ -284,7 +302,9 @@ impl Core {
         Ok(())
     }
 
-    fn agent_identity(&self, candidate: &str) -> Result<(Role, String)> {
+    /// Who a binding is for: an agent pane, or a terminal pane and the process of it the binding
+    /// belongs to.
+    fn agent_identity(&self, candidate: &str) -> Result<BoundPane> {
         let mut found = None;
         for (pane, running) in self.agents.iter() {
             let active = self
@@ -300,8 +320,24 @@ impl Core {
                     Role::Chief => Role::Chief,
                     _ => return Err(errors::internal("Agent checkpoint has an invalid role")),
                 };
-                found = Some((role, pane.clone()));
+                found = Some(BoundPane {
+                    role,
+                    pane: pane.clone(),
+                    terminal: None,
+                });
             }
+        }
+        if found.is_none()
+            && let Some(pane) = self.terminal_pane_of_binding(candidate)
+        {
+            found = Some(BoundPane {
+                role: Role::Agent,
+                pane: pane.pane.pane_id.clone(),
+                terminal: Some(TerminalInstance {
+                    instance_key: pane.instance_key.clone(),
+                    generation: pane.pane.generation,
+                }),
+            });
         }
         found.ok_or_else(|| errors::unauthorized("Unknown agent binding"))
     }
@@ -338,6 +374,26 @@ impl Core {
             .as_ref()
             .ok_or_else(|| errors::unauthorized("Handshake required"))?;
         requires_signed_ui(method, client.signed_ui)?;
+        if let Some(bound) = &client.terminal_instance {
+            // A terminal pane's binding speaks only for the process it was made for, and only
+            // for messaging (ADR 0165); the task and web families stay with the agent panes.
+            let current = actor
+                .pane_id
+                .as_deref()
+                .and_then(|pane| self.panes.get(pane));
+            if !current.is_some_and(|pane| {
+                !pane.stored.closed
+                    && pane.stored.instance_key == bound.instance_key
+                    && pane.stored.pane.generation == bound.generation
+            }) {
+                return Err(errors::unauthorized("Stale agent binding"));
+            }
+            if !matches!(method, method::AGENT_LIST | method::AGENT_MESSAGE) {
+                return Err(errors::forbidden_role(
+                    "Agent binding method is not allowed",
+                ));
+            }
+        }
         if matches!(actor.role, Role::Agent | Role::Chief)
             && !method_family::TASK.contains(&method)
             && !method_family::WEB.contains(&method)
