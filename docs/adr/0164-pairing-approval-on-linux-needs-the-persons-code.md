@@ -466,8 +466,14 @@ the text above in these places.
   The question's list is what the person is shown: once the device is revoked, the app lists its
   panes again and closes that set, since the device may have made some in between and its
   connection is closed by then. A pane that is already gone counts as closed.
-- **The visible notice of a changed tailnet** is not part of this slice: the desktop's
-  confirmation of `tailnetChanged` follows it.
+- **The visible notice of a changed tailnet** is a transient event, `device.pair_tailnet_changed`,
+  sent to the person's own connections (not to a paired device) the first time a change waits and
+  again for another one, so that a sheet that is already open says so: the answer of `device.pair.start`
+  only states it for a sheet opened after the refusal. The desktop shows it with the action that
+  confirms (`device.pair.start {confirmTailnet: true}`), which opens a new window. The person is shown
+  the tailnet name the refusal saw, and the confirmation names the identity shown (`tailnetPin`, sent
+  back as `confirmTailnetPin`): the engine pins it only while it is still the unconfirmed one, so
+  a change that happens between the person's look and their click is not confirmed for them.
 
 ## Slices
 
