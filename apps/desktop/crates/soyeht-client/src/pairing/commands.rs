@@ -32,6 +32,9 @@ pub enum Command {
     /// Open a pairing window. `ticket` names the attempt in the answer, so that the answer of an
     /// attempt a reconnect replaced is not taken for the current one.
     Start { ticket: u64 },
+    /// Open a pairing window, and with it confirm the tailnet change the engine refused a pairing
+    /// for (`confirmTailnet`): the person chose to. It is answered as a start is.
+    ConfirmTailnet { ticket: u64, pin: Option<String> },
     /// Allow or deny a request. `code` goes only to an engine that offers `pairing-code`, and only
     /// with an approval.
     Decide {
@@ -61,7 +64,7 @@ impl Command {
     pub fn failure(&self, error: &Error) -> Event {
         let refusal = Refusal::of(error);
         match self {
-            Self::Start { ticket } => Event::StartFailed {
+            Self::Start { ticket } | Self::ConfirmTailnet { ticket, .. } => Event::StartFailed {
                 ticket: *ticket,
                 refusal,
             },
@@ -105,12 +108,16 @@ fn close_panes_of(rpc: &Rpc, device_id: &str) -> Option<usize> {
 /// connection alone (ADR 0164): a request is decided on the connection that opened its window.
 pub fn run(rpc: &Rpc, command: &Command) -> Result<Option<ClientEvent>> {
     let event = match command {
-        Command::Start { ticket } => {
+        Command::Start { ticket } | Command::ConfirmTailnet { ticket, .. } => {
+            let (confirm_tailnet, confirm_tailnet_pin) = match command {
+                Command::ConfirmTailnet { pin, .. } => (Some(true), pin.clone()),
+                _ => (None, None),
+            };
             let started: DevicePairStartResult = serde_json::from_value(rpc.call(
                 &Request::DevicePairStart(DevicePairStartParams {
                     idempotency_key: key(),
-                    // The tailnet-change confirmation is a later slice of ADR 0164.
-                    confirm_tailnet: None,
+                    confirm_tailnet,
+                    confirm_tailnet_pin,
                 }),
             )?)?;
             Event::Started {

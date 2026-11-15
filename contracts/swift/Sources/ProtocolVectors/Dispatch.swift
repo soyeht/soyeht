@@ -130,6 +130,7 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "StreamGapEvent": return try codec(SoyehtProtocol.StreamGapEvent.self, data)
         case "DevicePairRequestedEvent": return try codec(SoyehtProtocol.DevicePairRequestedEvent.self, data)
         case "DevicePairedEvent": return try codec(SoyehtProtocol.DevicePairedEvent.self, data)
+        case "DevicePairTailnetChangedEvent": return try codec(SoyehtProtocol.DevicePairTailnetChangedEvent.self, data)
         case "DeviceRevokedEvent": return try codec(SoyehtProtocol.DeviceRevokedEvent.self, data)
         case "PairResultEvent": return try codec(SoyehtProtocol.PairResultEvent.self, data)
         case "EngineUpdatingEvent": return try codec(SoyehtProtocol.EngineUpdatingEvent.self, data)

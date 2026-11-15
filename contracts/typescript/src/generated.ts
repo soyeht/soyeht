@@ -396,6 +396,7 @@ export interface PaneExperimentExportResult {
 export interface DevicePairStartParams {
   "idempotencyKey": Id;
   "confirmTailnet"?: boolean;
+  "confirmTailnetPin"?: string;
 }
 
 export interface DevicePairStartResult {
@@ -405,6 +406,8 @@ export interface DevicePairStartResult {
   "qr"?: string;
   "reachability"?: EngineReachability;
   "tailnetChanged"?: boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DevicePairDecideParams {
@@ -679,6 +682,12 @@ export interface DevicePairedEvent {
   "at": string;
   "actor"?: Actor;
   "device": Device;
+}
+
+export interface DevicePairTailnetChangedEvent {
+  "tailnetChanged": boolean;
+  "tailnetName"?: string;
+  "tailnetPin"?: string;
 }
 
 export interface DeviceRevokedEvent {
@@ -3796,6 +3805,7 @@ export interface Events {
   "device.pair_requested": DevicePairRequestedEvent;
   "device.paired": DevicePairedEvent;
   "device.revoked": DeviceRevokedEvent;
+  "device.pair_tailnet_changed": DevicePairTailnetChangedEvent;
   "pair.result": PairResultEvent;
   "engine.updating": EngineUpdatingEvent;
   "engine.restarted": EngineRestartedEvent;
@@ -3879,6 +3889,7 @@ export const eventRegistry = {
   "device.pair_requested": { paramsType: "DevicePairRequestedEvent", durable: true },
   "device.paired": { paramsType: "DevicePairedEvent", durable: true },
   "device.revoked": { paramsType: "DeviceRevokedEvent", durable: true },
+  "device.pair_tailnet_changed": { paramsType: "DevicePairTailnetChangedEvent", durable: false },
   "pair.result": { paramsType: "PairResultEvent", durable: false },
   "engine.updating": { paramsType: "EngineUpdatingEvent", durable: true },
   "engine.restarted": { paramsType: "EngineRestartedEvent", durable: true },
