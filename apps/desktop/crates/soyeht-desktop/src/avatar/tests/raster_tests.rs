@@ -105,10 +105,16 @@ fn the_mouth_is_one_geometry_never_two_half_visible_mouths() {
         inside,
     );
     let half = raster.render(&frame(towards_a(0.5), OPEN_EYES, NEUTRAL), SPEC.side);
-    let aperture = column_count(&half, x, inside);
-    // Half way the aperture is half of the open one, filled with the one inner mouth there is.
+    // The inner mouth comes in with the weight of the drawings that have a picture of it: half
+    // way it is half over what is below, and it is the one inner mouth there is.
+    let faded = |c: usize| ((u16::from(BASE[c]) + u16::from(inside[c])) / 2) as u8;
+    let faded = [faded(0), faded(1), faded(2), 255];
+    let aperture = (0..half.height)
+        .filter(|y| near(rgba(&half, x, *y), faded, 2))
+        .count();
+    // Half way the aperture is about half of the open one.
     assert!(open >= 12, "{open}");
-    assert!(aperture.abs_diff(open / 2) <= 2, "{aperture} of {open}");
+    assert!(aperture.abs_diff(open / 2) <= 3, "{aperture} of {open}");
     // The lips are the weighted average of the two drawings, at the one half-open geometry.
     let [_, cy] = SPEC.mouth_centre();
     let lip = rgba(&half, x, (cy - aperture as f64 / 2.0 - 1.0) as u32);
@@ -256,4 +262,56 @@ fn a_spoken_clip_animates_the_avatar_and_every_frame_is_whole() {
         distinct.insert(picture.bgra.to_vec());
     }
     assert!(distinct.len() > 60, "{} distinct frames", distinct.len());
+}
+
+/// How many pixels of two pictures of the same size differ by more than `by` in some channel.
+fn changed(a: &Picture, b: &Picture, by: u8) -> usize {
+    a.bgra
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(b.bgra.as_chunks::<4>().0)
+        .filter(|(p, q)| p.iter().zip(q.iter()).any(|(x, y)| x.abs_diff(*y) > by))
+        .count()
+}
+
+#[test]
+fn a_drawing_coming_in_does_not_move_the_edge_of_a_part() {
+    // The skin fades out towards the edge of the mouth's area. A drawing that comes in at a
+    // thousandth of the weight changes the picture by a thousandth: the feather is laid once for
+    // the part, not once for each drawing (which made the edge a third more opaque at once).
+    let mut raster = rasteriser(SPEC);
+    let alone = frame(towards_a(0.0), OPEN_EYES, NEUTRAL);
+    let alone = raster.render(&alone, SPEC.side).bgra.to_vec();
+    let with_a = frame(towards_a(0.001), OPEN_EYES, NEUTRAL);
+    let with_a = raster.render(&with_a, SPEC.side);
+    let before = Picture {
+        width: with_a.width,
+        height: with_a.height,
+        bgra: &alone,
+    };
+    // A pixel on the edge of a contour may cross to the next one: a handful at the most.
+    assert!(
+        changed(&before, &with_a, 8) <= 6,
+        "{}",
+        changed(&before, &with_a, 8)
+    );
+}
+
+#[test]
+fn the_inner_mouth_does_not_pop_in_when_a_drawing_passes_the_layer_threshold() {
+    // The inner mouth has a picture only in the open drawings, and a sliver of an area in the
+    // others. Passing a weight of 1e-4 used to draw the whole of its picture at full opacity over
+    // that sliver.
+    let mut raster = rasteriser(SPEC);
+    let under = frame(towards_a(0.00009), OPEN_EYES, NEUTRAL);
+    let under = raster.render(&under, SPEC.side).bgra.to_vec();
+    let over = frame(towards_a(0.00011), OPEN_EYES, NEUTRAL);
+    let over = raster.render(&over, SPEC.side);
+    let before = Picture {
+        width: over.width,
+        height: over.height,
+        bgra: &under,
+    };
+    assert_eq!(changed(&before, &over, 8), 0);
 }

@@ -1,11 +1,17 @@
 //! Textured triangles onto a `Pixmap`: the mouth, which the package describes as a mesh.
 //!
+//! A triangle is drawn once, with every layer of the picture read at each of its pixels and
+//! mixed one over another (the exact weighted average of the drawings), and that picture is laid
+//! over what is below with the feather of the corners. The feather
+//! therefore counts once, however many drawings take part: a layer coming in or going out does
+//! not change the edge of the part.
+//!
 //! The corners snap to 1/16 of a pixel and the edge tests are exact integers, so two triangles
 //! that share an edge cover each pixel on it once between them (a pixel exactly on an edge
 //! belongs to the triangle whose edge runs one way): a feathered part drawn at less than full
 //! opacity shows no seam and no double-drawn line.
 
-use super::pixmap::Pixmap;
+use super::pixmap::{Pixmap, over};
 
 /// Corner coordinates are kept in this many parts of a pixel.
 const SUBPIXEL: i64 = 16;
@@ -15,14 +21,24 @@ const FAR: f64 = 100_000.0;
 /// The opacity of a texel, as a whole, in the 256ths `Pixmap::lay_over` takes.
 const WHOLE: f32 = 256.0;
 
-/// One corner: where it lands (pixels of the target), where it reads (0 to 1 across the source) and
-/// how opaque it is, 0 to 1.
+/// One corner: where it lands (pixels of the target) and how opaque the part is there, 0 to 1
+/// (the feather at the edge of the skin).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Corner {
     pub(super) at: [f32; 2],
-    pub(super) texel: [f32; 2],
+    pub(super) feather: f32,
+}
+
+/// What one drawing contributes to a triangle: where its three corners read (0 to 1 across the
+/// source) and its opacity over the drawings before it.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct Reading {
+    pub(super) texel: [[f32; 2]; 3],
     pub(super) alpha: f32,
 }
+
+/// The most drawings that take part in a picture: the nine of a mouth.
+pub(super) const MOST_READINGS: usize = 9;
 
 #[derive(Clone, Copy)]
 struct Snapped {
@@ -50,9 +66,19 @@ fn owns_edge(a: Snapped, b: Snapped) -> bool {
     dy > 0 || (dy == 0 && dx > 0)
 }
 
-/// Draws the triangle over `target`, reading `source`, every texel taken at `opacity` (0 to 1)
-/// times the interpolated corner opacity.
-pub(super) fn fill(target: &mut Pixmap, source: &Pixmap, corners: [Corner; 3], opacity: f32) {
+/// Draws the triangle over `target`: its pixels read `source` once for each of `readings` (at
+/// most `MOST_READINGS`, in the order they are laid), the readings mixed one over another, and
+/// the result laid over the pixel at the interpolated feather (0 to 1).
+pub(super) fn fill(
+    target: &mut Pixmap,
+    source: &Pixmap,
+    corners: [Corner; 3],
+    readings: &[Reading],
+) {
+    let readings = &readings[..readings.len().min(MOST_READINGS)];
+    if readings.is_empty() {
+        return;
+    }
     // A corner that is not a place draws nothing.
     if corners.iter().any(|c| c.at.iter().any(|v| !v.is_finite())) {
         return;
@@ -76,23 +102,27 @@ pub(super) fn fill(target: &mut Pixmap, source: &Pixmap, corners: [Corner; 3], o
         owns_edge(p[2], p[0]),
         owns_edge(p[0], p[1]),
     ];
-    // What each corner reads, as a weight of its edge function: the attribute at a pixel is the
+    // What each corner holds, as a weight of its edge function: the attribute at a pixel is the
     // sum over the three edges of the edge's value there times its corner's attribute, over the
     // area. The edge values change by a constant from one pixel to the next along a row.
     let inverse = 1.0 / area as f32;
     let [w, h] = [source.width() as f32, source.height() as f32];
-    let attribute = |f: &dyn Fn(&Corner) -> f32| {
-        [
-            f(&corners[0]) * inverse,
-            f(&corners[1]) * inverse,
-            f(&corners[2]) * inverse,
-        ]
-    };
-    let (us, vs, alphas) = (
-        attribute(&|c| c.texel[0] * w),
-        attribute(&|c| c.texel[1] * h),
-        attribute(&|c| c.alpha * opacity * WHOLE),
-    );
+    let weigh = |k: [f32; 3]| k.map(|v| v * inverse);
+    let feather = weigh([
+        corners[0].feather * WHOLE,
+        corners[1].feather * WHOLE,
+        corners[2].feather * WHOLE,
+    ]);
+    let mut reads = [([0.0; 3], [0.0; 3], 0u32); MOST_READINGS];
+    for (slot, reading) in reads.iter_mut().zip(readings) {
+        let [a, b, c] = reading.texel;
+        let covers = (reading.alpha * WHOLE).round().clamp(0.0, WHOLE) as u32;
+        *slot = (
+            weigh([a[0] * w, b[0] * w, c[0] * w]),
+            weigh([a[1] * h, b[1] * h, c[1] * h]),
+            covers,
+        );
+    }
     let step = [
         -(p[2].y - p[1].y) * SUBPIXEL,
         -(p[0].y - p[2].y) * SUBPIXEL,
@@ -116,9 +146,13 @@ pub(super) fn fill(target: &mut Pixmap, source: &Pixmap, corners: [Corner; 3], o
             edge(p[0], p[1], start) as f32,
         ];
         for x in first..=last {
-            let texel = source.sample(dot(&e, &us), dot(&e, &vs));
-            let coverage = dot(&e, &alphas).round().clamp(0.0, WHOLE);
-            target.lay_over(x as u32, y, texel, coverage as u32);
+            let mut picture = 0;
+            for (us, vs, covers) in &reads[..readings.len()] {
+                let texel = source.sample(dot(&e, us), dot(&e, vs));
+                picture = over(picture, texel, *covers);
+            }
+            let coverage = dot(&e, &feather).round().clamp(0.0, WHOLE);
+            target.lay_over(x as u32, y, picture, coverage as u32);
             for (value, by) in e.iter_mut().zip(step) {
                 *value += by;
             }
@@ -179,12 +213,32 @@ mod tests {
         Pixmap::from_straight_rgba(width, height, &bytes).unwrap()
     }
 
+    /// A corner of a triangle that reads one place of the source, for the older, simpler tests.
+    #[derive(Clone, Copy)]
+    struct Corner {
+        at: [f32; 2],
+        texel: [f32; 2],
+        alpha: f32,
+    }
+
     fn corner(x: f32, y: f32) -> Corner {
         Corner {
             at: [x, y],
             texel: [0.5, 0.5],
             alpha: 1.0,
         }
+    }
+
+    fn fill(target: &mut Pixmap, source: &Pixmap, c: [Corner; 3], opacity: f32) {
+        let corners = c.map(|c| super::Corner {
+            at: c.at,
+            feather: c.alpha * opacity,
+        });
+        let reading = Reading {
+            texel: c.map(|c| c.texel),
+            alpha: 1.0,
+        };
+        super::fill(target, source, corners, &[reading]);
     }
 
     fn quad(target: &mut Pixmap, source: &Pixmap, rect: [f32; 4], opacity: f32) {
@@ -351,5 +405,27 @@ mod tests {
                 assert_eq!(solved, brute, "{tri:?} row {y}");
             }
         }
+    }
+
+    #[test]
+    fn a_feathered_part_is_laid_once_however_many_drawings_take_part() {
+        // Half feathered over black. Whether one drawing reads, or two of the same colour read
+        // one over the other, the edge is the same half of that colour: the feather is not
+        // applied once for each drawing.
+        let white = flat(1, 1, [200, 200, 200, 255]);
+        let triangle = [(0.0, 0.0), (8.0, 0.0), (0.0, 8.0)].map(|(x, y)| super::Corner {
+            at: [x, y],
+            feather: 0.5,
+        });
+        let reading = |alpha| Reading {
+            texel: [[0.5, 0.5]; 3],
+            alpha,
+        };
+        let mut one = flat(8, 8, [0, 0, 0, 255]);
+        super::fill(&mut one, &white, triangle, &[reading(1.0)]);
+        let mut two = flat(8, 8, [0, 0, 0, 255]);
+        super::fill(&mut two, &white, triangle, &[reading(1.0), reading(0.5)]);
+        assert_eq!(one, two);
+        assert_eq!(one.at(0), [100, 100, 100, 255]);
     }
 }

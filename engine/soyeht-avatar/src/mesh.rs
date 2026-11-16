@@ -47,7 +47,9 @@ impl MeshPart {
     /// The layers of the picture at the morph `weights`, in the order of the drawings. Each
     /// textured drawing's opacity is its weight over the cumulative weight of the layers so far,
     /// which makes the layers an exact weighted average. When no textured drawing takes part the
-    /// first one is drawn alone, unless the part hides when empty (the inner mouth).
+    /// first one is drawn alone, unless the part hides when empty (the inner mouth). A part that
+    /// is always drawn has a picture for every drawing (the loader refuses one that has not), so
+    /// some drawing always takes part and none replaces another in one frame.
     pub fn layers(&self, weights: &[f64; SHAPES]) -> Vec<Layer> {
         let mut textured: Vec<(usize, bool)> = self
             .shapes
@@ -78,6 +80,51 @@ impl MeshPart {
         }
         layers
     }
+}
+
+impl MeshPart {
+    /// How much of this part is drawn over what is below it, 0 to 1, before the feather of its
+    /// corners. A part that is always drawn is drawn whole. A part that hides when empty (the
+    /// inner mouth, which has no picture at rest, and which does cover an area there) is drawn as
+    /// much as the drawings that have a picture of it take part: the sum of their weights, so it
+    /// comes in as the mouth opens and not whole when a weight passes the threshold under which
+    /// a drawing takes no part (`layers`). The coverage of `composite` is this times the feather.
+    pub fn opacity(&self, weights: &[f64; SHAPES]) -> f64 {
+        if !self.hide_when_empty {
+            return 1.0;
+        }
+        let taking_part: f64 = Shape::ALL
+            .iter()
+            .zip(weights)
+            .filter(|(shape, _)| {
+                self.shapes
+                    .iter()
+                    .any(|m| m.id == shape.id() && m.uvs.is_some())
+            })
+            .map(|(_, w)| w)
+            .sum();
+        taking_part.clamp(0.0, 1.0)
+    }
+}
+
+/// A part of the mouth laid over the picture, once: `under` is what is below it, `layers` are the
+/// texel each drawing's picture gives at this pixel with the `Layer::alpha` of the drawing, and
+/// `coverage` is the opacity of the part at this pixel (the feather of its corners), 0 to 1.
+/// Every colour is premultiplied RGBA of 0 to 255. Each layer is laid over what the layers before
+/// it made of the picture (`texel * a + picture * (1 - a * texel alpha)`, starting from `under`),
+/// which mixes the drawings by their weights, and the result takes the place of `under` by
+/// `coverage`. The feather is applied once, here, and never once for each layer: laying each layer
+/// over the picture with the feather would count it once for each drawing in play, and the edge of
+/// the part would step when a layer came in.
+pub fn composite(under: [f64; 4], layers: &[([f64; 4], f64)], coverage: f64) -> [f64; 4] {
+    let mut picture = under;
+    for (texel, alpha) in layers {
+        let a = alpha.clamp(0.0, 1.0);
+        let keep = 1.0 - a * texel[3] / 255.0;
+        picture = [0, 1, 2, 3].map(|c| texel[c] * a + picture[c] * keep);
+    }
+    let c = coverage.clamp(0.0, 1.0);
+    [0, 1, 2, 3].map(|k| under[k] + (picture[k] - under[k]) * c)
 }
 
 impl MouthModel {

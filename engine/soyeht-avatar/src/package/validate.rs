@@ -5,10 +5,12 @@ use std::collections::HashSet;
 
 use super::acting_bounds;
 use super::limits::{
-    MAX_FILE_BYTES, MAX_FILES, MAX_NAME_BYTES, MAX_PATH_BYTES, MAX_PIXELS, MAX_SIDE,
+    MAX_DRAW_AREA, MAX_FILE_BYTES, MAX_FILES, MAX_NAME_BYTES, MAX_PATH_BYTES, MAX_PIXELS, MAX_SIDE,
     MAX_TEXTURE_POWER, MAX_TOTAL_BYTES, MAX_TRIANGLES, MAX_VERTICES,
 };
-use super::model::{EYE_IDS, FORMAT, MeshPart, Package, PartKind, Patch, Region, VERSION, Warp};
+use super::model::{
+    EYE_IDS, FORMAT, MeshPart, Package, PartKind, Patch, Region, ShapeMesh, VERSION, Warp,
+};
 use crate::params::Shape;
 
 /// What the caller knows about a file of the package folder: its size in bytes and, when it is a
@@ -220,6 +222,47 @@ fn mouth(p: &Package) -> Check {
     for (i, part) in p.mouth.parts.iter().enumerate() {
         mesh_part(p, part, &format!("/mouth/parts/{i}"))?;
     }
+    draw_work(p)
+}
+
+/// The area of the triangles of a part in one drawing (pixels squared). Run once the indices of
+/// the part are known to be in range.
+fn shape_area(part: &MeshPart, shape: &ShapeMesh) -> f64 {
+    let at = |i: u32| {
+        (
+            shape.positions[2 * i as usize],
+            shape.positions[2 * i as usize + 1],
+        )
+    };
+    part.triangles
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|t| {
+            let (a, b, c) = (at(t[0]), at(t[1]), at(t[2]));
+            0.5 * ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs()
+        })
+        .sum()
+}
+
+/// The area the triangles of each drawing cover, over all three parts, is at most `MAX_DRAW_AREA`
+/// canvases. Run after the parts, so every index and every position is known to be in range.
+fn draw_work(p: &Package) -> Check {
+    let limit = MAX_DRAW_AREA * f64::from(p.canvas.width) * f64::from(p.canvas.height);
+    for shape in Shape::ALL {
+        let area: f64 = p
+            .mouth
+            .parts
+            .iter()
+            .filter_map(|part| {
+                let mesh = part.shapes.iter().find(|s| s.id == shape.id())?;
+                Some(shape_area(part, mesh))
+            })
+            .sum();
+        if area > limit {
+            return fail(ErrorKind::TooLarge, "/mouth/parts");
+        }
+    }
     Ok(())
 }
 
@@ -284,7 +327,17 @@ fn mesh_part(p: &Package, part: &MeshPart, at: &str) -> Check {
         {
             return fail(ErrorKind::Value, format!("{here}/positions"));
         }
-        let Some(uvs) = &shape.uvs else { continue };
+        let Some(uvs) = &shape.uvs else {
+            // A drawing with no picture of its own for a part that is always drawn would be
+            // replaced by another drawing's picture in one frame, whenever its weight passed the
+            // threshold under which it takes no part. A part that hides when empty (the inner
+            // mouth) may have drawings with no picture: its opacity follows the weights of the
+            // others (`MeshPart::opacity`).
+            if !part.hide_when_empty {
+                return fail(ErrorKind::Value, format!("{here}/uvs"));
+            }
+            continue;
+        };
         textured = true;
         if uvs.len() != floats {
             return fail(ErrorKind::Topology, format!("{here}/uvs"));

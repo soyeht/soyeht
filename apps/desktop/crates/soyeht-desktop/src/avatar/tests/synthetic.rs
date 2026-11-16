@@ -165,12 +165,14 @@ impl Spec {
             let (inner, outer) = self.contours(s);
             [outer, inner].concat()
         };
+        let open = |s: Shape| s.anchor().o > 0.0;
+        // The inner mouth has a picture only where the mouth is open, and a sliver of an area
+        // where it is not, as the lab's model has.
         let inner = |s: Shape| {
             let mut ring = self.contours(s).0;
             ring.push(self.mouth_centre());
             ring
         };
-        let open = |s: Shape| s.anchor().o > 0.0;
         let mut skin = self.part("skin", &outer, strip.clone(), &|_| true);
         // The skin fades out towards the edge of the area.
         skin["alphas"] = json!([vec![1.0; n], vec![0.0; n]].concat());

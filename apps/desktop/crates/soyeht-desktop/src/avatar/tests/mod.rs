@@ -3,6 +3,7 @@
 //! hand (`cargo test --release -- --ignored --nocapture frame_budget`).
 
 mod budget;
+mod composite_vectors;
 mod load_tests;
 mod raster_tests;
 mod synthetic;

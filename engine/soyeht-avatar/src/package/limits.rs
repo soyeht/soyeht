@@ -24,5 +24,15 @@ pub(crate) const MAX_NAME_BYTES: usize = 64;
 /// Vertices of one part of the mouth mesh, and its triangles. The lab's mesh has a few hundred.
 pub(crate) const MAX_VERTICES: usize = 3000;
 pub(crate) const MAX_TRIANGLES: usize = 6000;
-/// The power that sharpens the picture's weights.
-pub(crate) const MAX_TEXTURE_POWER: f64 = 8.0;
+/// The power that sharpens the picture's weights. A drawing's share of the picture between two is
+/// `w^p / (w^p + (1 - w)^p)`, which moves `p` times as fast as the weight `w` at the middle, so
+/// the picture moves at most twice as fast as the weights, which the mouth's own rate limits keep
+/// continuous. A power of 8 made the share go from a tenth to nine tenths while the weight moved a
+/// fifth: about one frame, a swap of the pictures.
+pub(crate) const MAX_TEXTURE_POWER: f64 = 2.0;
+/// How many canvas areas the triangles of one drawing may cover, its three parts together. A mouth
+/// is a small part of a face (the lab's covers a twentieth of its canvas), and every drawing taking
+/// part in a frame is drawn over the one before, so what a renderer fills for a frame is bounded by
+/// this times the canvas times the drawings that take part; a package of thousands of overlapping
+/// triangles the size of the canvas is refused.
+pub(crate) const MAX_DRAW_AREA: f64 = 1.0;

@@ -6,10 +6,12 @@
 //!
 //! 1. the base picture, with the eye frame the acting layer asks for laid over it;
 //! 2. the mouth: the three parts of the mesh (skin, lips, inner mouth, in the order
-//!    `MouthModel::in_drawing_order` gives) at the geometry the morph
-//!    weights blend (`MeshPart::blend`), each textured by the drawings the weights name, laid
-//!    one over the other with the opacities `MeshPart::layers` gives, which make the picture the
-//!    exact weighted average of the drawings;
+//!    `MouthModel::in_drawing_order` gives), at the vertices `MeshPart::blend` gives. Each part is
+//!    drawn once: every drawing `MeshPart::layers` names is read at the pixel and mixed with the
+//!    others (the exact weighted average), and that picture is laid over what is below at the
+//!    opacity of the part (`MeshPart::opacity`) and the feather of its corners (`composite` of
+//!    the crate is the rule), so the edge of a part does not move when a drawing comes in or
+//!    goes out;
 //! 3. the pose: the composed picture read through `Warp::source_point` (`resample`).
 //!
 //! Drawing in software keeps one algorithm on every renderer of the avatar (the Mac and iOS draw
@@ -20,7 +22,7 @@ use super::{
     art::Avatar,
     pixmap::Pixmap,
     resample::{Field, resample},
-    triangles::{Corner, fill},
+    triangles::{Corner, Reading, fill},
 };
 use soyeht_avatar::{Frame, MeshPart};
 use std::sync::Arc;
@@ -103,42 +105,65 @@ fn lay_patch(target: &mut Pixmap, patch: &Pixmap, rect: [u32; 4]) {
     }
 }
 
-/// One part of the mouth, at the geometry of the weights: each layer of the picture is the part's
-/// triangles, read from the cell of one drawing.
+/// One part of the mouth, at the geometry of the weights: each triangle is drawn once, reading the
+/// cell of every drawing that takes part, and the part is laid over the picture once. The
+/// drawings are mixed with each other, never one by one with what is below, so a drawing coming
+/// in or out changes the colour of the part and not the edge of it.
 fn draw_part(target: &mut Pixmap, atlas: &Pixmap, part: &MeshPart, weights: &[f64; 9]) {
+    let drawn: Vec<(&[f64], f32)> = part
+        .layers(weights)
+        .iter()
+        .filter_map(|layer| {
+            let uvs = part
+                .shapes
+                .iter()
+                .find(|s| s.id == layer.shape.id())?
+                .uvs
+                .as_deref()?;
+            Some((uvs, layer.alpha as f32))
+        })
+        .collect();
+    // How much of the part is drawn: the inner mouth comes in with the weights of the drawings
+    // that have a picture of it, not whole when one passes the threshold.
+    let opacity = part.opacity(weights) as f32;
+    if drawn.is_empty() || opacity <= 0.0 {
+        return;
+    }
     let positions = part.blend(weights);
-    for layer in part.layers(weights) {
-        let Some(uvs) = part
-            .shapes
-            .iter()
-            .find(|s| s.id == layer.shape.id())
-            .and_then(|s| s.uvs.as_ref())
-        else {
+    for triangle in part.triangles.as_chunks::<3>().0 {
+        let corners = triangle.map(|index| {
+            let i = index as usize;
+            let at = positions.get(2 * i..2 * i + 2)?;
+            let feather = part
+                .alphas
+                .as_ref()
+                .and_then(|a| a.get(i))
+                .map_or(1.0, |a| *a as f32);
+            Some(Corner {
+                at: [at[0] as f32, at[1] as f32],
+                feather: feather * opacity,
+            })
+        });
+        let [Some(a), Some(b), Some(c)] = corners else {
             continue;
         };
-        let corner = |index: u32| {
-            let i = index as usize;
-            Some(Corner {
-                at: [
-                    *positions.get(2 * i)? as f32,
-                    *positions.get(2 * i + 1)? as f32,
-                ],
-                texel: [*uvs.get(2 * i)? as f32, *uvs.get(2 * i + 1)? as f32],
-                alpha: part
-                    .alphas
-                    .as_ref()
-                    .and_then(|a| a.get(i))
-                    .map_or(1.0, |a| *a as f32),
+        let readings: Vec<Reading> = drawn
+            .iter()
+            .filter_map(|(uvs, alpha)| {
+                let texel = triangle.map(|index| {
+                    let i = index as usize;
+                    uvs.get(2 * i..2 * i + 2)
+                        .map(|uv| [uv[0] as f32, uv[1] as f32])
+                });
+                let [Some(a), Some(b), Some(c)] = texel else {
+                    return None;
+                };
+                Some(Reading {
+                    texel: [a, b, c],
+                    alpha: *alpha,
+                })
             })
-        };
-        for triangle in part.triangles.as_chunks::<3>().0 {
-            if let (Some(a), Some(b), Some(c)) = (
-                corner(triangle[0]),
-                corner(triangle[1]),
-                corner(triangle[2]),
-            ) {
-                fill(target, atlas, [a, b, c], layer.alpha as f32);
-            }
-        }
+            .collect();
+        fill(target, atlas, [a, b, c], &readings);
     }
 }

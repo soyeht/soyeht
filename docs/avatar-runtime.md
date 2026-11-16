@@ -27,25 +27,31 @@ contours, which share one vertex list, and the aligned weighted average of their
 way between closed and A the lips are half open with a half-size aperture, never two half-visible
 mouths.
 
-**There is no code path that swaps or cross-fades mouth drawings, for the mouth or for a resting
-expression.** That is the owner's rule (2026-11-05: the first lip-sync, which swapped and
-cross-faded drawings, scored 1 out of 10).
+How much of a part is drawn is also continuous in the weights. A drawing may have no picture of
+its own for a part that hides when empty: the lab's inner mouth has none for the resting and the
+closed drawing, and does cover a sliver of the face there. `MeshPart::opacity` of such a part is
+the sum of the weights of the drawings that have a picture of it, so the inner mouth comes in as
+the mouth opens, and not whole when a weight passes the threshold under which a drawing takes no
+part in `MeshPart::layers` (1e-4; the first layer has the opacity 1 whatever its weight). A part
+that is always drawn must have a picture for every drawing (the loader refuses one that has
+not), since the first drawing with a picture would otherwise replace another in one frame.
 
-The lab's listening smile and thinking "hm" were two more mouth pictures, swapped in with a short
-fade. They are not in the package. A resting expression is a target of the continuous mouth: the
-acting constants hold `expression.listening` and `expression.thinking` (five parameters each), the
-runtime gives them to the mouth while nothing is said, and the mouth morphs there and back like
-everywhere else. The defaults are a slight spread (a smile) and a pressed, slightly pursed mouth.
+A renderer lays a part over the picture **once**: `composite` is the rule, and the `composite`
+cases of `avatar-package.json` pin it (one to three layers, coverages 0.3, 0.5 and 1, texel
+alphas 0, 128 and 255, and a layer of the weight 0.0002 that changes a feathered pixel by less
+than a 255th). Each layer is laid over what the layers before it made of the picture, starting
+from what is below the part (`texel * a + picture * (1 - a * texel alpha)`, `a` the layer's
+`Layer::alpha`), which mixes the drawings by their weights; the result takes the place of what
+was below by the coverage, which is the part's opacity times the feather of its corners. Laying
+each layer over the picture with the feather would count the feather once for each drawing in
+play, and the edge of the part would step when a layer came in.
 
-The acceptance of any change to the mouth is the lab's checker limits, which the crate's tests
-port to geometry (the largest one-frame change at most 0.65 of the closed to A distance and 0.70
-inside a closure, M/B/P closed at least 90 %, silences closed, at most 7 reversals per second,
-opening against the voice at least 0.55) and a look at a contact sheet across the whole clip by a
-person: the rejected H1 mouth passed the checker. The lab's pixel checks (the seam of the morph
-boundary, a smeared corner, the ghost frames of a dissolve) belong to the renderers. What holds the
-"one mouth" rule in this crate is a property test: over a grid of the parameter space the weights
-are never negative and sum to 1, and the layers of the picture give each drawing exactly its
-weight.
+**The texture power** (`texturePower`, 1 to 2) sharpens the weights of the pictures, so the
+nearest drawing dominates. Between two drawings a share is `w^p / (w^p + (1 - w)^p)`, which moves
+`p` times as fast as the weight at the middle: with a power of 8 (the old limit) the share went from
+a tenth to nine tenths while the weight moved a fifth, about one frame at the mouth's rate limits,
+a swap of the pictures. A power of 2 (the lab's skin has it, and its other parts have 1) moves the
+picture at most twice as fast as the weights.
 
 ## The aligner
 
@@ -87,7 +93,9 @@ returns a failure kind (stable, camelCase) and a JSON pointer, never a value. Th
 `contracts/vectors/avatar-package.json` with a case at the limit (it loads) and one past it (it
 fails): the document (4 MiB, checked before it is parsed), the canvas and pictures (2048 on a side),
 the files (64, 4 MiB each, 8 MiB together, 8 Mpx decoded together), the vertices and triangles of a
-part, path names (plain ASCII, no reserved Windows name, no two names that differ only in case, no
+part, the area their triangles cover (for each of the nine drawings, the three parts together,
+at most one canvas: what a renderer fills for a frame is bounded; the lab's mouth covers 3%), the
+texture power (at most 2), a drawing with no picture in a part that is always drawn, path names (plain ASCII, no reserved Windows name, no two names that differ only in case, no
 bidirectional override) and every number of the acting constants. A package is a file from a
 stranger: a constant that would make the pose absurd or not a number is refused.
 
@@ -127,8 +135,9 @@ image:
    gaze, lid and soft combination;
 2. the mouth: each part in the order `MouthModel::in_drawing_order` gives (skin, lips, inner,
    whatever order the package lists them in; vectors `drawOrder` of `avatar-package.json`), at
-   the vertices `MeshPart::blend` gives, one layer for each drawing `MeshPart::layers` names,
-   each over the one before. A triangle is filled with exact integer edge tests (corners snapped
+   the vertices `MeshPart::blend` gives. A part is drawn once: each pixel reads every drawing
+   `MeshPart::layers` names and mixes them, and the picture is laid over what is below at
+   `MeshPart::opacity` times the feather (`composite`). A triangle is filled with exact integer edge tests (corners snapped
    to 1/16 pixel) and the top-left rule, so two triangles that share an edge never draw a pixel
    twice;
 3. the pose: `Warp::source_point` is evaluated on a grid and each output pixel reads the picture,
@@ -141,18 +150,17 @@ more than the canvas.
 
 **Frame cost** (Linux, release build, one core, an Intel Xeon E5-2680 v4 at 2.4 GHz on a shared
 host, so a slow core; a canvas of 512 pixels drawn at 512 by 512, a mouth mesh of 1280 triangles
-in three parts, a person speaking; mean of 600 frames): **15.9 ms** (median 15.9, 95th percentile
-17.5). Of it, 5.2 ms composes the picture (the eyes and the mouth), 3.9 ms evaluates the rule of
-the pose on the grid and 6.0 ms reads the picture through it. The cost is that of the output:
-drawn 256 wide it is 8.6 ms. A canvas of 1024 drawn 1024 wide is 69 ms and drawn 512 wide 38 ms,
-because the composing is by the canvas. **Windows is still to be measured**; the ADR's frame budget
-there (one 60 Hz frame, 16.7 ms, for the avatar alone, with half of it as the aim) is met on this
-core by a small margin and the aim is missed; how much faster a laptop core is is not yet
-measured. The numbers come from
+in three parts, a person speaking; mean of 600 frames): **12.6 ms** (median 12.5, 95th percentile
+13.4). Of it, about 3 ms composes the picture (the eyes and the mouth), 4 ms evaluates the rule of
+the pose on the grid and 6 ms reads the picture through it (the host is shared, and the split
+varies by a few milliseconds from run to run). Drawn 256 wide it is 5.2 ms. A canvas of 1024 drawn
+512 wide is 18 ms and drawn 1024 wide 50 ms, because the composing is by the canvas. **Windows is still to be measured**; the ADR's frame budget there (one 60 Hz frame,
+16.7 ms, for the avatar alone, with half of it as the aim) is met on this core and the aim is
+missed by a little; how much faster a laptop core is is not yet measured. The numbers come from
 `cargo test --release -p soyeht-desktop avatar::tests::budget -- --ignored --nocapture`
 (`frame_budget_at_512`, `frame_cost_by_size`, `frame_cost_by_step`). The GPU path the ADR leaves
-for later (wgpu through GPUI) is what this measurement argues for if a Windows laptop does not
-reach the aim; the rasteriser stays as the reference the vectors and the tests hold.
+for later (wgpu through GPUI) is what to build if a Windows laptop does not reach the aim; the
+rasteriser stays as the reference the vectors and the tests hold.
 
 ## Inputs from the host
 

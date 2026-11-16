@@ -58,6 +58,21 @@ fn lerp(a: u32, b: u32, t: u32) -> u32 {
     (rb & LANES_RB) | (ga & LANES_GA)
 }
 
+/// `texel`, taken `coverage` of 256, laid over `below`.
+pub(super) fn over(below: u32, texel: u32, coverage: u32) -> u32 {
+    let coverage = coverage.min(ONE);
+    match (texel >> 24 == 255, coverage) {
+        (_, 0) => below,
+        (true, ONE) => texel,
+        // An opaque texel taken in part is a mix of it and what is below.
+        (true, _) => lerp(below, texel, coverage),
+        _ => {
+            let laid = scale(texel, coverage);
+            add(laid, scale(below, ONE - (laid >> 24)))
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pixmap {
     width: u32,
@@ -132,17 +147,7 @@ impl Pixmap {
             return;
         }
         let slot = y as usize * self.width as usize + x as usize;
-        let coverage = coverage.min(ONE);
-        let opaque = texel >> 24 == 255;
-        self.texels[slot] = match (opaque, coverage) {
-            (true, ONE) => texel,
-            // An opaque texel taken in part is a mix of it and what is below.
-            (true, _) => lerp(self.texels[slot], texel, coverage),
-            _ => {
-                let over = scale(texel, coverage);
-                add(over, scale(self.texels[slot], ONE - (over >> 24)))
-            }
-        };
+        self.texels[slot] = over(self.texels[slot], texel, coverage);
     }
 
     /// The picture at (`x`, `y`), in texel units where the centre of the first texel is (0.5, 0.5):

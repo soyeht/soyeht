@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 
 use super::{numbers, read, render, round, updating, vectors_dir};
+use crate::mesh::composite;
 use crate::package::{AssetInfo, Package};
 use crate::tests::fixtures::{assets, package_json};
 
@@ -199,7 +200,9 @@ fn file_cases() -> Vec<Value> {
 fn mesh_cases() -> Vec<Value> {
     let case = |name: &str, patch: Vec<Value>, expect: &str| json!({ "name": name, "patch": patch, "expect": expect });
     let shape = "/mouth/parts/0/shapes";
-    vec![
+    let mut cases = draw_work_cases();
+    cases.extend(unpictured_cases());
+    cases.extend([
         case(
             "four shapes only",
             vec![remove(&format!("{shape}/8")), remove(&format!("{shape}/7"))],
@@ -252,6 +255,16 @@ fn mesh_cases() -> Vec<Value> {
             "value",
         ),
         case(
+            "a texture power at the limit",
+            vec![replace("/mouth/parts/0/texturePower", 2.0.into())],
+            "ok",
+        ),
+        case(
+            "a texture power over the limit, which would swap the pictures in a frame",
+            vec![replace("/mouth/parts/0/texturePower", 2.5.into())],
+            "value",
+        ),
+        case(
             "a texture power under one",
             vec![replace("/mouth/parts/0/texturePower", 0.5.into())],
             "value",
@@ -263,6 +276,106 @@ fn mesh_cases() -> Vec<Value> {
                 replace("/mouth/atlas/rows", 2.into()),
             ],
             "atlas",
+        ),
+    ]);
+    cases
+}
+
+/// The area the triangles of the resting drawing cover, the three parts together, and the same
+/// scaled about the middle of the canvas.
+fn rest_area(package: &Package) -> f64 {
+    package
+        .mouth
+        .parts
+        .iter()
+        .map(|part| {
+            let rest = &part.shapes[0].positions;
+            part.triangles
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .map(|t| {
+                    let at = |i: u32| (rest[2 * i as usize], rest[2 * i as usize + 1]);
+                    let (a, b, c) = (at(t[0]), at(t[1]), at(t[2]));
+                    0.5 * ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs()
+                })
+                .sum::<f64>()
+        })
+        .sum()
+}
+
+/// The rest drawing blown up until its triangles cover `share` canvas areas (the limit is one).
+fn draw_work_case(package: &Package, share: f64, name: &str, expect: &str) -> Value {
+    let canvas = f64::from(package.canvas.width) * f64::from(package.canvas.height);
+    let factor = (share * canvas / rest_area(package)).sqrt();
+    let middle = [
+        f64::from(package.canvas.width) / 2.0,
+        f64::from(package.canvas.height) / 2.0,
+    ];
+    let patch: Vec<Value> = package
+        .mouth
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(i, part)| {
+            let scaled: Vec<f64> = part.shapes[0]
+                .positions
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .flat_map(|p| {
+                    [
+                        ((middle[0] + (p[0] - middle[0]) * factor) * 1e5).round() / 1e5,
+                        ((middle[1] + (p[1] - middle[1]) * factor) * 1e5).round() / 1e5,
+                    ]
+                })
+                .collect();
+            replace(
+                &format!("/mouth/parts/{i}/shapes/0/positions"),
+                json!(scaled),
+            )
+        })
+        .collect();
+    json!({ "name": name, "patch": patch, "expect": expect })
+}
+
+/// A drawing with no picture of its own: a part that hides when empty (the inner mouth) may have
+/// some, whatever area they cover, as the lab's model has (its resting inner mouth covers a
+/// sliver); a part that is always drawn may not, since another drawing would take its place in one
+/// frame.
+fn unpictured_cases() -> Vec<Value> {
+    let package = Package::load(&package_json().to_string(), &assets())
+        .unwrap_or_else(|_| unreachable!("the base is valid"));
+    let case = |name: &str, patch: Vec<Value>, expect: &str| json!({ "name": name, "patch": patch, "expect": expect });
+    vec![
+        case(
+            "a drawing of the inner mouth with no picture and the area of an open mouth",
+            vec![replace(
+                "/mouth/parts/2/shapes/0/positions",
+                json!(package.mouth.parts[2].shapes[2].positions),
+            )],
+            "ok",
+        ),
+        case(
+            "a drawing of a part that is always drawn with no picture",
+            vec![remove("/mouth/parts/0/shapes/3/uvs")],
+            "value",
+        ),
+    ]
+}
+
+/// A drawing whose triangles cover more than one canvas is refused: what a renderer fills for a
+/// frame is bounded.
+fn draw_work_cases() -> Vec<Value> {
+    let package = Package::load(&package_json().to_string(), &assets())
+        .unwrap_or_else(|_| unreachable!("the base is valid"));
+    vec![
+        draw_work_case(&package, 0.99, "a drawing covering 0.99 canvases", "ok"),
+        draw_work_case(
+            &package,
+            1.01,
+            "a drawing covering 1.01 canvases",
+            "tooLarge",
         ),
     ]
 }
@@ -400,7 +513,12 @@ fn run_mesh(package: &Package, case: &Value) -> Value {
                 .iter()
                 .map(|l| json!({ "shape": l.shape.id(), "alpha": round(l.alpha) }))
                 .collect();
-            json!({ "id": part.id, "positions": numbers(&part.blend(&weights)), "layers": layers })
+            json!({
+                "id": part.id,
+                "positions": numbers(&part.blend(&weights)),
+                "opacity": round(part.opacity(&weights)),
+                "layers": layers,
+            })
         })
         .collect();
     json!({ "parts": parts })
@@ -408,7 +526,7 @@ fn run_mesh(package: &Package, case: &Value) -> Value {
 
 fn mesh_blend_cases(package: &Package) -> Vec<Value> {
     // Weights in the order rest, closed_MBP, A, E, I, O, U, FV, LDT.
-    let sets: [(&str, [f64; 9]); 8] = [
+    let sets: [(&str, [f64; 9]); 10] = [
         (
             "the rest drawing alone",
             [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -451,6 +569,14 @@ fn mesh_blend_cases(package: &Package) -> Vec<Value> {
             "the closed drawing, whose inner mouth has no picture",
             [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ),
+        (
+            "just under the layer threshold: the inner mouth is all but clear",
+            [0.99991, 0.0, 0.00009, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ),
+        (
+            "just over it: the inner mouth is drawn at the opacity of its weight",
+            [0.99989, 0.0, 0.00011, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        ),
     ];
     sets.iter()
         .map(|(name, w)| {
@@ -459,6 +585,89 @@ fn mesh_blend_cases(package: &Package) -> Vec<Value> {
             case
         })
         .collect()
+}
+
+fn colour_of(v: &Value) -> [f64; 4] {
+    let at = |i: usize| v[i].as_f64().unwrap_or(0.0);
+    [at(0), at(1), at(2), at(3)]
+}
+
+/// `under`, `layers` (`texel`, `alpha`) and `coverage` in; the colour out.
+fn run_composite(case: &Value) -> Value {
+    let layers: Vec<([f64; 4], f64)> = case["layers"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .map(|l| (colour_of(&l["texel"]), l["alpha"].as_f64().unwrap_or(0.0)))
+        .collect();
+    let colour = composite(
+        colour_of(&case["under"]),
+        &layers,
+        case["coverage"].as_f64().unwrap_or(0.0),
+    );
+    json!({ "colour": numbers(&colour) })
+}
+
+/// A part laid over a picture once: one to three layers, three coverages, three texel alphas, and
+/// a layer that is all but absent.
+fn composite_cases() -> Vec<Value> {
+    // Straight colours of the drawings, premultiplied by the alpha of the texel.
+    let straight = [
+        [200.0, 60.0, 20.0],
+        [20.0, 160.0, 220.0],
+        [240.0, 240.0, 40.0],
+    ];
+    let texel = |k: usize, alpha: f64| {
+        let c = straight[k];
+        json!(numbers(&[
+            c[0] * alpha / 255.0,
+            c[1] * alpha / 255.0,
+            c[2] * alpha / 255.0,
+            alpha
+        ]))
+    };
+    // The alphas of the layers of three drawings of weights 0.5, 0.3 and 0.2.
+    let alphas = [1.0, 0.375, 0.2];
+    let mut cases = Vec::new();
+    for count in 1..=3 {
+        for coverage in [0.3, 0.5, 1.0] {
+            for alpha in [0.0, 128.0, 255.0] {
+                let layers: Vec<Value> = (0..count)
+                    .map(|k| json!({ "texel": texel(k, alpha), "alpha": alphas[k] }))
+                    .collect();
+                let mut case = json!({
+                    "name": format!("{count} layers, coverage {coverage}, texel alpha {alpha}"),
+                    "under": [120, 80, 40, 255], "layers": layers, "coverage": coverage,
+                });
+                case["expected"] = run_composite(&case);
+                cases.push(case);
+            }
+        }
+    }
+    let clear = json!({
+        "name": "over a picture that is clear",
+        "under": [0, 0, 0, 0],
+        "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": texel(1, 128.0), "alpha": 0.5 }],
+        "coverage": 0.5,
+    });
+    // A drawing that comes in at a weight of 0.0002 changes a feathered pixel by under a 255th.
+    let one = json!({
+        "name": "a feathered pixel, one layer",
+        "under": [120, 80, 40, 255],
+        "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }],
+        "coverage": 0.5,
+    });
+    let two = json!({
+        "name": "the same with a second layer at the weight 0.0002",
+        "under": [120, 80, 40, 255],
+        "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": texel(1, 255.0), "alpha": 0.0002 }],
+        "coverage": 0.5,
+    });
+    for mut case in [clear, one, two] {
+        case["expected"] = run_composite(&case);
+        cases.push(case);
+    }
+    cases
 }
 
 /// `parts`: the ids of the base package's parts, in the order the package lists them. Out: the
@@ -505,12 +714,13 @@ fn draw_order_cases(package: &Package) -> Vec<Value> {
 fn package_vectors() -> Value {
     let base_assets = assets();
     json!({
-        "description": "The mesh of the base package: `drawOrder` cases give the ids of the mouth's parts in the order the package lists them and expect the order they are drawn in, each over the one before: skin, lips, inner (a part the list lacks is skipped). `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+        "description": "The mesh of the base package: `composite` cases give `under` (the picture below a part), `layers` (each the `texel` its drawing gives at the pixel and the `alpha` of its layer) and `coverage` (the opacity of the part at the pixel, its feather), all colours premultiplied RGBA of 0 to 255, and expect the colour of the pixel: each layer is laid over the picture the layers before it made, starting from `under` (`texel * alpha + picture * (1 - alpha * texel alpha / 255)`), and the result takes the place of `under` by `coverage`, so the feather counts once however many drawings take part. `drawOrder` cases give the ids of the mouth's parts in the order the package lists them and expect the order they are drawn in, each over the one before: skin, lips, inner (a part the list lacks is skipped). `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions), its `opacity` (1 for a part that is always drawn; for a part that hides when empty, the sum of the weights of the drawings that have a picture of it, so it comes in with the mouth and not whole at a threshold) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). A `composite` coverage is the part's opacity times the feather of its corners. The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
         "base": package_json(),
         "assets": asset_values(&base_assets),
         "cases": package_cases(),
         "mesh": mesh_blend_cases(&base_package(&base_assets)),
         "drawOrder": draw_order_cases(&base_package(&base_assets)),
+        "composite": composite_cases(),
     })
 }
 
@@ -537,6 +747,24 @@ fn vectors_package_file_matches_the_loader() {
             panic!("mesh / {}: {why}", case["name"]);
         }
     }
+    let composite = file["composite"].as_array().expect("composite");
+    for case in composite {
+        if let Err(why) = super::close(&run_composite(case), &case["expected"], "") {
+            panic!("composite / {}: {why}", case["name"]);
+        }
+    }
+    // A drawing that is all but absent changes the pixel by less than a 255th: the last two cases.
+    let colour = |case: &Value| colour_of(&case["expected"]["colour"]);
+    let [one, two] = [
+        &composite[composite.len() - 2],
+        &composite[composite.len() - 1],
+    ];
+    assert!(
+        colour(one)
+            .iter()
+            .zip(colour(two))
+            .all(|(a, b)| (a - b).abs() < 1.0)
+    );
     for case in file["drawOrder"].as_array().expect("drawOrder") {
         if let Err(why) = super::close(&run_draw_order(&package, case), &case["expected"], "") {
             panic!("drawOrder / {}: {why}", case["name"]);

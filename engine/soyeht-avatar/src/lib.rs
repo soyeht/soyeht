@@ -50,7 +50,7 @@ pub use aligner::{Alignment, Language, align};
 pub use clip::{Clip, WordStart, energy_target};
 pub use envelope::{Envelope, HOP};
 pub use eye_frame::eye_frame;
-pub use mesh::Layer;
+pub use mesh::{Layer, composite};
 pub use mouth::Mouth;
 pub use package::{
     AssetInfo, Atlas, Chest, EYE_IDS, ErrorKind, FORMAT, FileDecl, MAX_DOCUMENT_BYTES,
