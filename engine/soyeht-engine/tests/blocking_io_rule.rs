@@ -292,6 +292,11 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
         3,
         "jobs: the drain, the exit lookup and the ack",
     ),
+    (
+        "soyeht-engine/src/terminal_foreground.rs",
+        1,
+        "job and offload: the scan of what the terminals run",
+    ),
 ];
 
 /// The waits in `shipped` source: `Supervisor::call`, `call_each` and `send_input`.

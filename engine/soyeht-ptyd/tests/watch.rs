@@ -209,7 +209,7 @@ fn an_engine_from_before_the_role_is_served_as_it_always_was() {
     assert_eq!(welcome["status"], "welcome");
     assert_eq!(
         welcome["value"]["features"],
-        serde_json::json!([FEATURE_WATCH, FEATURE_PANE_BINDING])
+        serde_json::json!([FEATURE_WATCH, FEATURE_PANE_BINDING, FEATURE_FOREGROUND])
     );
 }
 

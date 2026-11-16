@@ -71,6 +71,11 @@ impl Child {
         Ok(Some(exit))
     }
 
+    /// The processes the child's job holds, a process before what it started.
+    pub(crate) fn programs(&self) -> io::Result<Vec<soyeht_platform::process::inspect::Program>> {
+        self.spawned.programs()
+    }
+
     /// Ends the child and everything it started: the job holds all of it, so both reaches are
     /// the same.
     pub fn kill(&self, _: Reach) {

@@ -109,6 +109,7 @@ export interface Pane {
   "webSession"?: WebSessionState;
   "writingKind"?: WritingKind;
   "writingSection"?: WritingSection;
+  "terminalHarness"?: TerminalHarness;
 }
 
 export interface Device {
@@ -865,6 +866,12 @@ export interface PromptItem {
 }
 
 export type AgentMessageKind = "agent" | "terminal" | "web" | (string & {});
+
+export interface TerminalHarness {
+  "id": string;
+  "name": string;
+  "version"?: string;
+}
 
 export interface AgentMessageSource {
   "paneId": Id;
