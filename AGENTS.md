@@ -62,7 +62,10 @@ Each layer depends only on the layers listed above it.
    and skills. Neither depends on the engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic
-   here so `swift test --package-path apps/shared` covers it.
+   here so `swift test --package-path apps/shared` covers it. The package has a second, small
+   target, `SoyehtAvatarRaster`: the avatar's per-pixel code (`docs/avatar-runtime.md`), compiled
+   optimised in a debug build too, which `SoyehtClient` uses by `package` access and which has no
+   Soyeht dependency.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
    dictation engines and the text-to-speech providers that need third-party
    dependencies (Nemotron, Kokoro), and the catalogues of both
