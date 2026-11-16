@@ -2,5 +2,13 @@
   "loose_literals.engine/soyeht-engine/src/experiment_export/tests.rs.rust_limits": {
     "value": 1,
     "reason": "Pure move: the single 512 literal is a test value that moved with its test out of experiment_export.rs, whose entry of 1 is removed in the same change; the repository total does not grow."
+  },
+  "duplication.engine.clones": {
+    "value": 265,
+    "reason": "The two clones are the error type of soyeht-image: the opening of its Display match and its Error and From<io::Error> impls, which have the same token shape as the error type of every other crate (soyeht-protocol, soyeht-service). They are the idiom, not copied code, and a rewrite to dodge the detector was undone in review."
+  },
+  "duplication.engine.duplicated_lines": {
+    "value": 1995,
+    "reason": "The two clones are the error type of soyeht-image: the opening of its Display match and its Error and From<io::Error> impls, which have the same token shape as the error type of every other crate (soyeht-protocol, soyeht-service). They are the idiom, not copied code, and a rewrite to dodge the detector was undone in review."
   }
 }

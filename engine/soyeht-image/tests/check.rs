@@ -1,9 +1,9 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-mod support;
-
-use soyeht_image::{Error, Picture, Rect, check, spec};
-use support::{Scratch, rgba_png, write};
+use soyeht_image::{
+    Error, Picture, Rect, check, spec,
+    testing::{Scratch, rgba_png},
+};
 
 const SIDE: u32 = 96;
 
@@ -23,7 +23,7 @@ fn with_patch(x: u32, y: u32) -> [u8; 4] {
 
 fn picture(scratch: &Scratch, name: &str, pixel: impl Fn(u32, u32) -> [u8; 4]) -> Picture {
     let path = scratch.path(name);
-    write(&path, &rgba_png(SIDE, SIDE, pixel));
+    std::fs::write(&path, rgba_png(SIDE, SIDE, pixel).unwrap()).unwrap();
     Picture::read(&path).unwrap()
 }
 
@@ -32,7 +32,7 @@ fn report(
     candidate: impl Fn(u32, u32) -> [u8; 4],
     region: Option<Rect>,
 ) -> soyeht_image::Report {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("image-check");
     let spec = spec().unwrap();
     let source = picture(&scratch, "source.png", base);
     let candidate = picture(&scratch, "candidate.png", candidate);
@@ -74,7 +74,7 @@ fn a_picture_that_did_not_change_fails() {
 }
 
 #[test]
-fn the_faint_noise_of_a_model_that_redraws_everything_is_not_a_change() {
+fn a_small_shift_of_every_pixel_is_not_a_change() {
     let report = report(
         "A",
         |x, y| {
@@ -114,11 +114,11 @@ fn a_change_outside_the_region_fails_and_counts_the_squares() {
 
 #[test]
 fn another_size_fails_before_any_comparison() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("image-check");
     let spec = spec().unwrap();
     let source = picture(&scratch, "source.png", base);
     let path = scratch.path("small.png");
-    write(&path, &rgba_png(48, 48, base));
+    std::fs::write(&path, rgba_png(48, 48, base).unwrap()).unwrap();
     let small = Picture::read(&path).unwrap();
     let report = check(&spec, spec.frame("A").unwrap(), &source, &small, None).unwrap();
     assert_eq!(format!("{:?}", report.problems), "[SizeDiffers]");
@@ -126,22 +126,22 @@ fn another_size_fails_before_any_comparison() {
 
 #[test]
 fn a_file_that_is_not_a_usable_png_is_refused_with_a_reason() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("image-check");
     let path = scratch.path("text.png");
-    write(&path, b"not a picture");
+    std::fs::write(&path, b"not a picture").unwrap();
     assert!(matches!(Picture::read(&path), Err(Error::Picture(_))));
     assert!(matches!(
         Picture::read(&scratch.path("missing.png")),
-        Err(Error::Disk(_))
+        Err(Error::Io(_))
     ));
     let wide = scratch.path("wide.png");
-    write(&wide, &rgba_png(2049, 1, base));
+    std::fs::write(&wide, rgba_png(2049, 1, base).unwrap()).unwrap();
     assert!(matches!(Picture::read(&wide), Err(Error::Picture(_))));
 }
 
 #[test]
 fn a_grayscale_picture_reads_like_any_other() {
-    let scratch = Scratch::new();
+    let scratch = Scratch::new("image-check");
     let path = scratch.path("gray.png");
     let mut out = Vec::new();
     let mut encoder = png::Encoder::new(&mut out, 16, 8);
@@ -152,6 +152,25 @@ fn a_grayscale_picture_reads_like_any_other() {
         .unwrap()
         .write_image_data(&[100; 16 * 8])
         .unwrap();
-    write(&path, &out);
+    std::fs::write(&path, &out).unwrap();
     assert_eq!(Picture::read(&path).unwrap().size(), (16, 8));
+}
+
+#[test]
+fn a_region_at_the_edge_of_the_number_range_does_not_wrap() {
+    let region = Rect {
+        x: u32::MAX,
+        y: 0,
+        width: 1,
+        height: 1,
+    };
+    let outside = report("A", with_patch, Some(region));
+    assert_eq!(format!("{:?}", outside.problems), "[OutsideRegion]");
+    let huge = Rect {
+        x: 0,
+        y: 0,
+        width: u32::MAX,
+        height: u32::MAX,
+    };
+    assert!(report("A", with_patch, Some(huge)).ok);
 }

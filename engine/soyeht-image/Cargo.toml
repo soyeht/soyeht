@@ -6,6 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+# The stand-in server, the scratch folder and the PNG helper that this crate's tests and the
+# command line's share.
+test-support = ["soyeht-platform/test-support"]
+
 [dependencies]
 base64.workspace = true
 png.workspace = true
@@ -17,7 +22,7 @@ soyeht-process = { path = "../soyeht-process" }
 url.workspace = true
 
 [dev-dependencies]
-uuid.workspace = true
+soyeht-image = { path = ".", features = ["test-support"] }
 
 [lints]
 workspace = true

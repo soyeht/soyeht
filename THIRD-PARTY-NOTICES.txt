@@ -225,7 +225,7 @@ Rust crates (819)
       following: MIT
       https://github.com/phil-opp/rust-bit-field
       Copyright (c) 2016 Philipp Oppermann
-  bitflags 1.3.2  (MIT/Apache-2.0)  [apps/desktop, engine]
+  bitflags 1.3.2  (MIT/Apache-2.0)  [apps/desktop]
       following: MIT
       https://github.com/bitflags/bitflags
       Copyright (c) 2014 The Rust Project Developers
@@ -1494,11 +1494,11 @@ Rust crates (819)
       following: MIT
       https://github.com/randomites/plain
       Copyright (c) 2017 Plain contributors
-  png 0.17.16  (MIT OR Apache-2.0)  [apps/desktop, engine]
+  png 0.17.16  (MIT OR Apache-2.0)  [apps/desktop]
       following: MIT
       https://github.com/image-rs/image-png
       Copyright (c) 2015 nwin
-  png 0.18.1  (MIT OR Apache-2.0)  [apps/android, apps/desktop]
+  png 0.18.1  (MIT OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/image-rs/image-png
       Copyright (c) 2015 nwin

@@ -1,32 +1,43 @@
 //! The person's own key for a cloud provider, kept on the computer that builds the avatar (ADR
-//! 0166, section 2). One owner-only file per provider in an owner-only folder of the data
-//! directory. The key is never printed, never logged and never put on a command line: it is read
-//! here and written into the request's configuration, which reaches `curl` on standard input.
+//! 0166, section 2). A key belongs to one provider **and one address**: it is stored with the host
+//! it was given for, and a call to another host does not find it, so a key given for one service
+//! is never sent to a service the person did not give it for.
+//!
+//! One owner-only file per provider and host (`image-keys/<provider>/<digest of host>`) in
+//! owner-only folders of the data directory. The first line of the file is the host, the second
+//! the key. The key is never printed, never logged and never put on a command line.
 
 use crate::error::{Error, Result};
+use sha2::{Digest, Sha256};
 use soyeht_platform::fs::{WriteMode, ensure_private_dir, write_atomic};
+use soyeht_process::curl::Secret;
 use std::{
-    fmt, fs, io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
 const FOLDER: &str = "image-keys";
 /// Longest key accepted; real keys are a hundred characters or so.
 const MAX_KEY_BYTES: usize = 1000;
+/// Characters of the host's digest in a file name.
+const NAME_DIGEST: usize = 16;
 
-/// A key. It prints as nothing.
-pub struct Secret(String);
-
-impl Secret {
-    pub(crate) fn expose(&self) -> &str {
-        &self.0
+/// The one rule for a key, on the way in and on the way out of the file: printable characters with
+/// no space, so it can only ever be one header value.
+fn secret(text: &str) -> Result<Secret> {
+    let key = text.trim();
+    if key.is_empty() || key.len() > MAX_KEY_BYTES {
+        return Err(Error::InvalidKey("empty or too long"));
     }
+    if !key.bytes().all(|byte| byte.is_ascii_graphic()) {
+        return Err(Error::InvalidKey("only printable characters with no space"));
+    }
+    Ok(Secret::new(key))
 }
 
-impl fmt::Debug for Secret {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret(..)")
-    }
+/// The host and the key of a stored file.
+fn parse(text: &str) -> Option<(&str, &str)> {
+    text.split_once('\n')
 }
 
 pub struct Vault {
@@ -40,9 +51,9 @@ impl Vault {
         }
     }
 
-    /// The file of a provider. The id comes from the catalogue, and is checked again here so a
+    /// The folder of a provider. The id comes from the catalogue, and is checked again here so a
     /// value from anywhere else can never leave the folder.
-    fn file(&self, provider: &str) -> Result<PathBuf> {
+    fn folder(&self, provider: &str) -> Result<PathBuf> {
         let plain = !provider.is_empty()
             && !provider.starts_with('.')
             && !provider.contains("..")
@@ -55,32 +66,65 @@ impl Vault {
         Ok(self.directory.join(provider))
     }
 
-    /// The stored key of `provider`, if there is one.
-    pub fn read(&self, provider: &str) -> Result<Option<Secret>> {
-        let text = present(fs::read_to_string(self.file(provider)?))?;
-        Ok(text
-            .map(|text| Secret(text.trim().to_owned()))
-            .filter(|key| !key.0.is_empty()))
+    fn file(&self, provider: &str, host: &str) -> Result<PathBuf> {
+        let digest = format!("{:x}", Sha256::digest(host.as_bytes()));
+        Ok(self.folder(provider)?.join(&digest[..NAME_DIGEST]))
     }
 
-    /// Stores `key` for `provider`. A key is printable characters with no space.
-    pub fn set(&self, provider: &str, key: &str) -> Result<()> {
-        let key = key.trim();
-        if key.is_empty() || key.len() > MAX_KEY_BYTES {
-            return Err(Error::InvalidKey("empty or too long"));
-        }
-        if !key.bytes().all(|byte| byte.is_ascii_graphic()) {
-            return Err(Error::InvalidKey("only printable characters with no space"));
-        }
-        let file = self.file(provider)?;
+    /// Stores `key` for `provider` at `host` (`Choice::key_host`).
+    pub fn set(&self, provider: &str, host: &str, key: &str) -> Result<()> {
+        let key = secret(key)?;
+        let file = self.file(provider, host)?;
+        let folder = self.folder(provider)?;
         ensure_private_dir(&self.directory).map_err(io::Error::from)?;
-        write_atomic(&file, key.as_bytes(), WriteMode::OwnerOnly)?;
+        ensure_private_dir(&folder).map_err(io::Error::from)?;
+        let text = format!("{host}\n{}\n", key.expose());
+        write_atomic(&file, text.as_bytes(), WriteMode::OwnerOnly)?;
         Ok(())
     }
 
-    /// Forgets the key of `provider`; true when there was one.
-    pub fn clear(&self, provider: &str) -> Result<bool> {
-        Ok(present(fs::remove_file(self.file(provider)?))?.is_some())
+    /// The key stored for `provider` at `host`. A provider with keys for other addresses only is
+    /// told apart from one with none.
+    pub fn key_for(&self, provider: &str, host: &str) -> Result<Secret> {
+        match present(fs::read_to_string(self.file(provider, host)?))? {
+            Some(text) => match parse(&text) {
+                Some((stored, key)) if stored == host => secret(key),
+                _ => Err(Error::InvalidKey("the stored key file is damaged")),
+            },
+            None if self.hosts(provider)?.is_empty() => Err(Error::MissingKey),
+            None => Err(Error::KeyForAnotherAddress),
+        }
+    }
+
+    /// The addresses `provider` has a key for, sorted.
+    pub fn hosts(&self, provider: &str) -> Result<Vec<String>> {
+        let Some(entries) = present(fs::read_dir(self.folder(provider)?))? else {
+            return Ok(Vec::new());
+        };
+        let mut hosts = Vec::new();
+        for entry in entries {
+            let text = fs::read_to_string(entry?.path())?;
+            if let Some((host, _)) = parse(&text) {
+                hosts.push(host.to_owned());
+            }
+        }
+        hosts.sort();
+        Ok(hosts)
+    }
+
+    /// Forgets the key of `provider` at `host`, or every key of it when no host is given; how many
+    /// keys went. It needs no catalogue entry, so a key of an entry that has left can still go.
+    pub fn clear(&self, provider: &str, host: Option<&str>) -> Result<usize> {
+        match host {
+            Some(host) => Ok(usize::from(
+                present(fs::remove_file(self.file(provider, host)?))?.is_some(),
+            )),
+            None => {
+                let count = self.hosts(provider)?.len();
+                present(fs::remove_dir_all(self.folder(provider)?))?;
+                Ok(count)
+            }
+        }
     }
 }
 

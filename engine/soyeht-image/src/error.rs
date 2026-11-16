@@ -13,10 +13,14 @@ pub enum Error {
     NeedsEndpoint,
     /// The entry names no model and the person gave none.
     NeedsModel,
+    /// The person gave something the provider does not take (a model, a seed).
+    NotUsed(&'static str),
     /// The address cannot be used: the reason is a fixed phrase.
     InvalidEndpoint(&'static str),
     /// The entry needs the person's own key and none is stored.
     MissingKey,
+    /// Keys are stored for this provider, but none for this address.
+    KeyForAnotherAddress,
     /// A key that cannot travel in a request header.
     InvalidKey(&'static str),
     /// A picture that cannot be used: the reason is a fixed phrase.
@@ -45,61 +49,69 @@ pub enum Error {
     InvalidRequest(&'static str),
     /// A catalogue or spec that does not read (a build defect, caught by the crate's tests).
     Data(&'static str),
-    /// A file could not be read or written.
-    Disk(io::Error),
-    /// `curl` could not be run within its deadline.
-    Command(soyeht_process::Error),
+    /// A file could not be read or written: its kind only, since the system's message can name a
+    /// path.
+    Io(io::ErrorKind),
 }
 
-impl Error {
-    /// The sentence for the person or the agent.
-    fn sentence(&self) -> String {
+impl fmt::Display for Error {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownProvider(id) => format!("No image provider has the id {id}"),
-            Self::UnknownFrame(id) => format!("No frame has the id {id}"),
-            Self::NeedsEndpoint => String::from("This provider needs an address (--endpoint)"),
-            Self::NeedsModel => String::from("This provider needs a model name (--model)"),
-            Self::InvalidEndpoint(reason) => {
-                format!("The address cannot be used: {reason}")
+            Self::UnknownProvider(id) => write!(formatter, "No image provider has the id {id}"),
+            Self::UnknownFrame(id) => write!(formatter, "No frame has the id {id}"),
+            Self::NeedsEndpoint => {
+                formatter.write_str("This provider needs an address (--endpoint)")
             }
-            Self::MissingKey => String::from(
+            Self::NeedsModel => formatter.write_str("This provider needs a model name (--model)"),
+            Self::NotUsed(what) => write!(formatter, "This provider takes no {what}"),
+            Self::InvalidEndpoint(reason) => {
+                write!(formatter, "The address cannot be used: {reason}")
+            }
+            Self::MissingKey => formatter.write_str(
                 "This provider needs your own key: store it with `soyeht avatar key set`",
             ),
-            Self::InvalidKey(reason) => format!("The key cannot be used: {reason}"),
-            Self::Picture(reason) => format!("The picture cannot be used: {reason}"),
+            Self::KeyForAnotherAddress => formatter.write_str(
+                "A key is stored for this provider, but not for this address: \
+store it with `soyeht avatar key set PROVIDER --endpoint ADDRESS`",
+            ),
+            Self::InvalidKey(reason) => write!(formatter, "The key cannot be used: {reason}"),
+            Self::Picture(reason) => write!(formatter, "The picture cannot be used: {reason}"),
             Self::SourceSize {
                 width,
                 height,
                 multiple,
-            } => format!(
+            } => write!(
+                formatter,
                 "The picture is {width}x{height}; this provider needs both sides to be a multiple of {multiple}"
             ),
-            Self::Unauthorized => String::from("The service refused the key"),
-            Self::RateLimited => String::from("The service asked to slow down; try again later"),
+            Self::Unauthorized => formatter.write_str("The service refused the key"),
+            Self::RateLimited => {
+                formatter.write_str("The service asked to slow down; try again later")
+            }
             Self::Provider {
                 status,
                 reason: Some(reason),
-            } => {
-                format!("The service answered {status}: {reason}")
-            }
+            } => write!(formatter, "The service answered {status}: {reason}"),
             Self::Provider {
                 status,
                 reason: None,
-            } => format!("The service answered {status}"),
-            Self::Unreachable => String::from("The service could not be reached"),
+            } => write!(formatter, "The service answered {status}"),
+            Self::Unreachable => formatter.write_str("The service could not be reached"),
             Self::BadResponse(reason) => {
-                format!("The service answered something unexpected: {reason}")
+                write!(
+                    formatter,
+                    "The service answered something unexpected: {reason}"
+                )
             }
-            Self::TimedOut => String::from("The picture was not ready in time"),
+            Self::TimedOut => formatter.write_str("The picture was not ready in time"),
             Self::JobFailed => {
-                String::from("The server reported an error while it made the picture")
+                formatter.write_str("The server reported an error while it made the picture")
             }
             Self::InvalidRequest(reason) => {
-                format!("The request cannot be sent: {reason}")
+                write!(formatter, "The request cannot be sent: {reason}")
             }
-            Self::Data(reason) => format!("The built-in data is broken: {reason}"),
-            Self::Disk(error) => error.to_string(),
-            Self::Command(error) => error.to_string(),
+            Self::Data(reason) => write!(formatter, "The built-in data is broken: {reason}"),
+            Self::Io(kind) => write!(formatter, "A file could not be read or written ({kind})"),
         }
     }
 }
@@ -108,13 +120,7 @@ impl std::error::Error for Error {}
 
 impl From<io::Error> for Error {
     fn from(error: io::Error) -> Self {
-        Error::Disk(error)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Display::fmt(&self.sentence(), formatter)
+        Self::Io(error.kind())
     }
 }
 

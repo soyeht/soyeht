@@ -35,7 +35,10 @@ impl Picture {
         if width == 0 || height == 0 || width > MAX_SIDE || height > MAX_SIDE {
             return Err(Error::Picture("empty or larger than 2048 pixels on a side"));
         }
-        let mut buffer = vec![0; reader.output_buffer_size()];
+        let size = reader
+            .output_buffer_size()
+            .ok_or(Error::Picture("larger than memory allows"))?;
+        let mut buffer = vec![0; size];
         let frame = reader.next_frame(&mut buffer).map_err(unreadable)?;
         let channels = match frame.color_type {
             ColorType::Grayscale => 1,
@@ -160,11 +163,15 @@ pub fn check(
     Ok(report)
 }
 
+/// Whether `square` lies within `region` grown by `margin` on every side. The sums are made in
+/// 64 bits, so a region given at the edge of the number range cannot wrap.
 fn inside(square: &Rect, region: &Rect, margin: u32) -> bool {
-    square.x + margin >= region.x
-        && square.y + margin >= region.y
-        && square.x + square.width <= region.x + region.width + margin
-        && square.y + square.height <= region.y + region.height + margin
+    let end = |start: u32, length: u32| u64::from(start) + u64::from(length);
+    let (margin, left, top) = (u64::from(margin), u64::from(region.x), u64::from(region.y));
+    u64::from(square.x) + margin >= left
+        && u64::from(square.y) + margin >= top
+        && end(square.x, square.width) <= end(region.x, region.width) + margin
+        && end(square.y, square.height) <= end(region.y, region.height) + margin
 }
 
 struct Squares {

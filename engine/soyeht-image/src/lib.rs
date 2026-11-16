@@ -6,9 +6,10 @@
 //!
 //! - `catalogue`: the descriptors (data) and the choice of one call: its address and model.
 //! - `adapter`: how one edit reaches a provider (the OpenAI image-edit request, a ComfyUI server)
-//!   and how the picture comes back. Requests run through `curl` under the bounded runner, with
-//!   the person's own key on standard input.
-//! - `vault`: the person's own key for a provider that needs one, on the computer that builds.
+//!   and how the picture comes back. Requests are made by the bounded runner's `curl`
+//!   (`soyeht_process::curl`), with the person's own key on standard input.
+//! - `vault`: the person's own key for a provider that needs one, per address, on the computer
+//!   that builds.
 //! - `frames`: the frame spec, as data: the 18 frames, their prompts and how much may change.
 //! - `check`: the deterministic check of an edited frame against its source.
 //!
@@ -18,14 +19,17 @@
 mod adapter;
 mod catalogue;
 mod check;
-mod curl;
 mod error;
+mod exchange;
 mod frames;
+#[cfg(feature = "test-support")]
+pub mod testing;
 mod vault;
 
 pub use adapter::{Edit, edit};
-pub use catalogue::{Choice, Descriptor, find, registry};
+pub use catalogue::{Adapter, Choice, Descriptor, find, host_of, registry};
 pub use check::{Picture, Problem, Rect, Report, check};
 pub use error::{Error, Result};
 pub use frames::{Frame, Spec, spec};
-pub use vault::{Secret, Vault};
+pub use soyeht_process::curl::Secret;
+pub use vault::Vault;

@@ -5,7 +5,6 @@
 //! harness receives them.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
-pub mod bundled;
 pub mod home;
 mod manifest;
 mod store;

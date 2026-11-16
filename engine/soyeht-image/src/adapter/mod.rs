@@ -8,8 +8,8 @@ mod openai;
 use crate::{
     catalogue::{Adapter, Choice},
     error::{Error, Result},
-    vault::Secret,
 };
+use soyeht_process::curl::Secret;
 use std::{path::Path, time::Duration};
 
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
@@ -21,7 +21,7 @@ pub struct Edit<'a> {
     pub prompt: &'a str,
     pub width: u32,
     pub height: u32,
-    pub seed: u64,
+    pub seed: Option<u64>,
 }
 
 /// Everything one adapter needs for one edit.
@@ -32,8 +32,9 @@ pub(crate) struct Job<'a> {
     pub timeout: Duration,
 }
 
-/// Runs one edit and returns the PNG the provider made. `key` is the person's own key; it is
-/// sent only to a provider whose entry needs one.
+/// Runs one edit and returns the PNG the provider made. `key` is the person's own key for this
+/// address (`Vault::key_for`); it is sent only to a provider whose entry needs one, and only over
+/// https or to this computer.
 pub fn edit(
     choice: &Choice,
     key: Option<&Secret>,
@@ -53,6 +54,11 @@ pub fn edit(
         (true, Some(key)) => Some(key),
         (false, _) => None,
     };
+    if key.is_some() && choice.endpoint.scheme() != "https" && !choice.is_loopback() {
+        return Err(Error::InvalidEndpoint(
+            "a key is sent only over https or to this computer",
+        ));
+    }
     let job = Job {
         choice,
         key,

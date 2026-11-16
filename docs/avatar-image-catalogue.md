@@ -1,6 +1,15 @@
 # The image catalogue and the frame tooling (`soyeht-image`)
 
-ADR 0166, slice 9a. An avatar is one picture of a face and 18 edited copies of it (eight mouth
+ADR 0166, slice 9a.
+
+**Status: nothing here has met a real service.** The ComfyUI recipe and the cloud (OpenAI-style)
+adapter are tested only against a stand-in server on the loopback, with the real `curl`. The GPU
+host could not run when this was written, so the first real `soyeht avatar frame` and `check`, on
+a real ComfyUI server and on a real cloud service, are owed when it is back; until then the node
+names of the recipe, the request fields a service accepts, and the thresholds of the check are
+unconfirmed.
+
+An avatar is one picture of a face and 18 edited copies of it (eight mouth
 shapes, a blink, seven eye frames, two resting mouths). This is what makes the edits: a catalogue
 of image providers the person chooses from, the adapters that send one edit to a provider, the
 frame spec, and the commands that make and check one frame. The package build that turns the
@@ -22,13 +31,14 @@ list and never matches on an id or a model name. A descriptor holds:
 - the id, the names, `locality` (`local`: a computer of the person's own; `cloud`: someone else's)
   and `adapter` (which protocol it speaks);
 - the `model` and `endpoint` it starts with, both optional: the person gives their own for one
-  call with `--model` and `--endpoint`. A cloud entry takes only an https address; a local one may
-  take http. An address never holds a user name, a password, a query or a fragment;
+  call with `--model` and `--endpoint`, and a model is refused where the protocol takes none. A
+  cloud entry takes only an https address; a local one may take http. An address never holds a
+  user name, a password, a query or a fragment. A cloud entry's address and model are the
+  person's to give, never guessed;
 - `needsKey`: whether the provider needs the person's own key;
 - `sends`: what the provider receives (the picture, the instruction), which a screen names before
   the first use;
-- `license`: a name, an optional address and `commercialUse` (false for research-only terms, absent
-  when not known). It is data for the screens, and nothing enforces it;
+- `license`: a name and `commercialUse` (false for research-only terms, absent when not known). It is data for the screens, and nothing enforces it;
 - `timeoutSeconds` and `sizeMultiple` (both sides of the picture must be a multiple of it);
 - for a ComfyUI entry, the `recipe`: the graph in its API form and the places the edit's values go.
 
@@ -44,28 +54,37 @@ Adding a provider is adding an entry; adding a protocol is adding an adapter (on
 
 ### The adapters
 
-Both send their requests through `curl` run by `soyeht_process::run_with_input` (a deadline, a byte
-budget, no child left behind, refused under the Core lock). The address, the key header, the
-form fields and the body go in the configuration `curl` reads on standard input, so a key is never
-on a command line.
+Both send their requests with `soyeht_process::curl`, the one builder of a `curl` command line
+(also used by the usage readings of the engine): the system's `curl` (on Unix the first of
+`/usr/bin/curl`, `/bin/curl` and, for a NixOS machine, `/run/current-system/sw/bin/curl`; never
+one found on a search path) started with `--disable`, so no `.curlrc` changes it, `--globoff`, so a
+`{` or `[` in an address is never expanded, and no redirect followed. Headers, form fields and the
+body go in the configuration `curl` reads on standard input, so a key is never on a command line;
+every address part a server sends back is percent-encoded. A key is sent only over https or to
+this computer.
 
 - `openai-images`: `POST {endpoint}/images/edits`, a multipart form with `image`, `model`,
-  `prompt` and `size`; the answer is the picture as base64, or an https address that is fetched
-  with no key.
+  `prompt` and `size`; the answer must hold the picture as base64.
 - `comfyui`: `POST /upload/image`, `POST /prompt` with the entry's graph and this edit's values
   (picture, instruction, seed, width, height), `GET /history/ID` until it is complete, and
-  `GET /view` for the saved picture.
+  `GET /view` for the saved picture. The seed matters only here: the OpenAI-style request has none.
 
 A provider whose tool is the harness's own image tool needs no adapter: the agent makes the frame
 with that tool and runs `check` on the file.
 
 ### The person's key
 
-A key is kept per provider in `<data>/image-keys/<id>`, an owner-only file in an owner-only folder
-(`soyeht_platform::fs`). `soyeht avatar key set PROVIDER` reads it from standard input and
-`key clear` forgets it; `providers` says only whether one is stored. The key is never printed,
-never logged and never part of an error. This is the build host's vault of ADR 0166 section 2: the
-engine does not receive keys from the clients, and a phone that uses an avatar needs none.
+A key belongs to one provider **and one address**. `soyeht avatar key set PROVIDER [--endpoint URL]`
+reads one line from standard input and stores it in `<data>/image-keys/<provider>/<digest of the
+host and port>`, an owner-only file in owner-only folders (`soyeht_platform::fs`), with the host
+it was given for. A call to another address does not find it and is refused
+(`KeyForAnotherAddress`), so a key given for one service is never sent to another. `key clear
+PROVIDER [--endpoint URL]` forgets one address's key or all of the provider's, and works for an
+id that has left the catalogue. `providers` shows the addresses a key is stored for (`keyHosts`),
+never a key. The key is never printed, never logged, never part of an error (a service's own
+error text has it taken out) and a stored file is checked again when it is read. This is the
+build host's vault of ADR 0166 section 2: the engine does not receive keys from the clients, and
+a phone that uses an avatar needs none.
 
 ## The frame spec
 
@@ -93,7 +112,7 @@ soyeht avatar frames                          the 18 frames
 soyeht avatar frame --provider ID --frame FRAME --source PICTURE.png --out OUT.png \
     [--endpoint URL] [--model NAME] [--seed N] [--extra TEXT] [--timeout SECONDS]
 soyeht avatar check --frame FRAME --source PICTURE.png --image OUT.png [--region X,Y,W,H]
-soyeht avatar key set PROVIDER | soyeht avatar key clear PROVIDER
+soyeht avatar key set PROVIDER [--endpoint URL] | soyeht avatar key clear PROVIDER [--endpoint URL]
 ```
 
 All of them print JSON. They work with no engine running.
@@ -103,8 +122,8 @@ All of them print JSON. They work with no engine running.
 `engine/soyeht-skills/skills/avatar-builder/SKILL.md` tells an agent how to produce the set: what
 to ask the person first, how to use the two commands, what to look for in a frame, when to redo
 one and when to stop. It holds no list of frames (the command prints it). The build job of
-slices 1 and 2 puts it where the avatar's helper pane loads it; `soyeht_skills::bundled` carries
-the text.
+slices 1 and 2 puts it where the avatar's helper pane loads it; nothing places it yet, and a test
+keeps it a valid skill that names the commands it relies on.
 
 ## The preset pack
 
@@ -123,4 +142,6 @@ each of the 6 to 8 presets:
 4. Collect the packages as the downloadable pack, with its notice.
 
 The first run also measures what this document says is not measured: the thresholds of
-`frames.json`, and the cost per image of a cloud entry.
+`frames.json`, and the cost per image of a cloud entry. It is also the first time the recipe and
+the cloud adapter meet a real service; if a node, a field or a status differs, fix the data or the
+adapter then.

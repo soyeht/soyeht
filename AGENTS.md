@@ -30,7 +30,10 @@ Each layer depends only on the layers listed above it.
    specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation, the
    desktop's `os_notify`), under the rule below: the same public shape on every system.
    `engine/soyeht-process`, the bounded runner for every external command the engine
-   starts, depends on nothing but `soyeht-platform` (ADR 0079).
+   starts, depends on nothing but `soyeht-platform` (ADR 0079). Its `curl` module is the one
+   place that builds an HTTP request for the system's `curl` (no `.curlrc`, no globbing, no
+   redirect unless asked, credentials only on standard input) and the one `Secret`; the usage
+   host and the image adapters use it.
 3. Engine building blocks, each depending only on `soyeht-protocol` and
    `soyeht-platform`, and on `soyeht-process` where they run a command:
    - `soyeht-ptyd`: the process supervisor that holds pseudoterminals.
@@ -54,8 +57,8 @@ Each layer depends only on the layers listed above it.
      and `apps/desktop` and `soyeht-cli` (`soyeht avatar build`) may depend on it.
    - `soyeht-image`: the image catalogue and the frame tooling of an avatar (ADR 0166): the image
      providers as data (a descriptor each, local or cloud, no model hard-wired), the adapters
-     that send one edit to a provider with `curl` under `soyeht-process` and the person's own
-     key (kept in an owner-only file, never on a command line), the frame spec and the
+     that send one edit to a provider with `soyeht-process`'s `curl` and the person's own key
+     (kept in an owner-only file per provider and address, never on a command line), the frame spec and the
      deterministic check of an edited frame. It depends on `soyeht-platform` and
      `soyeht-process`; `soyeht-cli` (`soyeht avatar frame` and `check`) uses it.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd

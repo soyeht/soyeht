@@ -552,9 +552,14 @@ Built: the image catalogue, the adapters, the frame spec, `soyeht avatar` (`prov
 The catalogue's first list (question 4 below): `qwen-image-2.1-comfyui`, a local ComfyUI entry that
 carries the project's recipe as data, and `openai-compatible-image-edit`, a cloud entry for any
 service that answers the OpenAI image-edit request, with the person's own address, model and key.
-The image providers' keys live on the build host, in an owner-only file per provider; the engine
-never receives them. The harness's own image tool needs no adapter: an agent makes the frame with
+The image providers' keys live on the build host, in an owner-only file per provider and address
+(a key given for one address is never sent to another); the engine never receives them. The requests
+go through the one `curl` builder of `soyeht-process`, which the usage readings use too. The harness's own image tool needs no adapter: an agent makes the frame with
 it and runs `check` on the file.
+
+**Untested against any real service.** The ComfyUI recipe and the cloud adapter have met only a
+stand-in server with the real `curl`. The first real `soyeht avatar frame` and `check`, on a real
+ComfyUI server and on a real cloud service, are owed when the GPU host is back.
 
 Not built, and not measured: the preset pack (the GPU host was not available), the thresholds of
 the check (they are data in `frames.json` and are set from the first real outputs), and the cost

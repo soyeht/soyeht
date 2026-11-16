@@ -1,7 +1,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::Value;
-use soyeht_image::{Error, find, registry};
+use soyeht_image::{Descriptor, Error, find, registry};
 use std::collections::BTreeSet;
 
 #[test]
@@ -71,7 +71,7 @@ fn an_unknown_provider_is_named() {
     ));
 }
 
-fn cloud() -> soyeht_image::Descriptor {
+fn cloud() -> Descriptor {
     registry()
         .unwrap()
         .into_iter()
@@ -79,7 +79,7 @@ fn cloud() -> soyeht_image::Descriptor {
         .unwrap()
 }
 
-fn local() -> soyeht_image::Descriptor {
+fn local() -> Descriptor {
     registry()
         .unwrap()
         .into_iter()
@@ -104,7 +104,17 @@ fn a_cloud_entry_takes_only_https_and_needs_the_person_to_name_its_address_and_m
     let choice = cloud()
         .choose(Some("https://example.test/v1/"), Some("m"))
         .unwrap();
-    assert_eq!(choice.model.as_deref(), Some("m"));
+    assert_eq!(choice.key_host(), "example.test:443");
+}
+
+#[test]
+fn a_model_is_refused_where_the_protocol_takes_none() {
+    assert!(matches!(
+        local().choose(None, Some("some-model")),
+        Err(Error::NotUsed("model"))
+    ));
+    assert!(local().adapter.takes_seed() && !local().adapter.takes_model());
+    assert!(cloud().adapter.takes_model() && !cloud().adapter.takes_seed());
 }
 
 #[test]
@@ -130,9 +140,9 @@ fn an_address_never_holds_a_secret_or_anything_but_a_host_and_a_path() {
 #[test]
 fn a_local_entry_starts_from_its_own_address_and_takes_the_persons_over_it() {
     let own = local().choose(None, None).unwrap();
-    assert!(own.endpoint.as_str().starts_with("http://"));
+    assert_eq!(own.key_host(), "127.0.0.1:8188");
     let moved = local()
         .choose(Some("http://192.168.1.20:8188"), None)
         .unwrap();
-    assert_eq!(moved.endpoint.host_str(), Some("192.168.1.20"));
+    assert_eq!(moved.key_host(), "192.168.1.20:8188");
 }

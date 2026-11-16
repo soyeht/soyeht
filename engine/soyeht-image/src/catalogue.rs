@@ -35,6 +35,18 @@ pub enum Adapter {
     Comfyui,
 }
 
+impl Adapter {
+    /// Whether the protocol carries a model name.
+    pub fn takes_model(self) -> bool {
+        matches!(self, Self::OpenaiImages)
+    }
+
+    /// Whether the protocol carries a seed, so that another seed gives another picture.
+    pub fn takes_seed(self) -> bool {
+        matches!(self, Self::Comfyui)
+    }
+}
+
 /// What a provider receives; the screen names it before the first use.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -48,8 +60,6 @@ pub enum Sent {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct License {
     pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
     /// False for research-only terms; absent when the terms are not known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commercial_use: Option<bool>,
@@ -124,19 +134,20 @@ pub fn find(id: &str) -> Result<Descriptor> {
         .ok_or_else(|| Error::UnknownProvider(id.to_owned()))
 }
 
-/// A provider with the address and model one call will use.
+/// A provider with the address and model one call will use. Only `Descriptor::choose` makes one,
+/// so the rules about an address cannot be bypassed.
 #[derive(Debug)]
 pub struct Choice {
-    pub descriptor: Descriptor,
-    pub endpoint: Url,
-    pub model: Option<String>,
+    pub(crate) descriptor: Descriptor,
+    pub(crate) endpoint: Url,
+    pub(crate) model: Option<String>,
 }
 
 impl Descriptor {
-    /// The address and model of one call: the person's own, else the entry's. A cloud entry takes
-    /// only an https address; a local one may take http. An address never carries a user name,
-    /// a password, a query or a fragment, so nothing secret can end up in a URL.
-    pub fn choose(self, endpoint: Option<&str>, model: Option<&str>) -> Result<Choice> {
+    /// The address of one call: the person's own, else the entry's. A cloud entry takes only an
+    /// https address; a local one may take http. An address never carries a user name, a password,
+    /// a query or a fragment, so nothing secret can end up in a URL.
+    fn address(&self, endpoint: Option<&str>) -> Result<Url> {
         let text = endpoint
             .or(self.endpoint.as_deref())
             .ok_or(Error::NeedsEndpoint)?;
@@ -163,11 +174,27 @@ impl Descriptor {
                 "no user name, password, query or fragment",
             ));
         }
+        Ok(endpoint)
+    }
+
+    /// The address and port a key for this entry is stored under, for the address the person
+    /// names or else the entry's own.
+    pub fn key_host(&self, endpoint: Option<&str>) -> Result<String> {
+        Ok(host_key(&self.address(endpoint)?))
+    }
+
+    /// The address and model of one call: the person's own, else the entry's. A model is refused
+    /// where the protocol takes none, so it is never silently dropped.
+    pub fn choose(self, endpoint: Option<&str>, model: Option<&str>) -> Result<Choice> {
+        let endpoint = self.address(endpoint)?;
+        if model.is_some() && !self.adapter.takes_model() {
+            return Err(Error::NotUsed("model"));
+        }
         let model = model
             .map(str::to_owned)
             .or_else(|| self.model.clone())
             .filter(|model| !model.is_empty());
-        if self.adapter == Adapter::OpenaiImages && model.is_none() {
+        if self.adapter.takes_model() && model.is_none() {
             return Err(Error::NeedsModel);
         }
         Ok(Choice {
@@ -179,17 +206,56 @@ impl Descriptor {
 }
 
 impl Choice {
+    /// The address and the port the key of this call belongs to.
+    pub fn key_host(&self) -> String {
+        host_key(&self.endpoint)
+    }
+
     /// A cloud provider is reached over https only.
     pub(crate) fn https_only(&self) -> bool {
         self.descriptor.locality == Locality::Cloud
     }
 
-    /// The address of `path` below the endpoint, whatever path the endpoint already has.
-    pub(crate) fn url(&self, path: &str) -> String {
-        format!(
-            "{}/{}",
-            self.endpoint.as_str().trim_end_matches('/'),
-            path.trim_start_matches('/')
-        )
+    /// The address of `segments` below the endpoint, with `query` pairs. Every part is
+    /// percent-encoded, so text a server sent cannot change the path or add a part.
+    pub(crate) fn url(&self, segments: &[&str], query: &[(&str, &str)]) -> Result<String> {
+        if segments.iter().any(|part| matches!(*part, "" | "." | "..")) {
+            return Err(Error::InvalidRequest("a path part that moves up or stays"));
+        }
+        let mut url = self.endpoint.clone();
+        url.path_segments_mut()
+            .map_err(|()| Error::InvalidEndpoint("not an address"))?
+            .pop_if_empty()
+            .extend(segments);
+        if !query.is_empty() {
+            url.query_pairs_mut().extend_pairs(query);
+        }
+        Ok(url.to_string())
     }
+
+    /// Whether the address is this computer.
+    pub(crate) fn is_loopback(&self) -> bool {
+        match self.endpoint.host() {
+            Some(url::Host::Domain(name)) => name.eq_ignore_ascii_case("localhost"),
+            Some(url::Host::Ipv4(address)) => address.is_loopback(),
+            Some(url::Host::Ipv6(address)) => address.is_loopback(),
+            None => false,
+        }
+    }
+}
+
+/// `host:port` of an address: what a key is stored under.
+fn host_key(address: &Url) -> String {
+    format!(
+        "{}:{}",
+        address.host_str().unwrap_or_default(),
+        address.port_or_known_default().unwrap_or_default()
+    )
+}
+
+/// [`host_key`] of an address given as text, whatever entry it is for.
+pub fn host_of(address: &str) -> Result<String> {
+    Url::parse(address)
+        .map(|address| host_key(&address))
+        .map_err(|_| Error::InvalidEndpoint("not an address"))
 }

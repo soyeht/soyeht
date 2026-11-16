@@ -108,8 +108,9 @@ soyeht --profile dev usage refresh codex --idempotency-key usage-refresh-1
 `soyeht avatar` makes and checks the frames of an avatar (ADR 0166, `docs/avatar-image-catalogue.md`).
 It needs no engine: `providers` lists the image catalogue, `frames` the 18 frames, `frame` makes
 one with the provider the person chose, `check` measures an edited frame against its source, and
-`key set PROVIDER` (the key on standard input) and `key clear PROVIDER` keep the person's own key
-for a provider that needs one. The key is never printed and is never an argument.
+`key set PROVIDER [--endpoint URL]` (the key on one line of standard input) and `key clear PROVIDER
+[--endpoint URL]` keep the person's own key for a provider at one address. The key is never printed and
+is never an argument.
 
 ```sh
 soyeht --profile dev avatar providers
