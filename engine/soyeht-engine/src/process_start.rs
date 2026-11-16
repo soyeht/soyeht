@@ -303,7 +303,7 @@ mod tests {
         offload::Background,
         ports::SupervisorPort,
         supervisor_link::tests::core_with_unstarted_pane,
-        test_panes::{Answering, apply_until_done},
+        test_panes::{Answering, Featured, apply_until_done},
     };
     use soyeht_ptyd::wire::Request;
     use std::{
@@ -364,47 +364,29 @@ mod tests {
         asked.lock().unwrap().clone()
     }
 
-    /// A supervisor that lists the pane binding feature, or does not, and keeps the environment of
-    /// every start it is asked for.
-    struct Featured {
-        inner: Box<dyn SupervisorPort>,
-        listed: bool,
-    }
-
-    impl SupervisorPort for Featured {
-        fn request(&mut self, request: Request) -> soyeht_ptyd::Result<Response> {
-            self.inner.request(request)
-        }
-
-        fn supervisor_id(&self) -> &str {
-            self.inner.supervisor_id()
-        }
-
-        fn supervisor_generation(&self) -> u32 {
-            self.inner.supervisor_generation()
-        }
-
-        fn supports(&self, feature: &str) -> bool {
-            self.listed && feature == soyeht_ptyd::wire::FEATURE_PANE_BINDING
-        }
-    }
-
     /// The environments of the starts a pane makes on a supervisor that lists the feature or not.
     fn started_environment(listed: bool) -> std::collections::BTreeMap<String, String> {
         let (mut core, directory, _, _) = core_with_unstarted_pane(Vec::new());
         core.background = Background::default();
         let environments = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&environments);
-        core.link_supervisor(Box::new(Featured {
-            inner: Box::new(Answering(move |request| match request {
+        // A supervisor that lists the pane binding feature, or does not, and keeps the environment
+        // of every start it is asked for.
+        let features = if listed {
+            vec![soyeht_ptyd::wire::FEATURE_PANE_BINDING.to_owned()]
+        } else {
+            Vec::new()
+        };
+        core.link_supervisor(Box::new(Featured(
+            Box::new(Answering(move |request| match request {
                 Request::Spawn(config) => {
                     kept.lock().unwrap().push(config.env.clone());
                     Ok(Response::Instance(instance_of(config)))
                 }
                 _ => Ok(Response::Ok),
             })),
-            listed,
-        }));
+            features,
+        )));
         core.spawn(PANE).unwrap();
         apply_until_done(&mut core, START);
         // The supervisor took the start whatever it listed, and the pane has its process.

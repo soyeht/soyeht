@@ -106,5 +106,6 @@ pub fn pane(id: &str, workspace_id: &str, mode: PaneMode, cwd: &str) -> Pane {
         web_session: None,
         writing_kind: None,
         writing_section: None,
+        terminal_harness: None,
     }
 }

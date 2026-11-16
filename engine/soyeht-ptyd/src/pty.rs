@@ -38,6 +38,18 @@ impl Resizer {
     }
 }
 
+impl Resizer {
+    /// What runs in the foreground of the terminal whose child is `child`: on Unix the leader
+    /// of the terminal's foreground process group, on Windows (no foreground group in a pseudo
+    /// console) the processes of the child's job, a process before what it started.
+    pub fn foreground(
+        &self,
+        child: &Child,
+    ) -> io::Result<Vec<soyeht_platform::process::inspect::Program>> {
+        system::foreground(&self.0, child)
+    }
+}
+
 /// Starts `command` on a new pseudo-terminal of `rows` x `cols`, leading its own session (a
 /// process group on Unix, a job on Windows) whose controlling terminal it is.
 ///

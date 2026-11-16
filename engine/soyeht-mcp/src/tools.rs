@@ -39,7 +39,7 @@ const TOOLS: [Tool; 36] = [
         name: "list_agents",
         method: method::AGENT_LIST,
         audience: Audience::Both,
-        description: "List the agent panes of every Soyeht workspace by name, your own workspace first, with their workspace, harness and pane IDs. For a request that names who to talk to, call this first: a name it lists is a Soyeht pane to reach with message_agent, never a subagent for you to create in its place. A name it does not list is not a pane: say so instead of creating one.",
+        description: "List the agent panes of every Soyeht workspace by name, your own workspace first, with their workspace, harness and pane IDs. For a request that names who to talk to, call this first: a name it lists is a Soyeht pane to reach with message_agent, never a subagent for you to create in its place. A name it does not list is not a pane: say so instead of creating one. An item of kind \"terminal\" is a terminal pane that runs a harness; it cannot receive messages yet.",
         schema: empty_schema,
     },
     Tool {

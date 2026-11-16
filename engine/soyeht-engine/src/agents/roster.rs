@@ -43,6 +43,18 @@ impl Agents {
         self.running.contains_key(pane)
     }
 
+    /// Whether `pane` is the terminal of an agent's sign-in, running or awaiting its confirmation.
+    pub(crate) fn is_login_terminal(&self, pane: &str) -> bool {
+        self.running.values().any(|running| {
+            [
+                &running.state.login_pane_id,
+                &running.state.unconfirmed_login_pane_id,
+            ]
+            .into_iter()
+            .any(|terminal| terminal.as_deref() == Some(pane))
+        })
+    }
+
     /// The agent of `pane`, when it has one.
     pub(crate) fn get(&self, pane: &str) -> Option<&Running> {
         self.running.get(pane)

@@ -45,6 +45,8 @@ use windows_sys::Win32::{
     },
 };
 
+mod programs;
+
 /// Ends the process `pid` at once, which [`super::terminate`] has checked is neither 0, 1 nor this
 /// process. A process that does not exist is `NotFound`.
 pub(super) fn terminate(pid: u32) -> io::Result<()> {

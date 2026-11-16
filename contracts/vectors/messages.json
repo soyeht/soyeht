@@ -4628,6 +4628,15 @@
     }
   },
   {
+    "name": "TerminalHarness",
+    "type": "TerminalHarness",
+    "value": {
+      "id": "registry.opencode",
+      "name": "OpenCode",
+      "version": "2.2.5"
+    }
+  },
+  {
     "name": "AgentMessageKind",
     "type": "AgentMessageKind",
     "value": "terminal"

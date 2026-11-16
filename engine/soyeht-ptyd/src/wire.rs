@@ -28,6 +28,9 @@ impl Role {
 
 /// A feature a supervisor lists in its welcome. An engine that does not find it does not use it.
 pub const FEATURE_WATCH: &str = "watch";
+/// The supervisor answers `Foreground` (ADR 0165). It is a feature and not a version, so a running
+/// supervisor of this protocol that does not list it keeps working after an engine update.
+pub const FEATURE_FOREGROUND: &str = "foreground";
 
 /// A supervisor that lists this accepts `SOYEHT_PANE_BINDING` in the environment of a terminal
 /// (ADR 0165). An older one refuses the variable as one the engine may not set, so the engine
@@ -99,6 +102,10 @@ pub enum Request {
         operation_key: String,
     },
     PendingInputs,
+    /// What each of these terminals runs in its foreground (at most [`MAX_FOREGROUND`]).
+    Foreground {
+        instance_ids: Vec<String>,
+    },
     PendingRequests {
         instance_id: String,
     },
@@ -145,6 +152,8 @@ pub enum Response {
         bytes: usize,
     },
     InputReceipts(Vec<String>),
+    /// The answer to `Foreground`, for the processes that are terminals the supervisor holds.
+    Foregrounds(Vec<Foreground>),
     PendingRequests {
         items: Vec<PendingRequest>,
         recovery_gap: bool,
@@ -155,6 +164,53 @@ pub enum Response {
         kind: String,
         message: String,
     },
+}
+
+/// How many terminals one `Foreground` may ask about.
+pub const MAX_FOREGROUND: usize = 256;
+
+/// The most bytes of file names and arguments one `Foregrounds` answer holds. An eighth of the
+/// largest JSON frame: a string can grow to six times its length when it is escaped, so the
+/// answer stays inside the frame whatever the terminals run. A terminal that does not fit is
+/// left out of the answer, and one that fits in part is marked `truncated`.
+pub const MAX_FOREGROUND_BYTES: usize = soyeht_protocol::limits::JSON_BYTES / 8;
+
+/// What one terminal runs in its foreground: on Unix the leader of the foreground process group,
+/// on Windows the processes of the terminal's job, a process before what it started. No programs
+/// when the terminal has none left to read (it ended, or the group's leader did).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Foreground {
+    pub instance_id: String,
+    pub programs: Vec<Program>,
+    /// Whether programs were left out for want of room in the answer ([`MAX_FOREGROUND_BYTES`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+}
+
+/// A process in a terminal's foreground.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Program {
+    pub pid: u32,
+    /// The parent, when it is another program of the same list.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_pid: Option<u32>,
+    /// The file it runs, when the system tells.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executable: Option<String>,
+    /// Its `argv`, `argv[0]` first, bounded in number and length.
+    #[serde(default)]
+    pub arguments: Vec<String>,
+}
+
+impl From<soyeht_platform::process::inspect::Program> for Program {
+    fn from(program: soyeht_platform::process::inspect::Program) -> Self {
+        Self {
+            pid: program.pid,
+            parent_pid: program.parent,
+            executable: program.executable,
+            arguments: program.arguments,
+        }
+    }
 }
 
 /// A process the engine has read to a point.

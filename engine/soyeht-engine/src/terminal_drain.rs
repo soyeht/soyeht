@@ -212,6 +212,9 @@ impl Core {
             running.screen.take_in_through(output.next_seq);
         }
         self.watch.note_read(&started.instance_id, &summary);
+        if taken {
+            self.foreground_mut().note_output(id);
+        }
         self.acknowledge_when_durable(id, &started.instance_id)?;
         if let Some(bytes) = capture_bytes {
             self.observe_terminal(id, bytes)?;
