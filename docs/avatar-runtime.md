@@ -255,26 +255,24 @@ by `package` access. `AvatarRenderer`, in `SoyehtClient`, drives it. A frame is:
    canvas;
 2. the eye frame in place of the pixels it covers. Each frame is laid over the base picture at the
    size of the canvas, the picture is scaled, and the rectangle (rounded outward) is cut out, so
-   the frame lands where the scaled picture has the eye at any scale. Which frame is drawn, and the
-   order of the mouth's parts below, are rules every renderer must share; the vector cases for
-   them arrive with slice 5 (`eyeFrames` in `avatar-mouth.json`, `drawOrder` in
-   `avatar-package.json`). Until then Swift draws the blink when the lid is closed, `half` when it
-   is half closed, else the frame of the gaze when the eyes are off centre, else `soft`, else
-   none; and the parts as `skin`, `lips`, `inner`;
-3. the mouth: for each part, the vertices are the weighted sum of the nine drawings' contours, and
-   each textured drawing whose weight is over 0.0001 is drawn over the previous ones through its
-   own texture coordinates, with the opacity the mesh gives it (`AvatarMeshPart.layers`), so the
-   layers are the exact weighted average. A triangle is filled by barycentric coordinates with the
-   top-left rule, so two triangles that share an edge never draw a pixel twice, and a texel's own
-   alpha is what the picture under it gives up. A part's feather (the vertices' opacity) is applied
-   once, over the picture as it was before the part, and the layers mix over that, so an edge does
-   not change when a layer comes in. A triangle costs the pixels it covers (each row is cut to the
-   span the edges leave), and a drawing's triangles may cover at most one canvas: the renderer
-   refuses a package that exceeds it, once, when it is made (`tooLarge`), never frame by frame,
-   because a frame that left the mouth out would put the base picture's own mouth in its place.
-   That rule is the Swift reader's own until the shared load rule of the Rust validator and
-   `avatar-package.json` replaces it. Only the pixels the eye frame and the mouth touched are
-   restored from the base picture the next frame;
+   the frame lands where the scaled picture has the eye at any scale. Which frame a look needs is
+   the shared rule of `eyeFrames` (`AvatarRenderer.patchId`, tested against the group);
+3. the mouth, for each part in the shared drawing order (skin, lips, inner; a part the package
+   lacks is skipped, `drawOrder`). The vertices are the weighted sum of the nine drawings'
+   contours. Each textured drawing whose weight is over 0.0001 is a layer (`AvatarMeshPart.layers`);
+   the layers are mixed by their weights over a clear mix (`AvatarRasterizer.mixLayer`, one
+   triangle at a time, the texel's own opacity part of the colour), and the mix is laid once over
+   the picture as it was before the part (`AvatarRasterizer.lay`), by the part's opacity
+   (`AvatarMeshPart.opacity`: 1, or for the inner mouth the sum of the weights of the drawings
+   that have a picture of it) times the feather of its corners, so an edge does not step when a
+   layer comes in (`composite`). The two steps are `mixStep` and `compose`, which the `composite`
+   vector cases run. A triangle is filled by barycentric coordinates with the top-left rule, so
+   two triangles that share an edge never draw a pixel twice, and it costs the pixels it covers
+   (each row is cut to the span the edges leave). The work of the mouth is bounded by the shared
+   load rule (`AvatarPackageValidator.blendWork`, at most one canvas, `tooLarge` at
+   `/mouth/parts`), so a frame never leaves the mouth out: that would put the base picture's own
+   mouth in its place. Only the pixels the eye frame and the mouth touched are restored from the
+   base picture the next frame;
 4. the warp: `AvatarWarp.sourcePoint` is evaluated on a grid of 8 output pixels, and each output
    pixel reads the picture, bilinearly, at the position interpolated across its cell.
 

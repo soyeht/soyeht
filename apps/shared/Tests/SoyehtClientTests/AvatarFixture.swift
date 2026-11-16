@@ -58,7 +58,8 @@ enum AvatarFixture {
   }
 
   static func make(
-    canvas: Int = 1024, columns: Int = 36, rows: Int = 24, inner: Inner = .collapsed
+    canvas: Int = 1024, columns: Int = 36, rows: Int = 24, inner: Inner = .collapsed,
+    mouth size: Double = 1
   ) throws -> Made {
     let k = Double(canvas) / referenceCanvas
     let atlasCell = (width: 96, height: 64)
@@ -97,7 +98,8 @@ enum AvatarFixture {
         ]),
         "parts": .array(
           [("skin", 1.0), ("lips", 0.55), ("inner", 0.45)].map {
-            part($0.0, scale: $0.1, canvas: canvas, columns: columns, rows: rows, inner: inner)
+            part(
+              $0.0, scale: $0.1 * size, canvas: canvas, columns: columns, rows: rows, inner: inner)
           }),
       ]),
       "eyes": .array(eyes), "warp": warp(k),
@@ -164,7 +166,9 @@ enum AvatarFixture {
     _ id: String, scale: Double, canvas: Int, columns: Int, rows: Int, inner mode: Inner
   ) -> JsonValue {
     let k = Double(canvas) / referenceCanvas
-    let box = (width: 32 * k * scale, height: 20 * k * scale)
+    // A mouth of about 11 by 7 hundredths of the canvas: the work of the mouth, at 0.55 canvases,
+    // is under the limit of one, as the lab's (0.23) is.
+    let box = (width: 22 * k * scale, height: 14 * k * scale)
     let center = (x: 100 * k, y: 100 * k)
     var grid: [(Double, Double)] = []
     for j in 0..<rows {
@@ -255,5 +259,44 @@ enum AvatarFixture {
     for (path, bitmap) in made.images {
       try png(bitmap).write(to: folder.appendingPathComponent(path))
     }
+  }
+}
+
+/// Triangles drawn as one part by the rasteriser's two passes: mixed (one layer, alpha 1) and laid
+/// over a flat picture, as a frame does.
+enum AvatarTestRaster {
+  typealias Triangle = (AvatarRasterizer.Vertex, AvatarRasterizer.Vertex, AvatarRasterizer.Vertex)
+
+  /// How many pixels the triangles covered, and the picture they leave.
+  static func draw(
+    _ triangles: [Triangle], texture: [UInt8], textureSize: (width: Int, height: Int) = (1, 1),
+    under: UInt8 = 0, opacity: Double = 1, size: (width: Int, height: Int)
+  ) -> (covered: Int, picture: [UInt8]) {
+    var destination = [UInt8](repeating: under, count: size.width * size.height * 4)
+    let beneath = destination
+    var mix = [Float](repeating: 0, count: size.width * size.height * 4)
+    var covered = 0
+    texture.withUnsafeBufferPointer { tex in
+      beneath.withUnsafeBufferPointer { below in
+        destination.withUnsafeMutableBufferPointer { dst in
+          mix.withUnsafeMutableBufferPointer { mixed in
+            guard let tex = tex.baseAddress, let below = below.baseAddress,
+              let dst = dst.baseAddress, let mixed = mixed.baseAddress
+            else { return }
+            for t in triangles {
+              covered += AvatarRasterizer.mixLayer(
+                t.0, t.1, t.2, alpha: 1, texture: tex, textureSize: textureSize, mix: mixed,
+                size: size)
+            }
+            for t in triangles {
+              AvatarRasterizer.lay(
+                t.0, t.1, t.2, opacity: opacity, mix: mixed, under: below, destination: dst,
+                size: size)
+            }
+          }
+        }
+      }
+    }
+    return (covered, destination)
   }
 }

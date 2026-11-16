@@ -213,6 +213,26 @@ private func pose(_ v: JsonValue) throws -> AvatarPose {
   }
 }
 
+@Test func theEyeFrameOfEveryLookIsTheOneTheVectorsName() throws {
+  try check("eyeFrames") { item in
+    func parse<T>(_ key: String, _ options: [String: T]) throws -> T {
+      let id = try item.text(key)
+      guard let value = options[id] else { throw AvatarVector.Unreadable(what: "\(key) \(id)") }
+      return value
+    }
+    let eye = AvatarEye(
+      gaze: try parse(
+        "gaze",
+        [
+          "center": .center, "left": .left, "right": .right, "up": .up, "down": .down,
+          "upleft": .upleft,
+        ]),
+      lid: try parse("lid", ["open": .open, "half": .half, "closed": .closed]),
+      soft: try item.flag("soft"))
+    return .object(["frame": AvatarRenderer.patchId(for: eye).map { .string($0) } ?? .null])
+  }
+}
+
 @Test func everyGroupOfTheVectorFilesIsRunHere() throws {
   for (name, run) in [
     ("avatar-mouth", AvatarVector.mouthGroups), ("avatar-package", AvatarVector.packageGroups),
