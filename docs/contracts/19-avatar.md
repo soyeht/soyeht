@@ -1,7 +1,7 @@
 # Contract 19 · The workspace's avatar
 
-Status: v1, slice 1 of ADR 0166 (the library and the binding; the avatar pane, the build, the package,
-the animation and the voice loop are later slices). Code: `soyeht_engine::avatars`,
+Status: v1, slices 1 and 2 of ADR 0166 (the library, the binding, the project folder and the avatar pane;
+the build, the package, the animation and the voice loop are later slices). Code: `soyeht_engine::avatars`,
 `soyeht_store::avatars`. Limits: `avatar*` of `x-limits` in `contracts/protocol.json`.
 
 A workspace is a project, and it has one avatar agent: a person-shaped face the person talks to by voice
@@ -90,8 +90,21 @@ any other durable one).
   the caller read, or `"0"` when the workspace had none: a different one is `stale_version`, nothing changes,
   and the caller reads again (from `avatar.list` or `avatar.changed`) and decides. So a client holding an old
   copy, a phone that was offline, cannot overwrite what the computer wrote since. `not_found` for a
-  workspace that is closed or unknown and for an unknown avatar. In this slice the engine records the
-  binding; starting the avatar's pane as the workspace's `chief` agent is slice 2.
+  workspace that is closed or unknown and for an unknown avatar. `acknowledgedPackage` is the one of
+  `pane.create` (ADR 0143), for the pane this call starts. The call also **starts the avatar's pane**
+  (section 6) and answers `{binding, paneId}`: the binding and the pane are one change, so a harness
+  that cannot start leaves no binding (`harness_unavailable`, `adapter_not_acknowledged`, and the
+  other refusals of `pane.create`). A workspace that already has its avatar pane open gets no other:
+  the binding is replaced, `paneId` names the open pane, and the pane reads the new persona the next
+  time its session opens; changing the harness of an open pane is `pane.harness.switch`.
+- `project.folder.create {name, idempotencyKey}` -> `{path}`: makes an empty folder for a project that
+  is not an app or a repository (a book being read, a school subject) under `<data>/projects/`, owner-only,
+  named from `name` (lower-case letters and digits joined by hyphens, at most 48 characters; `-2`, `-3`
+  when the name is taken, and a name Windows keeps for a device gets a `project-` prefix). `path` is the
+  canonical absolute path, which the client gives to `workspace.create`. `name` is 1 to
+  `projectNameChars` characters after trimming; another is `invalid_params`. The engine writes nothing in
+  the folder and removes nothing from it, closing the workspace included. Only a person calls it (an
+  `agent` or a `chief` gets `forbidden_role`).
 
 Not in this version, and why: building an avatar, its progress and reading its package come with the slice
 that has something to produce a build and a package (slice 9), each with its owner and its expiry. Taking
@@ -113,7 +126,31 @@ starts with an empty library and no binding. Closing a workspace deletes its bin
 
 ## 5. Outside this version
 
-The workspace folder flow, the avatar pane and the persona delivery (slice 2); the package format, the
-runtime and the animation (slices 3 to 5); speech providers and the voice loop (slices 6 to 8); the
-builder, its calls, the `soyeht avatar` commands and the `avatar-builder` skill (slices 9a and 9b); the
-preset pack, which is what produces `kind: preset`; the screens (slices 10 to 12).
+The package format, the runtime and the animation (slices 3 to 5); speech providers and the voice loop
+(slices 6 to 8); the builder, its calls, the `soyeht avatar` commands and the `avatar-builder` skill
+(slices 9a and 9b); the preset pack, which is what produces `kind: preset`; the screens (slices 10 to 12).
+
+## 6. The avatar pane (slice 2)
+
+`avatar.assign` starts the pane as an agent pane of the binding's harness, model and effort, named for
+the avatar, in the workspace's folder, and **as the workspace's `chief`** (contract 08 section 2) from
+its first session. The lead prompt that `pane.role.set` queues for a chief is not queued: what the
+avatar is for is its persona. The pane's agent state carries that it is the avatar's, so a restart, a
+recovery and a harness switch keep it.
+
+**The persona** is plain text: `You are <name>, the avatar agent of this project.`, then the persona of
+the binding. Soyeht adds no other text and no rule; what the avatar does in a project is its own job
+from plain instructions. It reaches the harness by the channel that harness honours, measured per
+harness in `docs/research/avatar-persona-delivery.md`:
+
+1. an adapter that advertises the ACP `systemPrompt` session capability gets it as the session's system
+   prompt, appended, in `session/new` and in `session/load` (it is sent only to such an adapter: the
+   others ignore the field without an error);
+2. any other gets it as the first prompt of a new session, an automatic prompt that says it is the
+   standing instructions of the conversation and not a request. It stays in the session's history, and
+   `session/load` does not send it again. The harness answers it with a short line.
+
+The text is read from the binding each time a session opens (and when a harness switch opens its
+candidate session), so the persona the person saved last is the one the next session gets. No file is
+written in the project folder: a workspace can be a folder the person already has. The persona is never
+part of a log line.

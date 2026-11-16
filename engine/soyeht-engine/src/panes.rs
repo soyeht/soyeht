@@ -199,8 +199,41 @@ impl Core {
         if let Some(created) = editor_like {
             return created.map(Outcome::Reply);
         }
+        self.create_process_pane(
+            connection,
+            (method::PANE_CREATE, params),
+            &create,
+            false,
+            |_, _| Ok(None),
+        )
+    }
+
+    /// Creates the process pane `create` describes, in one change with whatever `attach` adds. The
+    /// request that asked for it is `(method, params)`, whose idempotency key makes a repeat answer
+    /// with the stored reply and start nothing. `attach` runs inside the change with the new pane's
+    /// id and may replace the reply and put events ahead of the pane's own.
+    pub(crate) fn create_process_pane<F>(
+        &mut self,
+        connection: &str,
+        (request, params): (&str, &Value),
+        create: &PaneCreateParams,
+        avatar: bool,
+        attach: F,
+    ) -> Result<Outcome>
+    where
+        F: FnOnce(
+            &soyeht_store::database::Change<'_>,
+            &str,
+        ) -> soyeht_store::database::Result<Option<(Value, Vec<(String, Value)>)>>,
+    {
         let defaults = pane_defaults(&self.store)?;
-        let agent = new_agent(&self.directory, &self.store, &create)?;
+        let mut agent = new_agent(&self.directory, &self.store, create)?;
+        if let Some(agent) = agent.as_mut().filter(|_| avatar) {
+            // The workspace's avatar agent is its chief (contract 08 section 2). The lead prompt
+            // of `pane.role.set` is not queued: the persona says what the avatar is for.
+            agent.avatar = true;
+            agent.mcp_role = soyeht_protocol::Role::Chief;
+        }
         // An agent that downloads a package unchecked starts only once a person acknowledged
         // that exact package (ADR 0143): this request's own acknowledgement counts.
         let acknowledging = agent
@@ -222,14 +255,14 @@ impl Core {
             .flatten();
         let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
-            self.prepare_process_pane(&create, &defaults, agent.as_ref())?;
+            self.prepare_process_pane(create, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
         )?;
-        let created = pane_created(&saved)?;
-        let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
+        let (created_result, created_events) = pane_created(&saved)?;
+        let mutation = self.mutate(connection, request, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             if let Some(package) = &acknowledging {
                 soyeht_store::adapter_acknowledgement::acknowledge(tx, package, acknowledged_at)?;
@@ -237,7 +270,10 @@ impl Core {
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }
-            Ok(created)
+            let (result, mut events) =
+                attach(tx, &saved.pane.pane_id)?.unwrap_or((created_result, Vec::new()));
+            events.extend(created_events);
+            Ok((result, events))
         })?;
         if !mutation.repeated {
             let id = saved.pane.pane_id.clone();

@@ -434,6 +434,8 @@ func roundtrip(_ name: String, _ data: Data) throws -> Data {
         case "ProjectTreeChangedEvent": return try codec(SoyehtProtocol.ProjectTreeChangedEvent.self, data)
         case "ProjectEntryCreateParams": return try codec(SoyehtProtocol.ProjectEntryCreateParams.self, data)
         case "ProjectEntryCreateResult": return try codec(SoyehtProtocol.ProjectEntryCreateResult.self, data)
+        case "ProjectFolderCreateParams": return try codec(SoyehtProtocol.ProjectFolderCreateParams.self, data)
+        case "ProjectFolderCreateResult": return try codec(SoyehtProtocol.ProjectFolderCreateResult.self, data)
         case "ProjectEntryRenameParams": return try codec(SoyehtProtocol.ProjectEntryRenameParams.self, data)
         case "ProjectEntryRenameResult": return try codec(SoyehtProtocol.ProjectEntryRenameResult.self, data)
         case "ProjectEntryRenamedEvent": return try codec(SoyehtProtocol.ProjectEntryRenamedEvent.self, data)

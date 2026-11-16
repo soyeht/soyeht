@@ -74,6 +74,7 @@ fn open(
     };
     // A new harness process cannot report the previous one's subagents.
     super::subagents::disconnect_all(store, &saved.pane.pane_id, state, changes)?;
+    let persona = super::persona::text(store, state, &saved.pane.workspace_id)?;
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
@@ -95,6 +96,7 @@ fn open(
             super::opening::parameters(
                 runtime.data_directory,
                 state,
+                persona.as_deref(),
                 client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
             )?,
             &Purpose::Load,
@@ -106,6 +108,13 @@ fn open(
         // including the recovery path after session/load reports it missing.
         state.rotate_hook_binding()?;
         state.release_held_updates();
+        // A session with no system prompt of its own starts from the persona as its first prompt.
+        super::persona::queue_first_prompt(
+            state,
+            persona.as_deref(),
+            saved.pane.generation,
+            runtime.timestamp.to_owned(),
+        )?;
         state.phase = Phase::Opening;
         call(
             state,
@@ -114,6 +123,7 @@ fn open(
             super::opening::parameters(
                 runtime.data_directory,
                 state,
+                persona.as_deref(),
                 client::new_session_with_mcp(&saved.pane.cwd, &servers),
             )?,
             &Purpose::Open,

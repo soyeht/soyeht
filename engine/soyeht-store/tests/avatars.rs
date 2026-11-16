@@ -253,3 +253,27 @@ fn the_migration_runs_again_on_a_database_whose_version_was_set_back_and_keeps_t
     let store = profile.store();
     assert_eq!(avatars::count(&store).unwrap(), 1);
 }
+
+#[test]
+fn the_persona_of_a_workspace_is_its_avatars_name_and_the_bindings_text() {
+    let profile = Profile::new();
+    let mut store = store_with_a_binding(&profile);
+    let persona = avatars::persona(&store, "w1").unwrap().unwrap();
+    assert_eq!(persona.name, "One");
+    assert_eq!(persona.text, "Speak briefly.");
+    // A rename of the avatar and a new binding are what the next read finds.
+    commit(&mut store, "rename", |tx| {
+        avatars::rename_in(tx, "a1", "Mentor").map(drop)
+    });
+    let mut newer = binding("w1", "a1", 2);
+    newer.persona = String::new();
+    bind(&mut store, "second", &newer).unwrap();
+    let persona = avatars::persona(&store, "w1").unwrap().unwrap();
+    assert_eq!(
+        (persona.name.as_str(), persona.text.as_str()),
+        ("Mentor", "")
+    );
+    // A workspace with no avatar has none.
+    open_workspace(&mut store, "w2");
+    assert_eq!(avatars::persona(&store, "w2").unwrap(), None);
+}

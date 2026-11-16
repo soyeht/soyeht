@@ -101,6 +101,10 @@ pub struct State {
     pub(crate) mcp_role: Role,
     #[serde(default = "default_true")]
     pub(crate) mcp_enabled: bool,
+    /// The pane is its workspace's avatar agent (ADR 0166): its session opens with the avatar's
+    /// persona, read from the workspace's binding each time it opens (`agents::persona`).
+    #[serde(default)]
+    pub(crate) avatar: bool,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
     pub fingerprint: String,
@@ -218,6 +222,7 @@ impl State {
             hook_binding: Binding::generate()?,
             mcp_role: default_mcp_role(),
             mcp_enabled: true,
+            avatar: false,
             launch,
             binary_digest,
             fingerprint: String::new(),
@@ -314,6 +319,7 @@ impl State {
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
+        state.avatar = self.avatar;
         state.mode_ceiling = self.mode_ceiling.clone().map(|mut ceiling| {
             ceiling.reopened();
             ceiling

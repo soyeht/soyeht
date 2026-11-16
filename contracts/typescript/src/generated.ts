@@ -2608,6 +2608,15 @@ export interface ProjectEntryCreateResult {
   "entry": ProjectEntry;
 }
 
+export interface ProjectFolderCreateParams {
+  "name": string;
+  "idempotencyKey": Id;
+}
+
+export interface ProjectFolderCreateResult {
+  "path": string;
+}
+
 export interface ProjectEntryRenameParams {
   "workspaceId": Id;
   "from": string;
@@ -3724,11 +3733,13 @@ export interface AvatarAssignParams {
   "voice"?: AvatarVoice;
   "persona"?: string;
   "baseRevision": Decimal;
+  "acknowledgedPackage"?: string;
   "idempotencyKey": Id;
 }
 
 export interface AvatarAssignResult {
   "binding": AvatarBinding;
+  "paneId"?: Id;
 }
 
 export interface AvatarChangedEvent {
@@ -3848,6 +3859,7 @@ export interface Methods {
   "file.format": { params: FileFormatParams; result: FileFormatResult };
   "project.tree.list": { params: ProjectTreeListParams; result: ProjectTreeListResult };
   "project.tree.watch": { params: ProjectTreeWatchParams; result: ProjectTreeWatchResult };
+  "project.folder.create": { params: ProjectFolderCreateParams; result: ProjectFolderCreateResult };
   "project.entry.create": { params: ProjectEntryCreateParams; result: ProjectEntryCreateResult };
   "project.entry.rename": { params: ProjectEntryRenameParams; result: ProjectEntryRenameResult };
   "project.entry.delete": { params: ProjectEntryDeleteParams; result: ProjectEntryDeleteResult };

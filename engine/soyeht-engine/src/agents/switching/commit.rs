@@ -92,10 +92,7 @@ impl Core {
             candidate.state.session_id.clone(),
             "Candidate session did not open",
         )?;
-        candidate.state.adopt_queue(&original);
-        for prompt_id in incorporated_pending {
-            candidate.state.remove(prompt_id)?;
-        }
+        self.carry_queue(candidate, &original, incorporated_pending)?;
         candidate.state.harness_switch = None;
         candidate.state.requested_options.clear();
         candidate.state.acknowledged_offset = candidate.decoder.next_offset();
@@ -192,6 +189,32 @@ impl Core {
             seq,
         });
         Ok(())
+    }
+
+    /// The queue of the pane the candidate replaces, less what the continuation took in. A harness
+    /// with no system prompt of its own takes the avatar's persona as its first prompt, ahead of
+    /// what was waiting.
+    fn carry_queue(
+        &self,
+        candidate: &mut Candidate,
+        original: &State,
+        incorporated_pending: &[String],
+    ) -> Result<()> {
+        candidate.state.adopt_queue(original);
+        for prompt_id in incorporated_pending {
+            candidate.state.remove(prompt_id)?;
+        }
+        let persona = crate::agents::persona::text(
+            &self.store,
+            &candidate.state,
+            &candidate.saved.pane.workspace_id,
+        )?;
+        crate::agents::persona::queue_first_prompt(
+            &mut candidate.state,
+            persona.as_deref(),
+            candidate.saved.pane.generation,
+            self.timestamp(),
+        )
     }
 
     fn continuation_package(

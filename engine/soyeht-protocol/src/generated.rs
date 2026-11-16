@@ -4816,6 +4816,18 @@ pub struct ProjectEntryCreateResult {
     pub entry: ProjectEntry,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectFolderCreateParams {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProjectFolderCreateResult {
+    #[serde(rename = "path")]
+    pub path: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProjectEntryRenameParams {
     #[serde(rename = "workspaceId")]
     pub workspace_id: Id,
@@ -6791,6 +6803,11 @@ pub struct AvatarAssignParams {
     pub persona: Option<String>,
     #[serde(rename = "baseRevision")]
     pub base_revision: Decimal,
+    #[serde(
+        rename = "acknowledgedPackage",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub acknowledged_package: Option<String>,
     #[serde(rename = "idempotencyKey")]
     pub idempotency_key: Id,
 }
@@ -6798,6 +6815,8 @@ pub struct AvatarAssignParams {
 pub struct AvatarAssignResult {
     #[serde(rename = "binding")]
     pub binding: AvatarBinding,
+    #[serde(rename = "paneId", skip_serializing_if = "Option::is_none")]
+    pub pane_id: Option<Id>,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct AvatarChangedEvent {
@@ -7031,6 +7050,8 @@ pub enum Request {
     ProjectTreeList(ProjectTreeListParams),
     #[serde(rename = "project.tree.watch")]
     ProjectTreeWatch(ProjectTreeWatchParams),
+    #[serde(rename = "project.folder.create")]
+    ProjectFolderCreate(ProjectFolderCreateParams),
     #[serde(rename = "project.entry.create")]
     ProjectEntryCreate(ProjectEntryCreateParams),
     #[serde(rename = "project.entry.rename")]
@@ -7576,6 +7597,12 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "ProjectTreeWatchParams",
         "ProjectTreeWatchResult",
         false,
+    ),
+    (
+        "project.folder.create",
+        "ProjectFolderCreateParams",
+        "ProjectFolderCreateResult",
+        true,
     ),
     (
         "project.entry.create",
@@ -9430,6 +9457,7 @@ pub mod method {
     pub const FILE_FORMAT: &str = "file.format";
     pub const PROJECT_TREE_LIST: &str = "project.tree.list";
     pub const PROJECT_TREE_WATCH: &str = "project.tree.watch";
+    pub const PROJECT_FOLDER_CREATE: &str = "project.folder.create";
     pub const PROJECT_ENTRY_CREATE: &str = "project.entry.create";
     pub const PROJECT_ENTRY_RENAME: &str = "project.entry.rename";
     pub const PROJECT_ENTRY_DELETE: &str = "project.entry.delete";

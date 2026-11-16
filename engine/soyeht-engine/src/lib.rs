@@ -46,6 +46,7 @@ pub mod panes;
 mod png;
 pub mod ports;
 mod process_start;
+mod project_folder;
 pub mod project_trust;
 pub mod push;
 mod read_ahead;

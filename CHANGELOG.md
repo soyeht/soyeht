@@ -14,6 +14,12 @@ Security.
 
 ### Added
 
+- A workspace can be a project with no folder of your own: Soyeht makes an empty one under its data
+  folder, named from the project's name. Giving a workspace an avatar now starts the avatar's pane as
+  the workspace's chief agent, with the avatar's name and the persona you wrote. The persona reaches
+  the harness as its system prompt where the harness takes one, and as the first message of the
+  conversation where it does not. Soyeht writes nothing in your folder for it.
+
 - The Android app can read the pen's handwriting in the message field on devices below Android 14, with Google's ML
   Kit. It is off until you turn on "Handwriting on this device" in Settings. Turning it on starts ML Kit, which sends
   diagnostics and usage metrics to Google (`PRIVACY.md` lists them); what you write is not among the data Google lists.

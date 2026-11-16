@@ -9257,6 +9257,40 @@
       ],
       "additionalProperties": true
     },
+    "ProjectFolderCreateParams": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "The project's name. The folder is named from it."
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/Id"
+        }
+      },
+      "required": [
+        "name",
+        "idempotencyKey"
+      ],
+      "additionalProperties": true
+    },
+    "ProjectFolderCreateResult": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "The absolute path of the new, empty folder under the data directory's `projects` folder, the `path` of a `workspace.create` that follows."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": true
+    },
     "ProjectEntryRenameParams": {
       "type": "object",
       "properties": {
@@ -13463,6 +13497,11 @@
           "$ref": "#/$defs/Decimal",
           "description": "The `revision` of the binding the caller read, or `0` when the workspace had none. A different one is `stale_version` and nothing changes."
         },
+        "acknowledgedPackage": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "As in `PaneCreateParams.acknowledgedPackage`: the package the person was told the harness downloads and runs unchecked. It counts for the pane this call starts."
+        },
         "idempotencyKey": {
           "$ref": "#/$defs/Id"
         }
@@ -13481,6 +13520,10 @@
       "properties": {
         "binding": {
           "$ref": "#/$defs/AvatarBinding"
+        },
+        "paneId": {
+          "$ref": "#/$defs/Id",
+          "description": "The workspace's avatar pane: the one this call started as the workspace's `chief`, or the one the workspace already had open (nothing is started over it)."
         }
       },
       "required": [
@@ -14521,6 +14564,15 @@
       },
       "mutation": false
     },
+    "project.folder.create": {
+      "params": {
+        "$ref": "#/$defs/ProjectFolderCreateParams"
+      },
+      "result": {
+        "$ref": "#/$defs/ProjectFolderCreateResult"
+      },
+      "mutation": true
+    },
     "project.entry.create": {
       "params": {
         "$ref": "#/$defs/ProjectEntryCreateParams"
@@ -15526,7 +15578,8 @@
     "avatarLanguageChars": "The longest language tag (in characters) of an `AvatarHearing`; the length a BCP 47 tag may have.",
     "avatarSettingChars": "The longest model or effort name (in characters) of a binding.",
     "avatarCatalogueIdChars": "The longest image provider or image model catalogue id (in characters) of an avatar.",
-    "avatarKindChars": "The longest `Avatar.kind` (in characters)."
+    "avatarKindChars": "The longest `Avatar.kind` (in characters).",
+    "projectNameChars": "The longest project name (in characters) of `project.folder.create`; the folder name made from it is shorter."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -15657,7 +15710,8 @@
     "avatarLanguageChars": 35,
     "avatarSettingChars": 128,
     "avatarCatalogueIdChars": 128,
-    "avatarKindChars": 32
+    "avatarKindChars": 32,
+    "projectNameChars": 128
   },
   "x-settings": {
     "terminal.defaultCols": {

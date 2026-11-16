@@ -156,6 +156,8 @@ public enum ProtocolLimits {
     public static let avatarCatalogueIdChars = 128
     /// The longest `Avatar.kind` (in characters).
     public static let avatarKindChars = 32
+    /// The longest project name (in characters) of `project.folder.create`; the folder name made from it is shorter.
+    public static let projectNameChars = 128
 }
 
 public enum ProtocolVersion {

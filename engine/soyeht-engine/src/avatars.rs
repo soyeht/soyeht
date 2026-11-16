@@ -8,7 +8,8 @@
 //! the vault of the device that calls the provider, whether a client has voice on stays with that
 //! client, and a persona is never part of a log line.
 //!
-//! This module only records. Starting the avatar's pane is the workspace's (slice 2), and building
+//! `avatar.assign` also starts the avatar's pane as the workspace's `chief` agent (slice 2): the
+//! binding and the pane are one change, so a harness that cannot start leaves no binding. Building
 //! the avatar is the builder's (slice 9), which brings its own calls.
 use crate::{
     core::Core,
@@ -22,7 +23,7 @@ use soyeht_platform::fs::{WriteMode, ensure_private_dir, write_atomic};
 use soyeht_protocol::{
     Avatar, AvatarAssignParams, AvatarAssignResult, AvatarBinding, AvatarChangedDraft,
     AvatarCreateParams, AvatarCreateResult, AvatarDeleteParams, AvatarDeleteResult,
-    AvatarListResult, AvatarRenameParams, AvatarRenameResult, limits, method,
+    AvatarListResult, AvatarRenameParams, AvatarRenameResult, PaneCreateParams, limits, method,
 };
 use soyeht_store::{avatars as library, database::Store};
 use std::path::{Path, PathBuf};
@@ -139,7 +140,7 @@ pub(crate) fn avatar_request(
         }
         method::AVATAR_RENAME => avatar_rename(core, connection, params)?,
         method::AVATAR_DELETE => avatar_delete(core, connection, params)?,
-        method::AVATAR_ASSIGN => avatar_assign(core, connection, params)?,
+        method::AVATAR_ASSIGN => return avatar_assign(core, connection, params),
         _ => return Err(errors::internal("Method is not an avatar method")),
     };
     Ok(Outcome::Reply(result))
@@ -246,13 +247,15 @@ fn avatar_delete(core: &mut Core, connection: &str, params: &Value) -> Result<Va
     Ok(result)
 }
 
-/// Gives an open workspace its avatar, replacing the binding it had. The caller names the revision
-/// it read (`0` for none); another is `stale_version`, so a client with an old copy never overwrites
-/// a newer one.
-fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Value> {
+/// Gives an open workspace its avatar, replacing the binding it had, and starts the avatar's pane
+/// as the workspace's chief agent unless the workspace already has one open (nothing is started over
+/// it: it reads the new persona the next time its session opens, and a change of harness is
+/// `pane.harness.switch`). The caller names the revision it read (`0` for none); another is
+/// `stale_version`, so a client with an old copy never overwrites a newer one.
+fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Outcome> {
     let request: AvatarAssignParams = model::typed_params(params)?;
     model::workspace(&core.store, &request.workspace_id)?;
-    stored_avatar(core, &request.avatar_id)?;
+    let avatar = stored_avatar(core, &request.avatar_id)?;
     let current = library::binding(&core.store, &request.workspace_id)
         .map_err(errors::storage)?
         .map_or(Ok(0), |binding| binding.revision.parse::<u64>())
@@ -266,6 +269,7 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
             "The workspace's avatar changed since it was read",
         ));
     }
+    let create = pane_request(&request, &avatar.name)?;
     let binding = AvatarBinding {
         workspace_id: request.workspace_id,
         avatar_id: request.avatar_id,
@@ -277,8 +281,9 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         persona: request.persona.unwrap_or_default(),
         revision: (current + 1).to_string(),
     };
-    let result = model::to_value(&AvatarAssignResult {
+    let reply = model::to_value(&AvatarAssignResult {
         binding: binding.clone(),
+        pane_id: None,
     })?;
     let event = model::pending(&AvatarChangedDraft {
         avatar_id: binding.avatar_id.clone(),
@@ -287,12 +292,61 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         binding: Some(binding.clone()),
         removed: None,
     })?;
-    Ok(core
-        .mutate(connection, method::AVATAR_ASSIGN, params, |tx| {
+    if let Some(open) = open_pane(core, &binding.workspace_id) {
+        let result = named_pane(reply, &open);
+        return Ok(Outcome::Reply(
+            core.mutate(connection, method::AVATAR_ASSIGN, params, |tx| {
+                library::bind_in(tx, &binding)?;
+                Ok((result, vec![event]))
+            })?
+            .result,
+        ));
+    }
+    // The binding and the pane are one change; the reply names the pane the change made.
+    core.create_process_pane(
+        connection,
+        (method::AVATAR_ASSIGN, params),
+        &create,
+        true,
+        move |tx, pane_id| {
             library::bind_in(tx, &binding)?;
-            Ok((result, vec![event]))
-        })?
-        .result)
+            Ok(Some((named_pane(reply, pane_id), vec![event])))
+        },
+    )
+}
+
+fn named_pane(mut result: Value, pane_id: &str) -> Value {
+    result["paneId"] = Value::String(pane_id.to_owned());
+    result
+}
+
+/// The `pane.create` the avatar's pane is started with: an agent of the binding's harness, model
+/// and effort, named for the avatar.
+fn pane_request(request: &AvatarAssignParams, avatar_name: &str) -> Result<PaneCreateParams> {
+    model::typed_params(&json!({
+        "workspaceId": request.workspace_id,
+        "mode": "agent",
+        "name": avatar_name,
+        "harness": request.harness,
+        "model": request.model,
+        "effort": request.effort,
+        "acknowledgedPackage": request.acknowledged_package,
+        "idempotencyKey": request.idempotency_key,
+    }))
+}
+
+/// The avatar pane the workspace has open, if any.
+fn open_pane(core: &Core, workspace_id: &str) -> Option<String> {
+    core.panes
+        .values()
+        .filter(|pane| !pane.stored.closed && pane.stored.pane.workspace_id == workspace_id)
+        .map(|pane| &pane.stored.pane.pane_id)
+        .find(|pane_id| {
+            core.agents
+                .get(pane_id)
+                .is_some_and(|agent| agent.state.avatar)
+        })
+        .cloned()
 }
 
 /// Makes the avatar's folder, owner-only, and writes its source picture in it.

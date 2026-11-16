@@ -31,6 +31,10 @@ pub struct Initialization {
     /// The agent accepts ACP `additionalDirectories` on session requests.
     #[serde(default)]
     pub additional_directories: bool,
+    /// The agent applies the ACP `systemPrompt` of a session request. One that does not advertise
+    /// it ignores the field without an error, so it is sent only to an agent that does.
+    #[serde(default)]
+    pub system_prompt: bool,
     /// The agent accepts the ACP `logout` request and clears its credentials.
     #[serde(default)]
     pub logout: bool,
@@ -137,6 +141,8 @@ impl Initialization {
             additional_directories:
                 value["agentCapabilities"]["sessionCapabilities"]["additionalDirectories"]
                     .is_object(),
+            system_prompt: value["agentCapabilities"]["sessionCapabilities"]["systemPrompt"]
+                .is_object(),
             logout: value["agentCapabilities"]["auth"]["logout"].is_object(),
         })
     }
@@ -280,6 +286,11 @@ mod tests {
             "agentCapabilities":{"sessionCapabilities":{"additionalDirectories":{}}}}))
         .unwrap();
         assert!(directories.additional_directories);
+        assert!(!directories.system_prompt);
+        let prompt = Initialization::parse(&json!({"protocolVersion":1,
+            "agentCapabilities":{"sessionCapabilities":{"systemPrompt":{"mode":{"override":{}}}}}}))
+        .unwrap();
+        assert!(prompt.system_prompt);
         for (code, expected) in [
             (-32601, ProbeResult::Unsupported),
             (-32000, ProbeResult::Unauthenticated),

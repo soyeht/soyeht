@@ -157,6 +157,8 @@ pub const AVATAR_SETTING_CHARS: usize = 128;
 pub const AVATAR_CATALOGUE_ID_CHARS: usize = 128;
 /// The longest `Avatar.kind` (in characters).
 pub const AVATAR_KIND_CHARS: usize = 32;
+/// The longest project name (in characters) of `project.folder.create`; the folder name made from it is shorter.
+pub const PROJECT_NAME_CHARS: usize = 128;
 pub const FRAME_KIND_JSON: u8 = 1;
 pub const FRAME_KIND_TERMINAL: u8 = 2;
 pub const FRAME_KIND_ATTACHMENT: u8 = 3;

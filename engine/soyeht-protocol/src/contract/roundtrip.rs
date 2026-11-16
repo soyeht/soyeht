@@ -449,6 +449,8 @@ pub(super) fn roundtrip(name: &str, value: &Value) -> Result<Value, Mismatch> {
         "ProjectTreeChangedEvent" => decode_encode::<ProjectTreeChangedEvent>(name, value),
         "ProjectEntryCreateParams" => decode_encode::<ProjectEntryCreateParams>(name, value),
         "ProjectEntryCreateResult" => decode_encode::<ProjectEntryCreateResult>(name, value),
+        "ProjectFolderCreateParams" => decode_encode::<ProjectFolderCreateParams>(name, value),
+        "ProjectFolderCreateResult" => decode_encode::<ProjectFolderCreateResult>(name, value),
         "ProjectEntryRenameParams" => decode_encode::<ProjectEntryRenameParams>(name, value),
         "ProjectEntryRenameResult" => decode_encode::<ProjectEntryRenameResult>(name, value),
         "ProjectEntryRenamedEvent" => decode_encode::<ProjectEntryRenamedEvent>(name, value),
