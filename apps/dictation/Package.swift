@@ -19,6 +19,7 @@ let package = Package(
                 .product(name: "AudioCommon", package: "speech-swift"),
                 .product(name: "KokoroTTS", package: "speech-swift"),
                 .product(name: "NemotronStreamingASR", package: "speech-swift"),
+                .product(name: "SpeechVAD", package: "speech-swift"),
             ]
         ),
         .testTarget(name: "SoyehtDictationTests", dependencies: ["SoyehtDictation"]),

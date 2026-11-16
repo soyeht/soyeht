@@ -10,6 +10,8 @@ import Foundation
   public typealias Sink = @Sendable (AVAudioPCMBuffer) -> Void
 
   private var engine: AVAudioEngine?
+  /// Set while this capture listens through the voice loop's session instead of its own engine.
+  private var joined: (session: VoiceAudioSession, token: Int)?
 
   public init() {}
 
@@ -33,9 +35,14 @@ import Foundation
       : .denied("Allow the microphone for Soyeht in System Settings to dictate.")
   }
 
-  /// Starts delivering buffers to `sink`. Replaces a capture that is already running.
+  /// Starts delivering buffers to `sink`. Replaces a capture that is already running. While a
+  /// voice loop runs, the capture joins its echo-cancelled session rather than opening the device.
   public func start(_ sink: @escaping Sink) throws {
     stop()
+    if let session = VoiceAudioSession.active {
+      joined = (session, session.attach(sink))
+      return
+    }
     #if os(iOS)
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -51,6 +58,11 @@ import Foundation
   }
 
   public func stop() {
+    if let joined {
+      joined.session.detach(joined.token)
+      self.joined = nil
+      return
+    }
     guard let engine else { return }
     engine.stop()
     engine.inputNode.removeTap(onBus: 0)

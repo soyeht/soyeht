@@ -1,0 +1,61 @@
+{
+  "chunkerDefaults": {"minimumLength": 16, "maximumLength": 240},
+  "speechText": [
+    {"name": "plain text", "markdown": "Hello world", "spoken": "Hello world"},
+    {"name": "emphasis is read as its words and struck text is not", "markdown": "a **b** *c* ~~d~~ e", "spoken": "a b c e"},
+    {"name": "inline code is read as words", "markdown": "Run `make test` now", "spoken": "Run make test now"},
+    {"name": "a link is read as its label", "markdown": "See [the docs](https://example.com/docs) for more", "spoken": "See the docs for more"},
+    {"name": "a bare web address is dropped", "markdown": "Open https://example.com/x now", "spoken": "Open now"},
+    {"name": "an address with www is dropped", "markdown": "Try www.example.com today", "spoken": "Try today"},
+    {"name": "an image is read as its description", "markdown": "![a chart of sales](https://example.com/c.png)", "spoken": "a chart of sales"},
+    {"name": "a code block is not read", "markdown": "Here:\n\n```swift\nlet x = 1\n```\n\nDone.", "spoken": "Here:\nDone."},
+    {"name": "an indented code block is not read", "markdown": "Before\n\n    let x = 1\n\nAfter", "spoken": "Before\nAfter"},
+    {"name": "a heading and a paragraph are two lines", "markdown": "# Title\n\nBody text.", "spoken": "Title\nBody text."},
+    {"name": "a bullet list is one line per item", "markdown": "- one\n- two\n- three", "spoken": "one\ntwo\nthree"},
+    {"name": "an ordered list is read with no numbers", "markdown": "1. first\n2. second", "spoken": "first\nsecond"},
+    {"name": "a nested list is flattened", "markdown": "- a\n  - b\n- c", "spoken": "a\nb\nc"},
+    {"name": "a quote is read as its words", "markdown": "> quoted words\n\nafter", "spoken": "quoted words\nafter"},
+    {"name": "a table is not read", "markdown": "| a | b |\n|---|---|\n| 1 | 2 |\n\nAfter", "spoken": "After"},
+    {"name": "a rule is not read", "markdown": "one\n\n---\n\ntwo", "spoken": "one\ntwo"},
+    {"name": "emoji are dropped", "markdown": "Great job 🎉 done ✅", "spoken": "Great job done"},
+    {"name": "a line of only emoji is dropped", "markdown": "🎉🎉\n\nText", "spoken": "Text"},
+    {"name": "a line of only symbols is dropped", "markdown": "&&& ###\n\nText", "spoken": "Text"},
+    {"name": "a task list loses its markers", "markdown": "- [x] done\n- [ ] todo", "spoken": "done\ntodo"},
+    {"name": "a line break inside a paragraph is a blank", "markdown": "line one\nline two", "spoken": "line one line two"},
+    {"name": "blanks are collapsed", "markdown": "a    b \t c", "spoken": "a b c"},
+    {"name": "nothing to say", "markdown": "", "spoken": ""},
+    {"name": "only code", "markdown": "```\nx\n```", "spoken": ""},
+    {"name": "numbers and accents are kept", "markdown": "Olá, tudo bem? 3.5 por cento.", "spoken": "Olá, tudo bem? 3.5 por cento."},
+    {"name": "an unfinished bold span is read as its words", "markdown": "Here is **the", "streaming": true, "spoken": "Here is the"}
+  ],
+  "chunker": [
+    {"name": "a sentence is spoken once a blank follows its stop", "updates": [{"spoken": "The first sentence is here.", "final": false, "emit": []}, {"spoken": "The first sentence is here. Then", "final": false, "emit": ["The first sentence is here."]}, {"spoken": "The first sentence is here. Then more words.", "final": false, "emit": []}, {"spoken": "The first sentence is here. Then more words.", "final": true, "emit": ["Then more words."]}]},
+    {"name": "a short sentence is joined to the next", "updates": [{"spoken": "Yes. I can do that for you. ", "final": false, "emit": ["Yes. I can do that for you."]}]},
+    {"name": "a short last sentence waits unless the reply is over", "updates": [{"spoken": "Let me look at the code now. Ok. ", "final": false, "emit": ["Let me look at the code now."]}, {"spoken": "Let me look at the code now. Ok. ", "final": true, "emit": ["Ok."]}]},
+    {"name": "a finished line is spoken whole", "updates": [{"spoken": "Title\nBody sentence goes here", "final": false, "emit": ["Title"]}, {"spoken": "Title\nBody sentence goes here.", "final": true, "emit": ["Body sentence goes here."]}]},
+    {"name": "lines are never joined", "updates": [{"spoken": "One.\nTwo.\nThree and more words here.", "final": true, "emit": ["One.", "Two.", "Three and more words here."]}]},
+    {"name": "blank lines are skipped", "updates": [{"spoken": "One.\n\nTwo.\n", "final": true, "emit": ["One.", "Two."]}]},
+    {"name": "a full stop in a number or an abbreviation is not an end", "updates": [{"spoken": "Pi is 3.14 and that is that. See e.g. the docs. ", "final": false, "emit": ["Pi is 3.14 and that is that.", "See e.g. the docs."]}]},
+    {"name": "a closing quote belongs to its sentence", "updates": [{"spoken": "He said \"go home.\" Then he left. ", "final": false, "emit": ["He said \"go home.\""]}]},
+    {"name": "question marks, exclamation marks and an ellipsis end a sentence", "updates": [{"spoken": "Really?! Yes… I think so. ", "final": false, "emit": ["Really?! Yes… I think so."]}]},
+    {"name": "a stop of a script with no blanks ends a sentence at once", "updates": [{"spoken": "今日はとても晴れです。明日は雨です。", "final": false, "emit": ["今日はとても晴れです。明日は雨です。"]}]},
+    {"name": "the same text twice gives nothing the second time", "updates": [{"spoken": "Hello there, my friend. ", "final": false, "emit": ["Hello there, my friend."]}, {"spoken": "Hello there, my friend. ", "final": false, "emit": []}, {"spoken": "Hello there, my friend. How are you today? ", "final": false, "emit": ["How are you today?"]}]},
+    {"name": "the end of the reply flushes an unfinished tail", "updates": [{"spoken": "Almost done", "final": false, "emit": []}, {"spoken": "Almost done", "final": true, "emit": ["Almost done"]}]},
+    {"name": "a long sentence is cut at a clause, then at a blank", "config": {"maximumLength": 40}, "updates": [{"spoken": "Alpha beta gamma delta, epsilon zeta eta theta iota kappa lambda mu.", "final": true, "emit": ["Alpha beta gamma delta,", "epsilon zeta eta theta iota kappa", "lambda mu."]}]},
+    {"name": "a tail that outgrows the limit is spoken in parts before the reply is over", "config": {"maximumLength": 40}, "updates": [{"spoken": "Alpha beta gamma delta, epsilon zeta eta theta iota kappa lambda", "final": false, "emit": ["Alpha beta gamma delta,"]}, {"spoken": "Alpha beta gamma delta, epsilon zeta eta theta iota kappa lambda mu. ", "final": false, "emit": ["epsilon zeta eta theta iota kappa", "lambda mu."]}]}
+  ],
+  "stream": [
+    {"name": "a reply spoken as it arrives, with a code block between", "updates": [{"markdown": "Here is the plan.\n\n", "final": false, "emit": []}, {"markdown": "Here is the plan.\n\n```sh\nmake all\n```\n\nThen", "final": false, "emit": ["Here is the plan."]}, {"markdown": "Here is the plan.\n\n```sh\nmake all\n```\n\nThen we ship **it", "final": false, "emit": []}, {"markdown": "Here is the plan.\n\n```sh\nmake all\n```\n\nThen we ship **it** now.", "final": true, "emit": ["Then we ship it now."]}]},
+    {"name": "a heading is spoken as a line of its own", "updates": [{"markdown": "# Plan", "final": false, "emit": []}, {"markdown": "# Plan\n\nFirst we look at the code.", "final": true, "emit": ["Plan", "First we look at the code."]}]}
+  ],
+  "heard": [
+    {"name": "half of the sentence that was playing", "played": ["One.", "Two."], "current": "three four five six", "fraction": 0.5, "heard": "One. Two. three four"},
+    {"name": "none of it", "played": ["One.", "Two."], "current": "three four five six", "fraction": 0, "heard": "One. Two."},
+    {"name": "all of it", "played": ["One.", "Two."], "current": "three four five six", "fraction": 1, "heard": "One. Two. three four five six"},
+    {"name": "whole words only", "played": [], "current": "hello there you", "fraction": 0.34, "heard": "hello"},
+    {"name": "no sentence was playing", "played": ["A."], "current": null, "fraction": 0.5, "heard": "A."},
+    {"name": "a share above one is all", "played": [], "current": "a b", "fraction": 1.7, "heard": "a b"},
+    {"name": "a share below zero is none", "played": ["A."], "current": "a b", "fraction": -1, "heard": "A."},
+    {"name": "nothing heard", "played": [], "current": null, "fraction": 0, "heard": ""}
+  ]
+}
