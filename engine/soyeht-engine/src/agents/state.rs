@@ -20,6 +20,12 @@ pub(crate) struct HarnessSwitchCheckpoint {
     pub(crate) to_name: String,
     pub(crate) candidate_instance_key: String,
     pub(crate) previous_queue_paused: bool,
+    /// The model and effort the switch asked for, which a switch of an avatar pane records in its
+    /// binding when it ends.
+    #[serde(default)]
+    pub(crate) model: Option<String>,
+    #[serde(default)]
+    pub(crate) effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,6 +107,19 @@ pub struct State {
     pub(crate) mcp_role: Role,
     #[serde(default = "default_true")]
     pub(crate) mcp_enabled: bool,
+    /// The pane is its workspace's avatar agent (ADR 0166): its session opens with the avatar's
+    /// persona, read from the workspace's binding each time it opens (`agents::persona`).
+    #[serde(default)]
+    pub(crate) avatar: bool,
+    /// The avatar pane's next prompt carries the persona ahead of its own text (`agents::persona`).
+    #[serde(default)]
+    pub(crate) persona_pending: bool,
+    /// The prompt that carries the persona now. The pane owes it until that prompt is answered.
+    #[serde(default)]
+    pub(crate) persona_carried_by: Option<String>,
+    /// The replay of the user message being read, for the persona block in front of it.
+    #[serde(skip)]
+    pub(crate) persona_replay: Option<super::persona::Replayed>,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
     pub fingerprint: String,
@@ -218,6 +237,10 @@ impl State {
             hook_binding: Binding::generate()?,
             mcp_role: default_mcp_role(),
             mcp_enabled: true,
+            avatar: false,
+            persona_pending: false,
+            persona_carried_by: None,
+            persona_replay: None,
             launch,
             binary_digest,
             fingerprint: String::new(),
@@ -314,6 +337,7 @@ impl State {
         state.binding = self.binding.clone();
         state.mcp_role = self.mcp_role.clone();
         state.mcp_enabled = self.mcp_enabled;
+        state.avatar = self.avatar;
         state.mode_ceiling = self.mode_ceiling.clone().map(|mut ceiling| {
             ceiling.reopened();
             ceiling

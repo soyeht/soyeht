@@ -396,3 +396,29 @@ pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
     ("agent", "auto_review"),
     ("agent-full-access", "full_access"),
 ];
+
+/// What an agent announced at `initialize`, with or without the ACP `systemPrompt` capability.
+pub(crate) fn initialization(system_prompt: bool) -> soyeht_acp::session::Initialization {
+    let capabilities = if system_prompt {
+        json!({"systemPrompt": {"mode": {"override": {}}}})
+    } else {
+        json!({"additionalDirectories": {}})
+    };
+    soyeht_acp::session::Initialization::parse(&json!({"protocolVersion": 1,
+        "agentCapabilities": {"sessionCapabilities": capabilities}}))
+    .unwrap()
+}
+
+/// An avatar of the library, with the name given.
+pub(crate) fn avatar(avatar_id: &str, name: &str) -> soyeht_protocol::Avatar {
+    soyeht_protocol::Avatar {
+        avatar_id: avatar_id.into(),
+        name: name.into(),
+        kind: "uploaded".into(),
+        source_hash: "a".repeat(64),
+        image_provider: None,
+        image_model: None,
+        voice: None,
+        created_at: "2026-11-15T10:00:00Z".into(),
+    }
+}

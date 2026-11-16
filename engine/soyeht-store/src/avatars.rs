@@ -167,6 +167,33 @@ pub fn binding(store: &Store, workspace_id: &str) -> Result<Option<AvatarBinding
         .optional()?)
 }
 
+/// What an avatar's session is told about itself: the avatar's name and the persona of the
+/// workspace's binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Persona {
+    pub name: String,
+    pub text: String,
+}
+
+/// The persona of the workspace's avatar, `None` for a workspace that has none.
+pub fn persona(store: &Store, workspace_id: &str) -> Result<Option<Persona>> {
+    Ok(store
+        .connection()
+        .query_row(
+            "SELECT avatars.name, workspace_avatars.persona FROM workspace_avatars \
+             JOIN avatars ON avatars.id = workspace_avatars.avatar_id \
+             WHERE workspace_avatars.workspace_id=?1",
+            [workspace_id],
+            |row| {
+                Ok(Persona {
+                    name: row.get(0)?,
+                    text: row.get(1)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
 /// Binds `binding.avatar_id` to the workspace, replacing the binding it had. `binding.revision` is
 /// the new one, and the change is made only when it is one past the revision the workspace has now
 /// (none is revision 0): a writer that read an older binding is [`Error::StaleAvatarBinding`] and

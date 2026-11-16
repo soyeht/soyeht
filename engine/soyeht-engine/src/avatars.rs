@@ -8,8 +8,11 @@
 //! the vault of the device that calls the provider, whether a client has voice on stays with that
 //! client, and a persona is never part of a log line.
 //!
-//! This module only records. Starting the avatar's pane is the workspace's (slice 2), and building
-//! the avatar is the builder's (slice 9), which brings its own calls.
+//! `avatar.assign` also starts the avatar's pane as the workspace's `chief` agent (slice 2), in the
+//! same change as the binding, or brings the pane the workspace already has to the binding
+//! (`avatars/pane.rs`). A request that `pane.create` would refuse leaves no binding; a pane that is
+//! created and then fails to start leaves the binding and the failed pane. Building the avatar is
+//! the builder's (slice 9), which brings its own calls.
 use crate::{
     core::Core,
     dispatch::Outcome,
@@ -34,6 +37,9 @@ const AVATARS_DIRECTORY: &str = "avatars";
 const SOURCE_FILE: &str = "source.png";
 /// The kinds `avatar.create` takes. `preset` has no producer yet: presets come with the preset pack.
 const CREATABLE_KINDS: [&str; 2] = ["uploaded", "generated"];
+
+mod pane;
+pub(crate) use pane::{Choice, follow_switch};
 
 /// A source picture that was sent with `avatar.create` and checked, with its hash.
 pub(crate) struct AvatarPicture {
@@ -139,7 +145,7 @@ pub(crate) fn avatar_request(
         }
         method::AVATAR_RENAME => avatar_rename(core, connection, params)?,
         method::AVATAR_DELETE => avatar_delete(core, connection, params)?,
-        method::AVATAR_ASSIGN => avatar_assign(core, connection, params)?,
+        method::AVATAR_ASSIGN => return avatar_assign(core, connection, params),
         _ => return Err(errors::internal("Method is not an avatar method")),
     };
     Ok(Outcome::Reply(result))
@@ -213,12 +219,14 @@ fn avatar_rename(core: &mut Core, connection: &str, params: &Value) -> Result<Va
         avatar: avatar.clone(),
     })?;
     let event = changed(&avatar)?;
-    Ok(core
+    let result = core
         .mutate(connection, method::AVATAR_RENAME, params, |tx| {
             library::rename_in(tx, &avatar.avatar_id, &avatar.name)?;
             Ok((result, vec![event]))
         })?
-        .result)
+        .result;
+    pane::follow_rename(core, connection, &avatar);
+    Ok(result)
 }
 
 /// Removes the avatar. One that an open workspace has is refused by the store (`pane_busy`).
@@ -246,15 +254,17 @@ fn avatar_delete(core: &mut Core, connection: &str, params: &Value) -> Result<Va
     Ok(result)
 }
 
-/// Gives an open workspace its avatar, replacing the binding it had. The caller names the revision
-/// it read (`0` for none); another is `stale_version`, so a client with an old copy never overwrites
-/// a newer one.
-fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Value> {
+/// Gives an open workspace its avatar, replacing the binding it had, and brings its avatar pane to
+/// it (`pane`): a workspace with none open, or none alive, gets one started as its chief agent; one
+/// with its pane open has the pane changed to match. The caller names the revision it read (`0` for
+/// none); another is `stale_version`, so a client with an old copy never overwrites a newer one.
+fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Outcome> {
     let request: AvatarAssignParams = model::typed_params(params)?;
     model::workspace(&core.store, &request.workspace_id)?;
-    stored_avatar(core, &request.avatar_id)?;
-    let current = library::binding(&core.store, &request.workspace_id)
-        .map_err(errors::storage)?
+    let avatar = stored_avatar(core, &request.avatar_id)?;
+    let before = library::binding(&core.store, &request.workspace_id).map_err(errors::storage)?;
+    let current = before
+        .as_ref()
         .map_or(Ok(0), |binding| binding.revision.parse::<u64>())
         .map_err(|_| errors::internal("A stored binding has no revision"))?;
     let base = request
@@ -266,33 +276,31 @@ fn avatar_assign(core: &mut Core, connection: &str, params: &Value) -> Result<Va
             "The workspace's avatar changed since it was read",
         ));
     }
+    // Whether the workspace has a pane to change or starts one, a harness that is not there is
+    // refused, and the binding stays as it was.
+    crate::agents::registry::resolve(&core.directory, &request.harness)?;
     let binding = AvatarBinding {
-        workspace_id: request.workspace_id,
-        avatar_id: request.avatar_id,
-        harness: request.harness,
-        model: request.model,
-        effort: request.effort,
-        hearing: request.hearing,
-        voice: request.voice,
-        persona: request.persona.unwrap_or_default(),
+        workspace_id: request.workspace_id.clone(),
+        avatar_id: request.avatar_id.clone(),
+        harness: request.harness.clone(),
+        model: request.model.clone(),
+        effort: request.effort.clone(),
+        hearing: request.hearing.clone(),
+        voice: request.voice.clone(),
+        persona: request.persona.clone().unwrap_or_default(),
         revision: (current + 1).to_string(),
     };
-    let result = model::to_value(&AvatarAssignResult {
-        binding: binding.clone(),
-    })?;
-    let event = model::pending(&AvatarChangedDraft {
-        avatar_id: binding.avatar_id.clone(),
-        avatar: None,
-        workspace_id: Some(binding.workspace_id.clone()),
-        binding: Some(binding.clone()),
-        removed: None,
-    })?;
-    Ok(core
-        .mutate(connection, method::AVATAR_ASSIGN, params, |tx| {
-            library::bind_in(tx, &binding)?;
-            Ok((result, vec![event]))
-        })?
-        .result)
+    let open = pane::live(core, &binding.workspace_id);
+    let assignment = pane::Assignment {
+        request: &request,
+        avatar: &avatar,
+        binding,
+        before,
+    };
+    match open {
+        Some(pane_id) => pane::update(core, connection, params, &pane_id, assignment),
+        None => pane::start(core, connection, params, assignment),
+    }
 }
 
 /// Makes the avatar's folder, owner-only, and writes its source picture in it.

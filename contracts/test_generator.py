@@ -441,6 +441,10 @@ class SchemaTests(unittest.TestCase):
         }
         self.assertEqual({name for name in limits if name.startswith("avatar")}, used)
 
+    def test_a_project_name_is_bounded_by_the_named_limit(self):
+        """The longest project name `project.folder.create` takes is a limit with a name."""
+        self.assert_fields_bounded_by_limits({"projectNameChars": [("ProjectFolderCreateParams", "name")]})
+
     def test_web_field_bounds_are_the_named_limits(self):
         """Each web string or extent is bounded by the limit that names it."""
         limits = self.schema["x-limits"]
