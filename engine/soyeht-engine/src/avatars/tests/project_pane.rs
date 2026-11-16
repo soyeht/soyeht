@@ -23,6 +23,20 @@ fn started(rig: &mut Rig, workspace: &str, avatar: &Avatar) -> String {
     pane_of(&assigned(rig, workspace, avatar, "0", ""))
 }
 
+/// The binding of the workspace is still the first one, on the rig's harness.
+fn assert_first_binding(rig: &mut Rig) {
+    assert_first_binding(&mut rig);
+}
+
+/// A rig whose avatar pane waits for a sign-in, and a second harness to ask for.
+fn stuck_pane() -> (Rig, Avatar, String, String) {
+    let (mut rig, avatar, workspace) = project();
+    rig.add_harness("avatar-other");
+    let stuck = started(&mut rig, &workspace, &avatar);
+    rig.core.agents.get_mut(&stuck).unwrap().state.phase = crate::agents::state::Phase::NeedsLogin;
+    (rig, avatar, workspace, stuck)
+}
+
 fn pane_of(result: &Value) -> String {
     result["paneId"].as_str().unwrap().to_owned()
 }
@@ -215,9 +229,7 @@ fn an_assignment_names_a_harness_the_profile_has_whether_or_not_a_pane_is_open()
         json!({"harness": "nobody-has-this"}),
     );
     assert_eq!(kind(&refused), ErrorKind::HarnessUnavailable);
-    let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(listed["bindings"][0]["revision"], "1");
-    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
+    assert_first_binding(&mut rig);
 }
 
 #[test]
@@ -310,11 +322,7 @@ fn a_changed_persona_is_owed_to_a_pane_whose_adapter_has_a_system_prompt_too() {
 
 #[test]
 fn a_pane_that_cannot_be_switched_is_replaced_when_another_harness_is_asked_for() {
-    use crate::agents::state::Phase;
-    let (mut rig, avatar, workspace) = project();
-    rig.add_harness("avatar-other");
-    let stuck = started(&mut rig, &workspace, &avatar);
-    rig.core.agents.get_mut(&stuck).unwrap().state.phase = Phase::NeedsLogin;
+    let (mut rig, avatar, workspace, stuck) = stuck_pane();
     // The same harness stays: the person signs in to it.
     assigned(&mut rig, &workspace, &avatar, "1", "");
     assert_eq!(open_panes(&rig, &workspace), vec![stuck.clone()]);
@@ -542,12 +550,8 @@ fn queue(rig: &mut Rig, pane: &str, text: &str) -> String {
 
 #[test]
 fn a_replaced_pane_gives_its_queued_prompts_to_the_new_one_in_order() {
-    use crate::agents::state::Phase;
-    let (mut rig, avatar, workspace) = project();
-    rig.add_harness("avatar-other");
-    let stuck = started(&mut rig, &workspace, &avatar);
+    let (mut rig, avatar, workspace, stuck) = stuck_pane();
     let ids = [queue(&mut rig, &stuck, "first"), queue(&mut rig, &stuck, "second")];
-    rig.core.agents.get_mut(&stuck).unwrap().state.phase = Phase::NeedsLogin;
     let other = json!({"harness": "avatar-other"});
     let new = pane_of(&rig.assign(&workspace, &avatar.avatar_id, "1", other).unwrap());
     let carried: Vec<String> = rig
@@ -600,9 +604,7 @@ fn a_replacement_that_is_refused_leaves_the_pane_and_the_binding_as_they_were() 
     );
     assert!(refused.is_err());
     assert_eq!(open_panes(&rig, &workspace), vec![stuck]);
-    let listed = rig.call("avatar.list", json!({})).unwrap();
-    assert_eq!(listed["bindings"][0]["revision"], "1");
-    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
+    assert_first_binding(&mut rig);
 }
 
 #[test]

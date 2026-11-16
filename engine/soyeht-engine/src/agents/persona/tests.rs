@@ -108,6 +108,13 @@ fn has_system_prompt(request: &Value) -> bool {
     request.get("systemPrompt").is_some()
 }
 
+/// The prompt of "Hello" as the engine builds it for an avatar pane that owes its persona.
+fn first_prompt(store: &Store, state: &mut State, id: &str) -> Value {
+    state.persona_pending = true;
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    ahead_of(store, state, ("w", id), person).unwrap()
+}
+
 fn block(text: &str) -> String {
     format!("{BLOCK_LABEL}\n\n{text}\n\n{BLOCK_END}")
 }
@@ -278,9 +285,7 @@ fn a_session_that_was_created_owes_the_persona_to_its_first_prompt_once() {
 fn what_is_owed_survives_the_engine_stopping_with_the_prompt_in_flight() {
     let (store, directory) = store_with("Be brief.");
     let mut state = with_adapter(false);
-    state.persona_pending = true;
-    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
-    ahead_of(&store, &mut state, ("w", "prompt-1"), person).unwrap();
+    first_prompt(&store, &mut state, "prompt-1");
     let kept: State = serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
     assert!(kept.persona_pending);
     assert_eq!(kept.persona_carried_by.as_deref(), Some("prompt-1"));
@@ -439,9 +444,7 @@ fn a_pane_that_is_not_an_avatars_shows_every_replayed_message_as_it_came() {
 fn a_persona_saved_while_a_prompt_streams_is_not_settled_by_that_prompts_answer() {
     let (store, directory) = store_with("Be brief.");
     let mut state = with_adapter(false);
-    state.persona_pending = true;
-    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
-    ahead_of(&store, &mut state, ("w", "prompt-1"), person).unwrap();
+    first_prompt(&store, &mut state, "prompt-1");
     // The person changes the persona while prompt-1, which carried the old one, is answered.
     owe(&mut state);
     assert!(state.persona_carried_by.is_none());
