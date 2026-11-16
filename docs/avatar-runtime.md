@@ -130,6 +130,52 @@ After a deliberate change of the runtime, rewrite the files with
 `SOYEHT_UPDATE_VECTORS=1 cargo test -p soyeht-avatar vectors` and read the diff. A vector that
 changes is a mouth that changes.
 
+## The Swift runtime and rasteriser (slice 4)
+
+`apps/shared` (`SoyehtClient`) holds the second implementation, in the `Avatar*` files: the package
+reader and validator (`AvatarPackage`, `AvatarPackageValidator`, with the same limits, the same
+order of rules and the same failure kinds), the mouth (`AvatarParams`, `AvatarMorphWeights`,
+`AvatarTrack`, `AvatarClip`, `AvatarMouth`), the aligner (`AvatarLetters`, `AvatarAligner`), the
+acting layer (`AvatarActing`, with the bounds of `AvatarActingBounds`), the runtime
+(`AvatarRuntime`) and the warp (`AvatarWarp.sourcePoint`). It passes every case of both vector files
+(`AvatarMouthVectorTests`, `AvatarPackageVectorTests`). A package field that is present with
+`null`, or with another type, is malformed, as in the Rust reader; a field that is absent keeps its
+default.
+
+The rasteriser (`AvatarRenderer`, `AvatarRasterizer`) is software, on one core, in premultiplied
+RGBA bytes, and has no GPU path yet. A frame is:
+
+1. the base picture, scaled once at load (an area average, so a canvas of 1024 pixels drawn at 512
+   does not shimmer) to the size of the output, at most 512 pixels on the longer side and never
+   larger than the canvas;
+2. the eye frame laid over it, source-over. Which frame is a rule of the renderer, not of the
+   package: the blink when the lid is closed, `half` when it is half closed, else the frame of
+   the gaze when the eyes are off centre, else `soft` for the soft eyes of listening, else none;
+3. the mouth: for each part (`skin`, `lips`, `inner`), the vertices are the weighted sum of the
+   nine drawings' contours, and each textured drawing whose weight is over 0.0001 is drawn over the
+   previous ones through its own texture coordinates, with the opacity the mesh gives it
+   (`AvatarMeshPart.layers`), so the layers are the exact weighted average. A triangle is filled by
+   barycentric coordinates with the top-left rule, so two triangles that share an edge never draw a
+   pixel twice. Only the pixels the eye frame and the mouth touched are restored from the base
+   picture the next frame;
+4. the warp: `AvatarWarp.sourcePoint` is evaluated on a grid of 8 output pixels, and each output
+   pixel reads the picture, bilinearly, at the position interpolated across its cell.
+
+There is no code path that picks a mouth drawing. A test renders the mouth at weights from rest to A
+in steps and holds every step to a small multiple of the mean step.
+
+**Frame cost** (Mac Studio, release build, one core, a 1024-pixel canvas drawn at 512 by 512, a
+mouth mesh of about 4800 triangles in three parts, the host loaded by other work): about 6.5 ms
+(median, thread CPU time; the 95th percentile varies with the load) for the runtime step and the
+picture, 7 to 10 ms with the `CGImage` the view draws. A debug build is
+about 50 times slower, and the test's budget for it is loose. The cost is that of the output, not
+of the canvas. The rasteriser's numbers are the Mac's: the desktop's (slice 5) measures its own.
+
+The stage (`AvatarStageModel`, `AvatarStageView`) steps the runtime by the clock of the screen
+and draws the picture; the Mac (`MacAvatarStage`) and the iOS app (`PhoneAvatarStage`) give it the
+flat surface of the palette. The voice, the configuration and the pane are later slices; until
+then the mouth holds the expression of the state.
+
 ## Known limits
 
 - The aligner was measured by the review of this crate on four real TTS clips of the lab: with the
