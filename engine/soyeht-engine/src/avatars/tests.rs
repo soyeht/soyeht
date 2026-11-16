@@ -10,6 +10,8 @@ struct Rig {
     core: Core,
     directory: PathBuf,
     local: String,
+    /// A harness of the profile that an avatar's pane can be started with.
+    harness: String,
 }
 
 /// A PNG header of the size given, with a few bytes after it: what the library checks, and no image.
@@ -41,9 +43,23 @@ impl Rig {
             core: boot(&directory),
             directory,
             local: String::new(),
+            harness: "avatar-test".into(),
         };
         rig.local = rig.connect(Role::HumanLocal, None);
+        rig.add_harness("avatar-test");
         rig
+    }
+
+    /// Adds a harness to the profile. The program is never started: the supervisor of the rig
+    /// answers every start.
+    fn add_harness(&mut self, id: &str) {
+        let program = std::env::current_exe().unwrap();
+        self.call(
+            "harness.custom.create",
+            json!({"harness": {"id": id, "name": id,
+                "command": program.to_string_lossy(), "args": [], "version": "1"}}),
+        )
+        .unwrap();
     }
 
     /// The engine stops and starts again on the same data.
@@ -150,7 +166,7 @@ impl Rig {
         extra: Value,
     ) -> Result<Value> {
         let mut params = json!({"workspaceId": workspace, "avatarId": avatar,
-            "harness": "claude-code", "baseRevision": base});
+            "harness": self.harness, "baseRevision": base});
         for (key, value) in extra.as_object().unwrap() {
             params[key] = value.clone();
         }
@@ -509,7 +525,7 @@ fn an_assigned_avatar_binds_the_workspace_and_a_key_in_the_request_is_never_kept
         )
         .unwrap();
     let binding = &bound["binding"];
-    assert_eq!(binding["harness"], "claude-code");
+    assert_eq!(binding["harness"], rig.harness);
     assert_eq!(binding["persona"], "persona-marker-text");
     assert_eq!(binding["revision"], "1");
     let listed = rig.call("avatar.list", json!({})).unwrap();
@@ -664,7 +680,7 @@ fn an_agent_and_a_chief_have_none_of_the_avatar_methods() {
         (
             "avatar.assign",
             json!({"workspaceId": workspace, "avatarId": avatar.avatar_id,
-                   "harness": "claude-code", "baseRevision": "0"}),
+                   "harness": rig.harness, "baseRevision": "0"}),
         ),
     ];
     assert_eq!(calls.len(), 5);
@@ -722,3 +738,5 @@ fn the_engine_offers_the_avatars_capability() {
     let rig = Rig::new();
     assert!(rig.core.capabilities().contains(&"avatars".to_owned()));
 }
+
+mod project_pane;

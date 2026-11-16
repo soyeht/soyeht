@@ -86,6 +86,8 @@ fn public_state_restores_an_in_progress_harness_switch() {
         to_name: "Second".into(),
         candidate_instance_key: "candidate".into(),
         previous_queue_paused: false,
+        model: None,
+        effort: None,
     });
 
     let public = state.public(0);

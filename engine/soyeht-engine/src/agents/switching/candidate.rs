@@ -123,6 +123,11 @@ impl Core {
         } else {
             Vec::new()
         };
+        let persona = crate::agents::persona::text(
+            &self.store,
+            &candidate.state,
+            &candidate.saved.pane.workspace_id,
+        )?;
         let request = candidate
             .state
             .client
@@ -131,6 +136,7 @@ impl Core {
                 crate::agents::opening::parameters(
                     &self.directory,
                     &candidate.state,
+                    persona.as_deref(),
                     soyeht_acp::client::new_session_with_mcp(&candidate.saved.pane.cwd, &servers),
                 )?,
                 "switch:open",
@@ -173,6 +179,8 @@ impl Core {
         state.mode = original.mode.clone();
         state.mode_ceiling = original.mode_ceiling.clone();
         state.internal_continuation = Some(InternalContinuation::default());
+        // The avatar stays the avatar through a switch of the harness it thinks with.
+        state.avatar = original.avatar;
         state.binding = original.binding.clone();
         state.mcp_role = original.mcp_role.clone();
         state.mcp_enabled = original.mcp_enabled;

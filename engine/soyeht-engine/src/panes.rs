@@ -12,6 +12,7 @@ use soyeht_protocol::{
     Pane, PaneCreateParams, PaneExperimentCapture, PaneMode, StateSource, event, method, setting,
 };
 use soyeht_ptyd::wire::Request;
+use soyeht_store::database::{Change, Result as StoreResult};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -92,6 +93,23 @@ fn new_agent(
         }
     }
     Ok(Some(agent))
+}
+
+/// A reply and the events that go ahead of a new pane's own.
+pub(crate) type Reply = (Value, Vec<(String, Value)>);
+
+type ReplyFn<'a> = Box<dyn FnOnce(&str) -> Result<Reply> + 'a>;
+type ApplyFn<'a> = Box<dyn FnOnce(&Change<'_>, &str) -> StoreResult<()> + 'a>;
+
+/// What a pane that is made as part of another request adds to `pane.create`.
+pub(crate) struct Extras<'a> {
+    /// Sets the new agent's state up before it is stored.
+    pub(crate) setup: Box<dyn FnOnce(&mut crate::agents::state::State) + 'a>,
+    /// Takes the new pane's id and answers with the request's reply and the events that go ahead
+    /// of the pane's own.
+    pub(crate) reply: ReplyFn<'a>,
+    /// Writes what the request changes, in the change that stores the pane, which it is told the id of.
+    pub(crate) apply: ApplyFn<'a>,
 }
 
 impl Core {
@@ -229,10 +247,19 @@ impl Core {
         if let Some(created) = editor_like {
             return created.map(Outcome::Reply);
         }
-        let defaults = pane_defaults(&self.store)?;
-        let agent = new_agent(&self.directory, &self.store, &create)?;
-        // An agent that downloads a package unchecked starts only once a person acknowledged
-        // that exact package (ADR 0143): this request's own acknowledgement counts.
+        self.create_process_pane(connection, (method::PANE_CREATE, params), &create, None)
+    }
+
+    /// The agent `create` asks for, and the package the request acknowledges, after the checks that can
+    /// refuse it: an unknown harness, and a package nobody acknowledged (ADR 0143: such an agent starts
+    /// only once a person acknowledged that exact package, and this request's own acknowledgement
+    /// counts). `None` for a pane that is not an agent's.
+    fn agent_to_start(
+        &self,
+        connection: &str,
+        create: &PaneCreateParams,
+    ) -> Result<(Option<crate::agents::state::State>, Option<String>)> {
+        let agent = new_agent(&self.directory, &self.store, create)?;
         let acknowledging = agent
             .as_ref()
             .map(|agent| {
@@ -250,16 +277,54 @@ impl Core {
             })
             .transpose()?
             .flatten();
+        Ok((agent, acknowledging))
+    }
+
+    /// Whether the pane `create` describes would be refused for what it asks (see `agent_to_start`),
+    /// before anything is changed for it.
+    pub(crate) fn check_agent_pane(
+        &self,
+        connection: &str,
+        create: &PaneCreateParams,
+    ) -> Result<()> {
+        self.agent_to_start(connection, create).map(drop)
+    }
+
+    /// Creates the process pane `create` describes, in one change with whatever `extras` adds. The
+    /// request that asked for it is `(method, params)`, whose idempotency key makes a repeat answer
+    /// with the stored reply and start nothing.
+    pub(crate) fn create_process_pane(
+        &mut self,
+        connection: &str,
+        (request, params): (&str, &Value),
+        create: &PaneCreateParams,
+        extras: Option<Extras<'_>>,
+    ) -> Result<Outcome> {
+        let defaults = pane_defaults(&self.store)?;
+        let (mut agent, acknowledging) = self.agent_to_start(connection, create)?;
+        let extras = extras.map(|extras| {
+            if let Some(agent) = agent.as_mut() {
+                (extras.setup)(agent);
+            }
+            (extras.reply, extras.apply)
+        });
         let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
-            self.prepare_process_pane(&create, &defaults, agent.as_ref())?;
+            self.prepare_process_pane(create, &defaults, agent.as_ref())?;
         // Open storage before accepting a process creation. No child exists yet.
         let screen = Screen::open(
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
         )?;
-        let created = pane_created(&saved)?;
-        let mutation = self.mutate(connection, method::PANE_CREATE, params, |tx| {
+        let (mut result, mut events) = pane_created(&saved)?;
+        let mut apply = None;
+        if let Some((reply, change)) = extras {
+            let (replied, before) = reply(&saved.pane.pane_id)?;
+            result = replied;
+            events.splice(0..0, before);
+            apply = Some(change);
+        }
+        let mutation = self.mutate(connection, request, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             if let Some(package) = &acknowledging {
                 soyeht_store::adapter_acknowledgement::acknowledge(tx, package, acknowledged_at)?;
@@ -267,7 +332,10 @@ impl Core {
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }
-            Ok(created)
+            if let Some(apply) = apply {
+                apply(tx, &saved.pane.pane_id)?;
+            }
+            Ok((result, events))
         })?;
         if !mutation.repeated {
             let id = saved.pane.pane_id.clone();

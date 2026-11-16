@@ -42,7 +42,7 @@ fn append_replayed_user(
     .map(drop)
 }
 
-fn update_user(
+pub(crate) fn update_user(
     store: &impl StorePort,
     pane: &str,
     generation: u32,
@@ -82,6 +82,28 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
+    // The persona block the engine put ahead of a prompt is not something the person wrote. Text that
+    // began like it and was not is shown with the message it came with.
+    let another = state
+        .persona_replay
+        .as_ref()
+        .is_some_and(|replayed| replayed.is_another(message_id));
+    if another && let Some((held, held_id)) = super::persona::finish_replayed(state) {
+        append_replayed_user(
+            store,
+            pane,
+            state,
+            generation,
+            &held,
+            held_id.as_deref(),
+            changes,
+        )?;
+    }
+    let text = super::persona::filter_replayed(state, message_id, text);
+    if text.is_empty() {
+        return Ok(());
+    }
+    let text = text.as_str();
     let Some(continuation) = state
         .internal_continuation
         .clone()
@@ -132,6 +154,18 @@ pub(super) fn finish_replayed_user(
     state: &mut State,
     changes: &mut Changes,
 ) -> Result<()> {
+    // Text that began like a persona block and never became one is the person's, and comes first.
+    if let Some((held, message_id)) = super::persona::finish_replayed(state) {
+        append_replayed_user(
+            store,
+            pane,
+            state,
+            generation,
+            &held,
+            message_id.as_deref(),
+            changes,
+        )?;
+    }
     let Some(pending) = state.replay_user.take() else {
         return Ok(());
     };
