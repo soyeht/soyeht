@@ -57,6 +57,23 @@ pub(crate) fn awaits_subagents(state: &State, tool: &serde_json::Value) -> bool 
     })
 }
 
+/// Whether this report of a tool call is a wait the pane folds into its subagent rows, and so
+/// shows no row of its own. The first report decides (`awaits_subagents`); the ID then keeps
+/// every later report of the same call out of the transcript, whatever fields it carries.
+pub(crate) fn folds_wait(state: &mut State, id: &str, tool: &serde_json::Value) -> bool {
+    if state.folded_waits.contains(id) {
+        return true;
+    }
+    if !awaits_subagents(state, tool) {
+        return false;
+    }
+    if state.folded_waits.len() >= TRACKED_RUNS {
+        state.folded_waits.clear();
+    }
+    state.folded_waits.insert(id.to_owned());
+    true
+}
+
 /// The reported subagent session a native request comes from, if it is not
 /// the pane's own session.
 pub(crate) fn owner<'a>(state: &State, session: Option<&'a str>) -> Option<&'a str> {
@@ -268,6 +285,7 @@ pub(crate) fn disconnect_all(
         )?;
     }
     state.subagents.clear();
+    state.folded_waits.clear();
     Ok(())
 }
 
@@ -310,5 +328,55 @@ mod tests {
             &state,
             &json!({"toolCallId":"call_2","title":"wait"})
         ));
+    }
+
+    /// The reports of a wait from codex-acp 2.6.0: the first has the title and the input, the
+    /// one that ends it only what changed.
+    fn wait_start(id: &str, receivers: &[&str]) -> serde_json::Value {
+        json!({"sessionUpdate":"tool_call","toolCallId":id,"kind":"other","title":"wait",
+            "status":"in_progress","rawInput":{"agentsStates":{},"model":null,"prompt":null,
+                "reasoningEffort":null,"receiverThreadIds":receivers,"senderThreadId":"parent"}})
+    }
+
+    #[test]
+    fn a_wait_is_folded_from_its_first_report_to_the_one_that_ends_it() {
+        let launch = HarnessLaunch {
+            id: "registry.codex-acp".into(),
+            name: "Codex".into(),
+            command: "codex".into(),
+            args: vec![],
+            version: "1".into(),
+            environment: None,
+        };
+        let mut state = State::new(launch, "digest".into(), None).unwrap();
+        let done = |id: &str| json!({"sessionUpdate":"tool_call_update","toolCallId":id,"status":"completed"});
+        // Before any subagent runs, the wait is the agent's own tool call, and so is its end.
+        assert!(!folds_wait(&mut state, "early", &wait_start("early", &[])));
+        assert!(!folds_wait(&mut state, "early", &done("early")));
+        state.subagents.insert(
+            "child".into(),
+            Tracked {
+                row: Some(3),
+                last_message: None,
+                finished: false,
+            },
+        );
+        assert!(folds_wait(&mut state, "call_1", &wait_start("call_1", &[])));
+        assert!(folds_wait(&mut state, "call_1", &done("call_1")));
+        // A wait that names a session the pane does not track stays a tool row.
+        assert!(!folds_wait(
+            &mut state,
+            "call_2",
+            &wait_start("call_2", &["stranger"])
+        ));
+        assert!(!folds_wait(&mut state, "call_2", &done("call_2")));
+        // The old shape folds as before.
+        assert!(folds_wait(&mut state, "call_3", &wait(&["child"])));
+        // The memory is bounded.
+        for index in 0..=TRACKED_RUNS {
+            let id = format!("many-{index}");
+            assert!(folds_wait(&mut state, &id, &wait_start(&id, &[])));
+        }
+        assert!(state.folded_waits.len() <= TRACKED_RUNS);
     }
 }

@@ -114,16 +114,22 @@ pub fn report(tool: &Value) -> Option<Report> {
     })
 }
 
-/// Codex's collaboration `wait`: a session waiting on its subagents. codex-acp
-/// reports it as a tool call titled after the tool, with
-/// `_meta.codex.collaboration.tool` set to `wait`. Returns the awaited
-/// subagent sessions, which codex-acp leaves empty when the call awaits any.
+/// Codex's collaboration `wait`: a session waiting on its subagents. codex-acp reports it as a
+/// tool call titled after the tool. Adapters before 2.0 also set
+/// `_meta.codex.collaboration.tool` to `wait` on every report; from 2.0 on the title and the
+/// input (`rawInput.senderThreadId`, `rawInput.receiverThreadIds`) are on the first report only,
+/// and a later report carries just what changed. Returns the awaited subagent sessions, which
+/// codex-acp leaves empty when the call awaits any.
 pub fn collaboration_wait(tool: &Value) -> Option<Vec<String>> {
     let collaboration = &tool["_meta"]["codex"]["collaboration"];
-    if collaboration["tool"] != "wait" {
+    let receivers = if collaboration["tool"] == "wait" {
+        &collaboration["receiverThreadIds"]
+    } else if tool["title"] == "wait" && tool["rawInput"]["senderThreadId"].is_string() {
+        &tool["rawInput"]["receiverThreadIds"]
+    } else {
         return None;
-    }
-    collaboration["receiverThreadIds"]
+    };
+    receivers
         .as_array()?
         .iter()
         .map(|id| id.as_str().map(str::to_owned))
@@ -188,6 +194,28 @@ mod tests {
     }
 
     #[test]
+    fn codex_2_waits_are_recognized_by_their_title_and_input() {
+        // The first report of a wait from codex-acp 2.6.0, as the adapter's tool call contract
+        // makes it for a client that declares the AIR extension: no `_meta.codex`.
+        let wait = json!({"sessionUpdate":"tool_call","toolCallId":"call_1","kind":"other",
+            "title":"wait","status":"in_progress","locations":[],
+            "rawInput":{"agentsStates":{},"model":null,"prompt":null,"reasoningEffort":null,
+                "receiverThreadIds":[],"senderThreadId":"parent"}});
+        assert_eq!(collaboration_wait(&wait), Some(vec![]));
+        let mut named = wait.clone();
+        named["rawInput"]["receiverThreadIds"] = json!(["child"]);
+        assert_eq!(collaboration_wait(&named), Some(vec!["child".to_owned()]));
+        // Another collaboration call has the sender too, but another title.
+        let mut spawn = wait.clone();
+        spawn["title"] = json!("spawnAgent");
+        assert_eq!(collaboration_wait(&spawn), None);
+        // The report that ends it carries only what changed: it is not recognized by itself.
+        let done = json!({"sessionUpdate":"tool_call_update","toolCallId":"call_1",
+            "status":"completed"});
+        assert_eq!(collaboration_wait(&done), None);
+    }
+
+    #[test]
     fn codex_collaboration_waits_are_recognized_by_their_meta() {
         // Shape captured from codex-acp 1.11.0.
         let wait = json!({"sessionUpdate":"tool_call","toolCallId":"call_1","kind":"other",
@@ -204,6 +232,10 @@ mod tests {
         // A tool merely titled "wait" is not a collaboration wait.
         assert_eq!(
             collaboration_wait(&json!({"toolCallId":"t","title":"wait"})),
+            None
+        );
+        assert_eq!(
+            collaboration_wait(&json!({"toolCallId":"t","title":"wait","rawInput":{"seconds":3}})),
             None
         );
         let mut malformed = wait;

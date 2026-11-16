@@ -36,8 +36,7 @@ Security.
 
 - A Codex pane answers with the default model of your own Codex configuration. The adapter it runs carried a Codex
   command line too old for the current models, so the first reply was a "model not supported" error. The adapter
-  is now version 2.6.0, installed from the same kind of lockfile. A Codex pane on the new adapter shows the
-  adapter's `wait` calls on its subagents as tool rows.
+  is now version 2.6.0, installed from the same kind of lockfile.
 
 ### Removed
 
