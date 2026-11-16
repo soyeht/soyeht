@@ -10,6 +10,19 @@ fn assigned(rig: &mut Rig, workspace: &str, avatar: &Avatar, base: &str, persona
         .unwrap()
 }
 
+/// A rig with the avatar `Sabio` and an open workspace named `project`.
+fn project() -> (Rig, Avatar, String) {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    (rig, avatar, workspace)
+}
+
+/// The pane the first assignment of the avatar to the workspace starts.
+fn started(rig: &mut Rig, workspace: &str, avatar: &Avatar) -> String {
+    pane_of(&assigned(rig, workspace, avatar, "0", ""))
+}
+
 fn pane_of(result: &Value) -> String {
     result["paneId"].as_str().unwrap().to_owned()
 }
@@ -26,9 +39,7 @@ fn open_panes(rig: &Rig, workspace: &str) -> Vec<String> {
 
 #[test]
 fn assigning_an_avatar_starts_its_pane_as_the_chief_agent_named_for_it() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     let extra = json!({"model": "a-model", "effort": "high"});
     let bound = rig
         .assign(&workspace, &avatar.avatar_id, "0", extra)
@@ -72,9 +83,7 @@ fn assigning_an_avatar_starts_its_pane_as_the_chief_agent_named_for_it() {
 
 #[test]
 fn a_harness_that_cannot_start_leaves_no_binding_and_no_pane() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     let refused = rig.assign(
         &workspace,
         &avatar.avatar_id,
@@ -96,9 +105,7 @@ fn a_harness_that_cannot_start_leaves_no_binding_and_no_pane() {
 
 #[test]
 fn a_repeated_request_starts_no_second_pane() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     let extra = json!({"persona": "Once.", "idempotencyKey": "assign-once"});
     let first = rig
         .assign(&workspace, &avatar.avatar_id, "0", extra.clone())
@@ -140,9 +147,7 @@ fn system_prompt_text(request: &Value) -> &str {
 
 #[test]
 fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_its_session_reads_the_new_persona() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     let first = rig
         .assign(
             &workspace,
@@ -170,13 +175,8 @@ fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_its_session_reads
 
 #[test]
 fn a_changed_persona_is_owed_to_the_next_prompt_of_a_harness_with_no_system_prompt() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
-    let pane = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let (mut rig, avatar, workspace) = project();
+    let pane = started(&mut rig, &workspace, &avatar);
     // The pane's adapter has not announced a system prompt: it never does in the rig.
     assert!(!rig.core.agent_state(&pane).unwrap().persona_pending);
     rig.assign(
@@ -206,9 +206,7 @@ fn a_changed_persona_is_owed_to_the_next_prompt_of_a_harness_with_no_system_prom
 
 #[test]
 fn an_assignment_names_a_harness_the_profile_has_whether_or_not_a_pane_is_open() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     assigned(&mut rig, &workspace, &avatar, "0", "");
     let refused = rig.assign(
         &workspace,
@@ -228,10 +226,7 @@ fn a_changed_harness_switches_the_open_pane_and_the_binding_follows_the_pane() {
     rig.add_harness("avatar-other");
     let avatar = rig.avatar("Sabio");
     let workspace = rig.workspace("project");
-    let pane = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let pane = started(&mut rig, &workspace, &avatar);
     let switching = rig
         .assign(
             &workspace,
@@ -262,13 +257,8 @@ fn a_changed_harness_switches_the_open_pane_and_the_binding_follows_the_pane() {
 
 #[test]
 fn a_pane_that_failed_for_good_is_not_answered_with_and_the_next_assignment_starts_another() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
-    let dead = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let (mut rig, avatar, workspace) = project();
+    let dead = started(&mut rig, &workspace, &avatar);
     rig.core.agents.get_mut(&dead).unwrap().state.phase = crate::agents::state::Phase::Faulted;
     let next = pane_of(
         &rig.assign(&workspace, &avatar.avatar_id, "1", json!({}))
@@ -290,10 +280,7 @@ fn the_pane_is_named_for_the_avatar_after_a_rename_and_after_another_avatar_is_g
     let avatar = rig.avatar("Sabio");
     let other = rig.avatar("Mentor");
     let workspace = rig.workspace("project");
-    let pane = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let pane = started(&mut rig, &workspace, &avatar);
     let name = |rig: &Rig| rig.core.panes[&pane].stored.pane.name.clone();
     assert_eq!(name(&rig), "Sabio");
     rig.call(
@@ -309,13 +296,8 @@ fn the_pane_is_named_for_the_avatar_after_a_rename_and_after_another_avatar_is_g
 
 #[test]
 fn closing_the_avatar_pane_lets_the_next_assignment_start_another() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
-    let first = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let (mut rig, avatar, workspace) = project();
+    let first = started(&mut rig, &workspace, &avatar);
     rig.call("pane.close", json!({"paneId": first})).unwrap();
     assert!(open_panes(&rig, &workspace).is_empty());
     let second = pane_of(
@@ -328,9 +310,7 @@ fn closing_the_avatar_pane_lets_the_next_assignment_start_another() {
 
 #[test]
 fn a_pane_that_is_not_an_avatars_has_no_persona() {
-    let mut rig = Rig::new();
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
+    let (mut rig, avatar, workspace) = project();
     assigned(&mut rig, &workspace, &avatar, "0", "Hidden.");
     let ordinary = crate::test_panes::ready_agent_state();
     assert_eq!(
@@ -372,10 +352,7 @@ fn a_project_folder_is_made_under_the_data_directory_and_is_empty() {
         .unwrap()
         .to_owned();
     let avatar = rig.avatar("Sabio");
-    let pane = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
-            .unwrap(),
-    );
+    let pane = started(&mut rig, &workspace, &avatar);
     assert_eq!(Path::new(&rig.core.panes[&pane].stored.pane.cwd), path);
 }
 

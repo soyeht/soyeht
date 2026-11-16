@@ -105,6 +105,18 @@ fn requested(changes: &Changes, method: &str) -> Value {
     }
 }
 
+/// What `open` asks of the harness for a session of `state`.
+fn opening(store: &Store, directory: &std::path::Path, state: &mut State) -> Changes {
+    let mut changes = Changes::default();
+    responses::open(store, &runtime(directory), state, &pane(), &mut changes).unwrap();
+    changes
+}
+
+/// Whether the request had the system prompt field.
+fn has_system_prompt(request: &Value) -> bool {
+    request.get("systemPrompt").is_some()
+}
+
 fn block(text: &str) -> String {
     format!("{BLOCK_LABEL}\n\n{text}\n\n{BLOCK_END}")
 }
@@ -169,15 +181,7 @@ fn a_session_that_loads_carries_the_system_prompt_of_an_adapter_that_takes_one()
     let (store, directory) = store_with("Be brief.");
     let mut capable = with_adapter(true);
     capable.session_id = Some("native-1".into());
-    let mut changes = Changes::default();
-    responses::open(
-        &store,
-        &runtime(&directory),
-        &mut capable,
-        &pane(),
-        &mut changes,
-    )
-    .unwrap();
+    let changes = opening(&store, &directory, &mut capable);
     let load = requested(&changes, "session/load");
     assert_eq!(
         load["systemPrompt"],
@@ -189,20 +193,8 @@ fn a_session_that_loads_carries_the_system_prompt_of_an_adapter_that_takes_one()
     // An adapter without one is told nothing by a load: the conversation it loads has the persona.
     let mut other = with_adapter(false);
     other.session_id = Some("native-1".into());
-    let mut changes = Changes::default();
-    responses::open(
-        &store,
-        &runtime(&directory),
-        &mut other,
-        &pane(),
-        &mut changes,
-    )
-    .unwrap();
-    assert!(
-        requested(&changes, "session/load")
-            .get("systemPrompt")
-            .is_none()
-    );
+    let changes = opening(&store, &directory, &mut other);
+    assert!(!has_system_prompt(&requested(&changes, "session/load")));
     assert!(other.queue.is_empty() && !other.persona_pending);
     std::fs::remove_dir_all(directory).unwrap();
 }
@@ -212,33 +204,13 @@ fn a_new_session_carries_the_persona_by_the_channel_the_adapter_has() {
     let (store, directory) = store_with("Be brief.");
     // The session was lost: the open falls back to a new one.
     let mut capable = with_adapter(true);
-    let mut changes = Changes::default();
-    responses::open(
-        &store,
-        &runtime(&directory),
-        &mut capable,
-        &pane(),
-        &mut changes,
-    )
-    .unwrap();
+    let changes = opening(&store, &directory, &mut capable);
     let new = requested(&changes, "session/new");
     assert_eq!(new["systemPrompt"]["mode"], "append");
 
     let mut other = with_adapter(false);
-    let mut changes = Changes::default();
-    responses::open(
-        &store,
-        &runtime(&directory),
-        &mut other,
-        &pane(),
-        &mut changes,
-    )
-    .unwrap();
-    assert!(
-        requested(&changes, "session/new")
-            .get("systemPrompt")
-            .is_none()
-    );
+    let changes = opening(&store, &directory, &mut other);
+    assert!(!has_system_prompt(&requested(&changes, "session/new")));
     // Nothing is queued: the persona rides on the first prompt, once the session exists.
     assert!(other.queue.is_empty());
     std::fs::remove_dir_all(directory).unwrap();
