@@ -62,12 +62,12 @@ impl Core {
             .get_mut(connection)
             .ok_or_else(|| errors::unauthorized("Attachment connection is unknown"))?;
         let bytes = client.attachments.commit(reference)?;
-        if reference.mime_type != "image/png"
+        if reference.mime_type != crate::png::MIME
             || reference.name.is_empty()
             || reference.name.len() > 256
             || bytes.is_empty()
             || bytes.len() > limits::WRITING_IMAGE_BYTES
-            || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+            || !crate::png::has_signature(&bytes)
             || reference.bytes != bytes.len().to_string()
         {
             return Err(errors::invalid("Invalid writing image attachment"));

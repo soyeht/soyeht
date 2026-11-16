@@ -534,7 +534,7 @@ fn web_attachment_reference(
 }
 
 fn validate_web_attachment(reference: &AttachmentRef) -> Result<()> {
-    if reference.mime_type != "image/png" || reference.name != "screenshot.png" {
+    if reference.mime_type != crate::png::MIME || reference.name != "screenshot.png" {
         return Err(errors::invalid(
             "Web screenshot attachment must be a named PNG image",
         ));

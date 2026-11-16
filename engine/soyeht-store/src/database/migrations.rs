@@ -62,6 +62,9 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
         }
         tx.execute_batch(include_str!("../../migrations/037-device-notices.sql"))?;
     }
+    if version < 38 {
+        tx.execute_batch(include_str!("../../migrations/038-avatars.sql"))?;
+    }
     Ok(())
 }
 
