@@ -78,6 +78,7 @@ SCALAR_GROUPS = (
     "usageWindow",
     "crashReports",
     "editor",
+    "voice",
 )
 
 
@@ -188,6 +189,33 @@ def validate(policy, schema):
     for role, rule in policy[CONFIG_ROLES].items():
         if "category" not in rule or set(rule) - ROLE_FIELDS:
             raise ValueError(f"configRoles.{role} takes {sorted(ROLE_FIELDS)}, category required")
+    validate_voice_lists(policy)
+
+
+# The `voice` entries that are lists of entries separated by `|`, and which of them are ranges of
+# code points ("1F000-1FAFF", or one code point).
+VOICE_LISTS = (
+    "continuers",
+    "scriptsWithoutBlanks",
+    "sentenceAbbreviations",
+    "pictographs",
+    "addressPrefixes",
+)
+VOICE_RANGE_LISTS = ("scriptsWithoutBlanks", "pictographs")
+CODE_POINT_RANGE = re.compile(r"[0-9A-F]{4,6}(-[0-9A-F]{4,6})?")
+
+
+def validate_voice_lists(policy):
+    """A list of the `voice` group has no empty entry and none with blanks around it."""
+    for key in VOICE_LISTS:
+        entries = policy["voice"][key].split("|")
+        for entry in entries:
+            if not entry or entry != entry.strip():
+                raise ValueError(f"x-clientPolicy.voice.{key} has an empty or padded entry")
+        if len(set(entries)) != len(entries):
+            raise ValueError(f"x-clientPolicy.voice.{key} lists an entry twice")
+        if key in VOICE_RANGE_LISTS and not all(map(CODE_POINT_RANGE.fullmatch, entries)):
+            raise ValueError(f"x-clientPolicy.voice.{key} takes code points or ranges of them")
 
 
 def constants(policy):

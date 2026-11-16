@@ -37,3 +37,14 @@ extension JsonValue {
     }
   }
 }
+
+/// A case of a vector that lacks a key it needs, or has one of the wrong type: the test fails
+/// instead of passing on a default.
+struct ContractVectorError: Error, CustomStringConvertible {
+  let description: String
+}
+
+func need<Value>(_ value: Value?, _ what: @autoclosure () -> String) throws -> Value {
+  guard let value else { throw ContractVectorError(description: "missing or mistyped: \(what())") }
+  return value
+}
