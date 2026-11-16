@@ -90,20 +90,71 @@ private let restFrame = AvatarFixture.frame(weights: AvatarFixture.weights(.rest
   #expect(r.render(restFrame).pixels == first.pixels)
 }
 
-@Test func theMouthMorphsInSmallSteps() throws {
-  // The picture a mouth makes changes by a small, even amount as the weights go from one drawing
-  // to another: no step is a jump between pictures.
-  let r = try renderer(try made(), maxSide: canvas)
-  let steps = 12
-  let frames = (0...steps).map { i in
-    r.render(
-      AvatarFixture.frame(
-        weights: AvatarFixture.weights(.rest, .a, mix: Double(i) / Double(steps))))
+/// The largest change of one pixel between two pictures.
+private func largestChange(_ a: AvatarBitmap, _ b: AvatarBitmap) -> Int {
+  zip(a.pixels, b.pixels).reduce(0) { max($0, abs(Int($1.0) - Int($1.1))) }
+}
+
+/// For every pair of drawings, the mouth morphs from one to the other in steps: the most one pixel
+/// changes in a step, against the most it changes between the ends divided by the steps.
+private func worstStepOverEvenStep(inner: AvatarFixture.Inner) throws -> (
+  ratio: Double, pair: String
+) {
+  let made = try AvatarFixture.make(canvas: 96, columns: 18, rows: 12, inner: inner)
+  let r = try AvatarRenderer(package: made.package, images: made.images, maxSide: 96)
+  let steps = 8
+  var worst = (ratio: 0.0, pair: "")
+  for a in AvatarShape.allCases {
+    for b in AvatarShape.allCases where b.rawValue > a.rawValue {
+      let frames = (0...steps).map { i in
+        r.render(
+          AvatarFixture.frame(weights: AvatarFixture.weights(a, b, mix: Double(i) / Double(steps))))
+      }
+      let ends = Double(largestChange(frames[0], frames[steps]))
+      let step = Double(zip(frames, frames.dropFirst()).map { largestChange($0, $1) }.max() ?? 0)
+      guard ends > 0 else { continue }
+      let ratio = step / (ends / Double(steps))
+      if ratio > worst.ratio { worst = (ratio, "\(a.id) to \(b.id)") }
+    }
   }
-  let changes = zip(frames, frames.dropFirst()).map { meanDifference($0, $1) }
-  let total = meanDifference(frames[0], frames[steps])
-  #expect(total > 0)
-  for change in changes { #expect(change < 4 * total / Double(steps) + 0.05) }
+  return worst
+}
+
+@Test func theMouthMorphsInSmallStepsBetweenEveryPairOfDrawings() throws {
+  // The picture a mouth makes changes by a small, even amount, pixel by pixel, as the weights go
+  // from one drawing to another: no step is a jump between pictures. A whole jump in one of the
+  // eight steps would be a ratio of eight; six is the slack for an edge moving across a pixel.
+  let textured = try worstStepOverEvenStep(inner: .textured)
+  #expect(textured.ratio < 6, "\(textured.pair): \(textured.ratio)")
+  let collapsed = try worstStepOverEvenStep(inner: .collapsed)
+  #expect(collapsed.ratio < 6, "\(collapsed.pair): \(collapsed.ratio)")
+}
+
+/// How much the picture changes when a drawing takes a weight just over the threshold of the
+/// layers (0.0001), from rest.
+private func changeAtTheThreshold(inner: AvatarFixture.Inner) throws -> Int {
+  let made = try AvatarFixture.make(canvas: 96, columns: 18, rows: 12, inner: inner)
+  let r = try AvatarRenderer(package: made.package, images: made.images, maxSide: 96)
+  let rest = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.rest)))
+  let barely = r.render(
+    AvatarFixture.frame(weights: AvatarFixture.weights(.rest, .a, mix: 2e-4)))
+  return largestChange(rest, barely)
+}
+
+@Test func aDrawingThatBarelyTakesPartBarelyChangesThePicture() throws {
+  let textured = try changeAtTheThreshold(inner: .textured)
+  let collapsed = try changeAtTheThreshold(inner: .collapsed)
+  #expect(textured < 8 && collapsed < 8)
+}
+
+@Test func anInnerMouthWithAHeightAndNoPictureAtRestPopsInWhole() throws {
+  // A known problem of the shared rule, not of this renderer: the first textured drawing of a
+  // part is drawn with the opacity 1 whatever its weight (`AvatarMeshPart.layers`, as in the Rust
+  // crate), so an inner mouth that has a height where it has no picture appears whole as soon
+  // as a drawing with a picture passes 0.0001. A real mesh has no height there. This marks the
+  // rule for the follow-up: when it changes, this test starts to pass and must be removed.
+  let change = try changeAtTheThreshold(inner: .untexturedAtRest)
+  withKnownIssue { #expect(change < 8) }
 }
 
 @Test func theWarpGridDrawsWhatTheWarpOfEveryPixelWould() throws {
@@ -127,4 +178,74 @@ private let restFrame = AvatarFixture.frame(weights: AvatarFixture.weights(.rest
   #expect(throws: AvatarPackageError.self) {
     _ = try AvatarRenderer(package: made.package, images: images)
   }
+}
+
+@Test func anEyeFrameLandsWhereTheScaledPictureHasTheEyeAtAnyScale() throws {
+  let made = try made()
+  let rect = try #require(made.package.eyes.first { $0.id == "blink" }).rect
+  let color = AvatarFixture.eyeColor("blink").map { Int($0) }
+  for side in [100, 77, 200] {
+    let r = try renderer(made, maxSide: side)
+    let scale = Double(side) / Double(canvas)
+    let frame = AvatarFixture.frame(
+      weights: AvatarFixture.weights(.rest),
+      eye: AvatarEye(gaze: .center, lid: .closed, soft: false))
+    let blink = r.render(frame)
+    let (x0, y0) = (Double(rect[0]) * scale, Double(rect[1]) * scale)
+    let (x1, y1) = (x0 + Double(rect[2]) * scale, y0 + Double(rect[3]) * scale)
+    // Every pixel inside the frame's rectangle, but the ring the scaling filter reaches across
+    // its edge, has the frame's colour, and a pixel a whole pixel outside has not.
+    for y in (Int(y0.rounded(.up)) + 2)..<(Int(y1.rounded(.down)) - 1) {
+      for x in (Int(x0.rounded(.up)) + 2)..<(Int(x1.rounded(.down)) - 1) {
+        let got = pixel(blink, x, y)
+        for c in 0..<3 { #expect(abs(got[c] - color[c]) <= 3, "scale \(side): \(x),\(y)") }
+      }
+    }
+    let outside = pixel(blink, Int(x0) - 2, Int(y0) - 2)
+    #expect(outside != color)
+    let after = pixel(blink, Int(x1) + 1, Int(y1) + 1)
+    #expect(after != color)
+  }
+}
+
+@Test func theMouthDrawsAsManyTrianglesAsItsLayersAndNeverMoreTestsThanItsBudget() throws {
+  let r = try AvatarRenderer(
+    package: try AvatarFixture.make(canvas: 256).package,
+    images: try AvatarFixture.make(canvas: 256).images, maxSide: 256)
+  // Each part's triangles, once for every layer drawn: skin and lips one drawing each, and an
+  // inner mouth only once the drawing has a picture of its own.
+  let perPart = 35 * 23 * 2
+  _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.rest)))
+  #expect(r.lastMouthWork.triangles == 2 * perPart)
+  _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a)))
+  #expect(r.lastMouthWork.triangles == 3 * perPart)
+  _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a, .e, mix: 0.4)))
+  #expect(r.lastMouthWork.triangles > 3 * perPart)
+  #expect(r.lastMouthWork.tests > 0 && r.lastMouthWork.tests <= r.mouthBudget / 4)
+}
+
+@Test func aMeshThatCoversThePictureOverAndOverDrawsTheBaseInsteadOfCostingSeconds() throws {
+  let made = try AvatarFixture.make(canvas: 64)
+  var package = made.package
+  // Every vertex in a corner of the picture, so that each triangle covers all of it: allowed by the
+  // load rules, which bound the vertices and not what they cover.
+  let side = Double(package.canvas.width)
+  for part in package.mouth.parts.indices {
+    for shape in package.mouth.parts[part].shapes.indices {
+      let count = package.mouth.parts[part].shapes[shape].positions.count / 2
+      var corners: [Double] = []
+      for i in 0..<count {
+        corners.append(i % 3 == 1 ? side : 0)
+        corners.append(i % 3 == 2 ? side : 0)
+      }
+      package.mouth.parts[part].shapes[shape].positions = corners
+    }
+  }
+  let r = try AvatarRenderer(package: package, images: made.images, maxSide: 64)
+  let covered = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a)))
+  #expect(r.lastMouthWork.tests == 0 && r.lastMouthWork.triangles == 0)
+  let plain = try renderer(made, maxSide: 64).render(restFrame)
+  // Nothing of the mouth is drawn: the picture is the base, as at rest without a mouth.
+  #expect(pixel(covered, 2, 2) == pixel(plain, 2, 2))
+  #expect(pixel(covered, 32, 32) == pixel(plain, 32, 32))
 }

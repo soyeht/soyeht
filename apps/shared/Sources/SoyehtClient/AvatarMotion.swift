@@ -27,7 +27,7 @@ struct AvatarFollow: Sendable {
   /// Advance towards `target` with smooth time `smooth` (seconds) and return the new value.
   @discardableResult
   mutating func stepToward(_ target: Double, smooth: Double, dt: Double) -> Double {
-    let omega = 2.0 / max(smooth, 1e-3)
+    let omega = 2.0 / avatarMax(smooth, 1e-3)
     let x = omega * dt
     let damp = 1.0 / (1.0 + x + 0.48 * x * x + 0.235 * x * x * x)
     let change = value - target
@@ -42,10 +42,10 @@ struct AvatarFollow: Sendable {
   mutating func limitStep(before: Double, maxDelta: Double, dt: Double) {
     if value - before > maxDelta {
       value = before + maxDelta
-      vel = min(vel, maxDelta / dt)
+      vel = avatarMin(vel, maxDelta / dt)
     } else if before - value > maxDelta {
       value = before - maxDelta
-      vel = max(vel, -maxDelta / dt)
+      vel = avatarMax(vel, -maxDelta / dt)
     }
   }
 }
@@ -65,7 +65,7 @@ struct AvatarKick: Sendable {
   mutating func kick(_ velocity: Double) { v += velocity }
 
   mutating func step(_ dt: Double) -> Double {
-    let steps = max((dt / 0.008).rounded(.up), 1.0)
+    let steps = avatarMax((dt / 0.008).rounded(.up), 1.0)
     let h = dt / steps
     for _ in 0..<Int(steps) {
       v += (-omega * omega * x - 2.0 * damping * omega * v) * h
@@ -74,6 +74,14 @@ struct AvatarKick: Sendable {
     return x
   }
 }
+
+/// The larger of two numbers, and the other when one is not a number: Rust's `f64::max`. Swift's
+/// `max` answers the first when the second is not a number, and a number that is not a number
+/// goes on to the pose.
+func avatarMax(_ a: Double, _ b: Double) -> Double { a.isNaN ? b : (b.isNaN ? a : max(a, b)) }
+
+/// The smaller of two numbers, ignoring one that is not a number: Rust's `f64::min`.
+func avatarMin(_ a: Double, _ b: Double) -> Double { a.isNaN ? b : (b.isNaN ? a : min(a, b)) }
 
 /// Smoothstep: eased between 0 and 1.
 func avatarEase(_ t: Double) -> Double {

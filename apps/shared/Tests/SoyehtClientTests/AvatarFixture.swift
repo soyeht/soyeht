@@ -46,7 +46,19 @@ enum AvatarFixture {
     return [UInt8(40 + 150 * stripe), UInt8(60 + x % 128), UInt8(80 + y % 128), 255]
   }
 
-  static func make(canvas: Int = 1024, columns: Int = 36, rows: Int = 24) throws -> Made {
+  /// How the inner mouth (teeth and tongue) is built.
+  enum Inner {
+    /// No height while the lips are together, and no picture of its own then: a real mesh.
+    case collapsed
+    /// A picture of its own for every drawing, and a height in every one.
+    case textured
+    /// No picture while the lips are together, but a height all the same.
+    case untexturedAtRest
+  }
+
+  static func make(
+    canvas: Int = 1024, columns: Int = 36, rows: Int = 24, inner: Inner = .collapsed
+  ) throws -> Made {
     let k = Double(canvas) / referenceCanvas
     let atlasCell = (width: 96, height: 64)
     let atlasSize = (width: atlasCell.width * atlasColumns, height: atlasCell.height * atlasRows)
@@ -83,8 +95,8 @@ enum AvatarFixture {
           "rows": .integer(Int64(atlasRows)),
         ]),
         "parts": .array(
-          [("skin", 1.0), ("lips", 0.55), ("inner", 0.3)].map {
-            part($0.0, scale: $0.1, canvas: canvas, columns: columns, rows: rows)
+          [("skin", 1.0), ("lips", 0.55), ("inner", 0.45)].map {
+            part($0.0, scale: $0.1, canvas: canvas, columns: columns, rows: rows, inner: inner)
           }),
       ]),
       "eyes": .array(eyes), "warp": warp(k),
@@ -136,15 +148,19 @@ enum AvatarFixture {
 
   /// How open and how wide each drawing is, as factors of the mouth box: the shapes differ, so a
   /// blend of two of them is a different mouth from either.
-  private static func factors(_ shape: AvatarShape, inner: Bool) -> (open: Double, width: Double) {
+  private static func factors(
+    _ shape: AvatarShape, id: String, inner mode: Inner
+  ) -> (open: Double, width: Double) {
     let a = shape.anchor
-    // The inner mouth has no height while the lips are together, as in a real mesh: it is drawn
-    // whole as soon as a drawing with an aperture takes part, and is nothing yet.
-    return (inner ? a.o : 0.15 + 0.85 * a.o, 0.6 + 0.4 * a.w)
+    let width = 0.6 + 0.4 * a.w
+    guard id == "inner" else { return (0.15 + 0.85 * a.o, width) }
+    // A collapsed inner mouth has no height while the lips are together, as in a real mesh; any
+    // other has a height of its own in every drawing.
+    return (mode == .collapsed ? a.o : 0.6 + 0.4 * a.o, width)
   }
 
   private static func part(
-    _ id: String, scale: Double, canvas: Int, columns: Int, rows: Int
+    _ id: String, scale: Double, canvas: Int, columns: Int, rows: Int, inner mode: Inner
   ) -> JsonValue {
     let k = Double(canvas) / referenceCanvas
     let box = (width: 32 * k * scale, height: 20 * k * scale)
@@ -167,7 +183,7 @@ enum AvatarFixture {
       return min(1.0, 4.0 * edge)
     }
     let shapes: [JsonValue] = AvatarShape.allCases.map { shape in
-      let f = factors(shape, inner: id == "inner")
+      let f = factors(shape, id: id, inner: mode)
       var positions: [Double] = []
       for g in grid {
         positions.append(center.x + (g.0 - 0.5) * box.width * f.width)
@@ -181,8 +197,9 @@ enum AvatarFixture {
         uvs.append((Double(row) + 0.01 + 0.98 * g.1) / Double(atlasRows))
       }
       var object: [String: JsonValue] = ["id": .string(shape.id), "positions": doubles(positions)]
-      // The inner mouth has no picture of its own while the lips are closed.
-      if !(id == "inner" && (shape == .rest || shape == .closedMBP)) {
+      // The inner mouth has no picture of its own while the lips are closed, unless it is textured.
+      let closed = shape == .rest || shape == .closedMBP
+      if !(id == "inner" && closed && mode != .textured) {
         object["uvs"] = doubles(uvs)
       }
       return .object(object)

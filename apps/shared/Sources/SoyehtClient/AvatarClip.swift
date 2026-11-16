@@ -84,7 +84,7 @@ struct AvatarMouth: Sendable {
 
   /// The morph weights after the last step.
   var morphWeights: AvatarMorphWeights {
-    AvatarMorphWeights(visemes: weights.map { max($0.value, 0) })
+    AvatarMorphWeights(visemes: weights.map { avatarMax($0.value, 0) })
   }
 
   /// Advance by `dt` seconds towards `target` (`nil` is silence) and return the new parameters.

@@ -76,11 +76,7 @@ struct AvatarRuntime: Sendable {
   private mutating func wordAccents(_ audio: AvatarAudio?) {
     guard let clip, let audio, audio.position.isFinite else { return }
     let words = clip.words
-    var (low, high) = (0, words.count)
-    while low < high {
-      let mid = (low + high) / 2
-      if words[mid].t <= audio.position { low = mid + 1 } else { high = mid }
-    }
+    let low = words.partitionPoint { $0.t <= audio.position }
     if low > wordsReached {
       let word = words[low - 1]
       acting.wordStart(

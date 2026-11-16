@@ -11,8 +11,6 @@ struct PhoneAvatarStage: View {
     AvatarStageView(model: model)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .background(PhonePalette.canvas)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel("Avatar")
       .accessibilityIdentifier("avatar-stage")
   }
 }

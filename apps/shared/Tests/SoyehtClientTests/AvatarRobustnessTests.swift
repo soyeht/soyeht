@@ -106,7 +106,7 @@ private func numbers(in value: Any) -> Int {
 
 @Test func theRasteriserDrawsNothingForATriangleThatIsNotOne() {
   var destination = [UInt8](repeating: 7, count: 4 * 4 * 4)
-  let texture = [UInt8](repeating: 200, count: 4 * 4)
+  let texture: [UInt8] = Array(repeating: [200, 200, 200, 255], count: 4).flatMap { $0 }
   let nan = AvatarRasterizer.Vertex(x: .nan, y: 0, u: 0, v: 0, alpha: 1)
   let a = AvatarRasterizer.Vertex(x: 0, y: 0, u: 0, v: 0, alpha: 1)
   let b = AvatarRasterizer.Vertex(x: 1e6, y: 0, u: 0, v: 0, alpha: 1)
@@ -126,13 +126,13 @@ private func numbers(in value: Any) -> Int {
     }
   }
   // The large triangle covers the 4 by 4 picture; the others draw nothing and nothing traps.
-  #expect(destination.allSatisfy { $0 == 200 })
+  #expect(destination.enumerated().allSatisfy { $0.element == ($0.offset % 4 == 3 ? 255 : 200) })
 }
 
 @Test func twoTrianglesThatShareAnEdgeDrawEveryPixelOnce() {
   // Half-opaque triangles over a black picture: a pixel drawn twice would be brighter.
   var destination = [UInt8](repeating: 0, count: 8 * 8 * 4)
-  let texture = [UInt8](repeating: 200, count: 4)
+  let texture: [UInt8] = [200, 200, 200, 255]
   let corner = { (x: Double, y: Double) in
     AvatarRasterizer.Vertex(x: x, y: y, u: 0, v: 0, alpha: 0.5)
   }
@@ -148,5 +148,104 @@ private func numbers(in value: Any) -> Int {
       }
     }
   }
-  #expect(Set(destination) == [100])
+  for pixel in stride(from: 0, to: destination.count, by: 4) {
+    #expect(Array(destination[pixel..<pixel + 3]) == [100, 100, 100])
+    #expect(destination[pixel + 3] == 128)
+  }
+}
+
+@Test func aTexelWithNoAlphaLeavesWhatIsUnderIt() {
+  // The texture's own alpha is what the destination gives up, not only the triangle's coverage:
+  // a transparent texel must not erase the face under the mouth.
+  let triangle = (
+    AvatarRasterizer.Vertex(x: -4, y: -4, u: 0, v: 0, alpha: 1),
+    AvatarRasterizer.Vertex(x: 12, y: -4, u: 0, v: 0, alpha: 1),
+    AvatarRasterizer.Vertex(x: -4, y: 12, u: 0, v: 0, alpha: 1)
+  )
+  func draw(over under: UInt8, texel: [UInt8]) -> [UInt8] {
+    var destination = [UInt8](repeating: under, count: 4 * 4 * 4)
+    texel.withUnsafeBufferPointer { tex in
+      destination.withUnsafeMutableBufferPointer { dst in
+        guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
+        AvatarRasterizer.fill(
+          triangle.0, triangle.1, triangle.2, opacity: 1, texture: tex, textureSize: (1, 1),
+          destination: dst, destinationSize: (4, 4))
+      }
+    }
+    return Array(destination[0..<4])
+  }
+  #expect(draw(over: 200, texel: [0, 0, 0, 0]) == [200, 200, 200, 200])
+  // Half-opaque premultiplied grey 50 over 200: 50 + 200 * (1 - 128 / 255) = 149.6, and the
+  // alpha 128 + 200 * (1 - 128 / 255) = 227.6.
+  #expect(draw(over: 200, texel: [50, 50, 50, 128]) == [150, 150, 150, 228])
+}
+
+@Test func aPositionThatIsNotANumberReadsAPixelAndNeverTraps() {
+  let texture: [UInt8] = [10, 20, 30, 255, 40, 50, 60, 255]
+  texture.withUnsafeBufferPointer { tex in
+    guard let tex = tex.baseAddress else { return }
+    for (u, v) in [(Float.nan, Float.nan), (.infinity, -.infinity), (1e30, 1e30)] {
+      let color = AvatarRasterizer.sample(tex, width: 2, height: 1, u: u, v: v)
+      #expect(color[3] == 255)
+    }
+  }
+}
+
+@Test func theNumbersTheRustReaderIgnoresAreIgnoredHere() {
+  #expect(avatarMax(.nan, 1) == 1 && avatarMax(1, .nan) == 1 && avatarMax(2, 1) == 2)
+  #expect(avatarMin(.nan, 1) == 1 && avatarMin(1, .nan) == 1 && avatarMin(2, 1) == 1)
+  #expect(avatarMax(.nan, .nan).isNaN)
+  // Not a number where a mouth parameter is: the weights are still weights.
+  let weights = AvatarMorphWeights(params: AvatarParams(o: .nan, w: 0.5, r: 0, c: 0, f: 0)).all
+  #expect(weights.allSatisfy { $0.isFinite && $0 >= 0 })
+  var follow = AvatarFollow(value: 0, smooth: 0.1)
+  follow.stepToward(1, smooth: .nan, dt: 1.0 / 60)
+  #expect(follow.value.isFinite)
+}
+
+@Test func aDocumentThatIsNotPlainJsonObjectBytesIsMalformed() throws {
+  let made = try AvatarFixture.make(canvas: 64)
+  let assets = made.images.map {
+    AvatarAssetInfo(
+      path: $0.key, bytes: 100,
+      size: AvatarSize(width: UInt32($0.value.width), height: UInt32($0.value.height)))
+  }
+  func kind(_ data: Data) -> AvatarPackageErrorKind? {
+    do {
+      _ = try AvatarPackage.load(json: data, assets: assets)
+      return nil
+    } catch let error as AvatarPackageError {
+      return error.kind
+    } catch {
+      return .malformed
+    }
+  }
+  #expect(kind(made.json) == nil)
+  #expect(kind(Data("\n \t".utf8) + made.json) == nil)
+  #expect(kind(Data([0xEF, 0xBB, 0xBF]) + made.json) == .malformed)
+  let utf16 = String(decoding: made.json, as: UTF8.self).data(using: .utf16LittleEndian) ?? Data()
+  #expect(kind(utf16) == .malformed)
+  #expect(kind(Data([0x7B, 0x00, 0x7D])) == .malformed)
+  #expect(kind(Data("[1]".utf8)) == .malformed)
+  #expect(kind(Data()) == .malformed)
+}
+
+@Test func aPathIsTheSamePathOnlyWhenItsBytesAre() throws {
+  // A Kelvin sign is canonically equivalent to a capital K, and no file system finds one in the
+  // other: the base picture named with one is not the file listed with the other.
+  let made = try AvatarFixture.make(canvas: 64)
+  let text = String(decoding: made.json, as: UTF8.self)
+    .replacingOccurrences(of: "base.png", with: "K.png")
+    .replacingOccurrences(of: "\"base\":\"K.png\"", with: "\"base\":\"\\u212A.png\"")
+  var assets = made.images.map {
+    AvatarAssetInfo(
+      path: $0.key == "base.png" ? "K.png" : $0.key, bytes: 100,
+      size: AvatarSize(width: UInt32($0.value.width), height: UInt32($0.value.height)))
+  }
+  #expect(throws: AvatarPackageError(kind: .file, at: "/base")) {
+    _ = try AvatarPackage.load(json: Data(text.utf8), assets: assets)
+  }
+  assets.removeAll()
+  #expect(AvatarPackageValidator.sameBytes("K", "\u{212A}") == false)
+  #expect("K" == "\u{212A}")
 }

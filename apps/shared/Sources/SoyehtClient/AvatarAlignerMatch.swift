@@ -102,7 +102,7 @@ enum AvatarBoundaryMatch {
   static func match(boundaries: [AvatarBoundary], positions: [Double], meanWord: Double) -> [(
     Int, Int
   )] {
-    let tolerance = max(minTolerance, toleranceShare * meanWord)
+    let tolerance = avatarMax(minTolerance, toleranceShare * meanWord)
     // (boundary, silence, score), in order of boundary and then silence.
     var candidates: [(Int, Int, Double)] = []
     for (i, b) in boundaries.enumerated() {

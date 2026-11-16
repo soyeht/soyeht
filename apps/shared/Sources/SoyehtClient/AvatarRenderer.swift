@@ -37,8 +37,11 @@ final class AvatarRenderer {
   /// The size of the pictures `render` returns.
   let outputWidth: Int
   let outputHeight: Int
+  /// The longer side of the output.
+  var outputSide: Int { max(outputWidth, outputHeight) }
 
-  /// An eye frame at the output's scale, with where it goes.
+  /// An eye frame at the output's scale, with where it goes. It holds the base picture around the
+  /// eye as well, so it replaces the pixels it covers.
   private struct Patch {
     let bitmap: AvatarBitmap
     let x: Int
@@ -53,6 +56,8 @@ final class AvatarRenderer {
   /// in atlas pixels, by shape.
   private let parts: [(part: AvatarMeshPart, uvs: [[Double]?])]
   private var output: AvatarBitmap
+  /// The picture under the part being drawn (a copy of the rows it touches).
+  private var underneath: [UInt8]
   private let cell: Int
   /// Output pixels per canvas pixel.
   private let scale: Double
@@ -84,16 +89,27 @@ final class AvatarRenderer {
     base = full.resized(width: outputWidth, height: outputHeight)
     source = base
     output = AvatarBitmap(width: outputWidth, height: outputHeight)
+    underneath = [UInt8](repeating: 0, count: outputWidth * outputHeight * 4)
     let fullAtlas = try image(package.mouth.atlas.file)
     atlas = fullAtlas.resized(width: scaled(fullAtlas.width), height: scaled(fullAtlas.height))
+    // An eye frame is laid over the base picture at the size of the canvas, and then the picture is
+    // scaled and the rectangle (rounded outward) is cut out: the frame lands where the scaled
+    // picture puts the eye, not up to half a pixel away.
     var patches: [String: Patch] = [:]
     for frame in package.eyes {
       let picture = try image(frame.file)
-      let (width, height) = (scaled(picture.width), scaled(picture.height))
-      let x = min(Int((Double(frame.rect[0]) * scale).rounded()), outputWidth - width)
-      let y = min(Int((Double(frame.rect[1]) * scale).rounded()), outputHeight - height)
+      let (x, y) = (Int(frame.rect[0]), Int(frame.rect[1]))
+      let laid = full.laying(picture, atX: x, y: y)
+        .resized(width: outputWidth, height: outputHeight)
+      let x0 = Int((Double(x) * scale).rounded(.down))
+      let y0 = Int((Double(y) * scale).rounded(.down))
+      let x1 = Int((Double(x + picture.width) * scale).rounded(.up))
+      let y1 = Int((Double(y + picture.height) * scale).rounded(.up))
       patches[frame.id] = Patch(
-        bitmap: picture.resized(width: width, height: height), x: max(x, 0), y: max(y, 0))
+        bitmap: laid.cropped(
+          AvatarPixelRect(
+            x0: max(x0, 0), y0: max(y0, 0), x1: min(x1, outputWidth), y1: min(y1, outputHeight))),
+        x: max(x0, 0), y: max(y0, 0))
     }
     self.patches = patches
     self.cell = max(cell, 1)
@@ -153,7 +169,7 @@ final class AvatarRenderer {
     }
   }
 
-  /// Lay the eye frame over the base picture (source-over, so a frame with soft edges blends).
+  /// Put the eye frame in place of the base picture's pixels.
   private func drawEyes(_ eye: AvatarEye) -> AvatarPixelRect {
     guard let id = Self.patchId(for: eye), let patch = patches[id] else {
       return AvatarPixelRect(x0: 0, y0: 0, x1: 0, y1: 0)
@@ -164,13 +180,8 @@ final class AvatarRenderer {
       source.pixels.withUnsafeMutableBufferPointer { to in
         guard let from = from.baseAddress, let to = to.baseAddress else { return }
         for row in 0..<picture.height {
-          for column in 0..<picture.width {
-            let s = row * picture.width + column
-            let d = (patch.y + row) * width + patch.x + column
-            let keep = 1 - AvatarRasterizer.load(from, s)[3] / 255
-            AvatarRasterizer.store(
-              AvatarRasterizer.load(from, s) + AvatarRasterizer.load(to, d) * keep, to, d)
-          }
+          (to + ((patch.y + row) * width + patch.x) * 4).update(
+            from: from + row * picture.width * 4, count: picture.width * 4)
         }
       }
     }
@@ -178,24 +189,57 @@ final class AvatarRenderer {
       x0: patch.x, y0: patch.y, x1: patch.x + picture.width, y1: patch.y + picture.height)
   }
 
+  /// What the mouth of the last frame cost: the triangles drawn and the pixel centres tested. A
+  /// frame that would test more than `mouthBudget` draws no mouth at all.
+  private(set) var lastMouthWork = (triangles: 0, tests: 0)
+
+  /// The most pixel centres a frame may test for the mouth: twice the output's pixels. A mouth
+  /// is a few percent of the face; a package whose mesh covers the picture over and over (it is
+  /// bounded by its vertices, not by what it covers) draws the base picture instead of costing
+  /// seconds a frame.
+  var mouthBudget: Int { 2 * outputWidth * outputHeight }
+
   /// Blend the nine drawings' contours by the weights and draw the textured layers of each part.
   private func drawMouth(weights: [Double]) -> AvatarPixelRect {
     var box = AvatarPixelRect(x0: 0, y0: 0, x1: 0, y1: 0)
     let size = (width: source.width, height: source.height)
     let atlasSize = (width: atlas.width, height: atlas.height)
+    let blended = parts.map { part, _ in
+      (positions: part.blend(weights), layers: part.layers(weights))
+    }
+    var work = (triangles: 0, tests: 0.0)
+    for ((part, _), item) in zip(parts, blended) {
+      let drawn = Double(item.layers.count)
+      let tests = Self.tests(of: part, positions: item.positions, size: size)
+      work.triangles += part.triangles.count / 3 * item.layers.count
+      work.tests += tests * drawn
+    }
+    guard work.tests <= Double(mouthBudget) else {
+      lastMouthWork = (0, 0)
+      return box
+    }
+    lastMouthWork = (work.triangles, Int(work.tests))
     atlas.pixels.withUnsafeBufferPointer { texture in
       source.pixels.withUnsafeMutableBufferPointer { destination in
-        guard let texture = texture.baseAddress, let destination = destination.baseAddress else {
-          return
-        }
-        for (part, uvs) in parts {
-          let positions = part.blend(weights)
-          box = box.union(Self.bounds(of: positions, within: size))
-          for layer in part.layers(weights) {
-            guard let uv = uvs[layer.shape.rawValue] else { continue }
-            Self.draw(
-              part, positions: positions, uvs: uv, opacity: layer.alpha, texture: texture,
-              textureSize: atlasSize, destination: destination, destinationSize: size)
+        underneath.withUnsafeMutableBufferPointer { under in
+          guard let texture = texture.baseAddress, let destination = destination.baseAddress,
+            let under = under.baseAddress
+          else { return }
+          for ((part, uvs), item) in zip(parts, blended) {
+            let area = Self.bounds(of: item.positions, within: size)
+            box = box.union(area)
+            // What is under the part, as it was before any of its layers: the layers mix over it.
+            for y in area.y0..<max(area.y1, area.y0) {
+              (under + y * size.width * 4).update(
+                from: destination + y * size.width * 4, count: size.width * 4)
+            }
+            for layer in item.layers {
+              guard let uv = uvs[layer.shape.rawValue] else { continue }
+              Self.draw(
+                part, positions: item.positions, uvs: uv, opacity: layer.alpha, under: under,
+                texture: texture, textureSize: atlasSize, destination: destination,
+                destinationSize: size)
+            }
           }
         }
       }
@@ -203,9 +247,26 @@ final class AvatarRenderer {
     return box
   }
 
+  /// The pixel centres the triangles of a part test, once.
+  private static func tests(
+    of part: AvatarMeshPart, positions: [Double], size: (width: Int, height: Int)
+  ) -> Double {
+    let vertex = { (i: Int) in
+      AvatarRasterizer.Vertex(x: positions[2 * i], y: positions[2 * i + 1], u: 0, v: 0, alpha: 1)
+    }
+    var total = 0.0
+    for t in stride(from: 0, to: part.triangles.count, by: 3) {
+      total += AvatarRasterizer.tests(
+        vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
+        vertex(Int(part.triangles[t + 2])), destinationSize: size)
+    }
+    return total
+  }
+
   private static func draw(
     _ part: AvatarMeshPart, positions: [Double], uvs: [Double], opacity: Double,
-    texture: UnsafePointer<UInt8>, textureSize: (width: Int, height: Int),
+    under: UnsafePointer<UInt8>, texture: UnsafePointer<UInt8>,
+    textureSize: (width: Int, height: Int),
     destination: UnsafeMutablePointer<UInt8>, destinationSize: (width: Int, height: Int)
   ) {
     let vertex = { (i: Int) in
@@ -216,7 +277,7 @@ final class AvatarRenderer {
     for t in stride(from: 0, to: part.triangles.count, by: 3) {
       AvatarRasterizer.fill(
         vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
-        vertex(Int(part.triangles[t + 2])), opacity: opacity, texture: texture,
+        vertex(Int(part.triangles[t + 2])), opacity: opacity, under: under, texture: texture,
         textureSize: textureSize, destination: destination, destinationSize: destinationSize)
     }
   }
@@ -257,35 +318,53 @@ final class AvatarRenderer {
         gridY[j * columns + i] = point.y * scale
       }
     }
-    let (sourceWidth, sourceHeight) = (source.width, source.height)
-    let (width, height, cell) = (outputWidth, outputHeight, cell)
-    source.pixels.withUnsafeBufferPointer { picture in
+    let grid = (columns: columns, rows: rows, cell: cell)
+    let (picture, outSize) = ((source.width, source.height), (outputWidth, outputHeight))
+    source.pixels.withUnsafeBufferPointer { picture0 in
       output.pixels.withUnsafeMutableBufferPointer { out in
-        guard let picture = picture.baseAddress, let out = out.baseAddress else { return }
-        for cj in 0..<(rows - 1) {
-          for ci in 0..<(columns - 1) {
-            let (a, b) = (cj * columns + ci, (cj + 1) * columns + ci)
-            let cellSize = Double(cell)
-            for py in (cj * cell)..<min((cj + 1) * cell, height) {
-              let ty = (Double(py) + 0.5 - Double(cj * cell)) / cellSize
-              let leftX = gridX[a] + (gridX[b] - gridX[a]) * ty
-              let leftY = gridY[a] + (gridY[b] - gridY[a]) * ty
-              let stepX = (gridX[a + 1] + (gridX[b + 1] - gridX[a + 1]) * ty - leftX) / cellSize
-              let stepY = (gridY[a + 1] + (gridY[b + 1] - gridY[a + 1]) * ty - leftY) / cellSize
-              let first = ci * cell
-              // The first pixel centre is half a pixel into the cell.
-              var u = Float(leftX + stepX * 0.5)
-              var v = Float(leftY + stepY * 0.5)
-              let (du, dv) = (Float(stepX), Float(stepY))
-              for px in first..<min((ci + 1) * cell, width) {
-                AvatarRasterizer.store(
-                  AvatarRasterizer.sample(
-                    picture, width: sourceWidth, height: sourceHeight, u: u, v: v),
-                  out, py * width + px)
-                u += du
-                v += dv
-              }
-            }
+        gridX.withUnsafeBufferPointer { gx in
+          gridY.withUnsafeBufferPointer { gy in
+            guard let picture0 = picture0.baseAddress, let out = out.baseAddress,
+              let gx = gx.baseAddress, let gy = gy.baseAddress
+            else { return }
+            Self.readCells(
+              picture: picture0, pictureSize: picture, output: out, outputSize: outSize,
+              gridX: gx, gridY: gy, grid: grid)
+          }
+        }
+      }
+    }
+  }
+
+  /// The loop of the warp, on pointers: what a frame spends most of its time in.
+  private static func readCells(
+    picture: UnsafePointer<UInt8>, pictureSize: (width: Int, height: Int),
+    output: UnsafeMutablePointer<UInt8>, outputSize: (width: Int, height: Int),
+    gridX: UnsafePointer<Double>, gridY: UnsafePointer<Double>,
+    grid: (columns: Int, rows: Int, cell: Int)
+  ) {
+    let cell = grid.cell
+    let cellSize = Double(cell)
+    for cj in 0..<(grid.rows - 1) {
+      for ci in 0..<(grid.columns - 1) {
+        let (a, b) = (cj * grid.columns + ci, (cj + 1) * grid.columns + ci)
+        for py in (cj * cell)..<min((cj + 1) * cell, outputSize.height) {
+          let ty = (Double(py) + 0.5 - Double(cj * cell)) / cellSize
+          let leftX = gridX[a] + (gridX[b] - gridX[a]) * ty
+          let leftY = gridY[a] + (gridY[b] - gridY[a]) * ty
+          let stepX = (gridX[a + 1] + (gridX[b + 1] - gridX[a + 1]) * ty - leftX) / cellSize
+          let stepY = (gridY[a + 1] + (gridY[b + 1] - gridY[a + 1]) * ty - leftY) / cellSize
+          // The first pixel centre is half a pixel into the cell.
+          var u = Float(leftX + stepX * 0.5)
+          var v = Float(leftY + stepY * 0.5)
+          let (du, dv) = (Float(stepX), Float(stepY))
+          for px in (ci * cell)..<min((ci + 1) * cell, outputSize.width) {
+            AvatarRasterizer.store(
+              AvatarRasterizer.sample(
+                picture, width: pictureSize.width, height: pictureSize.height, u: u, v: v),
+              output, py * outputSize.width + px)
+            u += du
+            v += dv
           }
         }
       }

@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// An avatar package read from its folder: the validated document and its pictures, decoded.
@@ -12,12 +13,17 @@ struct AvatarLoadedPackage: Sendable {
   }
 }
 
-/// Reads a package folder (`avatar.json` and the PNG files it lists) into memory, with the same
-/// bounds the validator states: the document is not read past its limit, a picture is not read
-/// before the document that lists it has passed every rule, and a link or a file outside the
-/// folder is not followed.
+/// Reads a package folder (`avatar.json` and the PNG files it lists) into memory, with the bounds
+/// the validator states. Each file is opened once, never through a link (not in its name and not
+/// in any directory above it inside the folder), measured with `fstat`, and read up to its limit:
+/// the bytes that are measured are the bytes that are decoded, and a file larger than its limit
+/// is reported with its true size and never read.
 enum AvatarPackageFolder {
   static let documentName = "avatar.json"
+
+  /// `O_NOFOLLOW_ANY` of the system headers (macOS 11, iOS 14): no link in any component of the
+  /// path. Swift does not import the macro.
+  private static let noFollowAny: Int32 = 0x2000_0000
 
   /// Just the paths a document lists, to find the files to measure before it is validated.
   private struct Listed: Decodable {
@@ -25,71 +31,70 @@ enum AvatarPackageFolder {
     var files: [File]
   }
 
-  /// A regular file inside the folder: not a link, and no larger than `limit` bytes. Anything
-  /// else is `nil`, and the validator then names the file that is missing.
-  private static func regularFile(at url: URL, limit: UInt64) -> UInt64? {
-    do {
-      let values = try url.resourceValues(forKeys: [
-        .isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey,
-      ])
-      guard values.isRegularFile == true, values.isSymbolicLink != true,
-        let size = values.fileSize, UInt64(size) <= limit
-      else { return nil }
-      return UInt64(size)
-    } catch {
-      return nil
-    }
+  /// A file as it is on disk: its true size, the size of the picture its header declares, and its
+  /// bytes when they are within the limit.
+  private struct Found {
+    let size: UInt64
+    let picture: AvatarSize?
+    let data: Data?
   }
 
-  /// The first bytes of a file: enough for the header of a PNG. A file that cannot be read has
-  /// no size, and the validator names it.
-  private static func header(of url: URL) -> Data? {
-    do {
-      let handle = try FileHandle(forReadingFrom: url)
-      // The handle closes when it is released.
-      return try handle.read(upToCount: 24)
-    } catch {
-      return nil
-    }
+  /// Open `path` inside the folder (a descriptor of the folder itself) without following a link,
+  /// and read it when it is a regular file of at most `limit` bytes. `nil` when it cannot be
+  /// opened or is not a regular file: the validator then names the file that is missing.
+  private static func read(_ path: String, in folder: Int32, limit: Int) -> Found? {
+    let descriptor = openat(folder, path, O_RDONLY | noFollowAny)
+    guard descriptor >= 0 else { return nil }
+    defer { close(descriptor) }
+    var info = stat()
+    guard fstat(descriptor, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, info.st_size >= 0
+    else { return nil }
+    let size = UInt64(info.st_size)
+    var header = Data(count: 24)
+    let headerCount = header.withUnsafeMutableBytes { pread(descriptor, $0.baseAddress, 24, 0) }
+    let picture = headerCount == 24 ? avatarPngSize(header) : nil
+    guard size <= UInt64(limit) else { return Found(size: size, picture: picture, data: nil) }
+    var data = Data(count: Int(size))
+    let count = data.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, Int(size)) }
+    // A file that shrank while it was read is not the file that was measured.
+    return count == Int(size) ? Found(size: size, picture: picture, data: data) : nil
   }
 
   /// Read and validate the package in `folder`. A failure is an `AvatarPackageError`.
   static func load(_ folder: URL) throws -> AvatarLoadedPackage {
-    let document = folder.appendingPathComponent(documentName)
-    guard regularFile(at: document, limit: UInt64(AvatarPackageLimits.documentBytes + 1)) != nil
+    let root = open(folder.path, O_RDONLY | O_DIRECTORY)
+    guard root >= 0 else { throw AvatarPackageError(kind: .malformed, at: "") }
+    defer { close(root) }
+    guard let document = read(documentName, in: root, limit: AvatarPackageLimits.documentBytes)
     else { throw AvatarPackageError(kind: .malformed, at: "") }
-    let json: Data
-    do { json = try Data(contentsOf: document) } catch {
-      throw AvatarPackageError(kind: .malformed, at: "")
-    }
+    guard let json = document.data else { throw AvatarPackageError(kind: .tooLarge, at: "") }
     // A document that does not parse is named by the validator below; here it lists no files.
     let paths: [String]
     do { paths = try JSONDecoder().decode(Listed.self, from: json).files.map(\.path) } catch {
       paths = []
     }
-    // Measure what the document lists, never reading more than the headers; a path that is not a
-    // plain one is left unmeasured and the validator names it.
+    // Read what the document lists, at most as many files and bytes as a package may hold; a path
+    // that is not a plain one is left alone and the validator names it.
+    var found: [String: Found] = [:]
     var assets: [AvatarAssetInfo] = []
+    var budget = Int(AvatarPackageLimits.totalBytes)
     for path in paths.prefix(AvatarPackageLimits.files + 1)
-    where AvatarPackageValidator.isPlainPngPath(path) {
-      let url = folder.appendingPathComponent(path)
-      guard let bytes = regularFile(at: url, limit: AvatarPackageLimits.fileBytes + 1) else {
-        continue
-      }
-      assets.append(
-        AvatarAssetInfo(path: path, bytes: bytes, size: header(of: url).flatMap(avatarPngSize)))
+    where AvatarPackageValidator.isPlainPngPath(path) && found[path] == nil {
+      guard let file = read(path, in: root, limit: min(Int(AvatarPackageLimits.fileBytes), budget))
+      else { continue }
+      budget -= file.data?.count ?? 0
+      found[path] = file
+      // A file left unread is reported by its true size and the header's picture size: the
+      // validator's own rules say whether it is too large.
+      assets.append(AvatarAssetInfo(path: path, bytes: file.size, size: file.picture))
     }
     let package = try AvatarPackage.load(json: json, assets: assets)
     var images: [String: AvatarBitmap] = [:]
     for file in package.files {
       let size = AvatarSize(width: file.width, height: file.height)
-      let data: Data
-      do { data = try Data(contentsOf: folder.appendingPathComponent(file.path)) } catch {
-        throw AvatarPackageError(kind: .missingAsset, at: file.path)
-      }
-      guard let bitmap = AvatarBitmap(decoding: data, expecting: size) else {
-        throw AvatarPackageError(kind: .assetSize, at: file.path)
-      }
+      guard let data = found[file.path]?.data,
+        let bitmap = AvatarBitmap(decoding: data, expecting: size)
+      else { throw AvatarPackageError(kind: .assetSize, at: file.path) }
       images[file.path] = bitmap
     }
     return AvatarLoadedPackage(package: package, images: images)

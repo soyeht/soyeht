@@ -8,6 +8,22 @@ import SoyehtProtocol
 enum AvatarVector {
   static let fps = 60.0
 
+  /// The groups of `avatar-mouth.json` and of `avatar-package.json` the Swift tests run. A group
+  /// the file gains that is in neither list fails `everyGroupOfTheVectorFilesIsRunHere`, so a
+  /// rule another implementation pins is never left out here without being said.
+  static let mouthGroups: Set = ["weights", "dynamics", "aligner", "acting", "runtime", "warp"]
+  static let packageGroups: Set = ["cases", "mesh"]
+  /// Lists of the files that are inputs of the cases, not cases (the package vector's `assets`).
+  static let inputs: Set = ["assets"]
+  /// Groups of either file that the Swift tests do not run yet, each with the reason. Empty today.
+  static let notYetAdopted: Set<String> = []
+
+  /// The groups of a vector file: its keys whose values are lists of cases.
+  static func groups(of file: JsonValue) -> Set<String> {
+    guard case .object(let fields) = file else { return [] }
+    return Set(fields.filter { $0.value.array != nil }.keys).subtracting(inputs)
+  }
+
   /// The first place where two values differ: numbers within `tolerance`, everything else equal.
   static func difference(
     _ a: JsonValue, _ b: JsonValue, tolerance: Double, at path: String = ""
@@ -38,11 +54,20 @@ enum AvatarVector {
 
   static func numbers(_ xs: [Double]) -> JsonValue { .array(xs.map { .number($0) }) }
 
-  static func phonemes(_ v: JsonValue) -> [AvatarPhoneme] {
-    (v.array ?? []).map {
-      AvatarPhoneme(
-        p: $0["p"].string?.unicodeScalars.first ?? " ", t0: $0["t0"].double ?? 0,
-        t1: $0["t1"].double ?? 0)
+  /// A field the file lacks, or has with another type: the vector is read strictly, so a renamed
+  /// field fails here and is not read as a default.
+  struct Unreadable: Error, CustomStringConvertible {
+    let what: String
+    var description: String { "the vector has no \(what)" }
+  }
+
+  static func phonemes(_ v: JsonValue) throws -> [AvatarPhoneme] {
+    try v.items("phonemes").map {
+      let p = try $0.text("p")
+      guard p.unicodeScalars.count == 1, let scalar = p.unicodeScalars.first else {
+        throw Unreadable(what: "one-scalar phoneme \(p)")
+      }
+      return AvatarPhoneme(p: scalar, t0: try $0.number("t0"), t1: try $0.number("t1"))
     }
   }
 
@@ -53,33 +78,75 @@ enum AvatarVector {
       })
   }
 
-  static func envelope(_ v: JsonValue) -> AvatarEnvelope? {
-    guard let hop = v["hop"].double, let db = v["db"].array else { return nil }
-    return AvatarEnvelope(db: db.compactMap(\.double), hop: hop)
+  static func envelope(_ v: JsonValue) throws -> AvatarEnvelope {
+    AvatarEnvelope(db: try v.items("db").map { try $0.asNumber() }, hop: try v.number("hop"))
   }
 
-  /// `headRadii` of a case: the horizontal and vertical radius of the head, in pixels (the
-  /// reference face when absent).
-  static func radii(_ v: JsonValue) -> [Double] {
-    let reference = AvatarActing.referenceHead
-    let given = v["headRadii"].array ?? []
-    return (0..<2).map {
-      given.indices.contains($0) ? given[$0].double ?? reference[$0] : reference[$0]
-    }
+  /// `headRadii` of a case: the horizontal and vertical radius of the head, in pixels. A case that
+  /// has none is on the reference face.
+  static func radii(_ v: JsonValue) throws -> [Double] {
+    guard case .array(let given) = v["headRadii"] else { return AvatarActing.referenceHead }
+    guard given.count == 2 else { throw Unreadable(what: "two headRadii") }
+    return try given.map { try $0.asNumber() }
   }
 
-  static func state(_ id: String?) -> AvatarState { id.flatMap(AvatarState.init) ?? .idle }
-
-  static func seed(_ v: JsonValue) -> UInt64 {
-    if case .integer(let n) = v["seed"] { return UInt64(max(n, 0)) }
-    return 0
+  static func state(_ id: String) throws -> AvatarState {
+    guard let state = AvatarState(rawValue: id) else { throw Unreadable(what: "state \(id)") }
+    return state
   }
 
-  static func wordStarts(_ v: JsonValue) -> [AvatarWordStart] {
-    (v.array ?? []).map {
+  static func language(_ id: String) throws -> AvatarLanguage {
+    guard ["en", "pt-BR"].contains(id) else { throw Unreadable(what: "language \(id)") }
+    return AvatarLanguage(id: id)
+  }
+
+  static func seed(_ v: JsonValue) throws -> UInt64 {
+    guard case .integer(let n) = v["seed"], n >= 0 else { throw Unreadable(what: "seed") }
+    return UInt64(n)
+  }
+
+  static func wordStarts(_ v: JsonValue) throws -> [AvatarWordStart] {
+    try v.items("words").map {
       AvatarWordStart(
-        t: $0["t"].double ?? 0, word: $0["word"].string ?? "",
-        prevEndsClause: $0["prevEndsClause"].bool ?? false)
+        t: try $0.number("t"), word: try $0.text("word"),
+        prevEndsClause: try $0.flag("prevEndsClause"))
     }
+  }
+}
+
+extension JsonValue {
+  func asNumberOrText() throws -> String {
+    guard let value = string else { throw AvatarVector.Unreadable(what: "a path in \(self)") }
+    return value
+  }
+
+  func asNumber() throws -> Double {
+    guard let value = double else { throw AvatarVector.Unreadable(what: "a number in \(self)") }
+    return value
+  }
+
+  func number(_ key: String) throws -> Double {
+    guard let value = self[key].double else { throw AvatarVector.Unreadable(what: key) }
+    return value
+  }
+
+  func integer(_ key: String) throws -> Int {
+    guard let value = self[key].int else { throw AvatarVector.Unreadable(what: key) }
+    return value
+  }
+
+  func text(_ key: String) throws -> String {
+    guard let value = self[key].string else { throw AvatarVector.Unreadable(what: key) }
+    return value
+  }
+
+  func flag(_ key: String) throws -> Bool {
+    guard let value = self[key].bool else { throw AvatarVector.Unreadable(what: key) }
+    return value
+  }
+
+  func items(_ key: String) throws -> [JsonValue] {
+    guard let value = self[key].array else { throw AvatarVector.Unreadable(what: key) }
+    return value
   }
 }

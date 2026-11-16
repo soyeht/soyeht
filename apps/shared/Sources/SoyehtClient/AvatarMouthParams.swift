@@ -91,7 +91,7 @@ struct AvatarMorphWeights: Equatable, Sendable {
     var out = [Double](repeating: 0, count: AvatarShape.allCases.count)
     var sum = 0.0
     for (index, weight) in visemes.enumerated() {
-      out[index + 1] = max(weight, 0)
+      out[index + 1] = avatarMax(weight, 0)
       sum += out[index + 1]
     }
     if sum < 1 {
@@ -115,10 +115,10 @@ struct AvatarMorphWeights: Equatable, Sendable {
         let d = (qa[k] - anchor[k]) * scale[k]
         d2 += d * d
       }
-      return 1.0 / pow(max(d2.squareRoot(), 1e-3), power)
+      return 1.0 / pow(avatarMax(d2.squareRoot(), 1e-3), power)
     }
     let cut = inverse.sorted(by: >)[keep - 1]
-    let raw = inverse.map { max($0 - cut, 0) }
+    let raw = inverse.map { avatarMax($0 - cut, 0) }
     let total = raw.reduce(0, +)
     let sum = total == 0 ? 1 : total
     visemes = raw.dropFirst().map { $0 / sum }

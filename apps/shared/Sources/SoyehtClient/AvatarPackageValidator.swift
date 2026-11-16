@@ -84,6 +84,14 @@ extension AvatarPackage {
     guard json.count <= AvatarPackageLimits.documentBytes else {
       throw AvatarPackageError(kind: .tooLarge, at: "")
     }
+    // Foundation reads a document more loosely than the Rust reader. What this closes: the first
+    // byte that is not blank must open an object (no byte-order mark, no UTF-16, no bare value)
+    // and no NUL byte is allowed. It does not close the rest (a number written `512.0` or `1e2`
+    // for an integer, a repeated key, a trailing comma): the vector cases cannot say those, and a
+    // strict pre-scan with raw-document cases is a follow-up.
+    guard json.first(where: { ![0x20, 0x09, 0x0A, 0x0D].contains($0) }) == UInt8(ascii: "{"),
+      !json.contains(0)
+    else { throw AvatarPackageError(kind: .malformed, at: "") }
     let package: AvatarPackage
     do {
       package = try JSONDecoder().decode(AvatarPackage.self, from: json)
@@ -178,7 +186,7 @@ struct AvatarPackageValidator {
       if file.width == 0 || file.height == 0 || file.width > side || file.height > side {
         throw fail(.assetSize, at)
       }
-      guard let asset = assets.first(where: { $0.path == file.path }) else {
+      guard let asset = assets.first(where: { Self.sameBytes($0.path, file.path) }) else {
         throw fail(.missingAsset, at)
       }
       if asset.bytes > AvatarPackageLimits.fileBytes { throw fail(.tooLarge, at) }
@@ -207,8 +215,12 @@ struct AvatarPackageValidator {
     String(decoding: s.utf8.map { (0x41...0x5A).contains($0) ? $0 + 32 : $0 }, as: UTF8.self)
   }
 
+  /// Paths are the same when their UTF-8 bytes are: Swift's `==` is canonical equivalence, which
+  /// finds `K.png` (a Kelvin sign) in the listing of `K.png`, as no file system does.
+  static func sameBytes(_ a: String, _ b: String) -> Bool { a.utf8.elementsEqual(b.utf8) }
+
   private func listed(_ path: String) -> AvatarFileDecl? {
-    package.files.first { $0.path == path }
+    package.files.first { Self.sameBytes($0.path, path) }
   }
 
   private func checkMouth() throws {

@@ -95,18 +95,18 @@ enum AvatarTrack {
     }
     if AvatarPhonemes.isSibilant(p) {
       q.o *= 0.45
-      q.w = max(q.w, 0.7)
+      q.w = avatarMax(q.w, 0.7)
       q.r *= 0.5
     } else if AvatarPhonemes.isPalatal(p) {
       q.o *= 0.6
-      q.r = min(q.r + 0.25, 1.0)
-      q.w = min(q.w, 0.6)
+      q.r = avatarMin(q.r + 0.25, 1.0)
+      q.w = avatarMin(q.w, 0.6)
     } else if "ldtn".unicodeScalars.contains(p) {
-      q.o = max(q.o * 0.75, 0.3)
+      q.o = avatarMax(q.o * 0.75, 0.3)
     } else {
       q.o *= 0.6
     }
-    q.o = max(q.o, tune.floor)
+    q.o = avatarMax(q.o, tune.floor)
     return q
   }
 
@@ -148,7 +148,7 @@ enum AvatarTrack {
       if item.kind == .bilabial || item.kind == .labiodental {
         // Closures are early and held long enough to be seen.
         t0 -= tune.closureLead
-        t1 = max(t1, t0 + tune.minClosure)
+        t1 = avatarMax(t1, t0 + tune.minClosure)
       }
       return AvatarTarget(t0: t0, t1: t1, q: item.q ?? .rest, kind: item.kind, p: item.p)
     }
@@ -161,11 +161,7 @@ enum AvatarTrack {
   /// The target at clip time `t`: the last target whose start is at or before `t`, held until the
   /// next one starts. `nil` means nothing is being said now (silence, or outside the clip).
   static func target(in track: [AvatarTarget], at t: Double) -> AvatarParams? {
-    var (low, high) = (0, track.count)
-    while low < high {
-      let mid = (low + high) / 2
-      if track[mid].t0 <= t { low = mid + 1 } else { high = mid }
-    }
+    let low = track.partitionPoint { $0.t0 <= t }
     guard low > 0 else { return nil }
     let found = low - 1
     // A closure that overlaps the next start keeps priority until its own end. Speech has a

@@ -38,8 +38,9 @@ enum AvatarRasterizer {
   static func sample(
     _ texture: UnsafePointer<UInt8>, width: Int, height: Int, u: Float, v: Float
   ) -> SIMD4<Float> {
-    let x = min(max(u - 0.5, 0), Float(width - 1))
-    let y = min(max(v - 0.5, 0), Float(height - 1))
+    // A position that is not a number reads the first pixel: `Int(_:)` of one would trap.
+    let x = Float.minimum(Float.maximum(u - 0.5, 0), Float(width - 1))
+    let y = Float.minimum(Float.maximum(v - 0.5, 0), Float(height - 1))
     let x0 = Int(x)
     let y0 = Int(y)
     let fx = x - Float(x0)
@@ -58,13 +59,27 @@ enum AvatarRasterizer {
   @inline(__always)
   private static func owns(dx: Double, dy: Double) -> Bool { dy < 0 || (dy == 0 && dx > 0) }
 
+  /// The number of pixel centres `fill` tests for a triangle: the area of its box, clamped to the
+  /// destination. It is what a triangle costs, and what the renderer's budget adds up.
+  static func tests(
+    _ a: Vertex, _ b: Vertex, _ c: Vertex, destinationSize: (width: Int, height: Int)
+  ) -> Double {
+    let width = Double.minimum(
+      Double.maximum(max(a.x, b.x, c.x) - min(a.x, b.x, c.x), 0),
+      Double(destinationSize.width))
+    let height = Double.minimum(
+      Double.maximum(max(a.y, b.y, c.y) - min(a.y, b.y, c.y), 0),
+      Double(destinationSize.height))
+    return (width + 1) * (height + 1)
+  }
+
   /// Draw one textured triangle over `destination`, `opacity` times the interpolated vertex
   /// opacity (source-over, premultiplied). A triangle with no area, or with a vertex that is not
   /// a number, draws nothing.
   static func fill(
-    _ a: Vertex, _ b: Vertex, _ c: Vertex, opacity: Double, texture: UnsafePointer<UInt8>,
-    textureSize: (width: Int, height: Int), destination: UnsafeMutablePointer<UInt8>,
-    destinationSize: (width: Int, height: Int)
+    _ a: Vertex, _ b: Vertex, _ c: Vertex, opacity: Double, under: UnsafePointer<UInt8>? = nil,
+    texture: UnsafePointer<UInt8>, textureSize: (width: Int, height: Int),
+    destination: UnsafeMutablePointer<UInt8>, destinationSize: (width: Int, height: Int)
   ) {
     var (v0, v1, v2) = (a, b, c)
     var area = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x)
@@ -100,13 +115,28 @@ enum AvatarRasterizer {
         let b1 = w1 / area
         let b2 = w2 / area
         let coverage = opacity * (b0 * v0.alpha + b1 * v1.alpha + b2 * v2.alpha)
-        guard coverage > 0 else { continue }
+        guard coverage > 0 || under != nil else { continue }
         let color = sample(
           texture, width: textureSize.width, height: textureSize.height,
           u: Float(b0 * v0.u + b1 * v1.u + b2 * v2.u), v: Float(b0 * v0.v + b1 * v1.v + b2 * v2.v))
         let index = y * destinationSize.width + x
+        if let under {
+          // The vertices' opacity (the feather of an edge) is the coverage of the whole mouth
+          // part, applied once to the picture that was under it; the layer's opacity then mixes
+          // the layers by their weights. Applied to each layer, the coverage of an edge would
+          // add up with every layer drawn, and a layer that comes in at a tiny weight would
+          // change the edge.
+          let a = Float(min(max(b0 * v0.alpha + b1 * v1.alpha + b2 * v2.alpha, 0), 1))
+          let effective = color * a + load(under, index) * (1 - a * color[3] / 255)
+          let mix = Float(min(opacity, 1))
+          store(effective * mix + load(destination, index) * (1 - mix), destination, index)
+          continue
+        }
+        // Source-over of a premultiplied texel: the texel's own alpha, scaled by the coverage,
+        // is what the destination keeps less of.
         let k = Float(min(coverage, 1))
-        store(color * k + load(destination, index) * (1 - k), destination, index)
+        store(
+          color * k + load(destination, index) * (1 - k * color[3] / 255), destination, index)
       }
     }
   }

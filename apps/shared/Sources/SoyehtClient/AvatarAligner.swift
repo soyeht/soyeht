@@ -115,14 +115,14 @@ enum AvatarAligner {
     guard let voiced = AvatarVoiced(envelope: env), !words.isEmpty else { return AvatarAlignment() }
     // A text with more sounds than speech holds in this audio is not this audio's text.
     let sounds = words.reduce(0) { $0 + $1.phonemes.count { $0 != AvatarPhonemes.stress } }
-    if Double(sounds) > maxSoundsPerSecond * max(voiced.end - voiced.start, 1) {
+    if Double(sounds) > maxSoundsPerSecond * avatarMax(voiced.end - voiced.start, 1) {
       var out = AvatarAlignment()
       out.span = (voiced.start, voiced.end)
       out.fits = false
       return out
     }
     let silence = voiced.valleys.reduce(0) { $0 + $1.duration }
-    let total = max(voiced.end - voiced.start - silence, env.hop)
+    let total = avatarMax(voiced.end - voiced.start - silence, env.hop)
     let totalWeight = words.reduce(0) { $0 + $1.weight }
     let valleys = Valleys(spanStart: voiced.start, valleys: voiced.valleys)
     // Where the text puts the end of each word but the last.
@@ -154,7 +154,7 @@ enum AvatarAligner {
         spent += weight(p)
         let x1 = wordStart + (wordEnd - wordStart) * spent / word.weight
         let t0 = valleys.toClip(spanStart: voiced.start, y: warp.apply(x0), after: true)
-        let t1 = max(
+        let t1 = avatarMax(
           valleys.toClip(spanStart: voiced.start, y: warp.apply(x1), after: false), t0)
         phonemes.append(AvatarPhoneme(p: p, t0: t0, t1: t1))
       }

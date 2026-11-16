@@ -301,7 +301,7 @@ struct AvatarActing: Sendable {
     raiseBrows(tune.brow.stress * strength, hold: 0.38, asym: asym)
     if blink == nil {
       // Never blink in the middle of an accent.
-      blinkAt = max(blinkAt, 0.4)
+      blinkAt = avatarMax(blinkAt, 0.4)
     }
   }
 
@@ -358,9 +358,9 @@ struct AvatarActing: Sendable {
         && clock - voiceStart > 0.12
       {
         stressLast = clock
-        stress(min(0.7 + (over - tune.stress.dbOver) / 8.0, 1.4))
+        stress(avatarMin(0.7 + (over - tune.stress.dbOver) / 8.0, 1.4))
       }
-      dbEma += (db - dbEma) * min(dt / 0.8, 1.0)
+      dbEma += (db - dbEma) * avatarMin(dt / 0.8, 1.0)
     }
 
     for i in timers.indices.reversed() where timers[i].0 <= clock {

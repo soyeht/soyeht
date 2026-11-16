@@ -22,7 +22,7 @@ extension AvatarWarp {
   /// the zoom. The point it returns can lie outside the canvas (near an edge, with the head turned
   /// or the zoom in): the reader clamps it to the picture when it samples.
   func sourcePoint(pose: AvatarPose, x: Double, y: Double) -> (x: Double, y: Double) {
-    let zoom = max(pose.zoom, 1e-6)
+    let zoom = avatarMax(pose.zoom, 1e-6)
     let p = (
       (x - zoomCenter[0]) / zoom + zoomCenter[0], (y - zoomCenter[1]) / zoom + zoomCenter[1]
     )

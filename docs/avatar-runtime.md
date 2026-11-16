@@ -138,43 +138,71 @@ order of rules and the same failure kinds), the mouth (`AvatarParams`, `AvatarMo
 `AvatarTrack`, `AvatarClip`, `AvatarMouth`), the aligner (`AvatarLetters`, `AvatarAligner`), the
 acting layer (`AvatarActing`, with the bounds of `AvatarActingBounds`), the runtime
 (`AvatarRuntime`) and the warp (`AvatarWarp.sourcePoint`). It passes every case of both vector files
-(`AvatarMouthVectorTests`, `AvatarPackageVectorTests`). A package field that is present with
-`null`, or with another type, is malformed, as in the Rust reader; a field that is absent keeps its
-default.
+(`AvatarMouthVectorTests`, `AvatarPackageVectorTests`), and a test fails when either file gains a
+group of cases that no Swift test runs.
+
+**The reader is looser than the Rust one in what the vectors cannot say.** A package field that is
+present with `null`, or with another type, is malformed, as in the Rust reader; a field that is
+absent keeps its default. The document must open with `{` after blanks and holds no NUL byte (so a
+byte-order mark and UTF-16 are malformed), and paths are compared by their UTF-8 bytes, not by
+Swift's canonical equivalence. Foundation's decoder still accepts what `serde_json` does not: a
+number written `512.0` or `1e2` for an integer, a repeated key (the last wins), and a trailing
+comma. Closing that takes a strict pre-scan and raw-document vector cases, which are a follow-up.
 
 The rasteriser (`AvatarRenderer`, `AvatarRasterizer`) is software, on one core, in premultiplied
 RGBA bytes, and has no GPU path yet. A frame is:
 
-1. the base picture, scaled once at load (an area average, so a canvas of 1024 pixels drawn at 512
-   does not shimmer) to the size of the output, at most 512 pixels on the longer side and never
-   larger than the canvas;
-2. the eye frame laid over it, source-over. Which frame is a rule of the renderer, not of the
-   package: the blink when the lid is closed, `half` when it is half closed, else the frame of
-   the gaze when the eyes are off centre, else `soft` for the soft eyes of listening, else none;
-3. the mouth: for each part (`skin`, `lips`, `inner`), the vertices are the weighted sum of the
-   nine drawings' contours, and each textured drawing whose weight is over 0.0001 is drawn over the
-   previous ones through its own texture coordinates, with the opacity the mesh gives it
-   (`AvatarMeshPart.layers`), so the layers are the exact weighted average. A triangle is filled by
-   barycentric coordinates with the top-left rule, so two triangles that share an edge never draw a
-   pixel twice. Only the pixels the eye frame and the mouth touched are restored from the base
-   picture the next frame;
+1. the base picture, scaled once at load with CoreGraphics' high-quality interpolation (a smooth
+   filter, not an exact area average: a canvas of 1024 pixels drawn at 512 is not point-sampled)
+   to the size of the output, at most 512 pixels on the longer side and never larger than the
+   canvas;
+2. the eye frame in place of the pixels it covers. Each frame is laid over the base picture at the
+   size of the canvas, the picture is scaled, and the rectangle (rounded outward) is cut out, so
+   the frame lands where the scaled picture has the eye at any scale. Which frame is drawn, and the
+   order of the mouth's parts below, are rules every renderer must share; the vector cases for
+   them arrive with slice 5 (`eyeFrames` in `avatar-mouth.json`, `drawOrder` in
+   `avatar-package.json`). Until then Swift draws the blink when the lid is closed, `half` when it
+   is half closed, else the frame of the gaze when the eyes are off centre, else `soft`, else
+   none; and the parts as `skin`, `lips`, `inner`;
+3. the mouth: for each part, the vertices are the weighted sum of the nine drawings' contours, and
+   each textured drawing whose weight is over 0.0001 is drawn over the previous ones through its
+   own texture coordinates, with the opacity the mesh gives it (`AvatarMeshPart.layers`), so the
+   layers are the exact weighted average. A triangle is filled by barycentric coordinates with the
+   top-left rule, so two triangles that share an edge never draw a pixel twice, and a texel's own
+   alpha is what the picture under it gives up. A frame whose mouth would test more than twice the
+   output's pixels (the load rules bound the vertices, not what they cover) draws no mouth. Only
+   the pixels the eye frame and the mouth touched are restored from the base picture the next
+   frame;
 4. the warp: `AvatarWarp.sourcePoint` is evaluated on a grid of 8 output pixels, and each output
    pixel reads the picture, bilinearly, at the position interpolated across its cell.
 
-There is no code path that picks a mouth drawing. A test renders the mouth at weights from rest to A
-in steps and holds every step to a small multiple of the mean step.
+There is no code path that picks a mouth drawing. A test renders the mouth from every drawing to
+every other in steps and holds the largest change of any pixel in a step to four times the even
+step.
 
-**Frame cost** (Mac Studio, release build, one core, a 1024-pixel canvas drawn at 512 by 512, a
-mouth mesh of about 4800 triangles in three parts, the host loaded by other work): about 6.5 ms
-(median, thread CPU time; the 95th percentile varies with the load) for the runtime step and the
-picture, 7 to 10 ms with the `CGImage` the view draws. A debug build is
-about 50 times slower, and the test's budget for it is loose. The cost is that of the output, not
-of the canvas. The rasteriser's numbers are the Mac's: the desktop's (slice 5) measures its own.
+**The stage** (`AvatarStageModel`, `AvatarStageView`; the Mac's `MacAvatarStage` and the iOS app's
+`PhoneAvatarStage` give it the flat surface of the palette). An actor (`AvatarStageEngine`) owns
+the runtime and the renderer; the package is read and the first frame drawn off the main actor, and
+the main actor only assigns the finished picture. Frames are paced by completion: the next one
+starts when the last has been drawn, no sooner than 1/30 s after it started (1/60 s while
+speaking). The loop runs while at least one view of the model is on screen in an active scene, and
+there is one loop however many views show the model. With Reduce Motion on, one still picture is
+drawn per state and nothing is drawn between changes of state. A frame that costs more than the
+time it has, six times in a row, makes the picture a quarter smaller (down to 96 pixels, and never
+larger again): the cost is that of the output, so a debug build, which runs the rasteriser
+unoptimised, settles on a small picture and a release build keeps 512. The voice, the
+configuration and the pane are later slices; until then the mouth holds the expression of the
+state.
 
-The stage (`AvatarStageModel`, `AvatarStageView`) steps the runtime by the clock of the screen
-and draws the picture; the Mac (`MacAvatarStage`) and the iOS app (`PhoneAvatarStage`) give it the
-flat surface of the palette. The voice, the configuration and the pane are later slices; until
-then the mouth holds the expression of the state.
+**Frame cost** (Mac Studio, one core, thread CPU time, the host loaded by other work, a 1024-pixel
+canvas drawn at 512 by 512, a mouth mesh of about 4800 triangles in three parts): about 5.7 ms median
+(p95 9 ms) in a release build for the runtime step and the picture, and the same with the `CGImage`
+the view draws; all of it runs off the main actor. A debug build is about 60 times slower (about
+380 ms for the first frames at 512): the stage's pacer shrinks the picture until frames fit, and
+after about two seconds draws a picture of about 120 pixels in 20 to 50 ms a frame on a loaded host.
+The rasteriser takes no optimisation attribute: `@_optimize(speed)` was tried on its loops and a
+debug build ran as slowly with it. The cost is that of the output, not of the canvas. The
+desktop's rasteriser (slice 5) measures its own.
 
 ## Known limits
 
