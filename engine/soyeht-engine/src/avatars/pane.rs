@@ -7,7 +7,8 @@ use crate::{
     panes::Extras,
 };
 use soyeht_protocol::{
-    ConfigValue, PaneCreateParams, PaneHarnessSwitchParams, PaneMode, PaneState, Role,
+    ConfigValue, PaneConfigSetParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
+    PaneRenameParams, PaneState, Role,
 };
 
 /// The avatar panes the workspace has open, alive or not.
@@ -196,9 +197,18 @@ fn set_option(
     if option.current_value == ConfigValue::V0(wanted.to_owned()) {
         return Ok(());
     }
-    let params = json!({"paneId": pane_id, "configId": option.id, "value": wanted,
-        "idempotencyKey": Uuid::new_v4().to_string()});
-    core.agent_method(connection, method::PANE_CONFIG_SET, &params, Vec::new())?;
+    let set = PaneConfigSetParams {
+        pane_id: pane_id.to_owned(),
+        config_id: option.id.clone(),
+        value: ConfigValue::V0(wanted.to_owned()),
+        idempotency_key: Uuid::new_v4().to_string(),
+    };
+    core.agent_method(
+        connection,
+        method::PANE_CONFIG_SET,
+        &model::to_value(&set)?,
+        Vec::new(),
+    )?;
     Ok(())
 }
 
@@ -221,9 +231,14 @@ fn rename(core: &mut Core, connection: &str, pane_id: &str, name: &str) {
     if core.panes[pane_id].stored.pane.name == name {
         return;
     }
-    let params = json!({"paneId": pane_id, "name": name,
-        "idempotencyKey": Uuid::new_v4().to_string()});
-    if let Err(error) = core.pane_edit(connection, method::PANE_RENAME, &params) {
+    let renamed = PaneRenameParams {
+        pane_id: pane_id.to_owned(),
+        name: name.to_owned(),
+        idempotency_key: Uuid::new_v4().to_string(),
+    };
+    let params = model::to_value(&renamed)
+        .and_then(|params| core.pane_edit(connection, method::PANE_RENAME, &params));
+    if let Err(error) = params {
         soyeht_platform::log::failure("engine.avatar_pane_rename_failed", &error);
     }
 }
