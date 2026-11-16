@@ -2,14 +2,47 @@
 
 //! `soyeht avatar`: the commands run with no engine, against a data directory of their own.
 
-// The pictures, the scratch folders and the stand-in server are the image crate's test helpers.
-#[path = "../../soyeht-image/tests/support/mod.rs"]
-mod support;
-
 use serde_json::Value;
 use soyeht_avatar::{EYE_IDS, Shape};
-use std::{collections::BTreeSet, fs, path::Path, process::Command};
-use support::{Scratch, Server, rgba_png};
+use std::{
+    collections::BTreeSet,
+    fs,
+    io::{Read, Write},
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::Command,
+    thread,
+};
+
+/// A folder of the test, removed when the test ends.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new() -> Self {
+        Self(soyeht_platform::testing::scratch_dir("avatar-cli"))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+/// An RGBA picture whose pixel at `(x, y)` is `pixel(x, y)`.
+fn rgba_png(width: u32, height: u32, pixel: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
+    let data: Vec<u8> = (0..width * height)
+        .flat_map(|at| pixel(at % width, at / width))
+        .collect();
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer.write_image_data(&data).unwrap();
+    writer.finish().unwrap();
+    bytes
+}
 
 /// Runs `soyeht --data-dir DIR avatar ARGS` with `stdin` as its standard input.
 fn avatar(data: &Path, args: &[&str], stdin: &str) -> (bool, Value, String) {
@@ -248,16 +281,50 @@ fn frame_refuses_what_it_cannot_do_before_it_calls_anything() {
     assert!(stderr.contains("--out must not be the source"), "{stderr}");
 }
 
-/// A ComfyUI stand-in that answers each request by its path.
-fn comfy_stand_in(picture: Vec<u8>) -> Server {
-    Server::start(move |request| {
-        match request.path.split('?').next().unwrap_or("") {
-        "/upload/image" => (200, br#"{"name":"stored.png"}"#.to_vec()),
-        "/prompt" => (200, br#"{"prompt_id":"j"}"#.to_vec()),
-        "/history/j" => (200, br#"{"j":{"status":{"status_str":"success","completed":true},"outputs":{"461":{"images":[{"filename":"o.png"}]}}}}"#.to_vec()),
-        _ => (200, picture.clone()),
-    }
-    })
+/// A ComfyUI stand-in on the loopback: it answers every request by its path, and returns its
+/// address.
+fn comfy_stand_in(picture: Vec<u8>) -> String {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = format!("http://{}", listener.local_addr().unwrap());
+    thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut request = Vec::new();
+            let mut chunk = [0u8; 2048];
+            // Read the head, then the body the head announces, so curl is never cut off.
+            let (path, body_at, length) = loop {
+                let read = stream.read(&mut chunk).unwrap_or(0);
+                request.extend_from_slice(&chunk[..read]);
+                let head_end = request.windows(4).position(|w| w == b"\r\n\r\n");
+                if read == 0 || head_end.is_some() {
+                    let head = String::from_utf8_lossy(&request).to_lowercase();
+                    let path = head.split(' ').nth(1).unwrap_or("").to_owned();
+                    let length = head
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length:"))
+                        .and_then(|value| value.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    break (path, head_end.map_or(0, |at| at + 4), length);
+                }
+            };
+            while request.len() < body_at + length {
+                let read = stream.read(&mut chunk).unwrap_or(0);
+                if read == 0 {
+                    break;
+                }
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let body = match path.split('?').next().unwrap_or("") {
+                "/upload/image" => br#"{"name":"stored.png"}"#.to_vec(),
+                "/prompt" => br#"{"prompt_id":"j"}"#.to_vec(),
+                "/history/j" => br#"{"j":{"status":{"status_str":"success","completed":true},"outputs":{"461":{"images":[{"filename":"o.png"}]}}}}"#.to_vec(),
+                _ => picture.clone(),
+            };
+            let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", body.len());
+            let _ = stream.write_all(head.as_bytes());
+            let _ = stream.write_all(&body);
+        }
+    });
+    address
 }
 
 #[test]
@@ -266,8 +333,7 @@ fn frame_makes_one_picture_with_the_provider_the_person_chose_and_writes_it() {
     let source = data.0.join("source.png");
     let made = rgba_png(64, 32, |x, _| [x as u8, 9, 9, 255]);
     fs::write(&source, rgba_png(64, 32, |_, _| [1, 2, 3, 255])).unwrap();
-    let server = comfy_stand_in(made.clone());
-    let endpoint = server.url.clone();
+    let endpoint = comfy_stand_in(made.clone());
     let out = data.0.join("frames").join("A.png");
     fs::create_dir_all(out.parent().unwrap()).unwrap();
     let (ok, result, stderr) = avatar(
