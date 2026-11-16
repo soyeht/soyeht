@@ -43,6 +43,10 @@
     {"name": "an unmatched underscore is held back", "markdown": "It is _very", "streaming": true, "spoken": "It is"},
     {"name": "a matched underscore is read", "markdown": "It is _very_ good", "streaming": true, "spoken": "It is very good"},
     {"name": "an underscore inside a word is not emphasis", "markdown": "the snake_case name", "streaming": true, "spoken": "the snake_case name"},
+    {"name": "only the last line is looked at for an unfinished link", "markdown": "see [a\nnext line", "streaming": true, "spoken": "see [a next line"},
+    {"name": "a pair of stars is skipped when looking for a lone one", "markdown": "It is **very** *good", "streaming": true, "spoken": "It is very"},
+    {"name": "a backtick opens and closes code, where a bracket is not a link", "markdown": "a `b[c` d [e", "streaming": true, "spoken": "a b[c d"},
+    {"name": "a bracket not followed by an address is closed", "markdown": "See [the docs] and [more", "streaming": true, "spoken": "See [the docs] and"},
     {"name": "nothing is held inside a code block", "markdown": "```\nsee [x", "streaming": true, "spoken": ""}
   ],
   "chunker": [

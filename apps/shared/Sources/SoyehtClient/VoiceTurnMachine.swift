@@ -137,6 +137,9 @@ public struct VoiceTurnMachine: Sendable {
   private var finalText: String?
   /// The words of the recognizers that ended earlier in the same turn.
   private var carried = ""
+  /// When the recognizer of the turn ended: a recognizer that starts after it never starts from
+  /// audio the first one already heard.
+  private var endedAt = 0
   private var finalizeStart = 0
   private var interrupted = false
   private var needsQuiet = false
@@ -160,7 +163,7 @@ public struct VoiceTurnMachine: Sendable {
     case .stop: return stop()
     case .frame(let probability): return frame(probability, at: at)
     case .endOfTurn(let id, let complete): return endOfTurn(id: id, complete: complete, at: at)
-    case .transcript(let text, let final): return transcript(text, final: final)
+    case .transcript(let text, let final): return transcript(text, final: final, at: at)
     case .sentenceStarted(let text): return sentenceStarted(text)
     case .replyFinished: return replyFinished(at: at)
     case .interrupt: return interrupt(at: at)
@@ -226,13 +229,14 @@ public struct VoiceTurnMachine: Sendable {
   /// Where a recognizer started now begins in the audio: before the voice began, by the pre-roll,
   /// never before what is still kept, and never inside the deaf tail of the speaker.
   private func restart(_ at: Int) -> Int {
-    max(0, runStart - config.preRollMs, at - config.historyMs, ignoreUntil)
+    max(0, runStart - config.preRollMs, at - config.historyMs, ignoreUntil, endedAt)
   }
 
   private mutating func beginTurn() {
     partial = ""
     finalText = nil
     carried = ""
+    endedAt = 0
   }
 
   /// The person talks again after the recognizer of the turn ended: a recognizer starts for the new
@@ -294,12 +298,12 @@ public struct VoiceTurnMachine: Sendable {
     return endTurn(at: at)
   }
 
-  private mutating func transcript(_ text: String, final: Bool) -> [VoiceTurnAction] {
+  private mutating func transcript(_ text: String, final: Bool, at: Int) -> [VoiceTurnAction] {
     switch phase {
     case .hearing, .deciding:
       partial = text
-      if final { finalText = text }
-      return []
+      guard final else { return [] }
+      return ended(with: text, at: at)
     case .finalizing:
       partial = text
       return final ? complete(text) : []
@@ -315,10 +319,19 @@ public struct VoiceTurnMachine: Sendable {
       phase = .hearing
       interrupted = playing
       partial = text
-      finalText = final ? text : nil
-      return playing ? [.stopPlayback, .cancelReply] : [.cancelReply]
+      finalText = nil
+      let taken: [VoiceTurnAction] = playing ? [.stopPlayback, .cancelReply] : [.cancelReply]
+      return final ? taken + ended(with: text, at: at) : taken
     default: return []
     }
+  }
+
+  /// The recognizer of the turn ended with `text`. When the person is still talking, a recognizer
+  /// starts at once for the rest; otherwise one starts if they speak again before the turn ends.
+  private mutating func ended(with text: String, at: Int) -> [VoiceTurnAction] {
+    finalText = text
+    endedAt = at
+    return phase == .hearing && wasInSpeech ? resume(at) : []
   }
 
   private mutating func sentenceStarted(_ text: String) -> [VoiceTurnAction] {
@@ -394,6 +407,7 @@ public struct VoiceTurnMachine: Sendable {
     speechEnd = 0
     ignoreUntil = 0
     carried = ""
+    endedAt = 0
     partial = ""
     finalText = nil
     interrupted = false

@@ -6,10 +6,11 @@ import SoyehtProtocol
 public enum VoiceFrames {
   public static let sampleRate = ClientPolicy.voiceSampleRate
   public static let size = sampleRate * ClientPolicy.voiceFrameMs / 1_000
-  /// The audio the end-of-turn model reads: the last 8 seconds of the turn.
-  public static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
 
   public static var frameMs: Int { ClientPolicy.voiceFrameMs }
+
+  /// The audio the end-of-turn model reads: the last 8 seconds of the turn.
+  public static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
 }
 
 /// A voice model that could not answer: not a silence, a failure the loop reports.
@@ -28,7 +29,7 @@ public enum VoiceModelError: LocalizedError, Equatable {
 
 /// A voice-activity model: how likely one frame of audio is speech. It keeps state from frame to
 /// frame, so one instance serves one stream. The models of the catalogue
-/// (`VoiceModelProvider`) implement it; `EnergyVoiceActivity` is the one that needs no download.
+/// (`VoiceModelProvider`) implement it, and one needs no download: the loudness of the frame.
 public protocol VoiceActivityDetecting: Sendable {
   /// The probability, 0 to 1, that `frame` (`VoiceFrames.size` samples) holds speech. A model that
   /// cannot answer throws: that is not a silence.

@@ -45,3 +45,17 @@ import Testing
     symbols.contains("\u{1F389}") && symbols.contains("\u{2192}") && symbols.contains("\u{20E3}"))
   #expect(!symbols.contains("a") && !symbols.contains("."))
 }
+
+/// A model that cannot answer says so; nothing makes its failure a silence.
+private struct Failing: VoiceActivityDetecting, EndOfTurnDetecting {
+  struct Broken: Error {}
+
+  func probability(of frame: [Float]) throws -> Double { throw Broken() }
+  func reset() {}
+  func isComplete(turn audio: [Float]) async throws -> Bool { throw Broken() }
+}
+
+@Test func aModelThatCannotAnswerThrows() async {
+  #expect(throws: Failing.Broken.self) { try Failing().probability(of: []) }
+  await #expect(throws: Failing.Broken.self) { try await Failing().isComplete(turn: []) }
+}

@@ -55,6 +55,10 @@ sp("a block after the last line finishes it", "Hello\n\n```\nx\n```", "Hello\n",
 sp("an unmatched underscore is held back", "It is _very", "It is", streaming=True)
 sp("a matched underscore is read", "It is _very_ good", "It is very good", streaming=True)
 sp("an underscore inside a word is not emphasis", "the snake_case name", "the snake_case name", streaming=True)
+sp("only the last line is looked at for an unfinished link", "see [a\nnext line", "see [a next line", streaming=True)
+sp("a pair of stars is skipped when looking for a lone one", "It is **very** *good", "It is very", streaming=True)
+sp("a backtick opens and closes code, where a bracket is not a link", "a `b[c` d [e", "a b[c d", streaming=True)
+sp("a bracket not followed by an address is closed", "See [the docs] and [more", "See [the docs] and", streaming=True)
 sp("nothing is held inside a code block", "```\nsee [x", "", streaming=True)
 
 chunker = []

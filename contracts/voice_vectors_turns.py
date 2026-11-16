@@ -169,8 +169,9 @@ case("a wait a millisecond short of the final-text limit does not", finalizing()
 case("the text of a recognizer that ended during the turn is used when the turn ends", [
     start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
     step("transcript", 100, "hearing", text="open the", final=False),
-    step("transcript", 110, "hearing", text="open the file", final=True),
-    frames(128, 11, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
+    frames(128, 3, 0.1, "hearing"),
+    step("transcript", 200, "hearing", text="open the file", final=True),
+    frames(224, 8, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
     step("endOfTurn", 450, "waitingReply", [a("submit", 450, text="open the file", interrupted=False)],
          id=1, complete=True),
 ])
@@ -182,8 +183,9 @@ case("the text of a recognizer that ended during the check is used at the long s
 ])
 case("a recognizer that ended with nothing leaves nothing to send", [
     start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
-    step("transcript", 110, "hearing", text="", final=True),
-    frames(128, 11, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
+    frames(128, 3, 0.1, "hearing"),
+    step("transcript", 200, "hearing", text="", final=True),
+    frames(224, 8, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
     step("endOfTurn", 450, "waiting", [a("discardTurn", 450)], id=1, complete=True),
 ])
 # thinking
@@ -242,13 +244,51 @@ case("speech after the final text of the probe gets a recognizer of its own and 
     frames(2400, 11, 0.1, "probing", [a("finishProbe", 2720)]),
     step("transcript", 2800, "hearing", [a("stopPlayback", 2800), a("cancelReply", 2800)],
          text="para", final=True),
-    frames(2816, 3, 0.9, "hearing", [a("checkEndOfTurn", 2816, id=2), a("startTurn", 2880, fromMs=2464)]),
+    frames(2816, 3, 0.9, "hearing", [a("checkEndOfTurn", 2816, id=2), a("startTurn", 2880, fromMs=2800)]),
     step("transcript", 2900, "hearing", text="again please", final=False),
     frames(2912, 11, 0.1, "deciding", [a("checkEndOfTurn", 3232, id=3)]),
     step("endOfTurn", 3250, "finalizing", [a("finalizeTurn", 3250)], id=3, complete=True),
     step("transcript", 3300, "waitingReply",
          [a("submit", 3300, text="para again please", interrupted=True)],
          text="again please", final=True),
+])
+case("a recognizer that ended early gets a new one when the person speaks again, from after where it stopped", [
+    start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+    step("transcript", 100, "hearing", text="open the", final=False),
+    frames(128, 3, 0.1, "hearing"),
+    step("transcript", 200, "hearing", text="open the", final=True),
+    frames(224, 1, 0.1, "hearing"),
+    frames(256, 3, 0.9, "hearing", [a("startTurn", 320, fromMs=200)]),
+    step("transcript", 340, "hearing", text="file please", final=False),
+    frames(352, 11, 0.1, "deciding", [a("checkEndOfTurn", 672, id=1)]),
+    step("endOfTurn", 680, "finalizing", [a("finalizeTurn", 680)], id=1, complete=True),
+    step("transcript", 700, "waitingReply",
+         [a("submit", 700, text="open the file please", interrupted=False)],
+         text="file please", final=True),
+])
+case("a recognizer that ended early while the person goes on talking gets a new one at once", [
+    start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+    step("transcript", 100, "hearing", text="open the", final=False),
+    frames(128, 10, 0.9, "hearing"),
+    step("transcript", 420, "hearing", [a("startTurn", 420, fromMs=420)], text="open the", final=True),
+    frames(448, 11, 0.1, "deciding", [a("checkEndOfTurn", 768, id=1)]),
+    step("endOfTurn", 780, "finalizing", [a("finalizeTurn", 780)], id=1, complete=True),
+    step("transcript", 800, "waitingReply",
+         [a("submit", 800, text="open the file", interrupted=False)], text="file", final=True),
+])
+case("a word the sentence holds, or one that begins one, waits for the final text", playing("I do not know three things.") + [
+    frames(2048, 11, 0.9, "probing", [a("probeInterruption", 2368, fromMs=1696)]),
+    step("transcript", 2380, "probing", text="No", final=False),
+    step("transcript", 2390, "probing", text="th", final=False),
+    step("transcript", 2400, "hearing", [a("stopPlayback", 2400), a("cancelReply", 2400)],
+         text="stop", final=False),
+])
+case("a listener's noise is recognised by whole words: the start of one waits, a start of a word does not", playing() + [
+    frames(2048, 11, 0.9, "probing", [a("probeInterruption", 2368, fromMs=1696)]),
+    step("transcript", 2380, "probing", text="mm", final=False),
+    step("transcript", 2390, "probing", text="Mm hmm", final=False),
+    step("transcript", 2400, "hearing", [a("stopPlayback", 2400), a("cancelReply", 2400)],
+         text="aha", final=False),
 ])
 case("the probe's final text that is the avatar's own voice drops the probe", probing() + [
     frames(2400, 11, 0.1, "probing", [a("finishProbe", 2720)]),
@@ -487,7 +527,6 @@ for p in order:
     pair(p, "interrupt", "interrupt",
          [(d, {}) for d in INTERRUPT[p]] if p not in ("off", "waiting") else [],
          p if p in ("off", "waiting") else "waiting")
-    pair(p, "a voiced frame", "frames", [], p, count=1, p=0.9) if False else None
 for p in order:
     t = reach[p][1]
     for kind, prob in (("an unvoiced frame", 0.1), ("a voiced frame", 0.9)):
@@ -506,10 +545,16 @@ for p in order:
             pair(p, label, "transcript", [("submit", {"text": "hello there", "interrupted": False})],
                  "waitingReply", text="hello there", final=True)
         elif p == "probing":
-            pair(p, label, "transcript", [("stopPlayback", {}), ("cancelReply", {})], "hearing",
-                 text="hello there", final=final)
+            pair(p, label, "transcript",
+                 [("stopPlayback", {}), ("cancelReply", {})] + ([("startTurn", {"fromMs": reach[p][1] + 50})] if final else []),
+                 "hearing", text="hello there", final=final)
         elif p == "probingWait":
-            pair(p, label, "transcript", [("cancelReply", {})], "hearing", text="hello there", final=final)
+            pair(p, label, "transcript",
+                 [("cancelReply", {})] + ([("startTurn", {"fromMs": reach[p][1] + 50})] if final else []),
+                 "hearing", text="hello there", final=final)
+        elif p == "hearing" and final:
+            pair(p, label, "transcript", [("startTurn", {"fromMs": reach[p][1] + 50})], p,
+                 text="hello there", final=True)
         else:
             pair(p, label, "transcript", [], p, text="hello there", final=final)
     nxt = {"off": "off", "waiting": "playing", "waitingReply": "playing"}.get(p, p)

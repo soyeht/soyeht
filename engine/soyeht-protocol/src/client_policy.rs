@@ -177,6 +177,7 @@ pub const VOICE_PICTOGRAPHS: &str =
     "1F000-1FAFF|2190-21FF|2300-23FF|2600-27BF|2900-297F|2B00-2BFF|20E3|200D|FE0F";
 pub const VOICE_ADDRESS_PREFIXES: &str = "http://|https://|www.";
 pub const VOICE_ADDRESS_OPENERS: &str = "([{<\"'";
+pub const VOICE_REPLIES_REMEMBERED: u64 = 64;
 /// Image types that claude-agent-acp and codex-acp forward as model input and that both
 /// providers accept; any other image is linked.
 pub const INLINE_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
