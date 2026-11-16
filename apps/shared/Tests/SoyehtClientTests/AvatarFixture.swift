@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import SoyehtAvatarRaster
 import SoyehtProtocol
 import UniformTypeIdentifiers
 

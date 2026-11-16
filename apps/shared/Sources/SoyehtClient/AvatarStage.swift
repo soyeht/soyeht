@@ -1,31 +1,67 @@
 import CoreGraphics
 import Foundation
 import Observation
+import SoyehtAvatarRaster
 import SwiftUI
 
-/// Decides how large the picture is drawn. A frame that costs more than the time it has makes the
-/// next ones smaller (by a quarter of the side, down to `minimumSide`); the side never grows
-/// again, so a machine that cannot keep up does not oscillate. The cost is that of the output, so
-/// a debug build, which runs the rasteriser unoptimised, settles on a small picture and a
-/// release build keeps the 512 it asks for.
+/// Decides how large the picture is drawn, from what a frame costs against the time it has.
+///
+/// Frames that cost more than they have, `patience` in a row, make the picture a quarter smaller
+/// (down to `minimumSide`). Frames that cost under half of it for a stretch make it a third larger
+/// again (up to where it started), after `wait` seconds, which begins at ten and doubles every time
+/// a regrown picture has to shrink again within it. The cost is that of the computing, not of the
+/// wall clock (the engine measures the thread's CPU time), so a machine that is merely busy does
+/// not shrink the picture of a build that is fast.
 struct AvatarFramePacer: Equatable, Sendable {
+  enum Change: Equatable, Sendable {
+    case shrank(to: Int)
+    case grew(to: Int)
+  }
+
   static let minimumSide = 96
   /// How many frames in a row must be too slow before the picture shrinks.
   static let patience = 6
+  static let firstWait = 10.0
 
+  /// The largest the picture gets: the side it started at.
+  let ceiling: Int
   private(set) var side: Int
   private var slow = 0
+  private var quietSince: Double?
+  private var wait = firstWait
+  private var grewAt: Double?
 
-  init(side: Int) { self.side = side }
+  /// A pacer for a picture that starts at `side` pixels.
+  init(side: Int) {
+    self.side = side
+    ceiling = side
+  }
 
-  /// Record what a frame cost against the time it had, in seconds.
-  mutating func record(cost: Double, allowed: Double) {
-    guard side > Self.minimumSide else { return }
-    slow = cost > allowed ? slow + 1 : 0
-    if slow >= Self.patience {
-      side = max(Self.minimumSide, side * 3 / 4)
+  /// Record what a frame cost against the time it had (seconds), at `now` (seconds on any clock
+  /// that only goes forward). A change of the side is returned, to be made.
+  mutating func record(cost: Double, allowed: Double, now: Double) -> Change? {
+    if cost > allowed {
+      slow += 1
+      quietSince = nil
+    } else {
       slow = 0
+      quietSince = cost < allowed / 2 ? (quietSince ?? now) : nil
     }
+    if slow >= Self.patience, side > Self.minimumSide {
+      slow = 0
+      // A regrown picture that cannot be kept is waited on longer the next time.
+      if let grewAt, now - grewAt < wait { wait *= 2 }
+      grewAt = nil
+      side = max(Self.minimumSide, side * 3 / 4)
+      return .shrank(to: side)
+    }
+    if let quietSince, now - quietSince >= wait, side < ceiling {
+      self.quietSince = nil
+      grewAt = now
+      side = min(ceiling, (side * 4 + 2) / 3)
+      return .grew(to: side)
+    }
+    return nil
   }
 }
 
@@ -41,15 +77,18 @@ struct AvatarStagePicture: @unchecked Sendable {
 actor AvatarStageEngine {
   private var runtime: AvatarRuntime
   private var renderer: AvatarRenderer
+  /// The pictures at full size, kept to draw the avatar again at another size.
   private let loaded: AvatarLoadedPackage
   private var pacer: AvatarFramePacer
   private let clock = ContinuousClock()
+  private let started: ContinuousClock.Instant
 
   init(loaded: AvatarLoadedPackage, seed: UInt64, maxSide: Int) throws {
     self.loaded = loaded
     renderer = try loaded.renderer(maxSide: maxSide)
     runtime = AvatarRuntime(package: loaded.package, tune: AvatarTune(), seed: seed)
-    pacer = AvatarFramePacer(side: maxSide)
+    pacer = AvatarFramePacer(side: renderer.outputSide)
+    started = clock.now
   }
 
   /// Read a package folder and make its engine, off the main actor.
@@ -59,23 +98,45 @@ actor AvatarStageEngine {
       loaded: try AvatarPackageFolder.load(folder), seed: seed, maxSide: maxSide)
   }
 
-  /// Step by `dt` and draw. `allowed` is the time the frame has, in seconds: a frame that keeps
-  /// costing more shrinks the picture.
+  /// The time this thread has spent computing, in seconds. The methods of an actor are
+  /// synchronous, so a frame runs on one thread from start to end.
+  private static func cpuSeconds() -> Double {
+    Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e9
+  }
+
+  /// Step by `dt` and draw. `allowed` is the time the frame has, in seconds: frames that keep
+  /// costing more shrink the picture, and frames that cost little for long make it larger again.
   func frame(dt: Double, state: AvatarState, allowed: Double) -> AvatarStagePicture? {
-    let started = clock.now
+    let before = Self.cpuSeconds()
     let frame = runtime.step(dt: dt, state: state, audio: nil)
     let picture = draw(frame)
-    pacer.record(cost: seconds(clock.now - started), allowed: allowed)
-    if pacer.side < renderer.outputSide {
-      do {
-        renderer = try loaded.renderer(maxSide: pacer.side)
-      } catch {
-        // The same pictures drew the larger one, so this is not expected: keep it, and stop
-        // asking for a smaller one.
-        pacer = AvatarFramePacer(side: renderer.outputSide)
-      }
+    let cost = Self.cpuSeconds() - before
+    let elapsed = clock.now - started
+    let now = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) * 1e-18
+    if let change = pacer.record(cost: cost, allowed: allowed, now: now) {
+      resize(for: change)
     }
     return picture
+  }
+
+  private func resize(for change: AvatarFramePacer.Change) {
+    let (side, what): (Int, String)
+    switch change {
+    case .shrank(let to): (side, what) = (to, "shrank")
+    case .grew(let to): (side, what) = (to, "grew")
+    }
+    do {
+      renderer = try loaded.renderer(maxSide: side)
+      clientLogger.notice("avatar.picture \(what, privacy: .public) side=\(side)")
+    } catch let error as AvatarPackageError {
+      // The same pictures drew the other size, so this is not expected: keep what draws.
+      pacer = AvatarFramePacer(side: renderer.outputSide)
+      clientLogger.error(
+        "avatar.picture_refused kind=\(error.kind.rawValue, privacy: .public)")
+    } catch {
+      pacer = AvatarFramePacer(side: renderer.outputSide)
+      clientLogger.error("avatar.picture_refused kind=unknown")
+    }
   }
 
   /// The face of a state with no motion in it (Reduce Motion): the runtime is stepped to where it
@@ -91,10 +152,6 @@ actor AvatarStageEngine {
       AvatarStagePicture(
         image: $0, size: CGSize(width: renderer.outputWidth, height: renderer.outputHeight))
     }
-  }
-
-  private func seconds(_ d: Duration) -> Double {
-    Double(d.components.seconds) + Double(d.components.attoseconds) * 1e-18
   }
 }
 
@@ -121,6 +178,12 @@ public final class AvatarStageModel {
   /// Reduce Motion is on: one still picture per state, no loop of frames.
   var reducesMotion = false
 
+  /// What a view shows in place of the avatar when the package did not load: the kind of the
+  /// refusal and no path. `nil` while it is loading or drawn.
+  public var failureText: String? {
+    failure.map { "The avatar could not be loaded (\($0.rawValue))" }
+  }
+
   private enum Source {
     case folder(URL)
     case loaded(AvatarLoadedPackage, seed: UInt64)
@@ -128,7 +191,9 @@ public final class AvatarStageModel {
 
   private let source: Source
   private let maxSide: Int
-  private var engine: AvatarStageEngine?
+  private var loading: Task<AvatarStageEngine, any Error>?
+  /// How many times the package was read (once, whatever the views do).
+  private(set) var loadsStarted = 0
   private var viewing = Set<UUID>()
   private var loop: Task<Void, Never>?
 
@@ -145,8 +210,8 @@ public final class AvatarStageModel {
     self.maxSide = maxSide
   }
 
-  /// A view says whether it shows the model now (on screen, in an active scene). The loop runs
-  /// while any view does.
+  /// A view says whether it shows the model now (on screen, in a scene that is not in the
+  /// background, and not covered). The loop runs while any view does.
   func setViewing(_ viewer: UUID, _ showing: Bool) {
     if showing { viewing.insert(viewer) } else { viewing.remove(viewer) }
     if viewing.isEmpty {
@@ -160,29 +225,38 @@ public final class AvatarStageModel {
   /// Whether the frame loop is running.
   var isRunning: Bool { loop != nil }
 
-  private func makeEngine() async throws -> AvatarStageEngine {
-    switch source {
-    case .folder(let url):
-      return try await AvatarStageEngine.load(
-        folder: url, seed: UInt64.random(in: UInt64.min...UInt64.max), maxSide: maxSide)
-    case .loaded(let package, let seed):
-      return try AvatarStageEngine(loaded: package, seed: seed, maxSide: maxSide)
+  /// The engine, loaded once: a view that goes and comes back while the package is still being
+  /// read waits for the same load, and a package that was refused is not read again.
+  private func engine() async throws -> AvatarStageEngine {
+    if loading == nil {
+      loadsStarted += 1
+      let (source, maxSide) = (source, maxSide)
+      loading = Task {
+        switch source {
+        case .folder(let url):
+          return try await AvatarStageEngine.load(
+            folder: url, seed: UInt64.random(in: UInt64.min...UInt64.max), maxSide: maxSide)
+        case .loaded(let package, let seed):
+          return try AvatarStageEngine(loaded: package, seed: seed, maxSide: maxSide)
+        }
+      }
     }
+    guard let loading else { throw AvatarPackageError(kind: .malformed, at: "") }
+    return try await loading.value
   }
 
   private func run() async {
-    if engine == nil {
-      do {
-        engine = try await makeEngine()
-      } catch let error as AvatarPackageError {
-        failure = error.kind
-        return
-      } catch {
-        failure = .malformed
-        return
+    let engine: AvatarStageEngine
+    do {
+      engine = try await self.engine()
+    } catch {
+      let kind = (error as? AvatarPackageError)?.kind ?? .malformed
+      if failure == nil {
+        failure = kind
+        clientLogger.error("avatar.load_failed kind=\(kind.rawValue, privacy: .public)")
       }
+      return
     }
-    guard let engine else { return }
     let clock = ContinuousClock()
     var last = clock.now
     var stillState: AvatarState?
@@ -219,16 +293,23 @@ public final class AvatarStageModel {
 }
 
 /// The avatar's picture, drawn at the largest size that fits and kept in its proportions. It
-/// carries no colour of its own: the view that hosts it gives the background. It runs the model's
-/// frames while it is on screen in an active scene, and says what the avatar is doing to
-/// VoiceOver.
+/// carries no colour of its own: the view that hosts it gives the background and the look of a
+/// failed load (`AvatarStageModel.failureText`). It runs the model's frames while it is on screen
+/// in a scene that is not in the background and `visible` (the Mac view says when its window is
+/// covered), and says what the avatar is doing to VoiceOver.
 public struct AvatarStageView: View {
   let model: AvatarStageModel
+  let visible: Bool
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.scenePhase) private var scenePhase
   @State private var viewer = UUID()
 
-  public init(model: AvatarStageModel) { self.model = model }
+  public init(model: AvatarStageModel, visible: Bool = true) {
+    self.model = model
+    self.visible = visible
+  }
+
+  private var showing: Bool { visible && scenePhase != .background }
 
   public var body: some View {
     Group {
@@ -242,13 +323,13 @@ public struct AvatarStageView: View {
       }
     }
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Avatar, \(model.state.rawValue)")
+    .accessibilityLabel(model.failureText ?? "Avatar, \(model.state.rawValue)")
     .onAppear {
       model.reducesMotion = reduceMotion
-      model.setViewing(viewer, scenePhase == .active)
+      model.setViewing(viewer, showing)
     }
     .onDisappear { model.setViewing(viewer, false) }
-    .onChange(of: scenePhase) { _, phase in model.setViewing(viewer, phase == .active) }
+    .onChange(of: showing) { _, now in model.setViewing(viewer, now) }
     .onChange(of: reduceMotion) { _, reduced in model.reducesMotion = reduced }
   }
 }

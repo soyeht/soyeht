@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtAvatarRaster
 import Testing
 
 @testable import SoyehtClient

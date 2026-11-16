@@ -1,22 +1,6 @@
 import CoreGraphics
 import Foundation
-
-/// An axis-aligned rectangle of whole pixels, `x0..<x1` by `y0..<y1`.
-struct AvatarPixelRect: Equatable, Sendable {
-  var x0: Int
-  var y0: Int
-  var x1: Int
-  var y1: Int
-
-  var isEmpty: Bool { x0 >= x1 || y0 >= y1 }
-
-  func union(_ other: AvatarPixelRect) -> AvatarPixelRect {
-    if isEmpty { return other }
-    if other.isEmpty { return self }
-    return AvatarPixelRect(
-      x0: min(x0, other.x0), y0: min(y0, other.y0), x1: max(x1, other.x1), y1: max(y1, other.y1))
-  }
-}
+import SoyehtAvatarRaster
 
 /// Draws one avatar's frames: the base picture with the eye frame and the continuous mouth drawn
 /// into it, then the whole picture warped by the pose of the head (ADR 0166, section 6).
@@ -75,6 +59,7 @@ final class AvatarRenderer {
       guard let found = images[path] else { throw AvatarPackageError(kind: .file, at: path) }
       return found
     }
+    try Self.checkCoverage(package)
     self.package = package
     let canvas = (width: Int(package.canvas.width), height: Int(package.canvas.height))
     let scale = min(1, Double(max(maxSide, 1)) / Double(max(canvas.width, canvas.height)))
@@ -128,6 +113,37 @@ final class AvatarRenderer {
         }
       }
       return (part, uvs)
+    }
+  }
+
+  /// The area the triangles of one drawing cover, over all its triangles, is at most one canvas.
+  /// The vertex and triangle counts of the load rules bound the size of a mesh, not what it
+  /// covers: 6000 triangles of the canvas's size each would cost seconds a frame. A frame draws
+  /// up to nine drawings of a part at once, so this bound is what a frame's cost is bounded by,
+  /// and it is decided here, once, when the renderer is made, and never frame by frame (a frame
+  /// that left the mouth out would put the base picture's own mouth in its place, a swap of
+  /// drawings). It is the Swift reader's own rule until the shared load rule, in the Rust
+  /// validator and `avatar-package.json`, replaces it; this check is then that rule.
+  static func checkCoverage(_ package: AvatarPackage) throws {
+    let canvas = Double(package.canvas.width) * Double(package.canvas.height)
+    for (partIndex, part) in package.mouth.parts.enumerated() {
+      for (shapeIndex, shape) in part.shapes.enumerated() {
+        let p = shape.positions
+        var covered = 0.0
+        for t in stride(from: 0, to: part.triangles.count, by: 3) {
+          let a = Int(part.triangles[t])
+          let b = Int(part.triangles[t + 1])
+          let c = Int(part.triangles[t + 2])
+          let cross =
+            (p[2 * b] - p[2 * a]) * (p[2 * c + 1] - p[2 * a + 1])
+            - (p[2 * b + 1] - p[2 * a + 1]) * (p[2 * c] - p[2 * a])
+          covered += abs(cross) / 2
+        }
+        if covered > canvas {
+          throw AvatarPackageError(
+            kind: .tooLarge, at: "/mouth/parts/\(partIndex)/shapes/\(shapeIndex)/positions")
+        }
+      }
     }
   }
 
@@ -189,78 +205,47 @@ final class AvatarRenderer {
       x0: patch.x, y0: patch.y, x1: patch.x + picture.width, y1: patch.y + picture.height)
   }
 
-  /// What the mouth of the last frame cost: the triangles drawn and the pixel centres tested. A
-  /// frame that would test more than `mouthBudget` draws no mouth at all.
-  private(set) var lastMouthWork = (triangles: 0, tests: 0)
-
-  /// The most pixel centres a frame may test for the mouth: twice the output's pixels. A mouth
-  /// is a few percent of the face; a package whose mesh covers the picture over and over (it is
-  /// bounded by its vertices, not by what it covers) draws the base picture instead of costing
-  /// seconds a frame.
-  var mouthBudget: Int { 2 * outputWidth * outputHeight }
+  /// What the mouth of the last frame cost: the triangles drawn (once for each layer) and the
+  /// pixels they covered. The load rules bound it (`AvatarPackageValidator`: a drawing's
+  /// triangles cover at most one canvas), so a frame never decides to leave the mouth out.
+  private(set) var lastMouthWork = (triangles: 0, pixels: 0)
 
   /// Blend the nine drawings' contours by the weights and draw the textured layers of each part.
   private func drawMouth(weights: [Double]) -> AvatarPixelRect {
     var box = AvatarPixelRect(x0: 0, y0: 0, x1: 0, y1: 0)
     let size = (width: source.width, height: source.height)
     let atlasSize = (width: atlas.width, height: atlas.height)
-    let blended = parts.map { part, _ in
-      (positions: part.blend(weights), layers: part.layers(weights))
-    }
-    var work = (triangles: 0, tests: 0.0)
-    for ((part, _), item) in zip(parts, blended) {
-      let drawn = Double(item.layers.count)
-      let tests = Self.tests(of: part, positions: item.positions, size: size)
-      work.triangles += part.triangles.count / 3 * item.layers.count
-      work.tests += tests * drawn
-    }
-    guard work.tests <= Double(mouthBudget) else {
-      lastMouthWork = (0, 0)
-      return box
-    }
-    lastMouthWork = (work.triangles, Int(work.tests))
+    var work = (triangles: 0, pixels: 0)
     atlas.pixels.withUnsafeBufferPointer { texture in
       source.pixels.withUnsafeMutableBufferPointer { destination in
         underneath.withUnsafeMutableBufferPointer { under in
           guard let texture = texture.baseAddress, let destination = destination.baseAddress,
             let under = under.baseAddress
           else { return }
-          for ((part, uvs), item) in zip(parts, blended) {
-            let area = Self.bounds(of: item.positions, within: size)
+          for (part, uvs) in parts {
+            let positions = part.blend(weights)
+            let area = Self.bounds(of: positions, within: size)
             box = box.union(area)
             // What is under the part, as it was before any of its layers: the layers mix over it.
             for y in area.y0..<max(area.y1, area.y0) {
               (under + y * size.width * 4).update(
                 from: destination + y * size.width * 4, count: size.width * 4)
             }
-            for layer in item.layers {
+            for layer in part.layers(weights) {
               guard let uv = uvs[layer.shape.rawValue] else { continue }
-              Self.draw(
-                part, positions: item.positions, uvs: uv, opacity: layer.alpha, under: under,
+              let drawn = Self.draw(
+                part, positions: positions, uvs: uv, opacity: layer.alpha, under: under,
                 texture: texture, textureSize: atlasSize, destination: destination,
                 destinationSize: size)
+              work.triangles += part.triangles.count / 3
+              work.pixels += drawn
             }
           }
         }
       }
     }
+    lastMouthWork = work
     return box
-  }
-
-  /// The pixel centres the triangles of a part test, once.
-  private static func tests(
-    of part: AvatarMeshPart, positions: [Double], size: (width: Int, height: Int)
-  ) -> Double {
-    let vertex = { (i: Int) in
-      AvatarRasterizer.Vertex(x: positions[2 * i], y: positions[2 * i + 1], u: 0, v: 0, alpha: 1)
-    }
-    var total = 0.0
-    for t in stride(from: 0, to: part.triangles.count, by: 3) {
-      total += AvatarRasterizer.tests(
-        vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
-        vertex(Int(part.triangles[t + 2])), destinationSize: size)
-    }
-    return total
   }
 
   private static func draw(
@@ -268,18 +253,20 @@ final class AvatarRenderer {
     under: UnsafePointer<UInt8>, texture: UnsafePointer<UInt8>,
     textureSize: (width: Int, height: Int),
     destination: UnsafeMutablePointer<UInt8>, destinationSize: (width: Int, height: Int)
-  ) {
+  ) -> Int {
     let vertex = { (i: Int) in
       AvatarRasterizer.Vertex(
         x: positions[2 * i], y: positions[2 * i + 1], u: uvs[2 * i], v: uvs[2 * i + 1],
         alpha: part.alphas?[i] ?? 1)
     }
+    var covered = 0
     for t in stride(from: 0, to: part.triangles.count, by: 3) {
-      AvatarRasterizer.fill(
+      covered += AvatarRasterizer.fill(
         vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
         vertex(Int(part.triangles[t + 2])), opacity: opacity, under: under, texture: texture,
         textureSize: textureSize, destination: destination, destinationSize: destinationSize)
     }
+    return covered
   }
 
   /// The pixels a mesh can touch, with a margin for the sampling of its edge.
@@ -327,44 +314,9 @@ final class AvatarRenderer {
             guard let picture0 = picture0.baseAddress, let out = out.baseAddress,
               let gx = gx.baseAddress, let gy = gy.baseAddress
             else { return }
-            Self.readCells(
+            AvatarRasterizer.warp(
               picture: picture0, pictureSize: picture, output: out, outputSize: outSize,
               gridX: gx, gridY: gy, grid: grid)
-          }
-        }
-      }
-    }
-  }
-
-  /// The loop of the warp, on pointers: what a frame spends most of its time in.
-  private static func readCells(
-    picture: UnsafePointer<UInt8>, pictureSize: (width: Int, height: Int),
-    output: UnsafeMutablePointer<UInt8>, outputSize: (width: Int, height: Int),
-    gridX: UnsafePointer<Double>, gridY: UnsafePointer<Double>,
-    grid: (columns: Int, rows: Int, cell: Int)
-  ) {
-    let cell = grid.cell
-    let cellSize = Double(cell)
-    for cj in 0..<(grid.rows - 1) {
-      for ci in 0..<(grid.columns - 1) {
-        let (a, b) = (cj * grid.columns + ci, (cj + 1) * grid.columns + ci)
-        for py in (cj * cell)..<min((cj + 1) * cell, outputSize.height) {
-          let ty = (Double(py) + 0.5 - Double(cj * cell)) / cellSize
-          let leftX = gridX[a] + (gridX[b] - gridX[a]) * ty
-          let leftY = gridY[a] + (gridY[b] - gridY[a]) * ty
-          let stepX = (gridX[a + 1] + (gridX[b + 1] - gridX[a + 1]) * ty - leftX) / cellSize
-          let stepY = (gridY[a + 1] + (gridY[b + 1] - gridY[a + 1]) * ty - leftY) / cellSize
-          // The first pixel centre is half a pixel into the cell.
-          var u = Float(leftX + stepX * 0.5)
-          var v = Float(leftY + stepY * 0.5)
-          let (du, dv) = (Float(stepX), Float(stepY))
-          for px in (ci * cell)..<min((ci + 1) * cell, outputSize.width) {
-            AvatarRasterizer.store(
-              AvatarRasterizer.sample(
-                picture, width: pictureSize.width, height: pictureSize.height, u: u, v: v),
-              output, py * outputSize.width + px)
-            u += du
-            v += dv
           }
         }
       }

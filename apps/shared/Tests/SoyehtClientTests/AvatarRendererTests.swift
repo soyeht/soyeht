@@ -1,4 +1,6 @@
 import Foundation
+import SoyehtAvatarRaster
+import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
@@ -123,11 +125,12 @@ private func worstStepOverEvenStep(inner: AvatarFixture.Inner) throws -> (
 @Test func theMouthMorphsInSmallStepsBetweenEveryPairOfDrawings() throws {
   // The picture a mouth makes changes by a small, even amount, pixel by pixel, as the weights go
   // from one drawing to another: no step is a jump between pictures. A whole jump in one of the
-  // eight steps would be a ratio of eight; six is the slack for an edge moving across a pixel.
+  // eight steps would be a ratio of eight; five is the slack for an edge moving across a pixel
+  // (the worst pair is under 4.5).
   let textured = try worstStepOverEvenStep(inner: .textured)
-  #expect(textured.ratio < 6, "\(textured.pair): \(textured.ratio)")
+  #expect(textured.ratio < 5, "\(textured.pair): \(textured.ratio)")
   let collapsed = try worstStepOverEvenStep(inner: .collapsed)
-  #expect(collapsed.ratio < 6, "\(collapsed.pair): \(collapsed.ratio)")
+  #expect(collapsed.ratio < 5, "\(collapsed.pair): \(collapsed.ratio)")
 }
 
 /// How much the picture changes when a drawing takes a weight just over the threshold of the
@@ -208,44 +211,74 @@ private func changeAtTheThreshold(inner: AvatarFixture.Inner) throws -> Int {
   }
 }
 
-@Test func theMouthDrawsAsManyTrianglesAsItsLayersAndNeverMoreTestsThanItsBudget() throws {
-  let r = try AvatarRenderer(
-    package: try AvatarFixture.make(canvas: 256).package,
-    images: try AvatarFixture.make(canvas: 256).images, maxSide: 256)
+@Test func theMouthDrawsAsManyTrianglesAsItsLayersAndCostsWhatItCovers() throws {
+  let made = try AvatarFixture.make(canvas: 256)
+  let r = try AvatarRenderer(package: made.package, images: made.images, maxSide: 256)
   // Each part's triangles, once for every layer drawn: skin and lips one drawing each, and an
   // inner mouth only once the drawing has a picture of its own.
   let perPart = 35 * 23 * 2
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.rest)))
   #expect(r.lastMouthWork.triangles == 2 * perPart)
+  let atRest = r.lastMouthWork.pixels
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a)))
   #expect(r.lastMouthWork.triangles == 3 * perPart)
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a, .e, mix: 0.4)))
   #expect(r.lastMouthWork.triangles > 3 * perPart)
-  #expect(r.lastMouthWork.tests > 0 && r.lastMouthWork.tests <= r.mouthBudget / 4)
+  // What a triangle costs is the pixels it covers, not its box: the work is of the order of the
+  // area of the mouth, here a few thousand pixels at a time (about 36 by 22 pixels of skin).
+  #expect(atRest > 0 && atRest < 3_000)
+  #expect(r.lastMouthWork.pixels < 20_000)
 }
 
-@Test func aMeshThatCoversThePictureOverAndOverDrawsTheBaseInsteadOfCostingSeconds() throws {
+@Test func aTriangleCostsItsCoveredPixelsAndNotItsBox() {
+  // A thin diagonal sliver across a 200 pixel picture: its box is 40000 pixels, it covers a few.
+  let sliver = (
+    AvatarRasterizer.Vertex(x: 0, y: 0, u: 0, v: 0, alpha: 1),
+    AvatarRasterizer.Vertex(x: 200, y: 200, u: 0, v: 0, alpha: 1),
+    AvatarRasterizer.Vertex(x: 200, y: 198, u: 0, v: 0, alpha: 1)
+  )
+  var destination = [UInt8](repeating: 0, count: 200 * 200 * 4)
+  let texture: [UInt8] = [10, 10, 10, 255]
+  var covered = 0
+  texture.withUnsafeBufferPointer { tex in
+    destination.withUnsafeMutableBufferPointer { dst in
+      guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
+      covered = AvatarRasterizer.fill(
+        sliver.0, sliver.1, sliver.2, opacity: 1, texture: tex, textureSize: (1, 1),
+        destination: dst, destinationSize: (200, 200))
+    }
+  }
+  #expect(covered > 0 && covered < 500)
+  #expect(
+    destination.enumerated().filter { $0.offset % 4 == 0 && $0.element != 0 }.count == covered)
+}
+
+@Test func aMeshThatCoversThePictureOverAndOverIsRefusedAtLoadAndNeverDrawnWithoutItsMouth() throws
+{
+  // Every vertex in a corner of the picture, so that each triangle covers half of it: the vertex
+  // and triangle counts allow it, and a frame of nine drawings of it would cost seconds. The
+  // renderer refuses it as too large when it is made, once, and a frame never leaves the mouth
+  // out (that would put the base picture's own mouth in its place, a swap of drawings).
   let made = try AvatarFixture.make(canvas: 64)
   var package = made.package
-  // Every vertex in a corner of the picture, so that each triangle covers all of it: allowed by the
-  // load rules, which bound the vertices and not what they cover.
   let side = Double(package.canvas.width)
   for part in package.mouth.parts.indices {
     for shape in package.mouth.parts[part].shapes.indices {
       let count = package.mouth.parts[part].shapes[shape].positions.count / 2
       var corners: [Double] = []
       for i in 0..<count {
-        corners.append(i % 3 == 1 ? side : 0)
-        corners.append(i % 3 == 2 ? side : 0)
+        // The three corners in turn along a row and two along a column, so that the three
+        // vertices of every triangle of the grid are three different corners.
+        let corner = (i % 36 + 2 * (i / 36)) % 3
+        corners.append(corner == 1 ? side : 0)
+        corners.append(corner == 2 ? side : 0)
       }
       package.mouth.parts[part].shapes[shape].positions = corners
     }
   }
-  let r = try AvatarRenderer(package: package, images: made.images, maxSide: 64)
-  let covered = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a)))
-  #expect(r.lastMouthWork.tests == 0 && r.lastMouthWork.triangles == 0)
-  let plain = try renderer(made, maxSide: 64).render(restFrame)
-  // Nothing of the mouth is drawn: the picture is the base, as at rest without a mouth.
-  #expect(pixel(covered, 2, 2) == pixel(plain, 2, 2))
-  #expect(pixel(covered, 32, 32) == pixel(plain, 32, 32))
+  #expect(throws: AvatarPackageError(kind: .tooLarge, at: "/mouth/parts/0/shapes/0/positions")) {
+    _ = try AvatarRenderer(package: package, images: made.images, maxSide: 64)
+  }
+  // A drawing whose triangles cover exactly the canvas is within the rule.
+  _ = try AvatarRenderer(package: made.package, images: made.images, maxSide: 64)
 }

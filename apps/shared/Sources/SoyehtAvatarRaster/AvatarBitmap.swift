@@ -5,16 +5,16 @@ import ImageIO
 /// A picture in memory: 8-bit RGBA with the colour already multiplied by the alpha, row after
 /// row, top row first. The one pixel format of the avatar's rasteriser, so a layer blends with
 /// plain arithmetic.
-struct AvatarBitmap: Sendable {
-  let width: Int
-  let height: Int
-  var pixels: [UInt8]
+package struct AvatarBitmap: Sendable {
+  package let width: Int
+  package let height: Int
+  package var pixels: [UInt8]
 
   private static var colorSpace: CGColorSpace {
     CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
   }
 
-  init(width: Int, height: Int, pixels: [UInt8]? = nil) {
+  package init(width: Int, height: Int, pixels: [UInt8]? = nil) {
     self.width = width
     self.height = height
     self.pixels = pixels ?? [UInt8](repeating: 0, count: width * height * 4)
@@ -42,24 +42,24 @@ struct AvatarBitmap: Sendable {
   /// Decode a PNG (or any picture ImageIO reads) into this format. `nil` when it is not a
   /// picture, or is not the size the caller expects: a package declares its sizes, and a picture
   /// of another size is never drawn.
-  init?(decoding data: Data, expecting size: AvatarSize) {
+  package init?(decoding data: Data, width: Int, height: Int) {
     let options = [kCGImageSourceShouldCache: false] as CFDictionary
     guard let source = CGImageSourceCreateWithData(data as CFData, options),
       let image = CGImageSourceCreateImageAtIndex(source, 0, options),
-      image.width == Int(size.width), image.height == Int(size.height)
+      image.width == width, image.height == height
     else { return nil }
     self.init(drawing: image, width: image.width, height: image.height)
   }
 
   /// The picture at another size, averaged down or up (itself when the size is the same, and
   /// when the system cannot scale it).
-  func resized(width newWidth: Int, height newHeight: Int) -> AvatarBitmap {
+  package func resized(width newWidth: Int, height newHeight: Int) -> AvatarBitmap {
     guard newWidth != width || newHeight != height, let image = cgImage else { return self }
     return AvatarBitmap(drawing: image, width: newWidth, height: newHeight) ?? self
   }
 
   /// This picture with another laid over it, source-over, its top left corner at `(x, y)`.
-  func laying(_ other: AvatarBitmap, atX x: Int, y: Int) -> AvatarBitmap {
+  package func laying(_ other: AvatarBitmap, atX x: Int, y: Int) -> AvatarBitmap {
     var out = self
     out.pixels.withUnsafeMutableBufferPointer { to in
       other.pixels.withUnsafeBufferPointer { from in
@@ -79,7 +79,7 @@ struct AvatarBitmap: Sendable {
   }
 
   /// The pixels of a rectangle of this picture.
-  func cropped(_ rect: AvatarPixelRect) -> AvatarBitmap {
+  package func cropped(_ rect: AvatarPixelRect) -> AvatarBitmap {
     var out = AvatarBitmap(width: max(rect.x1 - rect.x0, 0), height: max(rect.y1 - rect.y0, 0))
     for row in 0..<out.height {
       let from = ((rect.y0 + row) * width + rect.x0) * 4
@@ -90,12 +90,36 @@ struct AvatarBitmap: Sendable {
   }
 
   /// The picture as a `CGImage` the system draws (a copy: the bitmap goes on being drawn into).
-  var cgImage: CGImage? {
+  package var cgImage: CGImage? {
     guard let provider = CGDataProvider(data: Data(pixels) as CFData) else { return nil }
     return CGImage(
       width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
       bytesPerRow: width * 4, space: Self.colorSpace,
       bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
       provider: provider, decode: nil, shouldInterpolate: true, intent: .defaultIntent)
+  }
+}
+
+/// An axis-aligned rectangle of whole pixels, `x0..<x1` by `y0..<y1`.
+package struct AvatarPixelRect: Equatable, Sendable {
+  package var x0: Int
+  package var y0: Int
+  package var x1: Int
+  package var y1: Int
+
+  package init(x0: Int, y0: Int, x1: Int, y1: Int) {
+    self.x0 = x0
+    self.y0 = y0
+    self.x1 = x1
+    self.y1 = y1
+  }
+
+  package var isEmpty: Bool { x0 >= x1 || y0 >= y1 }
+
+  package func union(_ other: AvatarPixelRect) -> AvatarPixelRect {
+    if isEmpty { return other }
+    if other.isEmpty { return self }
+    return AvatarPixelRect(
+      x0: min(x0, other.x0), y0: min(y0, other.y0), x1: max(x1, other.x1), y1: max(y1, other.y1))
   }
 }

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import SoyehtAvatarRaster
 import Testing
 
 @testable import SoyehtClient
@@ -124,22 +125,54 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
   #expect(failure == .malformed)
 }
 
-@Test func aSlowFrameShrinksThePictureAndAFastOneNeverGrowsItBack() {
+@Test func aSlowFrameShrinksThePicture() {
   var pacer = AvatarFramePacer(side: 512)
-  for _ in 0..<(AvatarFramePacer.patience - 1) { pacer.record(cost: 0.1, allowed: 0.033) }
-  #expect(pacer.side == 512)
-  pacer.record(cost: 0.1, allowed: 0.033)
-  #expect(pacer.side == 384)
+  var now = 0.0
+  func record(_ cost: Double) -> AvatarFramePacer.Change? {
+    now += 0.033
+    return pacer.record(cost: cost, allowed: 0.033, now: now)
+  }
+  for _ in 0..<(AvatarFramePacer.patience - 1) { #expect(record(0.1) == nil) }
+  #expect(record(0.1) == .shrank(to: 384))
   // Slow frames that are not in a row do not count.
   for _ in 0..<20 {
-    pacer.record(cost: 0.1, allowed: 0.033)
-    pacer.record(cost: 0.001, allowed: 0.033)
+    #expect(record(0.1) == nil)
+    #expect(record(0.03) == nil)
   }
   #expect(pacer.side == 384)
-  for _ in 0..<500 { pacer.record(cost: 0.0001, allowed: 0.033) }
-  #expect(pacer.side == 384)
-  for _ in 0..<500 { pacer.record(cost: 1, allowed: 0.033) }
+  for _ in 0..<500 { _ = record(1) }
   #expect(pacer.side == AvatarFramePacer.minimumSide)
+}
+
+@Test func aPictureGrowsBackAfterTenQuietSecondsAndTheWaitDoublesWhenItCannotStay() {
+  var pacer = AvatarFramePacer(side: 400)
+  var now = 0.0
+  func frames(seconds: Double, cost: Double) -> [AvatarFramePacer.Change] {
+    var changes: [AvatarFramePacer.Change] = []
+    for _ in 0..<Int(seconds / 0.033) {
+      now += 0.033
+      if let change = pacer.record(cost: cost, allowed: 0.033, now: now) { changes.append(change) }
+    }
+    return changes
+  }
+  #expect(frames(seconds: 0.2, cost: 0.1) == [.shrank(to: 300)])
+  // Under half of the allowance for under ten seconds changes nothing; a frame between half and
+  // all of it starts the count again.
+  #expect(frames(seconds: 9, cost: 0.001).isEmpty)
+  #expect(frames(seconds: 0.2, cost: 0.02).isEmpty)
+  #expect(frames(seconds: 9, cost: 0.001).isEmpty)
+  #expect(frames(seconds: 1.5, cost: 0.001) == [.grew(to: 400)])
+  // At the side it started at, it grows no more.
+  #expect(frames(seconds: 3, cost: 0.001).isEmpty)
+  // It shrinks again soon after it grew: the wait is now twenty seconds.
+  #expect(frames(seconds: 0.2, cost: 0.1) == [.shrank(to: 300)])
+  #expect(frames(seconds: 15, cost: 0.001).isEmpty)
+  #expect(frames(seconds: 6, cost: 0.001) == [.grew(to: 400)])
+  // It started where the renderer was: a picture smaller than the request never grows past it.
+  var small = AvatarFramePacer(side: 120)
+  #expect(small.record(cost: 0, allowed: 0.033, now: 0) == nil)
+  #expect(small.record(cost: 0, allowed: 0.033, now: 100) == nil)
+  #expect(small.side == 120)
 }
 
 @Test func aFolderWithNoDocumentIsMalformed() async throws {
@@ -230,10 +263,55 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
 extension AvatarBitmap {
   /// A picture the system drew, in this format (for a test that reads what a view would show).
   init?(image: CGImage) {
-    let size = AvatarSize(width: UInt32(image.width), height: UInt32(image.height))
     guard let data = AvatarFixture.png(from: image),
-      let decoded = AvatarBitmap(decoding: data, expecting: size)
+      let decoded = AvatarBitmap(decoding: data, width: image.width, height: image.height)
     else { return nil }
     self = decoded
   }
+}
+
+@Test func aNamedPipeInsteadOfAPictureDoesNotHangTheLoad() async throws {
+  let made = try AvatarFixture.make(canvas: 64)
+  try await withFolder { folder in
+    try AvatarFixture.write(made, to: folder)
+    let pipe = folder.appendingPathComponent("atlas.png")
+    try FileManager.default.removeItem(at: pipe)
+    #expect(mkfifo(pipe.path, 0o600) == 0)
+    // Opening a pipe for reading waits for a writer: the load must not.
+    #expect(error { try AvatarPackageFolder.load(folder) } == .missingAsset)
+    let document = folder.appendingPathComponent("avatar.json")
+    try FileManager.default.removeItem(at: document)
+    #expect(mkfifo(document.path, 0o600) == 0)
+    #expect(error { try AvatarPackageFolder.load(folder) } == .malformed)
+  }
+}
+
+@MainActor @Test func aPackageThatDidNotLoadSaysWhichKindAndNothingElse() async throws {
+  let made = try AvatarFixture.make(canvas: 64)
+  let text = try await withFolder { folder -> String? in
+    try AvatarFixture.write(made, to: folder)
+    try Data("not a png".utf8).write(to: folder.appendingPathComponent("atlas.png"))
+    let model = AvatarStageModel(folder: folder)
+    let viewer = UUID()
+    model.setViewing(viewer, true)
+    _ = await eventually { model.failure != nil }
+    model.setViewing(viewer, false)
+    return model.failureText
+  }
+  #expect(text == "The avatar could not be loaded (assetSize)")
+}
+
+@MainActor @Test func aViewThatComesBackWhileThePackageIsLoadingWaitsForTheSameLoad() async throws {
+  let made = try AvatarFixture.make(canvas: 64)
+  let model = AvatarStageModel(
+    loaded: AvatarLoadedPackage(package: made.package, images: made.images), seed: 1, maxSide: 64)
+  let viewer = UUID()
+  for _ in 0..<5 {
+    model.setViewing(viewer, true)
+    model.setViewing(viewer, false)
+  }
+  model.setViewing(viewer, true)
+  #expect(await eventually { model.image != nil })
+  #expect(model.loadsStarted == 1)
+  model.setViewing(viewer, false)
 }

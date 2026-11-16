@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import SoyehtAvatarRaster
 
 /// An avatar package read from its folder: the validated document and its pictures, decoded.
 struct AvatarLoadedPackage: Sendable {
@@ -21,10 +22,6 @@ struct AvatarLoadedPackage: Sendable {
 enum AvatarPackageFolder {
   static let documentName = "avatar.json"
 
-  /// `O_NOFOLLOW_ANY` of the system headers (macOS 11, iOS 14): no link in any component of the
-  /// path. Swift does not import the macro.
-  private static let noFollowAny: Int32 = 0x2000_0000
-
   /// Just the paths a document lists, to find the files to measure before it is validated.
   private struct Listed: Decodable {
     struct File: Decodable { var path: String }
@@ -43,7 +40,9 @@ enum AvatarPackageFolder {
   /// and read it when it is a regular file of at most `limit` bytes. `nil` when it cannot be
   /// opened or is not a regular file: the validator then names the file that is missing.
   private static func read(_ path: String, in folder: Int32, limit: Int) -> Found? {
-    let descriptor = openat(folder, path, O_RDONLY | noFollowAny)
+    // `O_NONBLOCK`: opening a named pipe for reading waits for a writer, and a package folder is
+    // not trusted not to hold one. The kind of file is checked after the open.
+    let descriptor = openat(folder, path, O_RDONLY | O_NOFOLLOW_ANY | O_NONBLOCK)
     guard descriptor >= 0 else { return nil }
     defer { close(descriptor) }
     var info = stat()
@@ -55,9 +54,23 @@ enum AvatarPackageFolder {
     let picture = headerCount == 24 ? avatarPngSize(header) : nil
     guard size <= UInt64(limit) else { return Found(size: size, picture: picture, data: nil) }
     var data = Data(count: Int(size))
-    let count = data.withUnsafeMutableBytes { Darwin.read(descriptor, $0.baseAddress, Int(size)) }
-    // A file that shrank while it was read is not the file that was measured.
-    return count == Int(size) ? Found(size: size, picture: picture, data: data) : nil
+    // A read may return less than asked; the loop goes on until the file has given what it was
+    // measured to hold. A file that ends sooner, or fails, is not the file that was measured.
+    var have = 0
+    let total = Int(size)
+    while have < total {
+      let count = data.withUnsafeMutableBytes { buffer in
+        Darwin.read(descriptor, buffer.baseAddress.map { $0 + have }, total - have)
+      }
+      if count > 0 {
+        have += count
+      } else if count < 0 && errno == EINTR {
+        continue
+      } else {
+        return nil
+      }
+    }
+    return Found(size: size, picture: picture, data: data)
   }
 
   /// Read and validate the package in `folder`. A failure is an `AvatarPackageError`.
@@ -91,9 +104,9 @@ enum AvatarPackageFolder {
     let package = try AvatarPackage.load(json: json, assets: assets)
     var images: [String: AvatarBitmap] = [:]
     for file in package.files {
-      let size = AvatarSize(width: file.width, height: file.height)
       guard let data = found[file.path]?.data,
-        let bitmap = AvatarBitmap(decoding: data, expecting: size)
+        let bitmap = AvatarBitmap(
+          decoding: data, width: Int(file.width), height: Int(file.height))
       else { throw AvatarPackageError(kind: .assetSize, at: file.path) }
       images[file.path] = bitmap
     }
