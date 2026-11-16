@@ -112,7 +112,7 @@ package enum AvatarRasterizer {
       // Where the three edge functions are all positive, along this row: each is a line in the
       // pixel's x, so the row's span is an interval.
       let span = Self.span(row: py, v0, v1, v2, from: minX, to: maxX)
-      guard span.lowerBound <= span.upperBound else { continue }
+      guard !span.isEmpty else { continue }
       for x in span {
         let px = Double(x) + 0.5
         let w0 = (v2.x - v1.x) * (py - v1.y) - (v2.y - v1.y) * (px - v1.x)
@@ -155,10 +155,11 @@ package enum AvatarRasterizer {
 
   /// The pixels of the row `py` (a pixel centre's y) that can be inside the triangle: the
   /// interval its three edge functions leave, one pixel wider on each side for rounding, cut to
-  /// `from...to`. Empty (a lower bound over the upper) when the row misses the triangle.
+  /// `from...to`. Empty (`0..<0`) when the row misses the triangle: a range whose bounds are
+  /// the wrong way round cannot be built, and a triangle may well leave the picture.
   private static func span(
     row py: Double, _ v0: Vertex, _ v1: Vertex, _ v2: Vertex, from: Int, to: Int
-  ) -> ClosedRange<Int> {
+  ) -> Range<Int> {
     var low = -Double.infinity
     var high = Double.infinity
     // The edge function along the row is `slope * px + offset`, and it must not be negative.
@@ -175,12 +176,12 @@ package enum AvatarRasterizer {
       }
       return true
     }
-    guard cut(v1, v2), cut(v2, v0), cut(v0, v1) else { return 1...0 }
+    guard cut(v1, v2), cut(v2, v0), cut(v0, v1) else { return 0..<0 }
     // Pixel x has its centre at x + 0.5.
     let first = max((low - 0.5).rounded(.up) - 1, Double(from))
     let last = min((high - 0.5).rounded(.down) + 1, Double(to))
-    guard first <= last else { return 1...0 }
-    return Int(first)...Int(last)
+    guard first <= last else { return 0..<0 }
+    return Int(first)..<(Int(last) + 1)
   }
 
   @inline(__always)

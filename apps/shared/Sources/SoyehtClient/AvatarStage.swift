@@ -22,6 +22,10 @@ struct AvatarFramePacer: Equatable, Sendable {
   /// How many frames in a row must be too slow before the picture shrinks.
   static let patience = 6
   static let firstWait = 10.0
+  /// "Quiet" is judged against the shortest time a frame ever has (1/60 s, while speaking),
+  /// whatever the state now: a picture that fits an idle frame (1/30 s) but not a speaking one
+  /// would otherwise grow while idle and shrink at the next sentence, and pulse.
+  static let quietAllowance = 1.0 / 60
 
   /// The largest the picture gets: the side it started at.
   let ceiling: Int
@@ -45,7 +49,7 @@ struct AvatarFramePacer: Equatable, Sendable {
       quietSince = nil
     } else {
       slow = 0
-      quietSince = cost < allowed / 2 ? (quietSince ?? now) : nil
+      quietSince = cost < Self.quietAllowance / 2 ? (quietSince ?? now) : nil
     }
     if slow >= Self.patience, side > Self.minimumSide {
       slow = 0

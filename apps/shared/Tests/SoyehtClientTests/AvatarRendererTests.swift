@@ -276,7 +276,7 @@ private func changeAtTheThreshold(inner: AvatarFixture.Inner) throws -> Int {
       package.mouth.parts[part].shapes[shape].positions = corners
     }
   }
-  #expect(throws: AvatarPackageError(kind: .tooLarge, at: "/mouth/parts/0/shapes/0/positions")) {
+  #expect(throws: AvatarPackageError(kind: .tooLarge, at: "/mouth/parts")) {
     _ = try AvatarRenderer(package: package, images: made.images, maxSide: 64)
   }
   // A drawing whose triangles cover exactly the canvas is within the rule.

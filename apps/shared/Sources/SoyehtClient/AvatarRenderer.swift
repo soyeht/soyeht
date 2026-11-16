@@ -116,20 +116,22 @@ final class AvatarRenderer {
     }
   }
 
-  /// The area the triangles of one drawing cover, over all its triangles, is at most one canvas.
-  /// The vertex and triangle counts of the load rules bound the size of a mesh, not what it
-  /// covers: 6000 triangles of the canvas's size each would cost seconds a frame. A frame draws
-  /// up to nine drawings of a part at once, so this bound is what a frame's cost is bounded by,
+  /// The area the triangles of one drawing cover, summed over the three parts, is at most one
+  /// canvas. The vertex and triangle counts of the load rules bound the size of a mesh, not what
+  /// it covers: 6000 triangles of the canvas's size each would cost seconds a frame. A frame draws
+  /// up to nine drawings of each part at once, so this bound is what a frame's cost is bounded by,
   /// and it is decided here, once, when the renderer is made, and never frame by frame (a frame
   /// that left the mouth out would put the base picture's own mouth in its place, a swap of
-  /// drawings). It is the Swift reader's own rule until the shared load rule, in the Rust
-  /// validator and `avatar-package.json`, replaces it; this check is then that rule.
+  /// drawings). It is the rule the shared load rule of the Rust validator and
+  /// `avatar-package.json` is adding (one canvas of triangle area per drawing, over the parts,
+  /// `tooLarge` at `/mouth/parts`); this check is replaced by it when it lands.
   static func checkCoverage(_ package: AvatarPackage) throws {
     let canvas = Double(package.canvas.width) * Double(package.canvas.height)
-    for (partIndex, part) in package.mouth.parts.enumerated() {
-      for (shapeIndex, shape) in part.shapes.enumerated() {
+    var covered: [String: Double] = [:]
+    for part in package.mouth.parts {
+      for shape in part.shapes {
         let p = shape.positions
-        var covered = 0.0
+        var area = 0.0
         for t in stride(from: 0, to: part.triangles.count, by: 3) {
           let a = Int(part.triangles[t])
           let b = Int(part.triangles[t + 1])
@@ -137,13 +139,13 @@ final class AvatarRenderer {
           let cross =
             (p[2 * b] - p[2 * a]) * (p[2 * c + 1] - p[2 * a + 1])
             - (p[2 * b + 1] - p[2 * a + 1]) * (p[2 * c] - p[2 * a])
-          covered += abs(cross) / 2
+          area += abs(cross) / 2
         }
-        if covered > canvas {
-          throw AvatarPackageError(
-            kind: .tooLarge, at: "/mouth/parts/\(partIndex)/shapes/\(shapeIndex)/positions")
-        }
+        covered[shape.id, default: 0] += area
       }
+    }
+    if covered.values.contains(where: { $0 > canvas }) {
+      throw AvatarPackageError(kind: .tooLarge, at: "/mouth/parts")
     }
   }
 

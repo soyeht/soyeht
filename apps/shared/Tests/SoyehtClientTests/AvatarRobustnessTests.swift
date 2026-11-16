@@ -250,3 +250,83 @@ private func numbers(in value: Any) -> Int {
   #expect(AvatarPackageValidator.sameBytes("K", "\u{212A}") == false)
   #expect("K" == "\u{212A}")
 }
+
+/// A triangle drawn over a `size` by `size` picture of one flat texel, and how many pixels it
+/// covered.
+private func covered(
+  _ a: (Double, Double), _ b: (Double, Double), _ c: (Double, Double), size: Int = 64
+) -> (count: Int, picture: [UInt8]) {
+  let vertex = { (p: (Double, Double)) in
+    AvatarRasterizer.Vertex(x: p.0, y: p.1, u: 0, v: 0, alpha: 1)
+  }
+  var destination = [UInt8](repeating: 0, count: size * size * 4)
+  let texture: [UInt8] = [10, 20, 30, 255]
+  var count = 0
+  texture.withUnsafeBufferPointer { tex in
+    destination.withUnsafeMutableBufferPointer { dst in
+      guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
+      count = AvatarRasterizer.fill(
+        vertex(a), vertex(b), vertex(c), opacity: 1, texture: tex, textureSize: (1, 1),
+        destination: dst, destinationSize: (size, size))
+    }
+  }
+  return (count, destination)
+}
+
+/// The pixels a triangle covers by the plain rule, tested at every pixel of the picture: the three
+/// edge functions positive, and zero only on an edge the triangle owns.
+private func brute(
+  _ a: (Double, Double), _ b: (Double, Double), _ c: (Double, Double), size: Int = 64
+) -> Int {
+  var (p0, p1, p2) = (a, b, c)
+  let area = (p1.0 - p0.0) * (p2.1 - p0.1) - (p1.1 - p0.1) * (p2.0 - p0.0)
+  if area < 0 { swap(&p1, &p2) }
+  let owns = { (dx: Double, dy: Double) in dy < 0 || (dy == 0 && dx > 0) }
+  let edges = [(p1, p2), (p2, p0), (p0, p1)]
+  var count = 0
+  for y in 0..<size {
+    for x in 0..<size {
+      let (px, py) = (Double(x) + 0.5, Double(y) + 0.5)
+      let inside = edges.allSatisfy { p, q in
+        let w = (q.0 - p.0) * (py - p.1) - (q.1 - p.1) * (px - p.0)
+        return w > 0 || (w == 0 && owns(q.0 - p.0, q.1 - p.1))
+      }
+      if inside { count += 1 }
+    }
+  }
+  return count
+}
+
+@Test func aTriangleThatLeavesThePictureIsClippedAtEveryBorderAndNeverTraps() {
+  let n = 64.0
+  let cases: [(String, (Double, Double), (Double, Double), (Double, Double))] = [
+    ("across the right border", (n - 12, 0), (n + 190, 0), (n + 190, 100)),
+    ("across the left border", (12, 0), (-190, 0), (-190, 100)),
+    ("across the top", (0, 12), (30, -190), (60, -190)),
+    ("across the bottom", (0, n - 12), (30, n + 190), (60, n + 190)),
+    ("wholly right", (n + 5, 0), (n + 200, 0), (n + 200, 100)),
+    ("wholly left", (-5, 0), (-200, 0), (-200, 100)),
+    ("wholly above", (0, -5), (30, -200), (60, -200)),
+    ("wholly below", (0, n + 5), (30, n + 200), (60, n + 200)),
+    ("far right, rows inside", (500, 0), (700, 0), (700, 100)),
+    ("big, around the picture", (-500, -500), (900, -500), (-500, 900)),
+    ("on a corner", (n - 2, n - 2), (n + 40, n - 2), (n - 2, n + 40)),
+  ]
+  for (name, a, b, c) in cases {
+    let drawn = covered(a, b, c)
+    #expect(drawn.count == brute(a, b, c), "\(name)")
+    let touched = stride(from: 0, to: drawn.picture.count, by: 4).filter { drawn.picture[$0] != 0 }
+    #expect(touched.count == drawn.count, "\(name)")
+  }
+  #expect(covered((n + 5, 0), (n + 200, 0), (n + 200, 100)).count == 0)
+  #expect(covered((-500, -500), (900, -500), (-500, 900)).count == 64 * 64)
+}
+
+@Test func triangleCoverageMatchesThePlainRuleOnManyTrianglesAroundThePicture() {
+  var rng = AvatarRng(seed: 11)
+  for _ in 0..<300 {
+    let point = { (rng: inout AvatarRng) in (rng.range(-40, 104), rng.range(-40, 104)) }
+    let (a, b, c) = (point(&rng), point(&rng), point(&rng))
+    #expect(covered(a, b, c).count == brute(a, b, c), "\(a) \(b) \(c)")
+  }
+}

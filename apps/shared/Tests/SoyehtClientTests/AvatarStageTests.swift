@@ -168,6 +168,24 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
   #expect(frames(seconds: 0.2, cost: 0.1) == [.shrank(to: 300)])
   #expect(frames(seconds: 15, cost: 0.001).isEmpty)
   #expect(frames(seconds: 6, cost: 0.001) == [.grew(to: 400)])
+  // A picture that costs 19 ms a frame (a debug build) fits an idle frame, 33 ms, but not a
+  // speaking one, 16.7 ms: it is never quiet, so it does not grow while idle to shrink at the next
+  // sentence.
+  var pulsing = AvatarFramePacer(side: 400)
+  now = 0
+  _ = pulsing.record(cost: 0.1, allowed: 0.033, now: 0)
+  var shrunk = false
+  for _ in 0..<(AvatarFramePacer.patience + 1) {
+    now += 0.033
+    shrunk = pulsing.record(cost: 0.1, allowed: 0.033, now: now) != nil || shrunk
+  }
+  #expect(shrunk)
+  let before = pulsing.side
+  for _ in 0..<5_000 {
+    now += 0.033
+    #expect(pulsing.record(cost: 0.019, allowed: 0.033, now: now) == nil)
+  }
+  #expect(pulsing.side == before)
   // It started where the renderer was: a picture smaller than the request never grows past it.
   var small = AvatarFramePacer(side: 120)
   #expect(small.record(cost: 0, allowed: 0.033, now: 0) == nil)
