@@ -7,9 +7,23 @@ public enum VoiceFrames {
   public static let sampleRate = ClientPolicy.voiceSampleRate
   public static let size = sampleRate * ClientPolicy.voiceFrameMs / 1_000
   /// The audio the end-of-turn model reads: the last 8 seconds of the turn.
-  static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
+  public static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
 
   public static var frameMs: Int { ClientPolicy.voiceFrameMs }
+}
+
+/// A voice model that could not answer: not a silence, a failure the loop reports.
+public enum VoiceModelError: LocalizedError, Equatable {
+  case frameSize(expected: Int, got: Int)
+  case prediction(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .frameSize(let expected, let got):
+      "The voice model reads frames of \(expected) samples and was given \(got)."
+    case .prediction(let reason): "The voice model failed: \(reason)"
+    }
+  }
 }
 
 /// A voice-activity model: how likely one frame of audio is speech. It keeps state from frame to
