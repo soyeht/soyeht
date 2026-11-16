@@ -129,12 +129,18 @@ impl Rig {
         (pane, format!("{label}-instance"))
     }
 
-    /// A rig whose app watches and whose one terminal runs `programs`, scanned once.
-    fn scanned(programs: Vec<Program>) -> (Self, String, String) {
+    /// A rig whose app watches and whose one terminal runs `programs`, not read yet.
+    fn watching(programs: Vec<Program>) -> (Self, String, String) {
         let mut rig = Self::new();
         rig.watch();
         let (pane, instance) = rig.terminal("shell");
         rig.programs.set(&instance, programs);
+        (rig, pane, instance)
+    }
+
+    /// The same, read once after the terminal printed.
+    fn scanned(programs: Vec<Program>) -> (Self, String, String) {
+        let (mut rig, pane, instance) = Self::watching(programs);
         rig.core.foreground_mut().note_output(&pane);
         rig.core.advance_foreground().unwrap();
         (rig, pane, instance)
@@ -287,11 +293,7 @@ fn nothing_is_scanned_while_no_app_watches_or_no_terminal_is_open() {
 
 #[test]
 fn an_idle_shell_with_an_app_connected_causes_no_scan() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
-    rig.programs
-        .set(&instance, vec![program(1, "/bin/zsh", &["zsh"])]);
+    let (mut rig, pane, _) = Rig::watching(vec![program(1, "/bin/zsh", &["zsh"])]);
     // Time goes by and the tick runs: the pane printed nothing, so nothing is read.
     for _ in 0..5 {
         rig.advance(INTERVAL_MS);
@@ -426,13 +428,8 @@ fn agent_list_names_the_terminals_of_every_workspace_with_the_workspace() {
 
 #[test]
 fn a_supervisor_that_does_not_list_the_feature_is_never_asked() {
-    let mut rig = Rig::new();
-    rig.watch();
-    let (pane, instance) = rig.terminal("shell");
-    rig.programs.set(
-        &instance,
-        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
-    );
+    let (mut rig, pane, _) =
+        Rig::watching(vec![program(12, "/nowhere/bin/opencode", &["opencode"])]);
     // A supervisor that was running before this engine: its welcome lists no features.
     rig.core.link_supervisor(rig.programs.answering());
     rig.core.foreground_mut().note_output(&pane);
