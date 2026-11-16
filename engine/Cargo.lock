@@ -1654,7 +1654,7 @@ dependencies = [
  "chrono",
  "rusqlite",
  "serde_json",
- "soyeht-process",
+ "soyeht-platform",
  "soyeht-protocol",
  "uuid",
 ]

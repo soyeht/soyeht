@@ -55,7 +55,7 @@ Adding a provider is adding an entry; adding a protocol is adding an adapter (on
 ### The adapters
 
 Both send their requests with `soyeht_process::curl`, the one builder of a `curl` command line
-(also used by the usage readings of the engine): the system's `curl` (on Unix the first of
+(also used by the usage readings of the engine; a `proxy` in the person's own `.curlrc` no longer applies to either, the proxy environment variables still do): the system's `curl` (on Unix the first of
 `/usr/bin/curl`, `/bin/curl` and, for a NixOS machine, `/run/current-system/sw/bin/curl`; never
 one found on a search path) started with `--disable`, so no `.curlrc` changes it, `--globoff`, so a
 `{` or `[` in an address is never expanded, and no redirect followed. Headers, form fields and the

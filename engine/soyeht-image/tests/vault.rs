@@ -52,7 +52,15 @@ fn a_key_never_prints() {
 fn a_key_that_cannot_travel_in_a_header_is_refused() {
     let scratch = Scratch::new("image-vault");
     let vault = Vault::new(&scratch.0);
-    for bad in ["", "   ", "has space", "line\nbreak", &"k".repeat(1001)] {
+    for bad in [
+        "",
+        "   ",
+        "has space",
+        "line\nbreak",
+        "quote\"inside",
+        "back\\slash",
+        &"k".repeat(1001),
+    ] {
         assert!(
             matches!(
                 vault.set("some-provider", HOST, bad),
@@ -61,8 +69,6 @@ fn a_key_that_cannot_travel_in_a_header_is_refused() {
             "{bad:?}"
         );
     }
-    // A quote is printable, and the request escapes it.
-    vault.set("some-provider", HOST, "quote\"inside").unwrap();
 }
 
 #[test]

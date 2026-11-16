@@ -30,10 +30,13 @@ Each layer depends only on the layers listed above it.
    specific to its own job (`soyeht-ptyd`'s child and pty, the engine's log rotation, the
    desktop's `os_notify`), under the rule below: the same public shape on every system.
    `engine/soyeht-process`, the bounded runner for every external command the engine
-   starts, depends on nothing but `soyeht-platform` (ADR 0079). Its `curl` module is the one
-   place that builds an HTTP request for the system's `curl` (no `.curlrc`, no globbing, no
-   redirect unless asked, credentials only on standard input) and the one `Secret`; the usage
-   host and the image adapters use it.
+   starts, depends on nothing but `soyeht-platform` (ADR 0079). Its `curl` module is the engine's
+   one place that builds a request for the system's `curl` (no `.curlrc`, no globbing, no redirect
+   unless asked, credentials only on standard input); the usage host and the image adapters use
+   it. The Windows and Linux app's update check
+   (`apps/desktop/crates/soyeht-client/src/update.rs`) still makes its own `curl` call, which finds
+   `curl` on the search path: the exception, until its follow-up (`docs/platforms.md`).
+   `Secret`, a value that never prints, is `soyeht_platform::secret::Secret`.
 3. Engine building blocks, each depending only on `soyeht-protocol` and
    `soyeht-platform`, and on `soyeht-process` where they run a command:
    - `soyeht-ptyd`: the process supervisor that holds pseudoterminals.
@@ -42,7 +45,8 @@ Each layer depends only on the layers listed above it.
    - `soyeht-store`: the only crate with SQL or `rusqlite`
      (`hardening_gate.py check-no-sql-outside-store`).
    - Pure, bounded domain crates: `soyeht-editor`, `soyeht-writing`,
-     `soyeht-web`, `soyeht-pane-state`, `soyeht-usage`, `soyeht-lsp`, and
+     `soyeht-web`, `soyeht-pane-state`, `soyeht-usage` (which takes `Secret` from
+     `soyeht-platform`; its `Host` seam is its only way out), `soyeht-lsp`, and
      `soyeht-vcs` (whose only Soyeht dependencies are `soyeht-platform`, for
      canonical paths, and `soyeht-process`).
    - `soyeht-skills`: the skill folders (`SKILL.md`) shared by every harness.

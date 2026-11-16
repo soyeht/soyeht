@@ -10,9 +10,8 @@ use std::{
     time::Duration,
 };
 
-/// A credential or cookie value. It never prints, so it cannot reach a log by accident. It is the
-/// one `Secret` of the runner that sends it (`soyeht_process::curl`).
-pub use soyeht_process::curl::Secret;
+/// A credential or cookie value. It never prints, so it cannot reach a log by accident.
+pub use soyeht_platform::secret::Secret;
 
 /// The operating system the engine runs on. Credential stores differ: macOS keeps Claude
 /// Code's login in the keychain and browsers' cookie keys in it, Linux keeps the login in a

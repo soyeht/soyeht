@@ -3,7 +3,8 @@
 
 use crate::error::{Error, Result};
 use serde_json::Value;
-use soyeht_process::curl::{self, Invalid, Request, Secret, SendError};
+use soyeht_platform::secret::Secret;
+use soyeht_process::curl::{self, Invalid, Request, SendError};
 use std::time::Duration;
 
 /// The most an answer may hold: an image as base64 inside a JSON document.

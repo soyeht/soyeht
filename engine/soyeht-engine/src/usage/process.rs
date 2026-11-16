@@ -1,12 +1,14 @@
-//! Bounded child processes for the usage host: `curl` for HTTPS, `security` for the macOS
+//! Bounded child processes for the usage host: an HTTPS request, `security` for the macOS
 //! keychain and newline-delimited JSON-RPC for the Codex app server.
 //!
-//! Every program the host starts, here and in `terminal.rs`, begins from [`harden`]: a probe is
-//! background work, so it must never open a browser, show a prompt or wait for a person.
-//! `curl` and `security` run through `soyeht_process`, with a deadline and a bounded output;
-//! the JSON-RPC child is interactive and keeps its own deadline. Credentials reach `curl` on standard
-//! input as configuration, never on its command line, and no response body or error text is
-//! logged.
+//! Every program the host starts, here and in `terminal.rs`, begins from [`harden`], except the
+//! request: a probe is background work, so it must never open a browser, show a prompt or wait for
+//! a person. The request is built and run by `soyeht_process::curl`, the one place that builds a
+//! command line for the system's `curl` (so a `.curlrc` of the person, such as a `proxy`, does not
+//! apply to it; the proxy environment variables still do); `security` runs through
+//! `soyeht_process::run`. Both have a deadline and a bounded output; the JSON-RPC child is
+//! interactive and keeps its own deadline. Credentials reach `curl` on standard input as
+//! configuration, never on its command line, and no response body or error text is logged.
 
 use crate::streak::{Streak, first_failure, recovered};
 use soyeht_platform::{
@@ -70,17 +72,15 @@ pub(super) fn harden(_command: &mut Command) {}
 fn run_bounded(
     program: &Path,
     args: &[&str],
-    input: Option<Vec<u8>>,
     timeout: Duration,
 ) -> soyeht_process::Result<soyeht_process::Output> {
     let mut command = Command::new(program);
     harden(&mut command);
     command.args(args);
-    let limits = soyeht_process::Limits::new(timeout, limits::JSON_BYTES);
-    match input {
-        Some(input) => soyeht_process::run_with_input(command, input, limits),
-        None => soyeht_process::run(command, limits),
-    }
+    soyeht_process::run(
+        command,
+        soyeht_process::Limits::new(timeout, limits::JSON_BYTES),
+    )
 }
 
 /// A generic password from the login keychain through `/usr/bin/security`. The first read of
@@ -96,7 +96,7 @@ pub(super) fn keychain_password(
     }
     args.push("-w");
     // A keychain that did not answer in time, or at all, is a read the person did not allow.
-    let Ok(output) = run_bounded(program, &args, None, KEYCHAIN_TIMEOUT) else {
+    let Ok(output) = run_bounded(program, &args, KEYCHAIN_TIMEOUT) else {
         return SecretRead::Denied;
     };
     match output.status.code() {

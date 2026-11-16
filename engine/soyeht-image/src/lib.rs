@@ -31,5 +31,5 @@ pub use catalogue::{Adapter, Choice, Descriptor, find, host_of, registry};
 pub use check::{Picture, Problem, Rect, Report, check};
 pub use error::{Error, Result};
 pub use frames::{Frame, Spec, spec};
-pub use soyeht_process::curl::Secret;
+pub use soyeht_platform::secret::Secret;
 pub use vault::Vault;

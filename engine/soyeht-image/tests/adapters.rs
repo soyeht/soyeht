@@ -380,3 +380,28 @@ fn the_key_is_never_on_a_command_line() {
         "Bearer sk-test-key"
     );
 }
+
+/// A header value cannot become two headers on the wire: the attempt is refused before anything
+/// is sent, and an ordinary value arrives as exactly one header.
+#[test]
+fn a_header_value_arrives_as_one_header_and_an_injected_one_is_never_sent() {
+    use soyeht_process::curl::{Request, system_program};
+    let server = Server::start(|_| (200, b"{}".to_vec())).unwrap();
+    assert!(
+        Request::new(&server.url)
+            .unwrap()
+            .header("X-A", "a\nX-Injected: yes")
+            .is_err()
+    );
+    let response = Request::new(&server.url)
+        .unwrap()
+        .header("X-A", "a b")
+        .unwrap()
+        .send(&system_program(), TIMEOUT, 1 << 16)
+        .unwrap();
+    assert_eq!(response.status, 200);
+    let sent = server.received();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].headers["x-a"], "a b");
+    assert!(!sent[0].headers.contains_key("x-injected"));
+}

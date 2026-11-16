@@ -179,11 +179,12 @@ fn region(text: &str) -> Result<Rect> {
 }
 
 fn set_key(directory: &Path, provider: &str, rest: &[&str]) -> Result<Value> {
-    if !soyeht_image::find(provider)?.needs_key {
+    let descriptor = soyeht_image::find(provider)?;
+    if !descriptor.needs_key {
         return Err(invalid("This provider does not use a key"));
     }
     let flags = Flags::parse(rest, &["--endpoint"])?;
-    let host = soyeht_image::find(provider)?.key_host(flags.get("--endpoint"))?;
+    let host = descriptor.key_host(flags.get("--endpoint"))?;
     let mut line = String::new();
     std::io::stdin()
         .lock()

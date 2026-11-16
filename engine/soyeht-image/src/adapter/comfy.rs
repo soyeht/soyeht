@@ -10,7 +10,8 @@ use crate::{
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use soyeht_process::curl::{Request, Secret};
+use soyeht_platform::secret::Secret;
+use soyeht_process::curl::Request;
 use std::{
     fs,
     time::{Duration, Instant},

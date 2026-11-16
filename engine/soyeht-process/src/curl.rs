@@ -8,9 +8,10 @@
 //!   configuration `curl` reads on standard input; only the address (which holds no secret) is an
 //!   argument.
 //! - **No redirect is followed** unless the caller asks, and then only as many as it names.
-//! - A [`Secret`] never prints.
+//! - A [`Secret`](soyeht_platform::secret::Secret) never prints.
 
 use crate::{Error, Limits, run_with_input};
+use soyeht_platform::secret::Secret;
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -24,39 +25,6 @@ const WRITE_OUT: &str = "\nSOYEHT_STATUS:%{http_code}\nSOYEHT_RETRY:%header{retr
 const CONNECT_SECONDS: &str = "10";
 /// How long past the request's own limit the runner waits before it kills `curl`.
 const KILL_GRACE: Duration = Duration::from_secs(5);
-/// Upper bound for one token or cookie value.
-pub const MAX_SECRET_BYTES: usize = 16 * 1024;
-
-/// A credential or cookie value. It never prints, so it cannot reach a log by accident.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Secret(String);
-
-impl Secret {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-
-    /// Printable ASCII without whitespace or quotes, within the size bound: safe to place in a
-    /// header without escaping.
-    pub fn is_usable(&self) -> bool {
-        let value = self.0.as_bytes();
-        !value.is_empty()
-            && value.len() <= MAX_SECRET_BYTES
-            && value
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() && !matches!(byte, b'"' | b'\\'))
-    }
-}
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret(<redacted>)")
-    }
-}
 
 /// The `curl` the system ships, never one found on a search path a program of the person's could
 /// have changed: on Unix the first of the system's own locations that exists (the last is a NixOS
@@ -168,11 +136,23 @@ impl Request {
         Ok(())
     }
 
-    fn named_header(mut self, name: &str, value: &str) -> Result<Self, Invalid> {
+    /// A header line. `curl` reads `\n`, `\r` and `\t` inside a configuration value as the
+    /// characters, so a value that holds any control character could end one header and start
+    /// another: it is refused, not escaped. `secret` says the value is a credential, which is
+    /// held to the stricter rule of a header that never needs escaping.
+    fn named_header(mut self, name: &str, value: &str, secret: bool) -> Result<Self, Invalid> {
         let plain =
             !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
-        if !plain || value.is_empty() {
-            return Err(Invalid("a header with no name or no value"));
+        let safe = !value.is_empty()
+            && !value.chars().any(char::is_control)
+            && (!secret
+                || value
+                    .bytes()
+                    .all(|b| (b.is_ascii_graphic() || b == b' ') && !matches!(b, b'"' | b'\\')));
+        if !plain || !safe {
+            return Err(Invalid(
+                "a header with no name, no value or a value that is not safe",
+            ));
         }
         self.line("header", &format!("{name}: {value}"))?;
         Ok(self)
@@ -180,17 +160,17 @@ impl Request {
 
     /// A header that holds no credential.
     pub fn header(self, name: &str, value: &str) -> Result<Self, Invalid> {
-        self.named_header(name, value)
+        self.named_header(name, value, false)
     }
 
-    /// A header that carries a credential.
+    /// A header that carries a credential: printable ASCII with blanks allowed, no quote or backslash.
     pub fn secret_header(self, name: &str, value: &Secret) -> Result<Self, Invalid> {
-        self.named_header(name, value.expose())
+        self.named_header(name, value.expose(), true)
     }
 
     /// `Authorization: Bearer <key>`.
     pub fn bearer(self, key: &Secret) -> Result<Self, Invalid> {
-        self.named_header("Authorization", &format!("Bearer {}", key.expose()))
+        self.named_header("Authorization", &format!("Bearer {}", key.expose()), true)
     }
 
     /// A text field of a multipart form; its value is never read as a file name.
@@ -222,8 +202,12 @@ impl Request {
         Ok(self)
     }
 
-    /// A JSON body.
+    /// A JSON body. `curl` reads a value that starts with `@` as a file to send, so a body that
+    /// does is refused.
     pub fn json_body(mut self, body: &str) -> Result<Self, Invalid> {
+        if body.starts_with('@') {
+            return Err(Invalid("a body that starts with @"));
+        }
         self.line("header", "Content-Type: application/json")?;
         self.line("data-binary", body)?;
         Ok(self)
@@ -384,12 +368,42 @@ mod tests {
     }
 
     #[test]
-    fn a_header_cannot_be_split_into_two_lines_or_named_with_a_colon() {
-        let request = request().header("X-A", "a\nHost: evil.test").unwrap();
-        // The newline is escaped inside one configuration value: curl reads one header.
-        assert_eq!(text(&request).lines().count(), 1);
-        assert!(self::request().header("X: y", "v").is_err());
-        assert!(self::request().header("", "v").is_err());
+    fn a_header_value_with_a_control_character_is_refused_not_escaped() {
+        for bad in ["a\nX-Injected: yes", "a\rb", "a\tb", "a\u{0}b"] {
+            assert!(request().header("X-A", bad).is_err(), "{bad:?}");
+            assert!(
+                request().secret_header("X-A", &Secret::new(bad)).is_err(),
+                "{bad:?}"
+            );
+        }
+        assert!(request().header("X: y", "v").is_err());
+        assert!(request().header("", "v").is_err());
+        assert!(request().header("X-A", "").is_err());
+        assert!(request().header("X-A", "a b").is_ok());
+    }
+
+    #[test]
+    fn a_credential_header_keeps_the_strict_rule_and_a_bearer_follows_it() {
+        for bad in ["a\"b", "a\\b", "caf\u{e9}"] {
+            assert!(
+                request()
+                    .secret_header("Cookie", &Secret::new(bad))
+                    .is_err(),
+                "{bad:?}"
+            );
+            assert!(request().bearer(&Secret::new(bad)).is_err(), "{bad:?}");
+        }
+        assert!(
+            request()
+                .secret_header("Cookie", &Secret::new("a=b; c=d"))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_json_body_that_starts_with_an_at_sign_is_refused() {
+        assert!(request().json_body("@/etc/passwd").is_err());
+        assert!(request().json_body("{\"a\":1}").is_ok());
     }
 
     #[test]
@@ -426,10 +440,5 @@ mod tests {
             parse(b"\nSOYEHT_STATUS:000\n".to_vec()),
             Err(SendError::Malformed)
         ));
-    }
-
-    #[test]
-    fn a_secret_never_prints() {
-        assert!(!format!("{:?}", Secret::new("sk-secret")).contains("secret"));
     }
 }

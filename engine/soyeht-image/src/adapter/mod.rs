@@ -9,7 +9,7 @@ use crate::{
     catalogue::{Adapter, Choice},
     error::{Error, Result},
 };
-use soyeht_process::curl::Secret;
+use soyeht_platform::secret::Secret;
 use std::{path::Path, time::Duration};
 
 const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];

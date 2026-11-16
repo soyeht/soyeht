@@ -10,7 +10,7 @@
 use crate::error::{Error, Result};
 use sha2::{Digest, Sha256};
 use soyeht_platform::fs::{WriteMode, ensure_private_dir, write_atomic};
-use soyeht_process::curl::Secret;
+use soyeht_platform::secret::Secret;
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -22,17 +22,17 @@ const MAX_KEY_BYTES: usize = 1000;
 /// Characters of the host's digest in a file name.
 const NAME_DIGEST: usize = 16;
 
-/// The one rule for a key, on the way in and on the way out of the file: printable characters with
-/// no space, so it can only ever be one header value.
+/// The one rule for a key, on the way in and on the way out of the file: what a header can hold
+/// without escaping (`Secret::is_usable`), within a size a key does not exceed, so it can only
+/// ever be one header value.
 fn secret(text: &str) -> Result<Secret> {
-    let key = text.trim();
-    if key.is_empty() || key.len() > MAX_KEY_BYTES {
-        return Err(Error::InvalidKey("empty or too long"));
+    let key = Secret::new(text.trim());
+    if key.expose().len() > MAX_KEY_BYTES || !key.is_usable() {
+        return Err(Error::InvalidKey(
+            "empty, too long, or not printable characters with no space, quote or backslash",
+        ));
     }
-    if !key.bytes().all(|byte| byte.is_ascii_graphic()) {
-        return Err(Error::InvalidKey("only printable characters with no space"));
-    }
-    Ok(Secret::new(key))
+    Ok(key)
 }
 
 /// The host and the key of a stored file.

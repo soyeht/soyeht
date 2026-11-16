@@ -76,11 +76,12 @@ folder next to the picture and name each file after its frame.
    hair, glasses, lighting, framing and background did not move; only the named feature changed;
    and the feature looks like what the frame asks for (a mouth shape looks like that sound, an
    eye frame looks where it should, a blink has the eyes closed).
-4. If it is wrong, make it again. A provider that `takesSeed` gives another picture for another
-   `--seed`; one that does not gives the same kind of picture again, so change the instruction
-   instead. When the same mistake repeats, add a short correction with `--extra` (for example
-   `--extra "the teeth are not visible"` or `--extra "the head stays exactly where it is"`). After
-   about eight tries on one frame, go on to the next and come back at the end.
+4. If it is wrong, make it again. A cloud service (`takesSeed` false) gives another picture on
+   every call, so run the same command again. A provider that `takesSeed` gives the same picture
+   for the same seed, so change `--seed`. When the same mistake repeats, change the instruction:
+   add a short correction with `--extra` (for example `--extra "the teeth are not visible"` or
+   `--extra "the head stays exactly where it is"`). After about eight tries on one frame, go on to
+   the next and come back at the end.
 
 Do the mouth frames first, the widest-open ones before the closed one (`A`, `O` and `E` before
 `closed_MBP`). Once several are accepted, give `--region X,Y,WIDTH,HEIGHT` to the next ones: the
