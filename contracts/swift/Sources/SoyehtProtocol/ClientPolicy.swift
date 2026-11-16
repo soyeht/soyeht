@@ -148,7 +148,6 @@ public enum ClientPolicy {
     public static let editorIndentOpeners = "{[("
     public static let voiceFrameMs = 32
     public static let voiceFrameSeconds: Double = 0.032
-    public static let voiceFrameSamples = 512
     public static let voiceSampleRate = 16000
     public static let voiceTurnWindowSeconds = 8
     public static let voiceStartThreshold: Double = 0.5

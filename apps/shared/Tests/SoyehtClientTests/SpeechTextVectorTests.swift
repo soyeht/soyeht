@@ -8,15 +8,6 @@ import Testing
 /// Every key a case needs is required: a missing or misspelled one fails the test.
 private func vector() throws -> JsonValue { try ContractVector.load("speech-text") }
 
-private struct VectorError: Error, CustomStringConvertible {
-  let description: String
-}
-
-private func need<Value>(_ value: Value?, _ what: @autoclosure () -> String) throws -> Value {
-  guard let value else { throw VectorError(description: "missing or mistyped: \(what())") }
-  return value
-}
-
 private func strings(_ value: JsonValue, _ what: String) throws -> [String] {
   try need(value.array, what).map { try need($0.string, what) }
 }
@@ -30,7 +21,7 @@ private func chunker(_ item: JsonValue) throws -> SentenceChunker {
       switch key {
       case "minimumLength": minimum = try need(value.int, "config.minimumLength")
       case "maximumLength": maximum = try need(value.int, "config.maximumLength")
-      default: throw VectorError(description: "the vector sets \(key), which is unknown")
+      default: throw ContractVectorError(description: "the vector sets \(key), which is unknown")
       }
     }
   }

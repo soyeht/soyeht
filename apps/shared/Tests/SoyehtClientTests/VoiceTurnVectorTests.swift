@@ -8,15 +8,6 @@ import Testing
 /// Every key a case needs is required: a missing or misspelled one fails the test.
 private func vector() throws -> JsonValue { try ContractVector.load("voice-turns") }
 
-private struct VectorError: Error, CustomStringConvertible {
-  let description: String
-}
-
-private func need<Value>(_ value: Value?, _ what: @autoclosure () -> String) throws -> Value {
-  guard let value else { throw VectorError(description: "missing or mistyped: \(what())") }
-  return value
-}
-
 extension VoiceTurnConfig {
   /// The overrides a case names; a name this client does not know, or a value of the wrong type,
   /// fails.
@@ -24,7 +15,7 @@ extension VoiceTurnConfig {
     self.init()
     if case .null = values { return }
     guard case .object(let fields) = values else {
-      throw VectorError(description: "\(name): config")
+      throw ContractVectorError(description: "\(name): config")
     }
     for (key, value) in fields {
       func int() throws -> Int { try need(value.int, "\(name).config.\(key)") }
@@ -45,7 +36,8 @@ extension VoiceTurnConfig {
       case "halfDuplex": halfDuplex = try need(value.bool, "\(name).config.halfDuplex")
       case "continuers":
         continuers = try need(value.array, "\(name).continuers").compactMap(\.string)
-      default: throw VectorError(description: "\(name): the vector sets \(key), which is unknown")
+      default:
+        throw ContractVectorError(description: "\(name): the vector sets \(key), which is unknown")
       }
     }
   }
@@ -171,6 +163,6 @@ private func inputs(of step: JsonValue, at: Int, config: VoiceTurnConfig, label:
     ]
   case "sentenceStarted":
     return [(at, .sentenceStarted(try need(step["text"].string, "\(label) text")))]
-  default: throw VectorError(description: "\(label): unknown input \(kind)")
+  default: throw ContractVectorError(description: "\(label): unknown input \(kind)")
   }
 }

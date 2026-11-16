@@ -326,15 +326,8 @@ public struct VoiceTurnMachine: Sendable {
   }
 
   private mutating func interrupt() -> [VoiceTurnAction] {
-    let actions: [VoiceTurnAction]
-    switch phase {
-    case .hearing, .deciding, .finalizing: actions = [.discardTurn]
-    case .waitingReply: actions = [.cancelReply]
-    case .probingWait: actions = [.dropProbe, .cancelReply]
-    case .playing: actions = [.stopPlayback, .cancelReply]
-    case .probing: actions = [.dropProbe, .stopPlayback, .cancelReply]
-    case .off, .waiting: return []
-    }
+    guard phase != .off, phase != .waiting else { return [] }
+    let actions = cancelling()
     phase = .waiting
     interrupted = false
     voiced = false
@@ -342,18 +335,22 @@ public struct VoiceTurnMachine: Sendable {
   }
 
   private mutating func stop() -> [VoiceTurnAction] {
-    let actions: [VoiceTurnAction]
-    switch phase {
-    case .off, .waiting: actions = []
-    case .hearing, .deciding, .finalizing: actions = [.discardTurn]
-    case .waitingReply: actions = [.cancelReply]
-    case .probingWait: actions = [.dropProbe, .cancelReply]
-    case .playing: actions = [.stopPlayback, .cancelReply]
-    case .probing: actions = [.dropProbe, .stopPlayback, .cancelReply]
-    }
+    let actions = cancelling()
     reset()
     phase = .off
     return actions
+  }
+
+  /// What drops everything that is under way in the phase the machine is in.
+  private func cancelling() -> [VoiceTurnAction] {
+    switch phase {
+    case .off, .waiting: []
+    case .hearing, .deciding, .finalizing: [.discardTurn]
+    case .waitingReply: [.cancelReply]
+    case .probingWait: [.dropProbe, .cancelReply]
+    case .playing: [.stopPlayback, .cancelReply]
+    case .probing: [.dropProbe, .stopPlayback, .cancelReply]
+    }
   }
 
   private mutating func reset() {

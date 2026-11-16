@@ -74,7 +74,6 @@ export const clientPolicy = {
   },
   "voice": {
     "frameMs": 32,
-    "frameSamples": 512,
     "sampleRate": 16000,
     "turnWindowSeconds": 8,
     "startThreshold": 0.5,

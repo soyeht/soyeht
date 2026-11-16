@@ -148,7 +148,6 @@ pub const EDITOR_SAVE_RETRY_MS: u32 = 100;
 pub const EDITOR_INDENT_UNIT: &str = "    ";
 pub const EDITOR_INDENT_OPENERS: &str = "{[(";
 pub const VOICE_FRAME_MS: u64 = 32;
-pub const VOICE_FRAME_SAMPLES: u64 = 512;
 pub const VOICE_SAMPLE_RATE: u64 = 16000;
 pub const VOICE_TURN_WINDOW_SECONDS: u64 = 8;
 pub const VOICE_START_THRESHOLD: f64 = 0.5;

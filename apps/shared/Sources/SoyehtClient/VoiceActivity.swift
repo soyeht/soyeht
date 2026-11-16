@@ -5,7 +5,7 @@ import SoyehtProtocol
 /// frames of 512 samples (32 ms), the size of the models' own windows (`x-clientPolicy.voice`).
 public enum VoiceFrames {
   public static let sampleRate = ClientPolicy.voiceSampleRate
-  public static let size = ClientPolicy.voiceFrameSamples
+  public static let size = sampleRate * ClientPolicy.voiceFrameMs / 1_000
   /// The audio the end-of-turn model reads: the last 8 seconds of the turn.
   public static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
 
