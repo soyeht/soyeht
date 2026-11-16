@@ -78,6 +78,7 @@ SCALAR_GROUPS = (
     "usageWindow",
     "crashReports",
     "editor",
+    "voice",
 )
 
 

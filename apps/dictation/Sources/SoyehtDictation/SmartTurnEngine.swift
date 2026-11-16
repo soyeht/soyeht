@@ -1,4 +1,3 @@
-import AudioCommon
 import CoreML
 import Foundation
 import SoyehtClient
@@ -33,14 +32,14 @@ public enum SmartTurnEngine {
 final class SmartTurnModelHolder: LocalModelHolder<MLModel>, @unchecked Sendable {
   static let shared = SmartTurnModelHolder()
 
-  static let modelId = "aufklarer/Smart-Turn-v3.2-CoreML"
   private static let compiledModel = "smart_turn.mlmodelc"
 
-  init(location: ModelCacheLocation = ModelCacheLocation(modelId: SmartTurnModelHolder.modelId)) {
+  init(
+    location: ModelCacheLocation = ModelCacheLocation(modelId: PinnedModel.smartTurn.repository)
+  ) {
     super.init(location: location) { installed, directory, report in
-      try await HuggingFaceDownloader.downloadFiles(
-        modelId: Self.modelId, to: directory,
-        files: ["\(Self.compiledModel)/**", "config.json"], offlineMode: installed
+      try await PinnedDownload.fetch(
+        .smartTurn, to: directory, offline: installed
       ) { report(.downloading($0)) }
       report(.preparing)
       let configuration = MLModelConfiguration()
@@ -56,7 +55,7 @@ final class SmartTurnModelHolder: LocalModelHolder<MLModel>, @unchecked Sendable
 final class SmartTurnEndOfTurn: EndOfTurnDetecting, @unchecked Sendable {
   /// The model's window: eight seconds at 16 kHz, with the newest audio last.
   static let window = VoiceFrames.turnWindow
-  /// The turn is complete above this probability (the model's `config.json`).
+  /// The turn is complete above this probability: the `threshold` of the pinned `config.json`.
   static let threshold = 0.5
 
   private static let queue = DispatchQueue(label: "com.soyeht.voice.smartturn")
@@ -64,14 +63,9 @@ final class SmartTurnEndOfTurn: EndOfTurnDetecting, @unchecked Sendable {
 
   init(_ model: MLModel) { self.model = model }
 
-  /// A model that fails to answer is no reason to hold the person's turn: the pause decides.
-  func isComplete(turn audio: [Float]) async -> Bool {
-    do {
-      return try await probability(of: audio) > Self.threshold
-    } catch {
-      ClientDiagnostics.reportOnce("voice_smart_turn_failed", key: "voice", error: error)
-      return true
-    }
+  /// A model that fails to answer throws: the loop then ends the turn at the pause and reports it.
+  func isComplete(turn audio: [Float]) async throws -> Bool {
+    try await probability(of: audio) > Self.threshold
   }
 
   private func probability(of audio: [Float]) async throws -> Double {
@@ -94,14 +88,8 @@ final class SmartTurnEndOfTurn: EndOfTurnDetecting, @unchecked Sendable {
     let output = try model.prediction(
       from: MLDictionaryFeatureProvider(dictionary: ["audio": MLFeatureValue(multiArray: input)]))
     guard let result = output.featureValue(for: "probability")?.multiArrayValue else {
-      throw SmartTurnFailure.noProbability
+      throw VoiceModelError.prediction("the model returned no probability")
     }
     return result[0].doubleValue
-  }
-
-  enum SmartTurnFailure: LocalizedError {
-    case noProbability
-
-    var errorDescription: String? { "The turn model returned no probability." }
   }
 }

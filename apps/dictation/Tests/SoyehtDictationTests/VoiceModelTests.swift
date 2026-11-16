@@ -43,3 +43,57 @@ private func expectLicenseAndInstall<Made>(_ provider: VoiceModelProvider<Made>)
   #expect(SileroEngine.provider.availability() == rule)
   #expect(SmartTurnEngine.provider.availability() == rule)
 }
+
+@Test func theSileroFrameIsTheFrameOfTheLoop() {
+  #expect(SileroVoiceActivity.chunkSize == VoiceFrames.size)
+}
+
+@Test func theDownloadsArePinnedToACommitAndAChecksum() {
+  for model in [PinnedModel.sileroVAD, PinnedModel.smartTurn] {
+    #expect(model.revision.count == 40 && model.revision.allSatisfy(\.isHexDigit))
+    #expect(!model.files.isEmpty)
+    for file in model.files {
+      #expect(file.sha256.count == 64 && file.sha256.allSatisfy(\.isHexDigit))
+      #expect(file.size > 0)
+    }
+  }
+}
+
+@Test func anInstalledModelIsCheckedNotFetched() async throws {
+  let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "voice-pinned-\(UUID().uuidString)")
+  defer { try? FileManager.default.removeItem(at: directory) }
+  // Nothing is there: an offline load fails, naming the file, and never reaches for the network.
+  await #expect(throws: PinnedDownload.Failure.self) {
+    try await PinnedDownload.fetch(.smartTurn, to: directory, offline: true) { _ in }
+  }
+  for file in PinnedModel.smartTurn.files {
+    let target = directory.appendingPathComponent(file.path)
+    try FileManager.default.createDirectory(
+      at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(count: file.size).write(to: target)
+  }
+  try await PinnedDownload.fetch(.smartTurn, to: directory, offline: true) { _ in }
+  // A file of the wrong size is not the pinned one.
+  let weights = directory.appendingPathComponent("smart_turn.mlmodelc/weights/weight.bin")
+  try Data(count: 3).write(to: weights)
+  await #expect(throws: PinnedDownload.Failure.self) {
+    try await PinnedDownload.fetch(.smartTurn, to: directory, offline: true) { _ in }
+  }
+}
+
+@Test func aFrameOfTheWrongSizeIsAnErrorNotASilence() throws {
+  struct Failing: VoiceActivityDetecting {
+    func probability(of frame: [Float]) throws -> Double {
+      guard frame.count == VoiceFrames.size else {
+        throw VoiceModelError.frameSize(expected: VoiceFrames.size, got: frame.count)
+      }
+      return 0
+    }
+
+    func reset() {}
+  }
+  #expect(throws: VoiceModelError.frameSize(expected: 512, got: 100)) {
+    try Failing().probability(of: [Float](repeating: 0, count: 100))
+  }
+}

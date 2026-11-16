@@ -9,6 +9,12 @@ import Foundation
 @MainActor public final class MicrophoneCapture {
   public typealias Sink = @Sendable (AVAudioPCMBuffer) -> Void
 
+  /// The frames of one tap buffer, for every capture of the app.
+  static let tapBufferFrames: AVAudioFrameCount = 1_024
+  /// How many captures hold the device on their own engine: the voice loop does not start while a
+  /// dictation does.
+  private(set) static var ownedCaptures = 0
+
   private var engine: AVAudioEngine?
   /// Set while this capture listens through the voice loop's session instead of its own engine.
   private var joined: (session: VoiceAudioSession, token: Int)?
@@ -40,6 +46,10 @@ import Foundation
   public func start(_ sink: @escaping Sink) throws {
     stop()
     if let session = VoiceAudioSession.active {
+      // The device is the voice loop's: only the recognizers it starts join it.
+      guard session.allowsJoin else {
+        throw VoiceAudioError.busy("The microphone is in use by the voice conversation.")
+      }
       joined = (session, session.attach(sink))
       return
     }
@@ -51,9 +61,11 @@ import Foundation
     let engine = AVAudioEngine()
     let input = engine.inputNode
     input.installTap(
-      onBus: 0, bufferSize: 1_024, format: input.outputFormat(forBus: 0), block: Self.tap(sink))
+      onBus: 0, bufferSize: Self.tapBufferFrames, format: input.outputFormat(forBus: 0),
+      block: Self.tap(sink))
     engine.prepare()
     try engine.start()
+    Self.ownedCaptures += 1
     self.engine = engine
   }
 
@@ -67,7 +79,10 @@ import Foundation
     engine.stop()
     engine.inputNode.removeTap(onBus: 0)
     self.engine = nil
+    Self.ownedCaptures -= 1
     #if os(iOS)
+      // The loop's session is its own: a dictation ending must not deactivate it.
+      guard VoiceAudioSession.active == nil else { return }
       _ = ClientDiagnostics.attempt("dictation_audio_session_release_failed", key: "dictation") {
         try AVAudioSession.sharedInstance().setActive(
           false, options: .notifyOthersOnDeactivation)

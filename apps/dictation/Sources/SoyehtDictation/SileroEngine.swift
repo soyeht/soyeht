@@ -1,13 +1,14 @@
+import CoreML
 import Foundation
 import SoyehtClient
-@preconcurrency import SpeechVAD
 
-/// Silero VAD as the CoreML model of `aufklarer/Silero-VAD-v6.2.1-CoreML`: the speech probability
-/// of every 32 ms of microphone audio, on this device. It is opt-in, after a one-time download the
-/// person starts, and it sends nothing anywhere.
+/// Silero VAD as the CoreML model of `aufklarer/Silero-VAD-v6.2.1-CoreML`, at a pinned revision: the
+/// speech probability of every 32 ms of microphone audio, on this device. It is opt-in, after a
+/// one-time download the person starts, and it sends nothing anywhere.
 ///
-/// ADR 0166 names Silero VAD v5; the CoreML conversion this module's dependency carries is of the
-/// same model's later 6.2.1 weights, under the same MIT license.
+/// ADR 0166 names Silero VAD v5; the CoreML conversion that exists is of the same project's 6.2.1
+/// weights, under the same MIT license. The model is run here rather than through a library, so a
+/// prediction that fails is an error the loop reports and not a silence.
 public enum SileroEngine {
   /// The model card states MIT, and so does the license of the Silero project.
   static let license = ProviderLicense(
@@ -19,7 +20,7 @@ public enum SileroEngine {
     platforms: Set(DictationPlatform.allCases),
     license: license,
     model: DictationModelInfo(
-      sizeDescription: "about 2 MB", licenseName: license.name, licenseURL: license.url,
+      sizeDescription: "about 1 MB", licenseName: license.name, licenseURL: license.url,
       commercialUse: license.commercialUse == true,
       install: { report in try await SileroModelHolder.shared.install(report: report) },
       isInstalled: { SileroModelHolder.shared.isInstalled },
@@ -28,45 +29,106 @@ public enum SileroEngine {
     make: { SileroModelHolder.shared.current.map(SileroVoiceActivity.init) })
 }
 
-/// The Silero model: its files on disk and the copy loaded in this process, like Kokoro's.
-final class SileroModelHolder: LocalModelHolder<SileroVADModel>, @unchecked Sendable {
+/// The Silero model: its files on disk and the compiled model loaded in this process, like Kokoro's.
+/// The compiled model holds no stream: each `SileroVoiceActivity` has its own state.
+final class SileroModelHolder: LocalModelHolder<MLModel>, @unchecked Sendable {
   static let shared = SileroModelHolder()
 
-  /// `fromPretrained` spends the first 80% of its progress on the download and the rest on loading.
-  private static let downloadShare = 0.8
+  static let compiledModel = "silero_vad.mlmodelc"
 
   init(
-    location: ModelCacheLocation = ModelCacheLocation(
-      modelId: SileroVADModel.defaultCoreMLModelId)
+    location: ModelCacheLocation = ModelCacheLocation(modelId: PinnedModel.sileroVAD.repository)
   ) {
     super.init(location: location) { installed, directory, report in
-      try await SileroVADModel.fromPretrained(
-        engine: .coreml, cacheDir: directory, offlineMode: installed
-      ) { fraction, _ in
-        report(
-          installed || fraction >= Self.downloadShare
-            ? .preparing : .downloading(fraction / Self.downloadShare))
-      }
+      try await PinnedDownload.fetch(
+        .sileroVAD, to: directory, offline: installed
+      ) { report(.downloading($0)) }
+      report(.preparing)
+      let configuration = MLModelConfiguration()
+      configuration.computeUnits = .cpuAndNeuralEngine
+      let model = try MLModel(
+        contentsOf: directory.appendingPathComponent(Self.compiledModel, isDirectory: true),
+        configuration: configuration)
+      try SileroVoiceActivity.checkFrameSize(of: model)
+      return model
     }
   }
 }
 
-/// One stream of microphone audio read by the model. The model carries its state from frame to
-/// frame, is not safe for two threads at once, and serves one stream: the lock keeps a stray call
-/// from another thread from corrupting it.
+/// One stream of microphone audio read by the model. The state of the model's recurrent layer and
+/// the 64 samples of context before each frame belong to the stream, so two streams never share
+/// them; the lock keeps a call from another thread from corrupting its own.
 final class SileroVoiceActivity: VoiceActivityDetecting, @unchecked Sendable {
+  /// The samples the model reads before each frame, taken from the end of the frame before.
+  static let contextSamples = 64
+  /// The model's own frame, from the pinned `config.json` (`chunk_size`).
+  static let chunkSize = 512
+  private static let stateShape: [NSNumber] = [1, 1, 128]
+
   private let lock = NSLock()
-  private let model: SileroVADModel
+  private let model: MLModel
+  private var context = [Float](repeating: 0, count: contextSamples)
+  private var hidden: MLMultiArray?
+  private var cell: MLMultiArray?
 
-  init(_ model: SileroVADModel) {
-    self.model = model
-    model.resetState()
+  init(_ model: MLModel) { self.model = model }
+
+  /// The compiled model reads `contextSamples + chunkSize` samples; a model that reads another
+  /// frame is not this one.
+  static func checkFrameSize(of model: MLModel) throws {
+    let shape = model.modelDescription.inputDescriptionsByName["audio"]?.multiArrayConstraint?.shape
+    let samples = shape?.last?.intValue
+    guard samples == contextSamples + chunkSize else {
+      throw VoiceModelError.frameSize(expected: contextSamples + chunkSize, got: samples ?? 0)
+    }
   }
 
-  func probability(of frame: [Float]) -> Double {
-    guard frame.count == SileroVADModel.chunkSize else { return 0 }
-    return lock.withLock { Double(model.processChunk(frame)) }
+  func probability(of frame: [Float]) throws -> Double {
+    guard frame.count == Self.chunkSize else {
+      throw VoiceModelError.frameSize(expected: Self.chunkSize, got: frame.count)
+    }
+    return try lock.withLock {
+      do {
+        return try predict(context + frame, then: frame)
+      } catch {
+        throw VoiceModelError.prediction(error.localizedDescription)
+      }
+    }
   }
 
-  func reset() { lock.withLock { model.resetState() } }
+  func reset() {
+    lock.withLock {
+      context = [Float](repeating: 0, count: Self.contextSamples)
+      hidden = nil
+      cell = nil
+    }
+  }
+
+  private func predict(_ samples: [Float], then frame: [Float]) throws -> Double {
+    let audio = try MLMultiArray(shape: [1, 1, NSNumber(value: samples.count)], dataType: .float16)
+    let values = audio.dataPointer.assumingMemoryBound(to: Float16.self)
+    for (index, sample) in samples.enumerated() { values[index] = Float16(sample) }
+    let h = try hidden ?? Self.zeros()
+    let c = try cell ?? Self.zeros()
+    let output = try model.prediction(
+      from: MLDictionaryFeatureProvider(dictionary: [
+        "audio": MLFeatureValue(multiArray: audio), "h": MLFeatureValue(multiArray: h),
+        "c": MLFeatureValue(multiArray: c),
+      ]))
+    guard let nextH = output.featureValue(for: "h_out")?.multiArrayValue,
+      let nextC = output.featureValue(for: "c_out")?.multiArrayValue,
+      let probability = output.featureValue(for: "probability")?.multiArrayValue
+    else { throw VoiceModelError.prediction("the model returned no probability") }
+    hidden = nextH
+    cell = nextC
+    context = Array(frame.suffix(Self.contextSamples))
+    return Double(probability.dataPointer.assumingMemoryBound(to: Float16.self)[0])
+  }
+
+  private static func zeros() throws -> MLMultiArray {
+    let array = try MLMultiArray(shape: stateShape, dataType: .float16)
+    let values = array.dataPointer.assumingMemoryBound(to: Float16.self)
+    for index in 0..<array.count { values[index] = 0 }
+    return array
+  }
 }

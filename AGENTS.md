@@ -66,7 +66,8 @@ Each layer depends only on the layers listed above it.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
    dictation engines and the text-to-speech providers that need third-party
    dependencies (Nemotron, Kokoro), and the catalogues of both
-   (`DictationCatalogue`, `VoiceCatalogue`; ADR 0083, ADR 0166).
+   (`DictationCatalogue`, `VoiceCatalogue`, and `VoiceModelCatalogue` for the voice loop's
+   voice-activity and end-of-turn models; ADR 0083, ADR 0166).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling. The Mac
    creates and injects every observable environment object once, in `SoyehtMacApp.swift`
@@ -157,8 +158,10 @@ ADR when you change a boundary.
   request, greeting and reconnect timings, the web read's settle poll and deadline share, the
   terminal input chunk, the `caps` (waiting messages read, links found in one text, pages of a model
   catalogue, tool calls the ticker lists), the usage and context band thresholds and ring opacities,
-  the weekly-window rule, provider names and which configuration selector is the model, effort or
-  permission one. Use `ClientPolicy` and
+  the weekly-window rule, provider names, which configuration selector is the model, effort or
+  permission one, and the `voice` group: the voice loop's frame size, timings, listener noises and
+  sentence limits and stops (`contracts/vectors/voice-turns.json` and `speech-text.json` are written
+  for those values). Use `ClientPolicy` and
   `ConfigOption.isModel`/`isEffort`/`isPermissionMode` in Swift and
   `soyeht_protocol::client_policy` in Rust. Behaviour the two languages implement separately
   (the usage presentation, the pane layout and each kind of pane's floor, of which the desktop

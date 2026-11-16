@@ -2,21 +2,21 @@
   "models": [
     {
       "name": "Silero VAD CoreML (aufklarer/Silero-VAD-v6.2.1-CoreML)",
-      "version": "",
+      "version": "523876545a57961474fee9df913e833e130560b8",
       "license": "MIT",
       "url": "https://huggingface.co/aufklarer/Silero-VAD-v6.2.1-CoreML",
       "notes": [
-        "the voice-activity model of the voice loop, downloaded after the person presses Install and never bundled",
+        "the voice-activity model of the voice loop, downloaded after the person presses Install and never bundled; fetched at this commit and checked against the SHA-256 of each file (PinnedModelDownload.swift)",
         "license: the model card metadata (license: mit), read on 2026-11-16; base model snakers4/silero-vad, whose LICENSE file is the MIT license of the Silero Team (read on 2026-11-16)"
       ]
     },
     {
       "name": "Smart Turn v3.2 CoreML (aufklarer/Smart-Turn-v3.2-CoreML)",
-      "version": "",
+      "version": "75f069717f500947195fa1945c46ddb472559cff",
       "license": "BSD-2-Clause",
       "url": "https://huggingface.co/aufklarer/Smart-Turn-v3.2-CoreML",
       "notes": [
-        "the end-of-turn model of the voice loop, downloaded after the person presses Install and never bundled",
+        "the end-of-turn model of the voice loop, downloaded after the person presses Install and never bundled; fetched at this commit and checked against the SHA-256 of each file (PinnedModelDownload.swift)",
         "license: the model card metadata (license: bsd-2-clause) and the LICENSE file of the repository, a BSD 2-Clause notice of Daily for the upstream pipecat-ai/smart-turn-v3 weights (read on 2026-11-16)"
       ]
     },

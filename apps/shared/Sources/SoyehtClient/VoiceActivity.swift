@@ -1,22 +1,38 @@
 import Foundation
+import SoyehtProtocol
 
 /// The audio the voice-activity model and the end-of-turn model read: mono floats at 16 kHz, in
-/// frames of 512 samples (32 ms), the size of the models' own windows.
+/// frames of 512 samples (32 ms), the size of the models' own windows (`x-clientPolicy.voice`).
 public enum VoiceFrames {
-  public static let sampleRate = 16_000
-  public static let size = 512
+  public static let sampleRate = ClientPolicy.voiceSampleRate
+  public static let size = ClientPolicy.voiceFrameSamples
   /// The audio the end-of-turn model reads: the last 8 seconds of the turn.
-  public static let turnWindow = 8 * sampleRate
+  public static let turnWindow = ClientPolicy.voiceTurnWindowSeconds * sampleRate
 
-  public static var frameMs: Int { size * 1_000 / sampleRate }
+  public static var frameMs: Int { ClientPolicy.voiceFrameMs }
+}
+
+/// A voice model that could not answer: not a silence, a failure the loop reports.
+public enum VoiceModelError: LocalizedError, Equatable {
+  case frameSize(expected: Int, got: Int)
+  case prediction(String)
+
+  public var errorDescription: String? {
+    switch self {
+    case .frameSize(let expected, let got):
+      "The voice model reads frames of \(expected) samples and was given \(got)."
+    case .prediction(let reason): "The voice model failed: \(reason)"
+    }
+  }
 }
 
 /// A voice-activity model: how likely one frame of audio is speech. It keeps state from frame to
 /// frame, so one instance serves one stream. The models of the catalogue
 /// (`VoiceModelProvider`) implement it; `EnergyVoiceActivity` is the one that needs no download.
 public protocol VoiceActivityDetecting: Sendable {
-  /// The probability, 0 to 1, that `frame` (`VoiceFrames.size` samples) holds speech.
-  func probability(of frame: [Float]) -> Double
+  /// The probability, 0 to 1, that `frame` (`VoiceFrames.size` samples) holds speech. A model that
+  /// cannot answer throws: that is not a silence.
+  func probability(of frame: [Float]) throws -> Double
   /// Forgets the stream so far.
   func reset()
 }
@@ -24,15 +40,16 @@ public protocol VoiceActivityDetecting: Sendable {
 /// An end-of-turn model: whether the person has finished what they were saying, read from the sound
 /// of the end of it (its pace and its fall in pitch) rather than from a silence alone.
 public protocol EndOfTurnDetecting: Sendable {
-  /// `audio` is the last `VoiceFrames.turnWindow` samples or fewer of the turn, at 16 kHz.
-  func isComplete(turn audio: [Float]) async -> Bool
+  /// `audio` is the last `VoiceFrames.turnWindow` samples or fewer of the turn, at 16 kHz. A model
+  /// that cannot answer throws, and the loop ends the turn at the pause.
+  func isComplete(turn audio: [Float]) async throws -> Bool
 }
 
 /// The end of turn with no model: a pause long enough (the turn machine's `silenceMs`) is the end.
 public struct SilenceEndOfTurn: EndOfTurnDetecting {
   public init() {}
 
-  public func isComplete(turn audio: [Float]) async -> Bool { true }
+  public func isComplete(turn audio: [Float]) async throws -> Bool { true }
 }
 
 /// Voice activity from loudness alone: a frame is speech when it is clearly louder than the quietest

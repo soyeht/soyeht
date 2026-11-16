@@ -146,6 +146,42 @@ public enum ClientPolicy {
     public static let editorSaveRetrySeconds: Double = 0.1
     public static let editorIndentUnit = "    "
     public static let editorIndentOpeners = "{[("
+    public static let voiceFrameMs = 32
+    public static let voiceFrameSeconds: Double = 0.032
+    public static let voiceFrameSamples = 512
+    public static let voiceSampleRate = 16000
+    public static let voiceTurnWindowSeconds = 8
+    public static let voiceStartThreshold: Double = 0.5
+    public static let voiceEndThreshold: Double = 0.35
+    public static let voiceSpeechStartMs = 96
+    public static let voiceSpeechStartSeconds: Double = 0.096
+    public static let voicePreRollMs = 320
+    public static let voicePreRollSeconds: Double = 0.32
+    public static let voiceHistoryMs = 2000
+    public static let voiceHistorySeconds: Double = 2.0
+    public static let voiceSilenceMs = 350
+    public static let voiceSilenceSeconds: Double = 0.35
+    public static let voiceIncompleteSilenceMs = 2000
+    public static let voiceIncompleteSilenceSeconds: Double = 2.0
+    public static let voiceFinalizeTimeoutMs = 3000
+    public static let voiceFinalizeTimeoutSeconds: Double = 3.0
+    public static let voiceBargeInMs = 350
+    public static let voiceBargeInSeconds: Double = 0.35
+    public static let voiceProbeTimeoutMs = 1500
+    public static let voiceProbeTimeoutSeconds: Double = 1.5
+    public static let voiceHalfDuplexTailMs = 300
+    public static let voiceHalfDuplexTailSeconds: Double = 0.3
+    public static let voiceWatchdogMs = 3000
+    public static let voiceWatchdogSeconds: Double = 3.0
+    public static let voiceOutputTickMs = 16
+    public static let voiceOutputTickSeconds: Double = 0.016
+    public static let voiceContinuers = "mhm|mmm|mm hmm|uh huh|hmm|aham|uhum"
+    public static let voiceSentenceMinChars = 16
+    public static let voiceSentenceMaxChars = 240
+    public static let voiceSentenceStops = ".!?…"
+    public static let voiceSentenceWideStops = "。！？"
+    public static let voiceSentenceClosers = "\"')]”’»」』）"
+    public static let voiceSentenceAbbreviations = "mr.|mrs.|ms.|dr.|prof.|st.|sr.|sra.|dra.|av.|vs.|e.g.|i.e."
 
     /// Image types that claude-agent-acp and codex-acp forward as model input and that both
     /// providers accept; any other image is linked.

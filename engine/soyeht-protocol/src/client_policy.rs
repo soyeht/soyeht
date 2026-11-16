@@ -147,6 +147,31 @@ pub const EDITOR_SAVE_ATTEMPTS: u32 = 30;
 pub const EDITOR_SAVE_RETRY_MS: u32 = 100;
 pub const EDITOR_INDENT_UNIT: &str = "    ";
 pub const EDITOR_INDENT_OPENERS: &str = "{[(";
+pub const VOICE_FRAME_MS: u64 = 32;
+pub const VOICE_FRAME_SAMPLES: u64 = 512;
+pub const VOICE_SAMPLE_RATE: u64 = 16000;
+pub const VOICE_TURN_WINDOW_SECONDS: u64 = 8;
+pub const VOICE_START_THRESHOLD: f64 = 0.5;
+pub const VOICE_END_THRESHOLD: f64 = 0.35;
+pub const VOICE_SPEECH_START_MS: u64 = 96;
+pub const VOICE_PRE_ROLL_MS: u64 = 320;
+pub const VOICE_HISTORY_MS: u64 = 2000;
+pub const VOICE_SILENCE_MS: u64 = 350;
+pub const VOICE_INCOMPLETE_SILENCE_MS: u64 = 2000;
+pub const VOICE_FINALIZE_TIMEOUT_MS: u64 = 3000;
+pub const VOICE_BARGE_IN_MS: u64 = 350;
+pub const VOICE_PROBE_TIMEOUT_MS: u64 = 1500;
+pub const VOICE_HALF_DUPLEX_TAIL_MS: u64 = 300;
+pub const VOICE_WATCHDOG_MS: u64 = 3000;
+pub const VOICE_OUTPUT_TICK_MS: u64 = 16;
+pub const VOICE_CONTINUERS: &str = "mhm|mmm|mm hmm|uh huh|hmm|aham|uhum";
+pub const VOICE_SENTENCE_MIN_CHARS: u64 = 16;
+pub const VOICE_SENTENCE_MAX_CHARS: u64 = 240;
+pub const VOICE_SENTENCE_STOPS: &str = ".!?…";
+pub const VOICE_SENTENCE_WIDE_STOPS: &str = "。！？";
+pub const VOICE_SENTENCE_CLOSERS: &str = "\"')]”’»」』）";
+pub const VOICE_SENTENCE_ABBREVIATIONS: &str =
+    "mr.|mrs.|ms.|dr.|prof.|st.|sr.|sra.|dra.|av.|vs.|e.g.|i.e.";
 /// Image types that claude-agent-acp and codex-acp forward as model input and that both
 /// providers accept; any other image is linked.
 pub const INLINE_IMAGE_TYPES: &[&str] = &["image/png", "image/jpeg", "image/gif", "image/webp"];
