@@ -47,6 +47,21 @@ class ClientPolicyTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate(policy, SCHEMA)
 
+    def test_a_list_of_the_voice_group_has_no_empty_or_padded_entry(self):
+        for key in ("continuers", "sentenceAbbreviations", "pictographs", "scriptsWithoutBlanks"):
+            for bad in ("a||b", "|a", "a|", " a|b", "a |b", "a|a"):
+                changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+                changed["voice"][key] = bad
+                with self.subTest(key=key, bad=bad), self.assertRaises(ValueError):
+                    validate(changed, SCHEMA)
+
+    def test_the_voice_ranges_are_code_points(self):
+        for bad in ("1F000-", "xyz", "1F", "1F000_1FAFF"):
+            changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
+            changed["voice"]["pictographs"] = bad
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate(changed, SCHEMA)
+
     def test_a_timeout_is_whole_positive_milliseconds(self):
         for value in (0, -5, 1.5, "12"):
             changed = copy.deepcopy(SCHEMA["x-clientPolicy"])
