@@ -19,16 +19,36 @@ fn a_folder_name_is_lower_case_words_joined_by_hyphens() {
 #[test]
 fn a_folder_name_is_cut_and_never_a_device_name_of_windows() {
     let long = folder_name(&"word ".repeat(40));
-    assert!(long.chars().count() <= FOLDER_NAME_CHARS);
+    assert!(long.chars().count() <= limits::PROJECT_FOLDER_NAME_CHARS);
     assert!(!long.ends_with('-'));
-    for device in ["con", "NUL", "com1", "LPT9", "aux"] {
+    for device in [
+        "con",
+        "NUL",
+        "com1",
+        "LPT9",
+        "aux",
+        "COM\u{b9}",
+        "lpt\u{b3}",
+        "com\u{b2}",
+    ] {
         assert_eq!(
             folder_name(device),
-            format!("{FALLBACK_NAME}-{}", device.to_lowercase())
+            format!("{FALLBACK_NAME}-{}", device.to_lowercase()),
+            "{device}"
         );
     }
-    assert_eq!(folder_name("com10"), "com10");
-    assert_eq!(folder_name("console"), "console");
+    // A name that only starts like a device, and the two that are a device only with a number.
+    for name in ["com10", "console", "com", "lpt", "com0", "auxiliary"] {
+        assert_eq!(folder_name(name), name);
+    }
+}
+
+#[test]
+fn a_letter_and_its_accent_are_one_character_however_they_were_typed() {
+    let composed = "A\u{e7}\u{e3}o f\u{ed}sica";
+    let decomposed = "Ac\u{327}a\u{303}o fi\u{301}sica";
+    assert_eq!(folder_name(composed), "a\u{e7}\u{e3}o-f\u{ed}sica");
+    assert_eq!(folder_name(decomposed), folder_name(composed));
 }
 
 fn directory() -> PathBuf {

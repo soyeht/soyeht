@@ -708,6 +708,8 @@ impl Core {
             .push(super::methods::queued(pane, &state, self.now_ms())?);
         sign_in::record_started(&mut state, saved.pane.generation, &prompt, &mut changes)?;
         let payload = prompt_payload(&state, &session, &prompt, &saved.pane.name)?;
+        let payload =
+            super::persona::ahead_of(&self.store, &mut state, &saved.pane.workspace_id, payload)?;
         responses::call(
             &mut state,
             &mut changes,

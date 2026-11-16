@@ -90,17 +90,34 @@ any other durable one).
   the caller read, or `"0"` when the workspace had none: a different one is `stale_version`, nothing changes,
   and the caller reads again (from `avatar.list` or `avatar.changed`) and decides. So a client holding an old
   copy, a phone that was offline, cannot overwrite what the computer wrote since. `not_found` for a
-  workspace that is closed or unknown and for an unknown avatar. `acknowledgedPackage` is the one of
-  `pane.create` (ADR 0143), for the pane this call starts. The call also **starts the avatar's pane**
-  (section 6) and answers `{binding, paneId}`: the binding and the pane are one change, so a harness
-  that cannot start leaves no binding (`harness_unavailable`, `adapter_not_acknowledged`, and the
-  other refusals of `pane.create`). A workspace that already has its avatar pane open gets no other:
-  the binding is replaced, `paneId` names the open pane, and the pane reads the new persona the next
-  time its session opens; changing the harness of an open pane is `pane.harness.switch`.
+  workspace that is closed or unknown and for an unknown avatar. `harness` must be one of the profile's
+  (`harness_unavailable` otherwise), whether or not the workspace has a pane. `acknowledgedPackage` is the
+  one of `pane.create` (ADR 0143), for the pane this call starts or switches. The call also **brings the
+  avatar's pane to the binding** (section 6) and answers `{binding, paneId}`:
+  - a workspace with no avatar pane open that is alive gets one **started**, in the same change as the
+    binding. A request that `pane.create` would refuse (`adapter_not_acknowledged`, a harness that
+    cannot be resolved) leaves no binding. A pane that is created and then fails to start leaves the
+    binding and the failed pane, as `pane.create` leaves a pane that failed to start;
+  - a workspace whose avatar pane is open and alive gets no other. The binding is replaced and `paneId`
+    names that pane, which is changed in the same call, **before** the binding, so a refusal leaves the
+    binding as it was: a `harness` that is not the pane's is `pane.harness.switch` (with the call's
+    `model` and `effort`, and the errors of that method, `pane_busy` among them; the switch finishes
+    after the reply, as it does for that method); a `model` or `effort` the pane's session has
+    announced and that differs is `pane.config.set`; one the session has not announced yet is not
+    applied; and a changed persona or avatar is given to the harness as section 6 says;
+  - an avatar pane that **failed for good** (its agent is faulted, or its pane is dead) is not the
+    workspace's: the call starts another and leaves the failed one for the person to close;
+  - the pane is named for the avatar, and is named again when the avatar is renamed or another avatar
+    is given;
+  - a `pane.harness.switch` of the avatar pane is the avatar thinking with another harness: when the switch
+    ends, the binding takes the pane's harness, model and effort, one revision on, and `avatar.changed`
+    says so.
 - `project.folder.create {name, idempotencyKey}` -> `{path}`: makes an empty folder for a project that
   is not an app or a repository (a book being read, a school subject) under `<data>/projects/`, owner-only,
-  named from `name` (lower-case letters and digits joined by hyphens, at most 48 characters; `-2`, `-3`
-  when the name is taken, and a name Windows keeps for a device gets a `project-` prefix). `path` is the
+  named from `name` (composed to NFC, lower-case letters and digits joined by hyphens, at most
+  `projectFolderNameChars` characters; `-2`, `-3` when the name is taken, and a name Windows keeps for a
+  device, `COM1` to `COM9` and `LPT1` to `LPT9` with the superscript digits included, and `CON`, `PRN`,
+  `AUX`, `NUL`, gets a `project-` prefix). `path` is the
   canonical absolute path, which the client gives to `workspace.create`. `name` is 1 to
   `projectNameChars` characters after trimming; another is `invalid_params`. The engine writes nothing in
   the folder and removes nothing from it, closing the workspace included. Only a person calls it (an
@@ -143,14 +160,22 @@ the binding. Soyeht adds no other text and no rule; what the avatar does in a pr
 from plain instructions. It reaches the harness by the channel that harness honours, measured per
 harness in `docs/research/avatar-persona-delivery.md`:
 
-1. an adapter that advertises the ACP `systemPrompt` session capability gets it as the session's system
-   prompt, appended, in `session/new` and in `session/load` (it is sent only to such an adapter: the
-   others ignore the field without an error);
-2. any other gets it as the first prompt of a new session, an automatic prompt that says it is the
-   standing instructions of the conversation and not a request. It stays in the session's history, and
-   `session/load` does not send it again. The harness answers it with a short line.
+1. an adapter that advertises the ACP `systemPrompt` session capability (an unstable field of the
+   protocol) gets it as the session's system prompt, appended, in `session/new` and in `session/load`
+   (it is sent only to such an adapter: the two measured that do not advertise it ignore the field
+   without an error). A persona the person changed applies **the next time such a session opens**, a
+   restart of the process or of the engine, or a harness switch; the open session keeps the one it was
+   opened with;
+2. any other is owed the persona by its **next prompt**: when a session of the pane is created, and when
+   the persona or the avatar of the open pane changed, the pane is marked, and the next `session/prompt`
+   the engine builds has the persona as a text block ahead of its own, after a line saying these are
+   standing instructions from the application, and before a last line that ends the block. It is no
+   prompt of the queue: it cannot be removed, paused or overtaken by the person's prompts, it costs no
+   turn, and it is not shown as a message (a replay of the session cuts the block out by its first and
+   last lines). A `session/load` does not send it again: the conversation it loads has it.
 
-The text is read from the binding each time a session opens (and when a harness switch opens its
-candidate session), so the persona the person saved last is the one the next session gets. No file is
-written in the project folder: a workspace can be a folder the person already has. The persona is never
-part of a log line.
+The text is read from the binding each time it is delivered (and when a harness switch opens its
+candidate session), so the persona the person saved last is the one the next delivery carries. At the
+limits (`avatarPersonaChars`, `avatarNameChars`) the block is within `promptBytes`. No file is written
+in the project folder: a workspace can be a folder the person already has. The persona is never part of
+a log line.

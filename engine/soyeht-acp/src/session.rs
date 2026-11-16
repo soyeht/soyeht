@@ -31,8 +31,9 @@ pub struct Initialization {
     /// The agent accepts ACP `additionalDirectories` on session requests.
     #[serde(default)]
     pub additional_directories: bool,
-    /// The agent applies the ACP `systemPrompt` of a session request. One that does not advertise
-    /// it ignores the field without an error, so it is sent only to an agent that does.
+    /// The agent advertises the ACP `systemPrompt` of a session request, a field of the protocol's
+    /// unstable surface. The two adapters measured that do not advertise it accept the field and
+    /// ignore it, so it is sent only to an agent that does.
     #[serde(default)]
     pub system_prompt: bool,
     /// The agent accepts the ACP `logout` request and clears its credentials.

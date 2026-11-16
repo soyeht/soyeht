@@ -1,7 +1,7 @@
 # ADR 0166: A workspace is a project with one avatar agent
 
-- Status: proposed (phase 1: this design and its estimate only; no product code. The owner decided on
-  2026-11-14 that it is required for 0.1.0)
+- Status: proposed, and being built by slices (slices 1, 3, 6 and 13 are merged, slice 2 is in review,
+  the others are not started). The owner decided on 2026-11-14 that it is required for 0.1.0
 - Date: 2026-11-14; revised 2026-11-15 with the owner's decisions on the image model (see "Owner
   decisions") and the lab's measurements; slice 2 (this change) added `project.folder.create`, which the
   folder flow needs and the text below did not name, and chose the persona channel by measurement; slice 1 (PR #265) moved the build call, the package read, the
@@ -159,8 +159,9 @@ rules; and nothing in the lab runs outside a browser. Avatar **A** needs far les
   whatever instruction channel the harness has (a file in the project folder the harness reads, or the
   first prompt of the session). Which one per harness is a slice-2 decision made by measurement
   (`docs/research/avatar-persona-delivery.md`): the session's system prompt where the adapter advertises
-  one (Claude Code's does; Codex and OpenCode accept the field and ignore it), the first prompt of the
-  session for the others. No file is written in the project folder, since a workspace can be a folder
+  one (Claude Code's does; Codex and OpenCode accept the field and ignore it), and for the others a text
+  block ahead of the next prompt after a session is created (no extra turn, and not a prompt of the
+  queue). No file is written in the project folder, since a workspace can be a folder
   the person already has. The engine adds only `You are <name>, the avatar agent of this project.`
   before the persona; the sentences about how the avatar speaks are text the configuration screen
   offers the person (slice 10).

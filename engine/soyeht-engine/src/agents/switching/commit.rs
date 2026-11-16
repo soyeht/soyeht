@@ -94,6 +94,7 @@ impl Core {
         )?;
         self.carry_queue(candidate, &original, incorporated_pending)?;
         candidate.state.harness_switch = None;
+        let avatar_choice = crate::avatars::Choice::of(&candidate.state);
         candidate.state.requested_options.clear();
         candidate.state.acknowledged_offset = candidate.decoder.next_offset();
         candidate.state.phase = Phase::Ready;
@@ -171,6 +172,9 @@ impl Core {
             None,
             json!({}),
         )?;
+        if let Some(choice) = avatar_choice {
+            crate::avatars::follow_switch(self, &candidate.saved.pane.workspace_id, choice);
+        }
         self.agents
             .get_mut(pane)
             .ok_or_else(|| errors::internal("Candidate runtime disappeared after commit"))?
@@ -192,9 +196,8 @@ impl Core {
     }
 
     /// The queue of the pane the candidate replaces, less what the continuation took in. A harness
-    /// with no system prompt of its own takes the avatar's persona as its first prompt, ahead of
-    /// what was waiting.
-    fn carry_queue(
+    /// with no system prompt of its own is owed the avatar's persona by its next prompt.
+    pub(super) fn carry_queue(
         &self,
         candidate: &mut Candidate,
         original: &State,
@@ -204,17 +207,8 @@ impl Core {
         for prompt_id in incorporated_pending {
             candidate.state.remove(prompt_id)?;
         }
-        let persona = crate::agents::persona::text(
-            &self.store,
-            &candidate.state,
-            &candidate.saved.pane.workspace_id,
-        )?;
-        crate::agents::persona::queue_first_prompt(
-            &mut candidate.state,
-            persona.as_deref(),
-            candidate.saved.pane.generation,
-            self.timestamp(),
-        )
+        crate::agents::persona::mark_pending(&mut candidate.state);
+        Ok(())
     }
 
     fn continuation_package(

@@ -110,8 +110,36 @@ fn a_repeated_request_starts_no_second_pane() {
     assert_eq!(open_panes(&rig, &workspace).len(), 1);
 }
 
+/// The request a session of the pane would open with, the way the engine opens it: the pane's
+/// state as it is now, for an adapter that takes a system prompt.
+fn session_request(rig: &Rig, pane: &str) -> Value {
+    use crate::agents::{Changes, responses};
+    let mut state = rig.core.agent_state(pane).unwrap();
+    state.mcp_enabled = false;
+    state.session_id = Some("native-1".into());
+    state.initialized = Some(crate::test_panes::initialization(true));
+    let runtime = responses::Runtime {
+        data_directory: &rig.directory,
+        now_ms: 0,
+        timestamp: "now",
+    };
+    let mut changes = Changes::default();
+    let saved = rig.core.panes[pane].stored.clone();
+    responses::open(&rig.core.store, &runtime, &mut state, &saved, &mut changes).unwrap();
+    match changes.outgoing.as_slice() {
+        [soyeht_acp::Message::Request { params, .. }] => params.clone(),
+        other => panic!("expected one request, got {other:?}"),
+    }
+}
+
+fn system_prompt_text(request: &Value) -> &str {
+    request["systemPrompt"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+}
+
 #[test]
-fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_reads_the_new_persona() {
+fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_its_session_reads_the_new_persona() {
     let mut rig = Rig::new();
     let avatar = rig.avatar("Sabio");
     let workspace = rig.workspace("project");
@@ -124,13 +152,7 @@ fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_reads_the_new_per
         )
         .unwrap();
     let pane = pane_of(&first);
-    let state = rig.core.agents.get(&pane).unwrap().state.clone();
-    assert_eq!(
-        persona::text(&rig.core.store, &state, &workspace)
-            .unwrap()
-            .unwrap(),
-        "You are Sabio, the avatar agent of this project.\n\nVersion one."
-    );
+    assert!(system_prompt_text(&session_request(&rig, &pane)).ends_with("Version one."));
     // A new persona is read by the pane the next time its session opens, not by a new pane.
     let second = rig
         .assign(
@@ -142,13 +164,147 @@ fn a_workspace_that_has_its_avatar_pane_open_gets_no_other_and_reads_the_new_per
         .unwrap();
     assert_eq!(pane_of(&second), pane);
     assert_eq!(second["binding"]["revision"], "2");
-    assert_eq!(open_panes(&rig, &workspace), vec![pane]);
-    assert_eq!(
-        persona::text(&rig.core.store, &state, &workspace)
-            .unwrap()
+    assert_eq!(open_panes(&rig, &workspace), vec![pane.clone()]);
+    assert!(system_prompt_text(&session_request(&rig, &pane)).ends_with("Version two."));
+}
+
+#[test]
+fn a_changed_persona_is_owed_to_the_next_prompt_of_a_harness_with_no_system_prompt() {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    let pane = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
             .unwrap(),
-        "You are Sabio, the avatar agent of this project.\n\nVersion two."
     );
+    // The pane's adapter has not announced a system prompt: it never does in the rig.
+    assert!(!rig.core.agent_state(&pane).unwrap().persona_pending);
+    rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "1",
+        json!({"persona": "Changed."}),
+    )
+    .unwrap();
+    assert!(rig.core.agent_state(&pane).unwrap().persona_pending);
+    // The same text again changes nothing the harness has to be told.
+    rig.core
+        .agents
+        .get_mut(&pane)
+        .unwrap()
+        .state
+        .persona_pending = false;
+    rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "2",
+        json!({"persona": "Changed."}),
+    )
+    .unwrap();
+    assert!(!rig.core.agent_state(&pane).unwrap().persona_pending);
+}
+
+#[test]
+fn an_assignment_names_a_harness_the_profile_has_whether_or_not_a_pane_is_open() {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    assigned(&mut rig, &workspace, &avatar, "0", "");
+    let refused = rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "1",
+        json!({"harness": "nobody-has-this"}),
+    );
+    assert_eq!(kind(&refused), ErrorKind::HarnessUnavailable);
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["bindings"][0]["revision"], "1");
+    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
+}
+
+#[test]
+fn a_changed_harness_switches_the_open_pane_and_the_binding_follows_the_pane() {
+    let mut rig = Rig::new();
+    rig.add_harness("avatar-other");
+    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    let pane = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
+            .unwrap(),
+    );
+    let switching = rig
+        .assign(
+            &workspace,
+            &avatar.avatar_id,
+            "1",
+            json!({"harness": "avatar-other", "model": "m2"}),
+        )
+        .unwrap();
+    assert_eq!(pane_of(&switching), pane);
+    let checkpoint = rig.core.agent_state(&pane).unwrap().harness_switch.unwrap();
+    assert_eq!(checkpoint.to_harness, "avatar-other");
+    // The pane switches by itself later; when it has, the binding says the harness it has.
+    let mut state = rig.core.agent_state(&pane).unwrap();
+    state.launch.id = "avatar-switched".into();
+    state.requested_options.insert(
+        "model".into(),
+        soyeht_protocol::ConfigValue::V0("m3".into()),
+    );
+    let choice = super::super::Choice::of(&state).unwrap();
+    super::super::follow_switch(&mut rig.core, &workspace, choice);
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    let binding = &listed["bindings"][0];
+    assert_eq!(binding["harness"], "avatar-switched");
+    assert_eq!(binding["model"], "m3");
+    assert_eq!(binding["revision"], "3");
+    assert_eq!(rig.changes().last().unwrap()["binding"], *binding);
+}
+
+#[test]
+fn a_pane_that_failed_for_good_is_not_answered_with_and_the_next_assignment_starts_another() {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let workspace = rig.workspace("project");
+    let dead = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
+            .unwrap(),
+    );
+    rig.core.agents.get_mut(&dead).unwrap().state.phase = crate::agents::state::Phase::Faulted;
+    let next = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "1", json!({}))
+            .unwrap(),
+    );
+    assert_ne!(next, dead);
+    assert!(open_panes(&rig, &workspace).contains(&next));
+    // The one that works is the workspace's now.
+    let again = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "2", json!({}))
+            .unwrap(),
+    );
+    assert_eq!(again, next);
+}
+
+#[test]
+fn the_pane_is_named_for_the_avatar_after_a_rename_and_after_another_avatar_is_given() {
+    let mut rig = Rig::new();
+    let avatar = rig.avatar("Sabio");
+    let other = rig.avatar("Mentor");
+    let workspace = rig.workspace("project");
+    let pane = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
+            .unwrap(),
+    );
+    let name = |rig: &Rig| rig.core.panes[&pane].stored.pane.name.clone();
+    assert_eq!(name(&rig), "Sabio");
+    rig.call(
+        "avatar.rename",
+        json!({"avatarId": avatar.avatar_id, "name": "Sage"}),
+    )
+    .unwrap();
+    assert_eq!(name(&rig), "Sage");
+    rig.assign(&workspace, &other.avatar_id, "1", json!({}))
+        .unwrap();
+    assert_eq!(name(&rig), "Mentor");
 }
 
 #[test]
@@ -160,7 +316,8 @@ fn closing_the_avatar_pane_lets_the_next_assignment_start_another() {
         &rig.assign(&workspace, &avatar.avatar_id, "0", json!({}))
             .unwrap(),
     );
-    rig.core.panes.get_mut(&first).unwrap().stored.closed = true;
+    rig.call("pane.close", json!({"paneId": first})).unwrap();
+    assert!(open_panes(&rig, &workspace).is_empty());
     let second = pane_of(
         &rig.assign(&workspace, &avatar.avatar_id, "1", json!({}))
             .unwrap(),

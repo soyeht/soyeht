@@ -105,6 +105,9 @@ pub struct State {
     /// persona, read from the workspace's binding each time it opens (`agents::persona`).
     #[serde(default)]
     pub(crate) avatar: bool,
+    /// The avatar pane's next prompt carries the persona ahead of its own text (`agents::persona`).
+    #[serde(default)]
+    pub(crate) persona_pending: bool,
     pub launch: HarnessLaunch,
     pub binary_digest: String,
     pub fingerprint: String,
@@ -223,6 +226,7 @@ impl State {
             mcp_role: default_mcp_role(),
             mcp_enabled: true,
             avatar: false,
+            persona_pending: false,
             launch,
             binary_digest,
             fingerprint: String::new(),

@@ -1,7 +1,19 @@
 use super::*;
-use crate::ports::testing::MemoryStore;
-use soyeht_acp::session::Initialization;
-use soyeht_protocol::PromptOrigin;
+use crate::{
+    agents::{
+        Changes,
+        purpose::Purpose,
+        responses::{self, Runtime},
+        state::tests::scratch_store,
+    },
+    ports::testing::MemoryStore,
+};
+use soyeht_acp::Message;
+use soyeht_protocol::{
+    Avatar, AvatarBinding, PaneMode, Workspace,
+    limits::{ACP_MESSAGE_BYTES, AVATAR_NAME_CHARS, AVATAR_PERSONA_CHARS, PROMPT_BYTES},
+};
+use soyeht_store::{avatars as library, database::Store};
 
 fn persona(text: &str) -> Persona {
     Persona {
@@ -11,20 +23,90 @@ fn persona(text: &str) -> Persona {
 }
 
 /// An avatar pane's state whose adapter did or did not advertise a system prompt.
-fn state(system_prompt: bool) -> State {
+fn with_adapter(system_prompt: bool) -> State {
     let mut state = crate::test_panes::ready_agent_state();
     state.avatar = true;
-    let capabilities = if system_prompt {
-        json!({"systemPrompt": {"mode": {"override": {}}}})
-    } else {
-        json!({"additionalDirectories": {}})
-    };
-    state.initialized = Some(
-        Initialization::parse(&json!({"protocolVersion": 1,
-            "agentCapabilities": {"sessionCapabilities": capabilities}}))
-        .unwrap(),
-    );
+    state.mcp_enabled = false;
+    state.initialized = Some(crate::test_panes::initialization(system_prompt));
     state
+}
+
+/// A store whose workspace `w` has the avatar `Sabio` with the persona given.
+fn store_with(text: &str) -> (Store, std::path::PathBuf) {
+    let (mut store, directory) = scratch_store();
+    let avatar = Avatar {
+        avatar_id: "a".into(),
+        name: "Sabio".into(),
+        kind: "uploaded".into(),
+        source_hash: "a".repeat(64),
+        image_provider: None,
+        image_model: None,
+        voice: None,
+        created_at: "2026-11-15T10:00:00Z".into(),
+    };
+    let binding = AvatarBinding {
+        workspace_id: "w".into(),
+        avatar_id: "a".into(),
+        harness: "test".into(),
+        model: None,
+        effort: None,
+        hearing: None,
+        voice: None,
+        persona: text.into(),
+        revision: "1".into(),
+    };
+    let workspace = Workspace {
+        workspace_id: "w".into(),
+        name: "w".into(),
+        path: "/tmp".into(),
+        layout: json!({}),
+    };
+    store
+        .mutate("test", "seed", "seed", |tx| {
+            tx.insert_workspace(&workspace)?;
+            library::insert_in(tx, &avatar)?;
+            library::bind_in(tx, &binding)?;
+            Ok((json!({}), vec![]))
+        })
+        .unwrap();
+    (store, directory)
+}
+
+fn pane() -> crate::model::StoredPane {
+    crate::model::StoredPane {
+        pane: crate::test_panes::pane("p", "w", PaneMode::Agent, "/tmp"),
+        closed: false,
+        instance_key: "key".into(),
+        instance_id: None,
+        supervisor_id: None,
+        sequence_base: 0,
+    }
+}
+
+fn runtime(directory: &std::path::Path) -> Runtime<'_> {
+    Runtime {
+        data_directory: directory,
+        now_ms: 0,
+        timestamp: "now",
+    }
+}
+
+/// The parameters of the one request an `open` made.
+fn requested(changes: &Changes, method: &str) -> Value {
+    match changes.outgoing.as_slice() {
+        [
+            Message::Request {
+                method: sent,
+                params,
+                ..
+            },
+        ] if sent == method => params.clone(),
+        other => panic!("expected one {method} request, got {other:?}"),
+    }
+}
+
+fn block(text: &str) -> String {
+    format!("{BLOCK_LABEL}\n\n{text}\n\n{BLOCK_END}")
 }
 
 #[test]
@@ -41,66 +123,220 @@ fn the_persona_is_who_the_avatar_is_then_the_persons_own_text() {
 }
 
 #[test]
+fn the_longest_persona_with_the_longest_name_fits_a_prompt_and_a_message() {
+    let longest = Persona {
+        name: "\u{1f600}".repeat(AVATAR_NAME_CHARS),
+        text: "\u{1f600}".repeat(AVATAR_PERSONA_CHARS),
+    };
+    let sent = block(&compose(&longest));
+    assert!(sent.len() <= PROMPT_BYTES, "{} bytes", sent.len());
+    assert!(sent.len() < ACP_MESSAGE_BYTES);
+}
+
+#[test]
 fn only_an_avatar_pane_has_a_persona() {
-    let mut other = state(true);
+    let (store, directory) = store_with("Be brief.");
+    let mut other = with_adapter(true);
     other.avatar = false;
+    assert_eq!(text(&store, &other, "w").unwrap(), None);
     assert_eq!(
-        text(&MemoryStore::default(), &other, "workspace").unwrap(),
-        None
+        text(&store, &with_adapter(true), "w").unwrap().unwrap(),
+        "You are Sabio, the avatar agent of this project.\n\nBe brief."
     );
     // An avatar pane whose workspace has no avatar (any more) has none either.
-    let avatar = state(true);
     assert_eq!(
-        text(&MemoryStore::default(), &avatar, "workspace").unwrap(),
+        text(&MemoryStore::default(), &with_adapter(true), "w").unwrap(),
         None
     );
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
-fn an_adapter_that_advertises_a_system_prompt_gets_the_persona_appended_to_it() {
-    let session = system_prompt(&state(true), Some("Persona text"), json!({"cwd": "/work"}));
-    assert_eq!(
-        session["systemPrompt"],
-        json!({"mode": "append", "content": [{"type": "text", "text": "Persona text"}]})
-    );
-    assert_eq!(session["cwd"], "/work");
-}
-
-#[test]
-fn an_adapter_that_does_not_advertise_one_is_never_sent_the_field() {
+fn an_adapter_that_does_not_advertise_a_system_prompt_is_never_sent_the_field() {
     // It would ignore the field without an error, and the persona would be lost.
-    let session = system_prompt(&state(false), Some("Persona text"), json!({"cwd": "/work"}));
+    let session = system_prompt(
+        &with_adapter(false),
+        Some("Persona text"),
+        json!({"cwd": "/work"}),
+    );
     assert!(session.get("systemPrompt").is_none());
-    let none = system_prompt(&state(true), None, json!({"cwd": "/work"}));
+    let none = system_prompt(&with_adapter(true), None, json!({"cwd": "/work"}));
     assert!(none.get("systemPrompt").is_none());
 }
 
 #[test]
-fn the_first_prompt_carries_the_persona_only_where_there_is_no_system_prompt() {
-    let mut taken = state(true);
-    queue_first_prompt(&mut taken, Some("Persona text"), 1, "t".into()).unwrap();
-    assert!(taken.queue.is_empty());
+fn a_session_that_loads_carries_the_system_prompt_of_an_adapter_that_takes_one() {
+    let (store, directory) = store_with("Be brief.");
+    let mut capable = with_adapter(true);
+    capable.session_id = Some("native-1".into());
+    let mut changes = Changes::default();
+    responses::open(
+        &store,
+        &runtime(&directory),
+        &mut capable,
+        &pane(),
+        &mut changes,
+    )
+    .unwrap();
+    let load = requested(&changes, "session/load");
+    assert_eq!(
+        load["systemPrompt"],
+        json!({"mode": "append", "content": [{"type": "text",
+            "text": "You are Sabio, the avatar agent of this project.\n\nBe brief."}]})
+    );
+    assert!(capable.queue.is_empty() && !capable.persona_pending);
 
-    let mut prompted = state(false);
-    queue_first_prompt(&mut prompted, Some("Persona text"), 1, "t".into()).unwrap();
-    // A second open of the same session does not queue it again.
-    queue_first_prompt(&mut prompted, Some("Persona text"), 1, "t".into()).unwrap();
-    assert_eq!(prompted.queue.len(), 1);
-    let queued = &prompted.queue[0];
-    assert_eq!(queued.origin, PromptOrigin::Automatic);
-    assert!(queued.text.starts_with("Persona text\n\n"));
-    assert!(queued.text.ends_with(PROMPT_NOTE));
-
-    let mut empty = state(false);
-    queue_first_prompt(&mut empty, None, 1, "t".into()).unwrap();
-    assert!(empty.queue.is_empty());
+    // An adapter without one is told nothing by a load: the conversation it loads has the persona.
+    let mut other = with_adapter(false);
+    other.session_id = Some("native-1".into());
+    let mut changes = Changes::default();
+    responses::open(
+        &store,
+        &runtime(&directory),
+        &mut other,
+        &pane(),
+        &mut changes,
+    )
+    .unwrap();
+    assert!(
+        requested(&changes, "session/load")
+            .get("systemPrompt")
+            .is_none()
+    );
+    assert!(other.queue.is_empty() && !other.persona_pending);
+    std::fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
-fn a_new_session_of_a_new_generation_is_told_again() {
-    let mut prompted = state(false);
-    queue_first_prompt(&mut prompted, Some("Persona text"), 1, "t".into()).unwrap();
-    prompted.queue.clear();
-    queue_first_prompt(&mut prompted, Some("Persona text"), 2, "t".into()).unwrap();
-    assert_eq!(prompted.queue.len(), 1);
+fn a_new_session_carries_the_persona_by_the_channel_the_adapter_has() {
+    let (store, directory) = store_with("Be brief.");
+    // The session was lost: the open falls back to a new one.
+    let mut capable = with_adapter(true);
+    let mut changes = Changes::default();
+    responses::open(
+        &store,
+        &runtime(&directory),
+        &mut capable,
+        &pane(),
+        &mut changes,
+    )
+    .unwrap();
+    let new = requested(&changes, "session/new");
+    assert_eq!(new["systemPrompt"]["mode"], "append");
+
+    let mut other = with_adapter(false);
+    let mut changes = Changes::default();
+    responses::open(
+        &store,
+        &runtime(&directory),
+        &mut other,
+        &pane(),
+        &mut changes,
+    )
+    .unwrap();
+    assert!(
+        requested(&changes, "session/new")
+            .get("systemPrompt")
+            .is_none()
+    );
+    // Nothing is queued: the persona rides on the first prompt, once the session exists.
+    assert!(other.queue.is_empty());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+fn opened(state: &mut State, store: &Store, directory: &std::path::Path) -> Result<()> {
+    state.phase = crate::agents::state::Phase::Opening;
+    let mut saved = pane();
+    responses::session_response(
+        store,
+        &runtime(directory),
+        state,
+        &mut saved,
+        &Purpose::Open,
+        &mut Changes::default(),
+        Ok(json!({"sessionId": "native-1"})),
+    )
+}
+
+#[test]
+fn a_session_that_was_created_owes_the_persona_to_its_first_prompt_once() {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(false);
+    // Signing in is asked for first, and a session that was not created owes nothing.
+    state.phase = crate::agents::state::Phase::Opening;
+    let needs_login = soyeht_acp::RpcError {
+        code: -32000,
+        message: "Authentication required".into(),
+        data: None,
+    };
+    responses::session_response(
+        &store,
+        &runtime(&directory),
+        &mut state,
+        &mut pane(),
+        &Purpose::Open,
+        &mut Changes::default(),
+        Err(needs_login),
+    )
+    .unwrap();
+    assert!(!state.persona_pending);
+    // The restart that follows opens the session, and the open that follows is owed once.
+    opened(&mut state, &store, &directory).unwrap();
+    assert!(state.persona_pending);
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    let first = ahead_of(&store, &mut state, "w", person.clone()).unwrap();
+    assert_eq!(
+        first["prompt"],
+        json!([
+            {"type": "text", "text": block("You are Sabio, the avatar agent of this project.\n\nBe brief.")},
+            {"type": "text", "text": "Hello"}
+        ])
+    );
+    assert!(!state.persona_pending);
+    assert_eq!(
+        ahead_of(&store, &mut state, "w", person.clone()).unwrap(),
+        person
+    );
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn an_adapter_with_a_system_prompt_owes_nothing_to_its_prompts() {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(true);
+    opened(&mut state, &store, &directory).unwrap();
+    assert!(!state.persona_pending);
+    // A pane that is not an avatar's is never owed one either.
+    let mut other = with_adapter(false);
+    other.avatar = false;
+    mark_pending(&mut other);
+    assert!(!other.persona_pending);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_persona_that_is_owed_to_a_workspace_with_no_avatar_is_dropped_not_sent() {
+    let mut state = with_adapter(false);
+    state.persona_pending = true;
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    let sent = ahead_of(&MemoryStore::default(), &mut state, "w", person.clone()).unwrap();
+    assert_eq!(sent, person);
+    assert!(!state.persona_pending);
+}
+
+#[test]
+fn a_replayed_user_message_loses_the_block_the_engine_put_ahead_of_it() {
+    let avatar = with_adapter(false);
+    let text = block("You are Sabio, the avatar agent of this project.");
+    // As two messages of the replay, and as one joined to the prompt's own text.
+    assert_eq!(strip_replayed(&avatar, &text), "");
+    assert_eq!(strip_replayed(&avatar, "Hello"), "Hello");
+    assert_eq!(strip_replayed(&avatar, &format!("{text}\nHello")), "Hello");
+    // Another persona, an older one, goes as well.
+    assert_eq!(strip_replayed(&avatar, &block("Another persona.")), "");
+    // What a person wrote that only starts alike stays, and a pane that is not an avatar's is left alone.
+    assert_eq!(strip_replayed(&avatar, BLOCK_LABEL), BLOCK_LABEL);
+    let mut other = with_adapter(false);
+    other.avatar = false;
+    assert_eq!(strip_replayed(&other, &text), text);
 }

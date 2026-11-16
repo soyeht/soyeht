@@ -12,6 +12,7 @@ use soyeht_protocol::{
     Pane, PaneCreateParams, PaneExperimentCapture, PaneMode, StateSource, event, method, setting,
 };
 use soyeht_ptyd::wire::Request;
+use soyeht_store::database::{Change, Result as StoreResult};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -92,6 +93,23 @@ fn new_agent(
         }
     }
     Ok(Some(agent))
+}
+
+/// A reply and the events that go ahead of a new pane's own.
+pub(crate) type Reply = (Value, Vec<(String, Value)>);
+
+type ReplyFn<'a> = Box<dyn FnOnce(&str) -> Result<Reply> + 'a>;
+type ApplyFn<'a> = Box<dyn FnOnce(&Change<'_>) -> StoreResult<()> + 'a>;
+
+/// What a pane that is made as part of another request adds to `pane.create`.
+pub(crate) struct Extras<'a> {
+    /// Sets the new agent's state up before it is stored.
+    pub(crate) setup: Box<dyn FnOnce(&mut crate::agents::state::State) + 'a>,
+    /// Takes the new pane's id and answers with the request's reply and the events that go ahead
+    /// of the pane's own.
+    pub(crate) reply: ReplyFn<'a>,
+    /// Writes what the request changes, in the change that stores the pane.
+    pub(crate) apply: ApplyFn<'a>,
 }
 
 impl Core {
@@ -199,41 +217,27 @@ impl Core {
         if let Some(created) = editor_like {
             return created.map(Outcome::Reply);
         }
-        self.create_process_pane(
-            connection,
-            (method::PANE_CREATE, params),
-            &create,
-            false,
-            |_, _| Ok(None),
-        )
+        self.create_process_pane(connection, (method::PANE_CREATE, params), &create, None)
     }
 
-    /// Creates the process pane `create` describes, in one change with whatever `attach` adds. The
+    /// Creates the process pane `create` describes, in one change with whatever `extras` adds. The
     /// request that asked for it is `(method, params)`, whose idempotency key makes a repeat answer
-    /// with the stored reply and start nothing. `attach` runs inside the change with the new pane's
-    /// id and may replace the reply and put events ahead of the pane's own.
-    pub(crate) fn create_process_pane<F>(
+    /// with the stored reply and start nothing.
+    pub(crate) fn create_process_pane(
         &mut self,
         connection: &str,
         (request, params): (&str, &Value),
         create: &PaneCreateParams,
-        avatar: bool,
-        attach: F,
-    ) -> Result<Outcome>
-    where
-        F: FnOnce(
-            &soyeht_store::database::Change<'_>,
-            &str,
-        ) -> soyeht_store::database::Result<Option<(Value, Vec<(String, Value)>)>>,
-    {
+        extras: Option<Extras<'_>>,
+    ) -> Result<Outcome> {
         let defaults = pane_defaults(&self.store)?;
         let mut agent = new_agent(&self.directory, &self.store, create)?;
-        if let Some(agent) = agent.as_mut().filter(|_| avatar) {
-            // The workspace's avatar agent is its chief (contract 08 section 2). The lead prompt
-            // of `pane.role.set` is not queued: the persona says what the avatar is for.
-            agent.avatar = true;
-            agent.mcp_role = soyeht_protocol::Role::Chief;
-        }
+        let extras = extras.map(|extras| {
+            if let Some(agent) = agent.as_mut() {
+                (extras.setup)(agent);
+            }
+            (extras.reply, extras.apply)
+        });
         // An agent that downloads a package unchecked starts only once a person acknowledged
         // that exact package (ADR 0143): this request's own acknowledgement counts.
         let acknowledging = agent
@@ -261,7 +265,14 @@ impl Core {
             &self.directory.join("sessions").join(&saved.pane.pane_id),
             saved.pane.record,
         )?;
-        let (created_result, created_events) = pane_created(&saved)?;
+        let (mut result, mut events) = pane_created(&saved)?;
+        let mut apply = None;
+        if let Some((reply, change)) = extras {
+            let (replied, before) = reply(&saved.pane.pane_id)?;
+            result = replied;
+            events.splice(0..0, before);
+            apply = Some(change);
+        }
         let mutation = self.mutate(connection, request, params, |tx| {
             persist_new_pane(tx, &saved, agent.as_ref())?;
             if let Some(package) = &acknowledging {
@@ -270,9 +281,9 @@ impl Core {
             if let Some((session, _)) = &terminal_harness {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }
-            let (result, mut events) =
-                attach(tx, &saved.pane.pane_id)?.unwrap_or((created_result, Vec::new()));
-            events.extend(created_events);
+            if let Some(apply) = apply {
+                apply(tx)?;
+            }
             Ok((result, events))
         })?;
         if !mutation.repeated {

@@ -46,15 +46,20 @@ impl Rig {
             harness: "avatar-test".into(),
         };
         rig.local = rig.connect(Role::HumanLocal, None);
-        // The program is never started: the supervisor of the rig answers every start.
+        rig.add_harness("avatar-test");
+        rig
+    }
+
+    /// Adds a harness to the profile. The program is never started: the supervisor of the rig
+    /// answers every start.
+    fn add_harness(&mut self, id: &str) {
         let program = std::env::current_exe().unwrap();
-        rig.call(
+        self.call(
             "harness.custom.create",
-            json!({"harness": {"id": rig.harness, "name": "Avatar test",
+            json!({"harness": {"id": id, "name": id,
                 "command": program.to_string_lossy(), "args": [], "version": "1"}}),
         )
         .unwrap();
-        rig
     }
 
     /// The engine stops and starts again on the same data.

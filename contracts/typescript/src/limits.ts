@@ -129,5 +129,6 @@ export const limits = {
   "avatarSettingChars": 128,
   "avatarCatalogueIdChars": 128,
   "avatarKindChars": 32,
-  "projectNameChars": 128
+  "projectNameChars": 128,
+  "projectFolderNameChars": 48
 } as const;

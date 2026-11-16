@@ -15681,7 +15681,8 @@
     "avatarSettingChars": "The longest model or effort name (in characters) of a binding.",
     "avatarCatalogueIdChars": "The longest image provider or image model catalogue id (in characters) of an avatar.",
     "avatarKindChars": "The longest `Avatar.kind` (in characters).",
-    "projectNameChars": "The longest project name (in characters) of `project.folder.create`; the folder name made from it is shorter."
+    "projectNameChars": "The longest project name (in characters) of `project.folder.create`.",
+    "projectFolderNameChars": "The longest folder name (in characters) `project.folder.create` makes from a project name: the name is cut there. A number that tells two folders of one name apart follows it."
   },
   "x-limits": {
     "jsonBytes": 1048576,
@@ -15813,7 +15814,8 @@
     "avatarSettingChars": 128,
     "avatarCatalogueIdChars": 128,
     "avatarKindChars": 32,
-    "projectNameChars": 128
+    "projectNameChars": 128,
+    "projectFolderNameChars": 48
   },
   "x-settings": {
     "terminal.defaultCols": {

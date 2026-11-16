@@ -315,3 +315,32 @@ fn a_candidate_that_stays_above_the_ceiling_after_the_correction_ends_the_switch
     // The harness confirmed but still runs `agent`: the correction is not tried twice.
     assert!(core.hold_candidate_ceiling(&mut candidate).is_err());
 }
+
+#[test]
+fn the_candidate_of_an_avatar_pane_is_the_avatars_and_is_owed_its_persona() {
+    let (mut core, _directory) = crate::test_panes::core_with_agent(&[]);
+    arm_switch(&mut core, Instant::now() + Duration::from_secs(30));
+    core.agents.get_mut("agent").unwrap().state.avatar = true;
+    let launch = core.agents.switch("agent").unwrap().launch.clone();
+    let (draft, _) = core
+        .draft_switch_candidate("agent", &launch, "digest")
+        .unwrap();
+    assert!(draft.state.avatar);
+
+    // A candidate whose adapter has no system prompt is owed the persona by its next prompt, ahead
+    // of the queue it takes over; one that takes the system prompt is owed nothing.
+    let original = core.agent_state("agent").unwrap();
+    let mut candidate = candidate_under_ceiling("codex", "agent", "auto");
+    candidate.state.avatar = true;
+    core.carry_queue(&mut candidate, &original, &[]).unwrap();
+    assert!(candidate.state.persona_pending);
+    let mut taking = candidate_under_ceiling("codex", "agent", "auto");
+    taking.state.avatar = true;
+    taking.state.initialized = Some(crate::test_panes::initialization(true));
+    core.carry_queue(&mut taking, &original, &[]).unwrap();
+    assert!(!taking.state.persona_pending);
+    // A pane that is not an avatar's is owed nothing.
+    let mut ordinary = candidate_under_ceiling("codex", "agent", "auto");
+    core.carry_queue(&mut ordinary, &original, &[]).unwrap();
+    assert!(!ordinary.state.persona_pending);
+}

@@ -23,13 +23,18 @@ the reply. No terminal interface of any harness was started, and no test rig typ
 - **Channels** (one case each, a fresh scratch folder and a fresh process per case):
   `system`, the ACP `systemPrompt` of `session/new` (`mode: append`); `file-claude` and `file-agents`,
   the persona as `CLAUDE.md` or `AGENTS.md` in the session's folder; `first`, the persona sent as the
-  first prompt and the question as the second; `first-quiet`, as `first` with the sentence Soyeht
-  adds ("These are your standing instructions ... do not answer them"); `codexcfg`, the persona as
+  first prompt and the question as the second; `first-quiet`, as `first` with a sentence saying the
+  message is not a request; `prepend`, the persona as a text block ahead of the question in the same
+  prompt (the label and last line are the ones Soyeht uses); `codexcfg`, the persona as
   `developer_instructions` in the `CODEX_CONFIG` environment variable of the Codex adapter.
 - The adapters ran on the owner's existing logins for one or two tiny turns per case. Nothing was
   logged in or out, no user-level configuration was written (the harnesses write their own session
   files), and a request the agent made of the client (permissions, files, terminals) was refused or
   cancelled: the client advertised no capability.
+- **Runs.** Each cell of the first results table is **one run**: one session, one reply. A single
+  run says that a channel can work, not how often. The `prepend` case, the one Soyeht uses, was run
+  **three times per harness** with the final text. An earlier set of runs with the same block without its
+  last line answered the question as the persona in every run too.
 - The probe is `persona_probe.py`, quoted at the end. It is not committed (there is no `scripts/research`).
 
 ## What each adapter advertises
@@ -43,6 +48,11 @@ the reply. No terminal interface of any harness was started, and no test rig typ
 | OpenCode | `additionalDirectories`, `close`, `delete`, `fork`, `list`, `resume`; **no `systemPrompt`** |
 | Cursor Agent | `list` only; **no `systemPrompt`** |
 
+`systemPrompt` is a field of the protocol's **unstable** surface: the Claude adapter takes the error
+type of its validation from the SDK's `unstable` entry point, and a version of the protocol or of an
+adapter may change or remove it. Soyeht sends it only to an adapter that advertises it on this
+version, and reads the advertisement again each time the adapter starts.
+
 ## Results
 
 | Channel | Claude Code | Codex | OpenCode | Cursor Agent |
@@ -52,10 +62,11 @@ the reply. No terminal interface of any harness was started, and no test rig typ
 | `CLAUDE.md` in the folder | yes | no | no | not measured |
 | `AGENTS.md` in the folder | yes | yes | yes | not measured |
 | first prompt | yes | yes | yes | not measured |
-| first prompt with Soyeht's sentence | yes | yes | yes | not measured |
+| first prompt with the sentence | yes | yes | yes | not measured |
+| **block ahead of the question, 3 runs** | **3 of 3** | **3 of 3** | **3 of 3** | not measured |
 | `CODEX_CONFIG` `developer_instructions` | n/a | yes | n/a | n/a |
 
-Reading the table:
+Reading the table (every cell but the block row is one run):
 
 - **The `systemPrompt` of a session is honoured exactly where it is advertised, and ignored without an
   error where it is not.** An adapter that does not advertise it cannot be told apart from one that
@@ -64,13 +75,20 @@ Reading the table:
   Marlow with the prompt sent again and without it. The second is no proof that the session keeps the
   system prompt: the earlier replies of the session all begin with `Marlow:` and the model can follow
   them. Soyeht sends the persona again on every `session/new` and `session/load`.
-- **The files**: `AGENTS.md` is read by all three harnesses that were reached, the Claude adapter
-  included; `CLAUDE.md` by Claude Code only.
-- **The first prompt is always honoured, and costs one turn.** The sentence "do not answer them" does
-  not stop the harness from answering: all three replied in one short line ("Understood.") and went
-  on to answer the question as Marlow. Without the sentence Claude Code answered at length. The reply
-  to that prompt is in the pane's transcript, and a client that speaks replies can skip a reply to an
-  automatic prompt.
+- **A persona sent as a prompt of its own is honoured in the run measured, and costs one turn.** The
+  sentence saying it is not a request does not stop the harness from answering: all three replied in
+  one short line ("Understood.") and went on to answer the question as Marlow. Without the sentence
+  Claude Code answered at length.
+- **A persona sent as a text block ahead of the question costs no turn and was honoured in every run
+  measured** (3 of 3 on each of the three harnesses, with the harness answering the question and nothing
+  else). After a restart with `session/load` the next answer was still the persona's in 8 of the 8
+  runs that got to it; the ninth (OpenCode) did not load, and the Codex runs of the first set of three
+  did not count because the rig had not set the small model again after the restart.
+- **What a replay shows.** `session/load` replays the user's message. The Claude and Codex adapters
+  replay the block and the question as two messages; OpenCode replays them as one message with a line
+  break between. Soyeht cuts the block out of a replayed message by its first and last lines.
+- **The files**: `AGENTS.md` is read by the three harnesses that were reached, the Claude adapter
+  included; `CLAUDE.md` by Claude Code only. Cursor Agent was not reached, so nothing is claimed for it.
 - **Codex takes a per-launch configuration** through the adapter's environment (`CODEX_CONFIG`), which
   is a way to hand it instructions with no turn and no file.
 
@@ -78,9 +96,9 @@ Reading the table:
 
 - **Cursor Agent.** `initialize` answers, but `session/new` answers `Authentication required`, and its
   only authentication method (`cursor_login`) is a login in a browser, which the spike does not perform.
-  What it advertises says it has no `systemPrompt`, so Soyeht gives it the first prompt, which every
-  harness measured honours.
-- **Compaction.** A persona given as the first prompt is part of the conversation, and a harness that
+  What it advertises says it has no `systemPrompt`, so Soyeht gives it the block ahead of the first
+  prompt, which every harness measured honours. Whether it does is not measured.
+- **Compaction.** A persona given ahead of a prompt is part of the conversation, and a harness that
   summarises a long conversation may drop or shorten it. The system prompt is not part of the
   conversation. Not measured.
 - **Windows and Linux**, and **a persona of the size limit** (`avatarPersonaChars`).
@@ -92,13 +110,17 @@ The channel follows the table, and nothing in it is a rule about behaviour (`age
 
 1. An adapter that advertises `systemPrompt` is sent the persona as the session's system prompt,
    appended, in `session/new` and in `session/load`.
-2. Any other harness gets the persona as the first prompt of a new session, queued as an automatic
-   prompt, with the sentence that says it is not a request.
-3. A file in the project folder is not used. Every harness that has no system prompt reads
-   `AGENTS.md`, but a workspace can be a folder the person already has, with a file of their own, and
-   Soyeht writes in the person's folder nothing the person did not ask for.
-4. The persona is read from the workspace's binding each time a session opens, so the text the person
-   last saved is the one the next session gets.
+2. Any other harness is owed the persona by its next prompt: when its session has been **created**
+   (`session/new` answered, not tried) and when the person changed the persona of the open pane, the
+   pane is marked, and the next `session/prompt` the engine builds carries the persona as a text block
+   ahead of its own. It is no prompt of the queue, so it cannot be removed, paused, or overtaken by a
+   prompt the person wrote, and it costs no turn. A `session/load` does not send it again: the
+   conversation it loads has it.
+3. A file in the project folder is not used. The harnesses measured read `AGENTS.md`, but a workspace
+   can be a folder the person already has, with a file of their own, and Soyeht writes in the
+   person's folder nothing the person did not ask for.
+4. The persona is read from the workspace's binding each time it is delivered, so the text the person
+   last saved is the one the next delivery carries.
 
 The text is the avatar's name (`You are <name>, the avatar agent of this project.`) followed by the
 person's own persona text. The sentences about how the avatar speaks are text the configuration screen
@@ -109,9 +131,12 @@ offers the person, not something the engine adds.
 ```python
 """Persona delivery probe: drives one ACP agent headless over stdio, one case per run.
 
-usage: persona_probe.py HARNESS CASE [--restart]
+usage: PROBE_DIR=<scratch folder> [MODEL=<model id>] [RESEND=0] persona_probe.py HARNESS CASE [--restart]
 HARNESS: claude | codex | opencode | cursor
-CASE: control | system | file-agents | file-claude | first | codexcfg
+CASE: control | system | file-agents | file-claude | first | first-quiet | prepend | codexcfg
+  prepend: the persona as a text block ahead of the question, in one prompt
+--restart: closes the process, opens the session again with session/load, asks once more, and
+  records the user messages the load replays.
 Prints one JSON line: what the agent advertised and what its replies were.
 """
 
@@ -152,6 +177,7 @@ class Agent:
         )
         self.lines = queue.Queue()
         self.next_id = 1
+        self.user_chunks = []
         threading.Thread(target=self._read, daemon=True).start()
 
     def _read(self):
@@ -189,6 +215,8 @@ class Agent:
                     self.send({"jsonrpc": "2.0", "id": message["id"], "error": error})
             elif message.get("method") == "session/update":
                 update = message["params"]["update"]
+                if update.get("sessionUpdate") == "user_message_chunk":
+                    self.user_chunks.append(update.get("content", {}).get("text"))
                 if update.get("sessionUpdate") == "agent_message_chunk":
                     content = update.get("content", {})
                     if content.get("type") == "text":
@@ -257,6 +285,9 @@ def main():
     prompts = [QUESTION]
     if case == "first":
         prompts = [PERSONA, QUESTION]
+    prepend = False
+    if case == "prepend":
+        prepend = True
     if case == "first-quiet":
         note = (
             "These are your standing instructions for this conversation, not a request from "
@@ -265,10 +296,14 @@ def main():
         prompts = [PERSONA + "\n\n" + note, QUESTION]
     replies = []
     for prompt in prompts:
-        done, text = agent.request(
-            "session/prompt",
-            {"sessionId": session, "prompt": [{"type": "text", "text": prompt}]},
-        )
+        blocks = [{"type": "text", "text": prompt}]
+        if prepend:
+            label = (
+                "Standing instructions for this conversation (they come from the application, "
+                "not from the person):\n\n"
+            )
+            blocks.insert(0, {"type": "text", "text": label + PERSONA + "\n\n(End of the standing instructions.)"})
+        done, text = agent.request("session/prompt", {"sessionId": session, "prompt": blocks})
         replies.append(text if "result" in done else f"ERROR {done.get('error')}")
     out["replies"] = replies
     out["honoured"] = replies[-1].strip().lstrip("*_` ").startswith("Marlow")
@@ -284,11 +319,16 @@ def main():
         if "error" in loaded:
             out["load_error"] = loaded["error"]
         else:
+            if os.environ.get("MODEL"):
+                again.request(
+                    "session/set_model", {"sessionId": session, "modelId": os.environ["MODEL"]}
+                )
             done, text = again.request(
                 "session/prompt",
                 {"sessionId": session, "prompt": [{"type": "text", "text": QUESTION}]},
             )
             out["after_load"] = text
+            out["replayed_user_chunks"] = again.user_chunks
             out["honoured_after_load"] = text.strip().lstrip("*_` ").startswith("Marlow")
         again.close()
     else:

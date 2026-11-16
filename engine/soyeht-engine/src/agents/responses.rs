@@ -55,7 +55,7 @@ pub fn call(
     Ok(())
 }
 
-fn open(
+pub(crate) fn open(
     store: &(impl StorePort + TaskStorePort),
     runtime: &Runtime<'_>,
     state: &mut State,
@@ -108,13 +108,6 @@ fn open(
         // including the recovery path after session/load reports it missing.
         state.rotate_hook_binding()?;
         state.release_held_updates();
-        // A session with no system prompt of its own starts from the persona as its first prompt.
-        super::persona::queue_first_prompt(
-            state,
-            persona.as_deref(),
-            saved.pane.generation,
-            runtime.timestamp.to_owned(),
-        )?;
         state.phase = Phase::Opening;
         call(
             state,
@@ -457,7 +450,7 @@ fn probe_configuration(
     }
 }
 
-fn session_response(
+pub(crate) fn session_response(
     store: &(impl StorePort + TaskStorePort),
     runtime: &Runtime<'_>,
     state: &mut State,
@@ -510,6 +503,9 @@ fn session_opened(
             ));
         }
         state.session_id = Some(id);
+        // A session that exists now has not been told who the avatar is, unless its adapter took
+        // the persona as the system prompt.
+        super::persona::mark_pending(state);
     }
     if *purpose == Purpose::Load {
         // The replay replaces the stored transcript, so a prompt written while

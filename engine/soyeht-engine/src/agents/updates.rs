@@ -82,6 +82,11 @@ fn update_user(
     let text = content["text"]
         .as_str()
         .ok_or_else(|| errors::invalid("Replay has no text"))?;
+    // The persona block the engine put ahead of a prompt is not something the person wrote.
+    let text = super::persona::strip_replayed(state, text);
+    if text.is_empty() {
+        return Ok(());
+    }
     let Some(continuation) = state
         .internal_continuation
         .clone()

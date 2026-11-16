@@ -375,3 +375,15 @@ pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
     ("agent", "auto_review"),
     ("agent-full-access", "full_access"),
 ];
+
+/// What an agent announced at `initialize`, with or without the ACP `systemPrompt` capability.
+pub(crate) fn initialization(system_prompt: bool) -> soyeht_acp::session::Initialization {
+    let capabilities = if system_prompt {
+        json!({"systemPrompt": {"mode": {"override": {}}}})
+    } else {
+        json!({"additionalDirectories": {}})
+    };
+    soyeht_acp::session::Initialization::parse(&json!({"protocolVersion": 1,
+        "agentCapabilities": {"sessionCapabilities": capabilities}}))
+    .unwrap()
+}

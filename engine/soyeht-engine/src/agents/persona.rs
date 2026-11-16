@@ -4,17 +4,19 @@
 //! no behaviour to it. What this module decides is only the channel, and it follows what each
 //! harness was measured to honour (`docs/research/avatar-persona-delivery.md`):
 //!
-//! - **The session's system prompt**, when the adapter advertises the ACP `systemPrompt`
-//!   capability (`session/new` and `session/load` carry it, appended to the harness's own prompt).
-//!   An adapter that does not advertise it ignores the field without an error, so it is never
-//!   sent to one.
-//! - **The first prompt of a new session** otherwise, queued as an automatic prompt: the text goes
-//!   to the harness as the first message and stays in the session's history.
+//! - **The session's system prompt**, when the adapter advertises the ACP `systemPrompt` capability
+//!   (`session/new` and `session/load` carry it, appended to the harness's own prompt). An adapter
+//!   that does not advertise it ignores the field without an error, so it is never sent to one.
+//! - **A block ahead of the first prompt** otherwise: when a session is created (or the person
+//!   changed the persona of an open pane) the state is marked `persona_pending`, and the next
+//!   `session/prompt` that is built carries the persona as a text block before the prompt's own.
+//!   It is no prompt of the queue: it cannot be removed, paused, or overtaken, it costs no turn, and
+//!   it reaches the harness before anything the person wrote.
 //!
 //! A file in the project folder (`AGENTS.md`, `CLAUDE.md`) is not used: the harnesses read them,
 //! but a workspace can be a folder the person already has with such a file, and Soyeht never writes
-//! over the person's files for this. The text is read from the workspace's binding each time a
-//! session opens, so a persona the person changed is the one the next session gets. It is never
+//! over the person's files for this. The text is read from the workspace's binding each time it is
+//! delivered, so a persona the person changed is the one the next delivery carries. It is never
 //! written to a log.
 
 use super::state::State;
@@ -23,15 +25,14 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
-use soyeht_protocol::PromptOrigin;
 use soyeht_store::avatars::Persona;
 
-/// The prompt id of the persona prompt of one pane, so an open that repeats queues it once.
-const PROMPT_ID_PREFIX: &str = "avatar-persona-";
+/// What the block ahead of a prompt says it is, so the harness does not read it as the person's words.
+const BLOCK_LABEL: &str = "Standing instructions for this conversation (they come from the \
+                           application, not from the person):";
 
-/// What a harness that takes the persona as its first message is told about that message.
-const PROMPT_NOTE: &str = "These are your standing instructions for this conversation, not a \
-                           request from the person: do not answer them.";
+/// The last line of the block, so a replay of the session can tell where the block ends.
+const BLOCK_END: &str = "(End of the standing instructions.)";
 
 fn compose(persona: &Persona) -> String {
     let identity = format!(
@@ -78,32 +79,46 @@ pub(crate) fn system_prompt(state: &State, persona: Option<&str>, mut session: V
     session
 }
 
-/// Queues the persona as the first prompt of a session that has no system prompt to carry it.
-/// Nothing is queued twice, nor for an adapter that took it as the system prompt.
-pub(crate) fn queue_first_prompt(
+/// Marks an avatar pane whose adapter has no system prompt as owing its persona to the next prompt.
+/// A session that was just created, and a persona that was just changed, are the moments.
+pub(crate) fn mark_pending(state: &mut State) {
+    state.persona_pending = state.avatar && !accepts_system_prompt(state);
+}
+
+/// `prompt`, the `session/prompt` request about to be sent, with the persona as the text block ahead
+/// of its own when the pane owes it. The mark is cleared whether or not there was a text to carry.
+pub(crate) fn ahead_of(
+    store: &impl StorePort,
     state: &mut State,
-    persona: Option<&str>,
-    generation: u32,
-    at: String,
-) -> Result<()> {
-    let Some(text) = persona.filter(|_| !accepts_system_prompt(state)) else {
-        return Ok(());
-    };
-    let prompt_id = format!("{PROMPT_ID_PREFIX}{generation}");
-    if state
-        .queue
-        .iter()
-        .any(|queued| queued.prompt_id == prompt_id)
-    {
-        return Ok(());
+    workspace_id: &str,
+    mut prompt: Value,
+) -> Result<Value> {
+    if !std::mem::take(&mut state.persona_pending) {
+        return Ok(prompt);
     }
-    state.enqueue_identified(
-        prompt_id,
-        format!("{text}\n\n{PROMPT_NOTE}"),
-        PromptOrigin::Automatic,
-        at,
-    )?;
-    Ok(())
+    if let (Some(text), Some(blocks)) = (
+        text(store, state, workspace_id)?,
+        prompt["prompt"].as_array_mut(),
+    ) {
+        blocks.insert(
+            0,
+            json!({"type":"text","text":format!("{BLOCK_LABEL}\n\n{text}\n\n{BLOCK_END}")}),
+        );
+    }
+    Ok(prompt)
+}
+
+/// `text`, a user message the harness replays from the session, without the persona block the
+/// engine put ahead of a prompt: the transcript shows what the person wrote. The block is told by
+/// its first and last lines, so it goes whichever persona it carried and whether the harness
+/// replays it as a message of its own or joined to the prompt's text.
+pub(crate) fn strip_replayed<'a>(state: &State, text: &'a str) -> &'a str {
+    if !state.avatar {
+        return text;
+    }
+    text.strip_prefix(BLOCK_LABEL)
+        .and_then(|block| block.split_once(BLOCK_END))
+        .map_or(text, |(_, after)| after.trim_start_matches('\n'))
 }
 
 #[cfg(test)]
