@@ -64,8 +64,9 @@ Each layer depends only on the layers listed above it.
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
-   dictation engines that need third-party dependencies, and the catalogue of
-   engines (ADR 0083).
+   dictation engines and the text-to-speech providers that need third-party
+   dependencies (Nemotron, Kokoro), and the catalogues of both
+   (`DictationCatalogue`, `VoiceCatalogue`; ADR 0083, ADR 0166).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling. The Mac
    creates and injects every observable environment object once, in `SoyehtMacApp.swift`
@@ -308,6 +309,26 @@ Do not edit the composer, Preferences or `DictationController` to add an engine:
 generated from the registry. System callbacks and audio taps are `@Sendable` and never
 inherit the main actor.
 
+## How to add a text-to-speech provider
+
+Voice providers are a catalogue too (ADR 0166, in the style of ADR 0083). A new provider is one
+file and one entry:
+
+1. Add one file with a `SpeechSynthesizing` implementation and its `SpeechSynthesisProvider`
+   descriptor (id, names, platforms, `license` with its `commercialUse` flag, `voices`, `model` when
+   it needs an install, `cloud` when it is someone else's computer and what it receives,
+   `availability`, `make`). It goes in `apps/dictation/Sources/
+   SoyehtDictation/` when it needs a third-party package, else in `apps/shared`. A model uses
+   `DictationModelInfo` (size, license name, `commercialUse`, installer) and so
+   `DictationModelStore`; write no install state. An installed model loads from disk with no
+   network, and nothing downloads before the person presses Install.
+2. List the descriptor in `VoiceCatalogue.synthesis`.
+3. Add tests with a fake. Never call a real provider, play audio or open the microphone.
+
+A provider's key lives in a `ProviderKeyVault` (the system keychain in the app, a fake in tests):
+never in a setting, never in an error or a log line, and never sent to the engine. No library that
+links may be GPL (espeak-ng is), and a model whose license is not permissive is not offered.
+
 ## Design
 
 - Colors come only from the palette: `SoyehtThemeColors`/`MacTheme`, backed by
@@ -467,13 +488,17 @@ inherit the main actor.
   or a `cfg` module with the same public shape on every system; where a feature
   cannot exist on a system it returns a typed `Unsupported` error.
   The merge gate lints `soyeht-platform`, `soyeht-process`, `soyeht-ptyd`, `soyeht-mcp` and
-  `soyeht-service` for `x86_64-pc-windows-msvc` when that target is installed (`rustup target add`), and
+  `soyeht-service` for `x86_64-pc-windows-msvc` when `rustc` can build for that target (`rustup target add`,
+  or listed in `scripts/linux-gate.nix` on a host with no `rustup`), and
   `soyeht-engine` and `soyeht-cli` as well when the host also has a C compiler that targets
   Windows (their dependencies compile C); `scripts/check_engine_windows.ps1` checks all of
   it on Windows itself. The desktop's Windows build is checked too: `desktop:clippy-windows`
   clippy-checks the whole workspace for the same target when the host has a C compiler that
   targets Windows, and otherwise `cargo check`s the crates that build without one
-  (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`).
+  (`soyeht-client`, `soyeht-webview`, `ztracing` and `wayland-protocols-plasma`). A step that checks
+  less than its name says (no target, no Windows C compiler) prints `check_all: SKIPPED STEP: REASON`,
+  records the reason in the timings and names the step in the run's summary: a skip is visible,
+  never a quiet pass.
 
 ## Repository hygiene
 

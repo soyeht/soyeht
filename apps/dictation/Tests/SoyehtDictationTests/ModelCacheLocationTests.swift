@@ -32,6 +32,7 @@ private func make(_ url: URL) throws {
 @Test func askingWhereTheModelLivesCreatesNothingOnDisk() throws {
   try inScratchCache { root, location in
     #expect(!NemotronModelHolder(location: location).isInstalled)
+    #expect(!KokoroModelHolder(location: location).isInstalled)
     let empty = try isEmpty(root)
     #expect(empty)
   }
@@ -92,5 +93,20 @@ private func make(_ url: URL) throws {
     try NemotronModelHolder(location: location).remove()
     let empty = try isEmpty(root)
     #expect(empty)
+  }
+}
+
+@Test func aModelCountsAsInstalledOnlyAfterItIsMarkedAndThenNeverBefore() throws {
+  try inScratchCache { _, location in
+    #expect(!location.isInstalled)
+    try make(location.directory)
+    // Files on disk are not enough: a download that was cut short has them too.
+    #expect(!location.isInstalled)
+    try location.markInstalled()
+    #expect(location.isInstalled)
+    #expect(NemotronModelHolder(location: location).isInstalled)
+    #expect(KokoroModelHolder(location: location).isInstalled)
+    try location.removeAll()
+    #expect(!location.isInstalled)
   }
 }

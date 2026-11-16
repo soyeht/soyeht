@@ -325,6 +325,7 @@ and pane-state experiment data is recorded only in the signed Mac app.
 | `device.pair.decide`, `device.revoke` (ADR 0162, 0164) | yes, only in the signed app (macOS); in `PersonsCode` mode (§2.2) the local human, and a decision only from the connection that opened the window and with the person's code to approve | own device only (`device.revoke`) | no | no |
 | `settings.set`, `harness.custom.*`, `skills.*` | yes | yes | no | no |
 | `project.trust.set` (trust a folder, contract 18) | yes, in the signed app where the system can attest it (macOS) | yes | no | no |
+| `avatar.*` (the avatar library and a workspace's avatar, contract 19) | yes | yes | no | no |
 | `task.worktree.clean`, closing web panes | yes | yes | no (web close: own workspace) | no (web close: own workspace) |
 
 **2.5 The local endpoint on Windows (ADR 0086).** Windows has no Unix socket in the

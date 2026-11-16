@@ -37,6 +37,14 @@ def unrun_steps(areas: dict[str, str] | None, ran: list[dict]) -> list[str] | No
     return [step for step in areas if step not in seen]
 
 
+def unjudged_failure(record: dict) -> str | None:
+    """A step that failed in the run and was never judged (rerun and called a flake), or None. The
+    two halves of a split run go on after one fails, so both can fail in one run: judging the first
+    must not hide the second."""
+    judged = {flake["step"] for flake in record.get("flaky_steps", [])}
+    return next((step["id"] for step in record["steps"] if step["status"] and step["id"] not in judged), None)
+
+
 def flaky_step(step: str, record: dict, load: dict | None, kind: str = PASSED_ON_RERUN) -> dict:
     """The record's account of a flake: the load of the host it ran on when it was measured (a
     timing step), else the Mac's load at the end of the run."""

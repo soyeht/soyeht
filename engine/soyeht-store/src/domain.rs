@@ -366,6 +366,12 @@ impl Change<'_> {
             "UPDATE client_focus SET workspace_id=NULL,pane_id=NULL WHERE workspace_id=?1",
             [workspace_id],
         )?;
+        // A closed workspace never opens again, so its avatar binding (and the persona in it) goes
+        // with it (ADR 0166).
+        self.transaction.execute(
+            "DELETE FROM workspace_avatars WHERE workspace_id=?1",
+            [workspace_id],
+        )?;
         Ok(())
     }
 

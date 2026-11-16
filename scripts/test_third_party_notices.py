@@ -366,6 +366,18 @@ class RepositoryTests(unittest.TestCase):
         names = {c.name for c in sources.asset_components(POLICY)}
         self.assertTrue({"Inter", "Lucide icons", "Lobe Icons (provider glyphs)"} <= names)
 
+    def test_the_speech_models_and_their_data_state_a_license_and_where_it_comes_from(self):
+        components = {c.name: c for c in sources.model_components(POLICY)}
+        self.assertTrue(any(name.startswith("Kokoro-82M CoreML") for name in components))
+        self.assertTrue(any("dictionaries" in name for name in components))
+        for component in components.values():
+            self.assertEqual(component.ecosystem, "Model")
+            self.assertIn(component.license, POLICY.allowed)
+            self.assertTrue(component.notes, component.name)
+            self.assertTrue(component.texts, component.name)
+        stated = {n for c in components.values() for n in c.notes if "provenance is not stated" in n}
+        self.assertTrue(stated)
+
     def test_every_license_the_policy_prefers_is_allowed_and_has_a_standard_text(self):
         for identifier in POLICY.prefer:
             self.assertIn(identifier, POLICY.allowed)

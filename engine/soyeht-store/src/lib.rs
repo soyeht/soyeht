@@ -2,6 +2,7 @@
 
 pub mod adapter_acknowledgement;
 pub mod agents;
+pub mod avatars;
 pub mod database;
 pub mod device_notices;
 pub use database::{Error, Result};

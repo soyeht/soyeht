@@ -488,6 +488,7 @@ impl Core {
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
         self.editor.remove_pane(id);
+        self.web.pages.forget(id);
         self.terminal_captures.remove(id);
         self.agent_captures.remove(id);
         self.forget_reads(&crate::read_ahead::agent(id));

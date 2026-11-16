@@ -12,13 +12,7 @@ public enum CredentialVault {
     ]
   }
   public static func load() throws -> DeviceCredential? {
-    var request = query
-    request[kSecReturnData as String] = true
-    request[kSecMatchLimit as String] = kSecMatchLimitOne
-    var result: CFTypeRef?
-    let status = SecItemCopyMatching(request as CFDictionary, &result)
-    if status == errSecItemNotFound { return nil }
-    guard status == errSecSuccess, let data = result as? Data else { throw failure(status) }
+    guard let data = try KeychainItem.read(query, failure: failure) else { return nil }
     return try JSONDecoder().decode(DeviceCredential.self, from: data)
   }
   public static func save(_ credential: DeviceCredential) throws {
@@ -26,14 +20,8 @@ public enum CredentialVault {
       kSecValueData as String: try JSONEncoder().encode(credential),
       kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
     ]
-    let status = SecItemUpdate(query as CFDictionary, values as CFDictionary)
-    if status == errSecItemNotFound {
-      let insertion = query.merging(values) { _, value in value }
-      let status = SecItemAdd(insertion as CFDictionary, nil)
-      guard status == errSecSuccess else { throw failure(status) }
-    } else if status != errSecSuccess {
-      throw failure(status)
-    }
+    let status = KeychainItem.upsert(query, values)
+    guard status == errSecSuccess else { throw failure(status) }
   }
   public static func forget() throws {
     let status = SecItemDelete(query as CFDictionary)

@@ -401,8 +401,7 @@ impl Core {
         request_id: Value,
         method: &str,
         params: &Value,
-        prompt_attachments: Vec<crate::agents::attachments::PreparedAttachment>,
-        writing_image: Option<crate::writing::attachments::WritingImageAttachment>,
+        attachments: crate::request_attachments::Attachments,
     ) -> Result<Outcome> {
         let result = match method {
             method::STATE_SNAPSHOT => return self.snapshot_parts(connection),
@@ -431,7 +430,7 @@ impl Core {
                 self.agent_custom_harness(connection, method, params)?
             }
             method if crate::agents::methods::handles(method) => {
-                self.agent_method(connection, method, params, prompt_attachments)?
+                self.agent_method(connection, method, params, attachments.prompt)?
             }
             method::AGENT_LIST | method::AGENT_MESSAGE => {
                 return self.agent_peer(connection, method, params);
@@ -474,7 +473,7 @@ impl Core {
                 return self.project_entry_request(connection, method, params, None);
             }
             method if crate::editor::handles(method) || crate::writing::handles(method) => {
-                self.document_request(connection, method, params, writing_image)?
+                self.document_request(connection, method, params, attachments.writing_image)?
             }
             method::TASK_DISPATCH => return self.task_dispatch(connection, params),
             method::TASK_NEXT => self.task_next(connection, params)?,
@@ -556,7 +555,16 @@ impl Core {
         }
     }
 
+    /// Answers one request. The frames it leaves on the connection are settled after it: see
+    /// `request_attachments::settle`.
     pub fn dispatch(&mut self, connection: &str, request: Value) -> Result<Outcome> {
+        let method = request["method"].as_str().map(str::to_owned);
+        let outcome = self.dispatch_request(connection, request);
+        crate::request_attachments::settle(self, connection, method.as_deref(), outcome.is_err());
+        outcome
+    }
+
+    fn dispatch_request(&mut self, connection: &str, request: Value) -> Result<Outcome> {
         if request["jsonrpc"] != "2.0" || !request["id"].is_string() && !request["id"].is_u64() {
             return Err(errors::invalid("Expected JSON-RPC 2.0 request with id"));
         }
@@ -575,27 +583,8 @@ impl Core {
         let scope = self.authenticated_scope(connection, method)?;
         // Before any stored result is looked up: a replay is matched by a scope with no signed-app bit.
         self.authorize_before_replay(connection, method, &params)?;
-        let prompt_attachments = if method == method::PANE_PROMPT {
-            self.prepare_prompt_attachments(connection, &mut params)?
-        } else {
-            Vec::new()
-        };
-        let writing_image = if method == method::WRITING_FORMAT {
-            let image = self.prepare_writing_image(connection, &mut params)?;
-            if image.is_none() && self.web_attachment_pending(connection)? {
-                return Err(errors::invalid(
-                    "Binary attachments must be committed by the following request",
-                ));
-            }
-            image
-        } else {
-            if self.web_attachment_pending(connection)? {
-                return Err(errors::invalid(
-                    "Binary attachments must be committed by the following request",
-                ));
-            }
-            None
-        };
+        let attachments =
+            crate::request_attachments::prepare(self, connection, method, &mut params)?;
         if let Some(outcome) =
             self.repeated_result(connection, &request["id"], method, &params, &scope)?
         {
@@ -607,13 +596,21 @@ impl Core {
                 params,
             });
         }
+        if crate::avatars::handles(method) {
+            return crate::avatars::avatar_request(
+                self,
+                connection,
+                method,
+                &params,
+                attachments.avatar_picture,
+            );
+        }
         self.route(
             connection,
             request["id"].clone(),
             method,
             &params,
-            prompt_attachments,
-            writing_image,
+            attachments,
         )
     }
 
@@ -711,6 +708,7 @@ impl Core {
             EngineCapability::DevicePairing,
             EngineCapability::WorkspaceTasks,
             EngineCapability::SubscriptionUsage,
+            EngineCapability::Avatars,
         ];
         if self.push.enabled() {
             offered.push(EngineCapability::Push);

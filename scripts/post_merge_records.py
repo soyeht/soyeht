@@ -84,6 +84,14 @@ def archive_previous_run(health: Path, sha: str) -> dict | None:
 
 
 def report(record: dict) -> str:
+    """The run's outcome, and the steps that passed without checking all they name, if any."""
+    skipped = [step["id"] for step in record.get("steps", []) if step.get("skipped")]
+    if not skipped:
+        return outcome(record)
+    return outcome(record) + f"\n  SKIPPED (checked less than their names say; the reasons are in the record and the log): {', '.join(skipped)}"
+
+
+def outcome(record: dict) -> str:
     if record["result"] == "pass":
         return f"post_merge: main {record['sha'][:12]} is green ({record['duration_seconds']:.0f}s)"
     if record["result"] == NEEDS_MEASUREMENT:

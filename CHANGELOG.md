@@ -20,6 +20,12 @@ Security.
   The Android app contains proprietary runtime libraries from Google (ML Kit and Google Play services), under Google's
   terms and not open source, and are listed in `THIRD-PARTY-NOTICES.txt`.
 
+- An agent can show a file of the project as a page in a web pane: `web_open` takes `path`, the file is served
+  read-only to the pane on the loopback interface, and the page reloads when a file it loaded changes. The page's
+  script can read every file below the file's folder that has no part starting with a dot (a file at the project
+  root exposes the whole project to it). It runs sandboxed, with no cookies and no storage, can fetch nothing but
+  those files (WebRTC and DNS lookups are not covered), and the pane cannot navigate away from it. The page is served again when the engine restarts.
+
 ### Removed
 
 - `soyeht device pair-start` is gone. A pairing is started and approved only in the Soyeht app.
