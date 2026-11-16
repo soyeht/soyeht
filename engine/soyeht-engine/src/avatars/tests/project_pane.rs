@@ -25,7 +25,9 @@ fn started(rig: &mut Rig, workspace: &str, avatar: &Avatar) -> String {
 
 /// The binding of the workspace is still the first one, on the rig's harness.
 fn assert_first_binding(rig: &mut Rig) {
-    assert_first_binding(&mut rig);
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["bindings"][0]["revision"], "1");
+    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
 }
 
 /// A rig whose avatar pane waits for a sign-in, and a second harness to ask for.
