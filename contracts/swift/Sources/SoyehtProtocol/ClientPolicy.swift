@@ -185,6 +185,7 @@ public enum ClientPolicy {
     public static let voicePictographs = "1F000-1FAFF|2190-21FF|2300-23FF|2600-27BF|2900-297F|2B00-2BFF|20E3|200D|FE0F"
     public static let voiceAddressPrefixes = "http://|https://|www."
     public static let voiceAddressOpeners = "([{<\"'"
+    public static let voiceRepliesRemembered = 64
 
     /// Image types that claude-agent-acp and codex-acp forward as model input and that both
     /// providers accept; any other image is linked.

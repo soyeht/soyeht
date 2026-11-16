@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtProtocol
 
 /// The agent's replies as the voice loop takes them: each message has an identity, grows by
 /// updates, and comes out as the sentences to speak. The rules are in `replies` of
@@ -15,8 +16,8 @@ public struct ReplyFeed: Sendable {
     var cancelled = false
   }
 
-  /// How many identities are remembered, the oldest forgotten first.
-  private static let remembered = 64
+  /// How many identities are remembered, the oldest forgotten first (`repliesRemembered`).
+  private static let remembered = ClientPolicy.voiceRepliesRemembered
 
   private let template: SentenceChunker
   private var replies: [String: Reply] = [:]

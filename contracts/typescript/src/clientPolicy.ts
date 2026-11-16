@@ -99,7 +99,8 @@ export const clientPolicy = {
     "sentenceAbbreviations": "mr.|mrs.|ms.|dr.|prof.|st.|sr.|sra.|dra.|av.|vs.|e.g.|i.e.",
     "pictographs": "1F000-1FAFF|2190-21FF|2300-23FF|2600-27BF|2900-297F|2B00-2BFF|20E3|200D|FE0F",
     "addressPrefixes": "http://|https://|www.",
-    "addressOpeners": "([{<\"'"
+    "addressOpeners": "([{<\"'",
+    "repliesRemembered": 64
   },
   "clientName": {
     "mac": "mac",

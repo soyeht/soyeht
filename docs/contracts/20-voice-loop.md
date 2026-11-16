@@ -1,11 +1,13 @@
 # Contract 20 · The voice loop
 
 Status: v1, slice 7 of ADR 0166 (the Apple clients; the Windows and Linux app implements the same rules in
-slice 8a). Code: `VoiceTurnMachine`, `SpeechText`, `SentenceChunker`, `ReplyFeed`, `HeardSpeech` and
-`VoiceLoopController` in `apps/shared`; the two optional models in `apps/dictation`. Vectors:
-`contracts/vectors/voice-turns.json` and `contracts/vectors/speech-text.json`. Numbers: the `voice` group of
-`x-clientPolicy` in `contracts/protocol.json` (`ClientPolicy.voice...` in Swift, `client_policy::VOICE_...` in
-Rust).
+slice 8a). The slice lands in three changes: this one holds the specification (sections 1 to 3: the policy, the
+vectors and the pure rules, `VoiceTurnMachine`, `SpeechText`, `SentenceChunker`, `ReplyFeed` and `HeardSpeech` in
+`apps/shared`); the second adds the two optional models (`VoiceModelCatalogue` in `apps/dictation`); the third
+adds the audio session and `VoiceLoopController`. Section 4 says what those two must do, and lands as code with
+them. Vectors: `contracts/vectors/voice-turns.json` and `contracts/vectors/speech-text.json`, written by
+`contracts/voice_vectors.py`. Numbers: the `voice` group of `x-clientPolicy` in `contracts/protocol.json`
+(`ClientPolicy.voice...` in Swift, `client_policy::VOICE_...` in Rust).
 
 The loop runs in the client that has the microphone and speaker. Speech is recognised and spoken on that
 device; only text crosses the wire, as the person's next prompt and the agent's reply. This contract adds
@@ -62,8 +64,11 @@ and whether the person interrupted a reply), `cancelReply`, `stopPlayback`.
   `incompleteSilenceMs` of silence. With no model the answer is always "finished".
 - Ending the turn asks the recognizer for its final text and waits for it (`finalizing`), at most
   `finalizeTimeoutMs`; then the last partial text is the final one (the recognizer is dropped, and a blank text
-  discards the turn). A recognizer that already ended during the turn (it failed, or it gave its final text
-  early) has given its text: the turn ends with that text at once, with no wait.
+  discards the turn). **A recognizer that ends before the turn does** (it failed, or it gave its final text
+  early) has given its text. If the person is still talking when it ends, a recognizer starts at once for the
+  rest; if they talk again after a pause, one starts then; and the words of the recognizers are one turn. A
+  recognizer that starts after another ended never starts from audio before the point where the first one
+  ended. If the person does not talk again, the turn ends with that text at once, with no wait.
 - Blank text discards the turn. Otherwise the text goes out with `submit`, and the machine waits for the reply.
 - **Talking over the wait or over the reply** is listened to before it is believed. After `bargeInMs` of
   unbroken voiced frames while the agent thinks (`waitingReply`) or its reply plays (`playing`), a recognizer
@@ -73,12 +78,14 @@ and whether the person interrupted a reply), `cancelReply`, `stopPlayback`.
   noise** or an **echo**. Taking the turn cancels the reply, and stops what plays; the words then go out as the
   next turn (with `interrupted` when a reply was playing). If the person goes on talking after the final text
   of that recognizer (after a pause), a recognizer starts for the new speech, and the words of both are one turn.
-  - A listener's noise is a text made only of entries of `continuers`, or the start of one. They are non-lexical
-    noises ("mhm", "uh huh", "hmm", "aham", "uhum") and nothing else: "yes", "sim", "ok" are answers, and an
+  - A listener's noise is a text made only of entries of `continuers`, or the first whole words of one ("mm"
+    waits, being the first word of "mm hmm"; "aha" is not the start of "aham" and takes the turn). They are
+    non-lexical noises ("mhm", "uh huh", "hmm", "aham", "uhum") and nothing else: "yes", "sim", "ok" are answers, and an
     answer to a spoken question takes the turn.
   - An echo is a text of two words or more that appears, as consecutive words, in the last two sentences
     played taken together (so it may cross their boundary); its last word may be unfinished. **One word** that
-    appears in them decides nothing while it is a partial text, and takes the turn only as the final text, after
+    equals a word of them or begins one ("no" against "not", "th" against "three") decides nothing while it is a
+    partial text, and takes the turn only as the final text, after
     the pause: the first word of the avatar's own echo does not take the turn, and "stop", "no" or "para" works,
     a little later when the avatar had said it too. A single word the sentences do not hold takes the turn at once.
   - Words are compared in Unicode NFC, lowercase, as runs of letters, combining marks and digits (categories L, M
@@ -122,12 +129,19 @@ one line per paragraph, heading or list item, joined by newlines.
   are dropped.
 - Emoji and symbols a voice would read out as their names, the code points of `pictographs` (pictographs, arrows,
   hourglass, the keycap mark, the joiner and the variation selector), are dropped. A line with no letter
-  or digit left is dropped. A task-list marker is dropped and blanks are collapsed.
-- For a reply **still arriving** (`streaming`): the text from an unclosed `[` of the last line (a link whose
-  words or address are not complete) or from an unmatched single `*` or `_` is held back, so the text spoken so
-  far is always the start of the text to come (a mark alone between blanks, a bullet, or an underscore inside a
-  word is not emphasis); bold and code spans are closed as in the Markdown rules. The text **ends with a newline when its last line is finished**: a
-  block follows it, or the Markdown ends with a blank line.
+  or digit left (a character of Unicode category L or N) is dropped. A task-list marker is dropped and blanks are collapsed.
+- For a reply **still arriving** (`streaming`), what an unfinished construct would still change is held back, so
+  the text spoken so far is always the start of the text to come:
+  - only the last line of the Markdown is looked at; none of this applies when the number of lines that start a
+    code fence (three backticks or tildes) is odd, that is, inside an open fence, where code is not read anyway;
+  - a backtick turns code on or off, and nothing is looked for inside code;
+  - a `[` opens a bracket, which a `]` not followed by `(` closes, and one followed by `(` closes at the next
+    `)`; the text from a bracket that is still open is held back (a link whose words or address are not complete);
+  - a `**` or a `__` is skipped as a pair, and the text from a lone `*` or `_` that is still open is held back; a
+    mark alone between blanks, a bullet, and an underscore inside a word ("snake_case") are not emphasis;
+  - bold and code spans are closed as in the Markdown rules.
+  The text **ends with a newline when its last line is finished**: a block follows it, or the Markdown ends with a
+  blank line.
 
 **Sentence chunker.** It takes the speech text so far and says which sentences became whole. Lengths count
 Unicode scalar values and a blank is a character with the Unicode `White_Space` property. Stops, closers,
@@ -154,7 +168,8 @@ that still arrive for its `id` are dropped, and they say nothing of the agent's 
 take them for the reply it is waiting for, nor end its wait because of them: an update reports whether it was
 accepted). **A new message id from the agent turn that was cancelled is the pane's to drop**: the loop knows no
 more than the ids it has seen, so after `onCancelReply` the pane gives it nothing of the cancelled turn, new ids
-included. A reply has more to come until its final update.
+included. A reply has more to come until its final update. The feed remembers the last `repliesRemembered` (64) identities
+and forgets the oldest.
 
 **Heard.** What the person heard of the reply they interrupted: the sentences played to their end, and the
 part of the one playing that its position in the audio covers. With the voice's own word timings, a word is
@@ -162,7 +177,11 @@ heard once the next one has begun (the last one when all of the sentence was hea
 (clamped to 0 to 1) selects the whole words, a word being a run of non-blank characters and each character of
 a script with no blanks a word of its own; the text is cut after the last whole word.
 
-## 4. The client
+## 4. The client (lands with the second and third changes)
+
+This section says what the models and the audio of the Apple clients must do; the code arrives with those
+changes (the catalogue of the models, `VoiceAudio` and `VoiceLoopController`), and so does the list of privacy
+strings in `docs/app-store.md` that section 5 names.
 
 `VoiceActivityDetecting` (the speech probability of a 512-sample frame at 16 kHz) and `EndOfTurnDetecting`
 (whether the last 8 seconds of the turn are a finished turn) are the two model seams, listed in the
@@ -213,4 +232,4 @@ The strings and the privacy answers of the apps must change **before the avatar 
 to the interface in this slice, so they are not changed here. The microphone is open from the start of a
 conversation to its end, not while a button is held, and where on-device recognition is not supported a probe
 sends audio to the system's recognition service. `docs/app-store.md` ("The voice loop: strings and answers to
-change before the avatar pane ships") lists what to change.
+change before the avatar pane ships", added with the third change) lists what to change.
