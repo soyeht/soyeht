@@ -628,6 +628,9 @@ impl Core {
         if self.agents.has(id) {
             return self.adopt_agent(id, instance);
         }
+        // A harness that is already running, and idle, prints nothing to be noticed by: read the
+        // pane once now that it has a process.
+        self.foreground_mut().note_output(id);
         let mut saved = self.pane(id)?.stored.clone();
         saved.instance_id = Some(instance.instance_id.clone());
         saved.supervisor_id = Some(instance.supervisor_id.clone());

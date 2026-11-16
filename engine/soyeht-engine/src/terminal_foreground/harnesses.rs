@@ -13,11 +13,15 @@
 //! 1. a file it runs (executable, or the script of a host program) sits in an install layout of
 //!    the harness (`.local/share/cursor-agent/versions/`, `node_modules/@openai/codex/`, ...);
 //! 2. `argv[0]` is the bare command name (the shell found it on the person's `PATH`);
-//! 3. the file is named like the command and the folder it is in is on the person's `PATH`.
+//! 3. a file it runs (executable, `argv[0]`, or the script of a host program) is named like the
+//!    command and the folder it is in is on the person's `PATH`. A harness installed with npm runs
+//!    as `node <the link npm made in a PATH folder>`: the interpreter and the link as it was
+//!    invoked, which is this rule applied to the script (measured on macOS and Linux).
 //!
 //! A binary named like a harness in a project folder is none of them. A wrong match only
 //! mislabels an `agent.list` entry; it grants nothing.
 
+use soyeht_platform::process::inspect::MAX_ARGUMENT_BYTES;
 use soyeht_protocol::readiness::HARNESSES;
 use soyeht_ptyd::wire::Program;
 
@@ -124,7 +128,7 @@ impl Matched<'_> {
         [Some(self.file), launched]
             .into_iter()
             .flatten()
-            .find_map(version_in_path)
+            .find_map(|path| version_after_layout(self.known, path))
     }
 }
 
@@ -227,7 +231,11 @@ pub(super) fn identify<'a>(
     let script = script_of(program)?;
     KNOWN
         .iter()
-        .find(|known| in_layout(known, script))
+        .find(|known| {
+            in_layout(known, script)
+                || (named(known, script)
+                    && folder_of(script).is_some_and(|folder| on_path(&folder)))
+        })
         .map(|known| matched(known, script))
 }
 
@@ -273,22 +281,51 @@ pub(super) fn pick<'a>(
 /// The longest a version is, as the contract says (`TerminalHarness.version`).
 const LONGEST_VERSION: usize = 64;
 
-/// The version a path carries: the last folder or file name that reads `1.2.3`, `0.169.0` or
-/// `2026.09.02-c22c1a3` (three numbers joined by dots, then an optional suffix after `-` or `+`).
-fn version_in_path(path: &str) -> Option<String> {
-    path.rsplit(['/', '\\']).find_map(|part| {
-        let number = part.split(['-', '+']).next()?;
-        let numbers: Vec<&str> = number.split('.').collect();
-        let is_version = numbers.len() == 3
-            && numbers
-                .iter()
-                .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
-            && part.len() <= LONGEST_VERSION
-            && part
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+' | '_'));
-        is_version.then(|| part.to_owned())
+/// How many parts after the install layout may hold the version (`.../versions/<version>`).
+const PARTS_AFTER_LAYOUT: usize = 2;
+
+/// The version an install layout carries: the part after the layout (or the one after that) that
+/// reads `1.2.3`, `0.169.0` or `2026.09.02-c22c1a3` (three numbers joined by dots, then an
+/// optional suffix after `-` or `+`). Only what follows the harness's own layout is read, so a
+/// node manager's or another folder's version in the path is never taken for the harness's. A path
+/// that was cut short (it is as long as the longest the supervisor keeps) and ends in the part is
+/// not read: the part may be cut.
+fn version_after_layout(known: &Known, path: &str) -> Option<String> {
+    let parts: Vec<&str> = path
+        .split(['/', '\\'])
+        .filter(|part| !part.is_empty())
+        .collect();
+    let lowered: Vec<String> = parts.iter().map(|part| part.to_lowercase()).collect();
+    let cut = path.len() >= MAX_ARGUMENT_BYTES;
+    known.layouts.iter().find_map(|layout| {
+        let wanted: Vec<&str> = layout.split('/').collect();
+        let at = lowered
+            .windows(wanted.len())
+            .position(|window| window.iter().zip(&wanted).all(|(part, want)| part == want))?;
+        let after = at + wanted.len();
+        parts
+            .iter()
+            .enumerate()
+            .skip(after)
+            .take(PARTS_AFTER_LAYOUT)
+            .find(|(index, part)| is_version(part) && !(cut && index + 1 == parts.len()))
+            .map(|(_, part)| (*part).to_owned())
     })
+}
+
+fn is_version(part: &str) -> bool {
+    let Some(number) = part.split(['-', '+']).next() else {
+        return false;
+    };
+    let numbers: Vec<&str> = number.split('.').collect();
+    numbers.len() == 3
+        && numbers
+            .iter()
+            .all(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+        && part.len() <= LONGEST_VERSION
+        && part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+' | '_'))
 }
 
 /// A program as the tests of this module and of its users spell one.
@@ -569,22 +606,79 @@ mod tests {
     }
 
     #[test]
-    fn a_version_is_read_from_the_path_and_nothing_else_is() {
-        for (path, version) in [
-            ("/h/.local/share/claude/versions/2.1.325", Some("2.1.325")),
+    fn a_version_is_read_after_the_install_layout_and_nowhere_else() {
+        let claude = &KNOWN[0];
+        let codex = &KNOWN[1];
+        let cursor = &KNOWN[2];
+        for (known, path, version) in [
             (
+                claude,
+                "/h/.local/share/claude/versions/2.1.325",
+                Some("2.1.325"),
+            ),
+            (
+                codex,
                 "/opt/homebrew/Caskroom/codex/0.169.0/bin/codex",
                 Some("0.169.0"),
             ),
             (
-                "C:\\x\\codex\\1.2.3-beta.1\\codex.exe",
+                cursor,
+                "C:\\Users\\x\\AppData\\Local\\cursor-agent\\versions\\1.2.3-beta.1\\index.js",
                 Some("1.2.3-beta.1"),
             ),
-            ("/h/opencode-v2/bin/opencode", None),
-            ("/h/v1.2/bin/x", None),
-            ("/h/1.2.3.4/bin/x", None),
+            // A node manager's folder is not the harness's version.
+            (
+                codex,
+                "/h/.nvm/versions/node/v22.20.0/lib/node_modules/@openai/codex/bin/codex.js",
+                None,
+            ),
+            (
+                codex,
+                "/h/.nvm/versions/22.20.0/lib/node_modules/@openai/codex/bin/codex.js",
+                None,
+            ),
+            // No layout, no version.
+            (codex, "/h/opencode-v2/1.2.3/bin/opencode", None),
+            (codex, "/opt/homebrew/Caskroom/codex/v1.2/bin/codex", None),
         ] {
-            assert_eq!(version_in_path(path).as_deref(), version, "{path}");
+            assert_eq!(
+                version_after_layout(known, path).as_deref(),
+                version,
+                "{path}"
+            );
         }
+        // A path cut where the version ends it may have lost part of it.
+        let long = format!(
+            "{}/.local/share/claude/versions/2.1.3",
+            "d".repeat(MAX_ARGUMENT_BYTES)
+        );
+        assert_eq!(version_after_layout(claude, &long), None);
+    }
+
+    #[test]
+    fn an_npm_installed_harness_runs_as_node_and_the_link_it_made_in_a_path_folder() {
+        // Measured on macOS and Linux: `node <the link as invoked> args`.
+        let installed = program(
+            1,
+            None,
+            "/usr/local/bin/node",
+            &["node", "/Users/x/.local/bin/opencode", "--flag"],
+        );
+        assert_eq!(named(&[installed]), Some("OpenCode"));
+        // The same name in a project folder away from the `PATH` is no harness.
+        let project = program(
+            1,
+            None,
+            "/usr/local/bin/node",
+            &["node", "/work/repo/bin/opencode", "--flag"],
+        );
+        assert_eq!(named(&[project]), None);
+        let project_js = program(
+            1,
+            None,
+            "/usr/local/bin/node",
+            &["node", "/work/repo/bin/opencode.js"],
+        );
+        assert_eq!(named(&[project_js]), None);
     }
 }

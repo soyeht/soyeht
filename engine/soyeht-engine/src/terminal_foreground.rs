@@ -108,10 +108,16 @@ impl Scan {
                 let answer = answers
                     .iter()
                     .find(|answer| answer.instance_id == target.instance_id)?;
+                let harness = harness_of(&answer.programs, &on_path);
+                // Programs were left out for want of room (a large build in another pane used the
+                // budget): none shown does not say none runs, so the pane keeps what it had.
+                if answer.truncated && harness.is_none() {
+                    return None;
+                }
                 Some(Found {
                     pane_id: target.pane_id.clone(),
                     instance_id: target.instance_id.clone(),
-                    harness: harness_of(&answer.programs, &on_path),
+                    harness,
                 })
             })
             .collect())
@@ -181,10 +187,23 @@ impl Core {
         if !supervisor.reports_foreground() {
             return Ok(None);
         }
+        // The marks of what is about to be read go now, not when the answer is applied: output
+        // that arrives while the scan is in flight is a mark for the next one.
+        let printed = &mut self.foreground_mut().printed;
+        for target in &targets {
+            printed.remove(&target.pane_id);
+        }
         Ok(Some(Scan {
             supervisor,
             targets,
         }))
+    }
+
+    /// Notes again that these panes printed, for a scan that did not read them.
+    fn remark(&mut self, ids: &[String]) {
+        for id in ids {
+            self.foreground_mut().note_output(id);
+        }
     }
 
     /// Whether an app subscribed to events watches the panes.
@@ -203,35 +222,66 @@ impl Core {
         {
             return Ok(());
         }
-        let printed = std::mem::take(&mut self.foreground_mut().printed);
+        let printed = self.foreground().printed.clone();
         self.foreground_mut().next_ms = now + INTERVAL_MS;
         let targets = self.foreground_targets(Some(&printed))?;
+        // A mark of a pane that cannot be read (closed, ended, a sign-in terminal) is dropped; the
+        // marks of the panes to read stay until their scan starts, so a scan that cannot start
+        // (no supervisor, an old one) or fails leaves them for the next.
+        let readable: BTreeSet<String> = targets
+            .iter()
+            .map(|target| target.pane_id.clone())
+            .collect();
+        self.foreground_mut()
+            .printed
+            .retain(|id| readable.contains(id));
         if targets.is_empty() {
             return Ok(());
         }
+        let ids: Vec<String> = targets
+            .iter()
+            .map(|target| target.pane_id.clone())
+            .collect();
         let Some(scan) = self.start_scan(targets)? else {
+            // A supervisor that cannot be asked will not be asked: nothing is kept for it.
+            self.foreground_mut().printed.clear();
             return Ok(());
         };
         let used = scan.supervisor.clone();
         self.spawn_background(
             SCAN_JOB.into(),
             move || scan.run(),
-            move |core, scanned| core.finish_foreground(&used, scanned),
+            move |core, scanned| core.finish_foreground(&used, scanned, &ids),
         )
     }
 
     /// When the tick must run for the scan: while an app watches and a pane printed.
     pub(crate) fn foreground_due(&self, next: &mut Next, now: i64) {
-        if self.watched() && !self.foreground().printed.is_empty() {
+        // Not while a scan is in flight: its deadline is past, and the tick would spin until the
+        // supervisor answers. The tick runs when the answer is applied.
+        if self.watched()
+            && !self.foreground().printed.is_empty()
+            && !self.background.is_active(SCAN_JOB)
+        {
             next.at_ms(now, self.foreground().next_ms);
         }
     }
 
     /// Puts a scan's findings into the panes, for each that is still the process it read. A scan
-    /// that failed on a link that was replaced meanwhile says nothing about the new one.
-    fn finish_foreground(&mut self, used: &Supervisor, scanned: Result<Vec<Found>>) -> Result<()> {
-        let Some(found) = self.settle_if_current(used, scanned)? else {
-            return Ok(());
+    /// that failed, or that ran on a link that was replaced meanwhile, read nothing: the panes it
+    /// was for (`ids`) are marked again so the next scan reads them.
+    fn finish_foreground(
+        &mut self,
+        used: &Supervisor,
+        scanned: Result<Vec<Found>>,
+        ids: &[String],
+    ) -> Result<()> {
+        let found = match self.settle_if_current(used, scanned) {
+            Ok(Some(found)) => found,
+            other => {
+                self.remark(ids);
+                return other.map(|_| ());
+            }
         };
         self.foreground_mut().scanned_ms = Some(self.now_ms());
         for Found {
@@ -240,7 +290,6 @@ impl Core {
             harness,
         } in found
         {
-            self.foreground_mut().printed.remove(&pane_id);
             let current = self.panes.get(&pane_id).is_some_and(|running| {
                 !running.stored.closed
                     && running.stored.instance_id.as_deref() == Some(instance_id.as_str())
@@ -300,13 +349,18 @@ impl Core {
             return Ok(Outcome::Reply(self.peer_listing(&sender)));
         };
         let used = scan.supervisor.clone();
+        let ids: Vec<String> = scan
+            .targets
+            .iter()
+            .map(|target| target.pane_id.clone())
+            .collect();
         Ok(Outcome::Offload(
             Offload::new(
                 "Terminal scan timed out",
                 SCAN_TIMEOUT,
                 move || scan.run(),
                 move |core, scanned| {
-                    let applied = core.finish_foreground(&used, scanned);
+                    let applied = core.finish_foreground(&used, scanned, &ids);
                     core.settle_supervisor_call(SCAN_FAILED, applied);
                     Ok(Outcome::Reply(core.peer_listing(&sender)))
                 },

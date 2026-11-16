@@ -386,7 +386,7 @@ profile): the command names each runs under and the install layouts its files li
 states the rule, which keeps a binary that is merely named like a harness in a project folder out).
 Slice 2 tests it against the shapes measured on the real binaries. The engine never reads every
 terminal on a period. It reads a pane **on demand** (`agent.list`, and a waiting message for it from
-slice 5) and otherwise only **when the pane has printed since its last read** (a change of the
+slice 5) and otherwise only **when the pane has printed since its last read** (or has just been adopted after an engine restart) (a change of the
 foreground program always prints), those reads coalesced on a slow tick (2 s) and only while an app
 watches, so a pane that runs an idle shell costs nothing.
 

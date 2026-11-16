@@ -33,6 +33,8 @@ type ByInstance = Vec<(String, Vec<Program>)>;
 #[derive(Clone, Default)]
 struct Programs {
     by_instance: Arc<Mutex<ByInstance>>,
+    /// The instances whose answer says programs were left out for want of room.
+    truncated: Arc<Mutex<Vec<String>>>,
     asked: Arc<AtomicUsize>,
 }
 
@@ -54,6 +56,7 @@ impl Programs {
 
     fn answering(&self) -> Box<dyn crate::ports::SupervisorPort> {
         let programs = self.clone();
+        let cut = Arc::clone(&self.truncated);
         Box::new(Answering(move |request| match request {
             Request::Foreground { instance_ids } => {
                 programs.asked.fetch_add(1, Ordering::SeqCst);
@@ -66,10 +69,11 @@ impl Programs {
                                 .iter()
                                 .find(|(id, _)| *id == instance_id)
                                 .map(|(_, programs)| programs.clone())?;
+                            let truncated = cut.lock().unwrap().contains(&instance_id);
                             Some(Foreground {
                                 instance_id,
                                 programs,
-                                truncated: false,
+                                truncated,
                             })
                         })
                         .collect(),
@@ -493,5 +497,115 @@ fn a_sign_in_terminal_is_never_read_or_listed() {
     let listed = rig.agent_list(&sender);
     assert!(listed["items"].as_array().unwrap().is_empty());
     assert_eq!(rig.programs.asked(), 0);
+    rig.finish();
+}
+
+#[test]
+fn a_terminal_whose_programs_did_not_fit_and_show_no_harness_keeps_what_it_had() {
+    let (mut rig, pane, instance) =
+        Rig::scanned(vec![program(12, "/nowhere/bin/opencode", &["opencode"])]);
+    assert!(rig.harness_of(&pane).is_some());
+    // Other panes used the budget: this one comes back empty and truncated.
+    rig.programs.set(&instance, Vec::new());
+    rig.programs.truncated.lock().unwrap().push(instance);
+    rig.rescan(&pane);
+    assert!(
+        rig.harness_of(&pane).is_some(),
+        "an unread pane keeps its harness"
+    );
+    rig.finish();
+}
+
+#[test]
+fn a_truncated_answer_that_still_shows_a_harness_is_applied() {
+    let (mut rig, pane, instance) = Rig::scanned(vec![program(1, "/bin/zsh", &["zsh"])]);
+    assert_eq!(rig.harness_of(&pane), None);
+    rig.programs.set(
+        &instance,
+        vec![program(12, "/nowhere/bin/opencode", &["opencode"])],
+    );
+    rig.programs.truncated.lock().unwrap().push(instance);
+    rig.rescan(&pane);
+    assert!(rig.harness_of(&pane).is_some());
+    rig.finish();
+}
+
+#[test]
+fn output_that_arrives_while_a_scan_is_in_flight_is_read_by_the_next_scan() {
+    let (mut rig, pane, _) = Rig::watching(vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.foreground_mut().note_output(&pane);
+    let targets = rig.core.foreground_targets(None).unwrap();
+    let ids: Vec<String> = targets
+        .iter()
+        .map(|target| target.pane_id.clone())
+        .collect();
+    let scan = rig.core.start_scan(targets).unwrap().unwrap();
+    let used = scan.supervisor.clone();
+    assert!(
+        rig.core.foreground().printed.is_empty(),
+        "the mark goes when the scan starts"
+    );
+    // The pane prints after the supervisor was asked and before the answer is applied.
+    rig.core.foreground_mut().note_output(&pane);
+    let read = scan.run();
+    rig.core.finish_foreground(&used, read, &ids).unwrap();
+    assert!(rig.core.foreground().printed.contains(&pane));
+    rig.finish();
+}
+
+#[test]
+fn the_marks_stay_when_the_scan_cannot_run_or_fails() {
+    // The link is away: the tick's scan cannot start, and the pane is still to be read.
+    let (mut rig, pane, _) = Rig::watching(vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.foreground_mut().note_output(&pane);
+    rig.core.ptyd = None;
+    assert!(rig.core.advance_foreground().is_err());
+    assert!(rig.core.foreground().printed.contains(&pane));
+    rig.finish();
+
+    // The supervisor fails the question: the mark is put back.
+    let (mut rig, pane, _) = Rig::watching(vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.link_supervisor(Box::new(Featured(
+        Box::new(Answering(|_| Err(soyeht_ptyd::Error::InvalidResponse))),
+        vec![FEATURE_FOREGROUND.into()],
+    )));
+    rig.core.foreground_mut().note_output(&pane);
+    let _ = rig.core.advance_foreground();
+    assert!(rig.core.foreground().printed.contains(&pane));
+    rig.finish();
+}
+
+#[test]
+fn the_tick_does_not_wake_for_a_scan_that_is_in_flight() {
+    let (mut rig, pane, _) = Rig::watching(vec![program(1, "/bin/zsh", &["zsh"])]);
+    rig.core.foreground_mut().note_output(&pane);
+    let mut next = Next::default();
+    rig.core.foreground_due(&mut next, rig.core.now_ms());
+    assert!(next.soonest().is_some());
+    // A scan that waits on the supervisor.
+    rig.core.background.busy(SCAN_JOB);
+    assert!(rig.core.background.is_active(SCAN_JOB));
+    let mut next = Next::default();
+    rig.core.foreground_due(&mut next, rig.core.now_ms());
+    assert!(next.soonest().is_none());
+    rig.finish();
+}
+
+#[test]
+fn a_process_that_is_adopted_is_read_once_so_a_running_idle_harness_is_labelled() {
+    let mut rig = Rig::new();
+    rig.watch();
+    let (pane, instance) = rig.terminal("shell");
+    assert!(rig.core.foreground().printed.is_empty());
+    let process = soyeht_ptyd::wire::Instance {
+        instance_id: instance,
+        supervisor_id: "answering".into(),
+        spawn: crate::test_panes::pty_spawn("key"),
+        pid: 7,
+        closed: false,
+        exit_code: None,
+    };
+    rig.core.adopt(&pane, &process).unwrap();
+    assert!(rig.core.foreground().printed.contains(&pane));
     rig.finish();
 }

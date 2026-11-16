@@ -87,8 +87,9 @@ shell only through shells and launchers, never one of a harness's own children.
 (1) a file it runs (the executable, or the script of a host program) sits in an install layout of that harness
 (`.local/share/claude/versions/`, `.local/share/cursor-agent/versions/`, `Caskroom/codex/`, `Cellar/opencode-v2/`,
 `node_modules/@openai/codex/`, `node_modules/opencode-ai/`, and so on, as the spike measured them); or (2) `argv[0]`
-is the bare command name, so the shell found it on the person's `PATH`; or (3) a file named like the command sits in a
-folder of the person's `PATH`. A binary or script merely named like a harness in a project folder is none of these and
+is the bare command name, so the shell found it on the person's `PATH`; or (3) a file named like the command (the executable, `argv[0]`, or the script of a host program) sits in a
+folder of the person's `PATH`: a harness installed with npm runs as `node` and the link npm made in a `PATH` folder, as
+it was invoked (measured on macOS and Linux). A binary or script merely named like a harness in a project folder is none of these and
 is not matched. The rule is a heuristic, and a wrong match only mislabels an entry of `agent.list`: it grants nothing,
 and slice 3's check of the terminal's screen decides whether anything may be typed. For the same reason a run that is
 not the interactive program (`-p`, `exec`, `--help`) is listed as the harness while it runs; the screen check decides
@@ -99,16 +100,19 @@ as they were measured, and on look-alikes.
 most 400 bytes (`argv[0]` and the script argument are what the matcher needs), and at most 64 programs of a job; a job
 read on Windows is read for at most 256 process ids. The whole answer is held to an eighth of the largest JSON frame:
 a terminal whose programs do not all fit is marked `truncated`, and terminals past the budget are left out of the
-answer, so a pane keeps what the engine knew of it.
+answer. The engine keeps what it knew of a pane that is left out, and of one that is `truncated` and shows no harness
+(none shown does not say none runs); a `truncated` answer that does show a harness is applied.
 
-**The version.** Read from the install path (`2.1.325`, `0.169.0`, `2026.09.02-c22c1a3`): the last path part that is
-three numbers joined by dots, with an optional suffix. No program is ever run to ask. A path that carries none gives
+**The version.** Read from the install path, from the part (or the one after it) that follows the harness's own install
+layout (`2.1.325`, `0.169.0`, `2026.09.02-c22c1a3`): three numbers joined by dots, with an optional suffix. A version
+elsewhere in the path (a node manager's folder) is not read, nor one in a path the supervisor cut short. No program is ever run to ask. A path that carries none gives
 no version.
 
 **When it is read.** Never on a period for every terminal. A pane is read on demand (`agent.list` reads every terminal
-unless the last read is younger than a second) and otherwise only when it has printed since its last read, a change of
+unless the last read is younger than a second) and otherwise only when it has printed since its last read (or has just
+been adopted after an engine restart, so a harness already running and idle is labelled), a change of
 the foreground program always printing, those reads coalesced to one per 2 seconds and only while an app subscribed to
 events watches. An idle shell costs nothing. A pane restored after an engine restart keeps the harness it had until it
-prints; one whose process ended loses it at once. `agent.list` never fails or waits for the sake of a terminal: with
-no supervisor, a supervisor that does not list the `foreground` feature, or a read that fails, it answers with what is
-known.
+prints; one whose process ended loses it at once. `agent.list` never fails for the sake of a terminal: with no supervisor, a
+supervisor that does not list the `foreground` feature, or a read that fails, it answers with what is known. When a
+read is due it waits for the supervisor's answer, which is bounded by the supervisor link's own timeout.
