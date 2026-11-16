@@ -3640,7 +3640,49 @@
       ]
     }
   ],
-  "description": "The mesh of the base package: `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+  "description": "The mesh of the base package: `drawOrder` cases give the ids of the mouth's parts in the order the package lists them and expect the order they are drawn in, each over the one before: skin, lips, inner (a part the list lacks is skipped). `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+  "drawOrder": [
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed skin, lips, inner",
+      "parts": ["skin","lips","inner"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed skin, inner, lips",
+      "parts": ["skin","inner","lips"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed lips, skin, inner",
+      "parts": ["lips","skin","inner"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed lips, inner, skin",
+      "parts": ["lips","inner","skin"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed inner, skin, lips",
+      "parts": ["inner","skin","lips"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed inner, lips, skin",
+      "parts": ["inner","lips","skin"]
+    },
+    {
+      "expected": {"order":["skin","lips"]},
+      "name": "listed lips, skin",
+      "parts": ["lips","skin"]
+    },
+    {
+      "expected": {"order":["inner"]},
+      "name": "listed inner",
+      "parts": ["inner"]
+    }
+  ],
   "mesh": [
     {
       "expected": {

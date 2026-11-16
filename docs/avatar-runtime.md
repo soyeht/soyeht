@@ -107,6 +107,53 @@ A resting expression (listening, thinking) is held by `Mouth::hold`, which is no
 not restart the silence rule, so leaving it goes to rest and not through the pressed lips of a
 pause.
 
+## The desktop rasteriser (Windows and Linux app)
+
+`apps/desktop`'s `avatar` module draws a package; every rule is the crate's. `load_folder` reads a
+package folder as this document asks a caller to: the document (at most `MAX_DOCUMENT_BYTES`),
+then the size of each picture it lists (a path that leaves the folder is never opened), then
+`Package::load`, and only then it decodes the PNGs. The stage view (`AvatarStage`) asks a `Driver`
+once a frame for the state and the audio that plays, steps `Runtime` by the time that really
+passed (at most 0.1 s), draws and paints. The voice, the configuration screens and the pane are
+later slices.
+
+A frame is drawn in software, on one core, in premultiplied RGBA, and handed to GPUI as a BGRA
+image:
+
+1. the base picture, with the eye frame laid over it, source-over. **Which frame is a rule of
+   the crate**, `eye_frame(eye)`: the blink when the lid is closed, `half` when it is half
+   closed, else the frame of the gaze when the eyes look away from the centre, else `soft` while
+   listening, else none. The vectors `eyeFrames` of `avatar-mouth.json` pin it for every
+   gaze, lid and soft combination;
+2. the mouth: each part in the order `MouthModel::in_drawing_order` gives (skin, lips, inner,
+   whatever order the package lists them in; vectors `drawOrder` of `avatar-package.json`), at
+   the vertices `MeshPart::blend` gives, one layer for each drawing `MeshPart::layers` names,
+   each over the one before. A triangle is filled with exact integer edge tests (corners snapped
+   to 1/16 pixel) and the top-left rule, so two triangles that share an edge never draw a pixel
+   twice;
+3. the pose: `Warp::source_point` is evaluated on a grid and each output pixel reads the picture,
+   bilinearly, at the position interpolated across its cell. The cell is the smallest place the
+   pose moves (a brow, a cheek) over 2.5, between 2 and 8 output pixels, so the number of
+   evaluations does not depend on the size of the picture.
+
+The picture is drawn at the size the view has on screen, at most 1024 pixels across and never
+more than the canvas.
+
+**Frame cost** (Linux, release build, one core, an Intel Xeon E5-2680 v4 at 2.4 GHz on a shared
+host, so a slow core; a canvas of 512 pixels drawn at 512 by 512, a mouth mesh of 1280 triangles
+in three parts, a person speaking; mean of 600 frames): **15.9 ms** (median 15.9, 95th percentile
+17.5). Of it, 5.2 ms composes the picture (the eyes and the mouth), 3.9 ms evaluates the rule of
+the pose on the grid and 6.0 ms reads the picture through it. The cost is that of the output:
+drawn 256 wide it is 8.6 ms. A canvas of 1024 drawn 1024 wide is 69 ms and drawn 512 wide 38 ms,
+because the composing is by the canvas. **Windows is still to be measured**; the ADR's frame budget
+there (one 60 Hz frame, 16.7 ms, for the avatar alone, with half of it as the aim) is met on this
+core by a small margin and the aim is missed; how much faster a laptop core is is not yet
+measured. The numbers come from
+`cargo test --release -p soyeht-desktop avatar::tests::budget -- --ignored --nocapture`
+(`frame_budget_at_512`, `frame_cost_by_size`, `frame_cost_by_step`). The GPU path the ADR leaves
+for later (wgpu through GPUI) is what this measurement argues for if a Windows laptop does not
+reach the aim; the rasteriser stays as the reference the vectors and the tests hold.
+
 ## Inputs from the host
 
 A host can hand over anything. A step whose `dt` is not a finite number is skipped by the mouth and

@@ -461,15 +461,62 @@ fn mesh_blend_cases(package: &Package) -> Vec<Value> {
         .collect()
 }
 
+/// `parts`: the ids of the base package's parts, in the order the package lists them. Out: the
+/// ids of the parts in the order they are drawn (a part the list leaves out is not drawn).
+fn run_draw_order(package: &Package, case: &Value) -> Value {
+    let mut model = package.mouth.clone();
+    let listed: Vec<String> = case["parts"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_string))
+        .collect();
+    let id = |p: &crate::package::MeshPart| json!(p.id).as_str().unwrap_or("").to_string();
+    model.parts = listed
+        .iter()
+        .filter_map(|name| package.mouth.parts.iter().find(|p| id(p) == *name).cloned())
+        .collect();
+    let order: Vec<String> = model.in_drawing_order().into_iter().map(id).collect();
+    json!({ "order": order })
+}
+
+fn draw_order_cases(package: &Package) -> Vec<Value> {
+    let lists: [&[&str]; 8] = [
+        &["skin", "lips", "inner"],
+        &["skin", "inner", "lips"],
+        &["lips", "skin", "inner"],
+        &["lips", "inner", "skin"],
+        &["inner", "skin", "lips"],
+        &["inner", "lips", "skin"],
+        &["lips", "skin"],
+        &["inner"],
+    ];
+    lists
+        .iter()
+        .map(|parts| {
+            let mut case =
+                json!({ "name": format!("listed {}", parts.join(", ")), "parts": parts });
+            case["expected"] = run_draw_order(package, &case);
+            case
+        })
+        .collect()
+}
+
 fn package_vectors() -> Value {
     let base_assets = assets();
     json!({
-        "description": "The mesh of the base package: `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+        "description": "The mesh of the base package: `drawOrder` cases give the ids of the mouth's parts in the order the package lists them and expect the order they are drawn in, each over the one before: skin, lips, inner (a part the list lacks is skipped). `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
         "base": package_json(),
         "assets": asset_values(&base_assets),
         "cases": package_cases(),
-        "mesh": mesh_blend_cases(&Package::load(&package_json().to_string(), &base_assets).unwrap_or_else(|_| unreachable!("the base is valid"))),
+        "mesh": mesh_blend_cases(&base_package(&base_assets)),
+        "drawOrder": draw_order_cases(&base_package(&base_assets)),
     })
+}
+
+fn base_package(base_assets: &[AssetInfo]) -> Package {
+    Package::load(&package_json().to_string(), base_assets)
+        .unwrap_or_else(|_| unreachable!("the base is valid"))
 }
 
 #[test]
@@ -488,6 +535,11 @@ fn vectors_package_file_matches_the_loader() {
     for case in file["mesh"].as_array().expect("mesh") {
         if let Err(why) = super::close(&run_mesh(&package, case), &case["expected"], "") {
             panic!("mesh / {}: {why}", case["name"]);
+        }
+    }
+    for case in file["drawOrder"].as_array().expect("drawOrder") {
+        if let Err(why) = super::close(&run_draw_order(&package, case), &case["expected"], "") {
+            panic!("drawOrder / {}: {why}", case["name"]);
         }
     }
     let mut kinds = std::collections::BTreeSet::new();

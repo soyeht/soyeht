@@ -6,14 +6,14 @@
 /// The document itself, before it is parsed. The largest legal package (three parts of
 /// `MAX_VERTICES` vertices, nine shapes, positions and texture coordinates, about ten bytes a
 /// number) is about three megabytes; the lab's real model is seventy kilobytes.
-pub(crate) const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
+pub const MAX_DOCUMENT_BYTES: usize = 4 * 1024 * 1024;
 /// The largest side of the canvas and of any listed picture (pixels). A face picture a renderer
 /// draws on a screen is not larger than a screen.
 pub(crate) const MAX_SIDE: u32 = 2048;
 /// Listed pictures: a base, an atlas, eight eye frames and a few more.
-pub(crate) const MAX_FILES: usize = 64;
+pub const MAX_FILES: usize = 64;
 /// One picture file, and all of them together (bytes).
-pub(crate) const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
+pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
 pub(crate) const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
 /// The pictures once decoded, in pixels (four bytes each when decoded: 32 megabytes). A few
 /// kilobytes of PNG can hold a 2048 by 2048 picture, so the file bytes alone do not bound this.

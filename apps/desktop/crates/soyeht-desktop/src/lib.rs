@@ -9,6 +9,7 @@ mod alerts;
 mod app;
 mod assets;
 mod attach;
+pub mod avatar;
 mod build_info;
 mod composer_field;
 mod destination;

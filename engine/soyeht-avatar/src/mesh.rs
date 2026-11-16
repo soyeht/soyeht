@@ -7,7 +7,7 @@
 //! texture coordinates, onto that one blended geometry. Ported from `evalBlend` of
 //! `rig/runtime/core.js` (Apache-2.0, the same authors).
 
-use crate::package::MeshPart;
+use crate::package::{MeshPart, MouthModel, PartKind};
 use crate::params::{SHAPES, Shape};
 
 /// A layer of the picture: one drawing, drawn with this opacity over the layers before it.
@@ -77,5 +77,18 @@ impl MeshPart {
             });
         }
         layers
+    }
+}
+
+impl MouthModel {
+    /// The parts in the order they are drawn, each over the one before: the skin around the
+    /// lips, the ring of the lips, and last the inner mouth. A package lists its parts in any
+    /// order (`drawOrder` of `contracts/vectors/avatar-package.json`); a part it lacks is
+    /// skipped.
+    pub fn in_drawing_order(&self) -> Vec<&MeshPart> {
+        PartKind::ALL
+            .iter()
+            .filter_map(|kind| self.parts.iter().find(|part| part.id == *kind))
+            .collect()
     }
 }

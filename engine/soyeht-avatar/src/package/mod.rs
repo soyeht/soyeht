@@ -10,6 +10,7 @@ mod model;
 mod png;
 mod validate;
 
+pub use limits::{MAX_DOCUMENT_BYTES, MAX_FILE_BYTES, MAX_FILES};
 pub use model::{
     Atlas, Chest, EYE_IDS, FORMAT, FileDecl, MeshPart, MouthModel, Package, PartKind, Patch,
     Region, ShapeMesh, Size, VERSION, Warp,
