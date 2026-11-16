@@ -39,15 +39,9 @@ extension KeyedDecodingContainer {
     contains(key) ? try decode(T.self, forKey: key) : fallback
   }
 
-  /// A pair of numbers: exactly two.
+  /// A pair of numbers, or `fallback` when the key is absent: exactly two.
   fileprivate func pair(_ key: Key, _ fallback: [Double]) throws -> [Double] {
-    guard contains(key) else { return fallback }
-    let values = try decode([Double].self, forKey: key)
-    guard values.count == 2 else {
-      throw DecodingError.dataCorruptedError(
-        forKey: key, in: self, debugDescription: "Expected two numbers")
-    }
-    return values
+    contains(key) ? try pair(key) : fallback
   }
 }
 
