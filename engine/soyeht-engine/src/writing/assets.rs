@@ -27,7 +27,7 @@ impl Core {
             .read_binary(&root.join(relative), limits::WRITING_IMAGE_BYTES)?;
         let after = self.editor.resolve(root, relative)?;
         if before.canonical != after.canonical
-            || !bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+            || !crate::png::has_signature(&bytes)
             || crate::immutable_file::hex_digest(&bytes) != expected_digest
             || self.editor.stored(&request.file_id)?.revision != file.revision
         {
