@@ -399,7 +399,8 @@ public struct Pane: Codable, Sendable {
     public var `webSession`: WebSessionState?
     public var `writingKind`: WritingKind?
     public var `writingSection`: WritingSection?
-    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `experimentCapture`: PaneExperimentCapture? = nil, `pid`: UInt32? = nil, `exitCode`: Int64? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `projectPath`: String? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil) {
+    public var `terminalHarness`: TerminalHarness?
+    public init(`paneId`: Id, `workspaceId`: Id, `name`: String, `cwd`: String, `mode`: PaneMode, `state`: PaneState, `source`: StateSource, `confidence`: Double, `phrase`: String, `generation`: UInt32, `cols`: UInt32, `rows`: UInt32, `record`: Bool, `experimentCapture`: PaneExperimentCapture? = nil, `pid`: UInt32? = nil, `exitCode`: Int64? = nil, `streamId`: Id? = nil, `agent`: AgentSession? = nil, `url`: String? = nil, `title`: String? = nil, `viewport`: WebViewport? = nil, `projectPath`: String? = nil, `incognito`: Bool? = nil, `webSession`: WebSessionState? = nil, `writingKind`: WritingKind? = nil, `writingSection`: WritingSection? = nil, `terminalHarness`: TerminalHarness? = nil) {
         self.`paneId` = `paneId`
         self.`workspaceId` = `workspaceId`
         self.`name` = `name`
@@ -426,6 +427,7 @@ public struct Pane: Codable, Sendable {
         self.`webSession` = `webSession`
         self.`writingKind` = `writingKind`
         self.`writingSection` = `writingSection`
+        self.`terminalHarness` = `terminalHarness`
     }
 }
 
@@ -2132,6 +2134,17 @@ public enum AgentMessageKind: RawRepresentable, Codable, Hashable, Sendable, Cas
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
+    }
+}
+
+public struct TerminalHarness: Codable, Sendable {
+    public var `id`: String
+    public var `name`: String
+    public var `version`: String?
+    public init(`id`: String, `name`: String, `version`: String? = nil) {
+        self.`id` = `id`
+        self.`name` = `name`
+        self.`version` = `version`
     }
 }
 

@@ -2,6 +2,7 @@ use super::{Changes, peer};
 use crate::model::{self, turn_ended};
 use crate::{
     core::Core,
+    dispatch::Outcome,
     errors::{self, Result},
     ports::StorePort,
     text_reduction,
@@ -162,24 +163,18 @@ pub(crate) fn cancel(
 }
 
 impl Core {
-    pub fn agent_peer_method(
-        &mut self,
-        connection: &str,
-        method: &str,
-        params: &Value,
-    ) -> Result<Value> {
+    /// The pane a connection is bound to: an agent pane, or a terminal pane whose process the
+    /// connection presented the binding of (checked at every request, `authenticated_scope`).
+    fn agent_sender(&self, connection: &str) -> Result<Pane> {
         let sender_id = self
             .clients
             .get(connection)
             .and_then(|client| client.actor.as_ref())
             .and_then(|actor| actor.pane_id.as_deref())
-            .ok_or_else(|| errors::forbidden_role("Agent binding required"))?
-            .to_owned();
-        // An agent pane, or a terminal pane whose process the connection presented the binding
-        // of (checked at every request, `authenticated_scope`).
-        let sender = self
+            .ok_or_else(|| errors::forbidden_role("Agent binding required"))?;
+        Ok(self
             .panes
-            .get(&sender_id)
+            .get(sender_id)
             .filter(|pane| {
                 !pane.stored.closed
                     && matches!(pane.stored.pane.mode, PaneMode::Agent | PaneMode::Terminal)
@@ -187,10 +182,33 @@ impl Core {
             .ok_or_else(|| errors::not_found("Sender pane not found"))?
             .stored
             .pane
-            .clone();
+            .clone())
+    }
+
+    /// `agent.list` and `agent.message`, which an agent binding may call. A list may wait for a
+    /// scan of the terminals (`terminal_foreground`), so it can be an offloaded request.
+    pub(crate) fn agent_peer(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Outcome> {
         if method == method::AGENT_LIST {
-            return Ok(self.peer_listing(&sender));
+            let sender = self.agent_sender(connection)?;
+            return self.agent_list(sender);
         }
+        self.agent_peer_method(connection, method, params)
+            .map(Outcome::Reply)
+    }
+
+    pub fn agent_peer_method(
+        &mut self,
+        connection: &str,
+        method: &str,
+        params: &Value,
+    ) -> Result<Value> {
+        let sender = self.agent_sender(connection)?;
+        let sender_id = sender.pane_id.clone();
         let target_id = self.peer_target(&sender, params)?;
         let target_id = target_id.as_str();
         let target = self.peer_pane(&sender_id, target_id)?;
@@ -368,16 +386,30 @@ impl Core {
             .unwrap_or_else(|_| workspace_id.to_owned())
     }
 
-    /// What `agent.list` answers `sender`: the agent panes it may message, in every workspace,
-    /// its own workspace first, each with its harness and the workspace it is in.
+    /// What `agent.list` answers `sender`: the agent panes it may message and the terminal panes
+    /// that run a known harness (`terminal_foreground`), in every workspace, its own workspace
+    /// first, each with its harness and the workspace it is in. A listed terminal is named and
+    /// takes no message yet (`TERMINAL_PANE_REASON`).
     pub(crate) fn peer_listing(&self, sender: &Pane) -> Value {
         // One read of the store per workspace, not per pane: this runs under the Core lock.
         let mut labels: BTreeMap<&str, String> = BTreeMap::new();
         let mut items: Vec<(bool, String, String, AgentMessageSource)> = Vec::new();
-        for pane in self.peers_of(sender) {
-            let Some(running) = self.agents.get(&pane.pane_id) else {
-                continue;
-            };
+        let agents = self.peers_of(sender).filter_map(|pane| {
+            let running = self.agents.get(&pane.pane_id)?;
+            Some((
+                pane,
+                running.state.launch.name.as_str(),
+                AgentMessageKind::Agent,
+            ))
+        });
+        let terminals = self
+            .unreceiving_panes(sender)
+            .filter(|pane| pane.mode == PaneMode::Terminal)
+            .filter_map(|pane| {
+                let harness = pane.terminal_harness.as_ref()?;
+                Some((pane, harness.name.as_str(), AgentMessageKind::Terminal))
+            });
+        for (pane, harness, kind) in agents.chain(terminals) {
             let workspace = labels
                 .entry(pane.workspace_id.as_str())
                 .or_insert_with(|| self.workspace_label(&pane.workspace_id))
@@ -389,8 +421,8 @@ impl Core {
                 AgentMessageSource {
                     pane_id: pane.pane_id.clone(),
                     name: text_reduction::name(&pane.name),
-                    harness: text_reduction::name(&running.state.launch.name),
-                    kind: Some(AgentMessageKind::Agent),
+                    harness: text_reduction::name(harness),
+                    kind: Some(kind),
                     workspace_name: Some(workspace),
                 },
             ));
@@ -404,7 +436,16 @@ impl Core {
     /// The sender of a message as the recipient's queue and transcript record it.
     pub(crate) fn peer_source(&self, sender: &Pane) -> Result<AgentMessageSource> {
         let (harness, kind) = match sender.mode {
-            PaneMode::Terminal => ("Terminal".to_owned(), AgentMessageKind::Terminal),
+            // The name `agent.list` gives the pane, so a message and the list agree.
+            PaneMode::Terminal => (
+                text_reduction::name(
+                    sender
+                        .terminal_harness
+                        .as_ref()
+                        .map_or("Terminal", |harness| harness.name.as_str()),
+                ),
+                AgentMessageKind::Terminal,
+            ),
             _ => {
                 let running = self
                     .agents

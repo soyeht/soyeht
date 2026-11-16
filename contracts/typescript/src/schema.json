@@ -449,6 +449,9 @@
         },
         "writingSection": {
           "$ref": "#/$defs/WritingSection"
+        },
+        "terminalHarness": {
+          "$ref": "#/$defs/TerminalHarness"
         }
       },
       "required": [
@@ -3041,6 +3044,30 @@
         "web"
       ],
       "description": "What the pane of an `agent.list` item or of the sender of a message is: an agent pane Soyeht opened (`agent`) or a terminal pane (`terminal`, ADR 0165). The engine may send other values later (`web`)."
+    },
+    "TerminalHarness": {
+      "type": "object",
+      "description": "The harness a terminal pane runs in its foreground (ADR 0165): which known harness it is and, when its install path carries one, its version (read from the path; no program is run). Absent while the foreground is a shell or any other program.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "The registry id of the harness, such as `registry.opencode`."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name the person knows it by."
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "The version the install path carries, such as `2.1.325`; absent when the path carries none."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "additionalProperties": true
     },
     "AgentMessageSource": {
       "type": "object",

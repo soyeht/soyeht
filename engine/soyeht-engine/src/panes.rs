@@ -1,5 +1,5 @@
 use crate::{
-    core::{Core, persist_pane},
+    core::{Core, persist_pane, write_pane},
     dispatch::Outcome,
     errors::{self, Result},
     model::{self, PaneSetup as _, RunningPane, StoredPane},
@@ -95,6 +95,36 @@ fn new_agent(
 }
 
 impl Core {
+    /// Stores a pane and tells the apps `before`, then that the pane was updated.
+    pub(crate) fn save_pane(
+        &mut self,
+        id: &str,
+        saved: StoredPane,
+        operation: &str,
+        before: Vec<(String, Value)>,
+    ) -> Result<()> {
+        let updated = model::pane_updated(&saved.pane)?;
+        let mut events = before;
+        events.push(updated);
+        let change = StorePort::mutate(
+            &mut self.store,
+            "engine",
+            &Uuid::new_v4().to_string(),
+            operation,
+            |tx| {
+                write_pane(tx, &saved)?;
+                Ok((json!({}), events))
+            },
+        )
+        .map_err(errors::storage)?;
+        errors::invariant(
+            self.panes.get_mut(id),
+            "Pane disappeared before its change was published",
+        )?
+        .stored = saved;
+        self.publish(&change.events)
+    }
+
     fn prepare_process_pane(
         &self,
         create: &PaneCreateParams,

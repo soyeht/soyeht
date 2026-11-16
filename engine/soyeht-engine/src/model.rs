@@ -173,6 +173,7 @@ pub(crate) fn new_pane(
         web_session: None,
         writing_kind: None,
         writing_section: None,
+        terminal_harness: None,
     }
 }
 

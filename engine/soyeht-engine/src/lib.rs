@@ -66,6 +66,7 @@ pub mod system_peers;
 pub mod tasks;
 mod terminal_capture;
 mod terminal_drain;
+mod terminal_foreground;
 mod terminal_harness;
 pub mod terminal_projection;
 #[cfg(feature = "test-hooks")]

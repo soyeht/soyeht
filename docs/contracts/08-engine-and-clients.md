@@ -460,8 +460,9 @@ every workspace count and several are `invalid_params` that lists them; `inReply
 so a stale or unknown one is ignored; a web page and a terminal pane are never candidates for a name, and a name or an id
 that is one is `not_found` with the reason: a page has no recorded creator to receive messages, and
 a terminal pane cannot receive messages yet) and `agent.list` (the agent panes of every workspace
-that the caller can message, its own workspace first, each as `{paneId, name, harness, kind,
-workspaceName}`),
+that the caller can message and the terminal panes that run a known harness (contract 05, "The harness a terminal
+pane runs"), which are named and take no message yet, its own workspace first, each as `{paneId, name, harness,
+kind, workspaceName}` with `kind` `agent` or `terminal`),
 `pane.record.set {on}` (do not record this pane's screen; contract 07 §2).
 `pane.commands.list {paneId}` → `{paneId, items: [{name, description, inputHint?}]}`,
 the slash commands the harness last advertised with ACP
