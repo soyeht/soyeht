@@ -3,7 +3,9 @@
 - Status: proposed (phase 1: this design and its estimate only; no product code. The owner decided on
   2026-11-14 that it is required for 0.1.0)
 - Date: 2026-11-14; revised 2026-11-15 with the owner's decisions on the image model (see "Owner
-  decisions") and the lab's measurements. Slice 0 has not run yet.
+  decisions") and the lab's measurements; slice 1 (PR #265) moved the build call, the package read, the
+  build state and the progress event to slice 9b and took voice on and off out of the engine. Slice 0 has
+  not run yet.
 - Builds on ADR 0083 (dictation engines are a catalogue), ADR 0148 and contract 17 (an agent delegates
   to helper agents in panes), ADR 0137 (a pane runs the Claude Code the person has), ADR 0154 (a
   workspace is a folder), ADR 0161 (the protocol only grows), ADR 0149 (only permissive licenses
@@ -161,17 +163,22 @@ the protocol, no change to an existing method or type:
 
 - **Avatar** (the reusable library, global to the person): id, name, `kind` (`preset`, `uploaded`,
   `generated`), the hash of the source picture, the catalogue ids of the image provider and model that
-  built it, the build state (`none`, `building`, `ready`, `failed`
-  with a reason kind), the package hash, the default voice (TTS provider id, voice id), a created date.
+  built it, the default voice (TTS provider id, voice id), a created date. The build state (`none`,
+  `building`, `ready`, `failed` with a reason kind) and the package hash come with the slice that builds
+  avatars (slice 9b), together with what sets them: slice 1 has nothing that could set them honestly, and
+  an avatar stays buildable again while the package format is unstable (section 6).
   Files live in `<data>/avatars/<id>/`: `source.png`, `package/` (below), and the build log.
 - **Workspace binding** (one per workspace): workspace id, avatar id, the harness, model and effort
   (so the avatar pane can be restarted the same way), the STT provider id and language, the TTS provider
-  id and voice (overrides the avatar's default), the persona text, and "voice on" per client.
+  id and voice (overrides the avatar's default), the persona text, and a revision that a writer must name, so a client with an old copy cannot
+  overwrite a newer one. Whether a client has voice on is that client's own preference (it holds the
+  microphone) and the engine does not store it.
 - Methods (names proposed, `avatar` is a new namespace): `avatar.list`, `avatar.create`,
   `avatar.rename`, `avatar.delete`, `avatar.assign` (binds an avatar and the voice and harness settings to a
-  workspace and starts its pane), `avatar.build` (starts a build job), `avatar.package.read` (ranged
-  read of a ready package, so a phone can fetch it; the existing `attachment` frame carries bytes up to
-  `attachmentPayloadBytes`), and events `avatar.changed`, `avatar.build_progress`. Limits (counts, sizes,
+  workspace and starts its pane), and the event `avatar.changed`. The call that starts a build, a ranged
+  read of a ready package (so a phone can fetch it; the existing `attachment` frame carries bytes up to
+  `attachmentPayloadBytes`) and the build's progress event come with slice 9b, which has something to
+  produce a build and a package, each with its owner and its expiry. Limits (counts, sizes,
   name length) go in `x-limits`, never typed. The persona and provider settings are never log text.
 - **Provider keys do not travel and are not stored by the engine.** Voice providers run in the client
   that has the microphone (section 5), so each client keeps its own provider keys in its own vault
@@ -240,7 +247,7 @@ the third plain instructions:
 - **A skill**, `avatar-builder` (a `SKILL.md` in `soyeht-skills`, so every harness has it): it tells the
   agent to take the picture, call `frame` for each pose, look at the results, redo the ones `check` or its
   own eyes reject, and then call `build`. The agent runs as a helper in its own pane (ADR 0148), so the
-  person sees it work, and `avatar.build_progress` is derived from its frame count.
+  person sees it work, and the build's progress event (slice 9b) is derived from its frame count.
 
 Time and cost per avatar (the lab's measurements, and what is not measured):
 
@@ -496,7 +503,7 @@ of each slice is included. A slice names its tests.
 | # | Slice | Size | Days | Depends on |
 | --- | --- | --- | --- | --- |
 | 0 | **Spike, gate for the whole feature. Not run yet** (the GPU host's driver was not loaded on 2026-11-15). Three photo-like faces through Qwen-Image 2.1 into the 18 frames each, built by hand into the lab's avatar A with the H0 mouth (the regions set by hand, since the lab's build is face-specific), and the owner's look test. Also the software-rasteriser frame cost on a Windows laptop and the Mac, and an ACP-pane brain latency measure, as before. The owner looks and decides. | M | 3 | none |
-| 1 | Contract 19 and the additive protocol (avatar library, binding, build events), store migration, engine methods, vectors, generated outputs | M | 3 | 0 |
+| 1 | Contract 19 and the additive protocol (avatar library, binding with a revision), store migration, engine methods, vectors, generated outputs | M | 3 | 0 |
 | 2 | Workspace as project: folder under the data directory, avatar pane start as chief, persona delivery per harness, per-harness measurement | M | 3 | 1 |
 | 3 | `soyeht-avatar` crate: package format, validator, mouth runtime, driver, aligner (tier 2), vectors `avatar-mouth.json` | L | 5 | 0 |
 | 4 | Swift runtime and rasteriser in `apps/shared`, avatar stage view for Mac and iOS, vector tests | L | 5 | 3 |
@@ -506,10 +513,10 @@ of each slice is included. A slice names its tests.
 | 8a | Desktop audio I/O (cpal), Silero and Smart Turn through `ort`, turn machine in Rust, half-duplex, AEC attempt (WebRTC audio processing or speexdsp) | L | 5 | 7 vectors |
 | 8b | Desktop providers: local Whisper-class STT, Kokoro (English) TTS, cloud adapters, model install and notices | L | 5 | 8a |
 | 9a | The image catalogue (descriptor, registry, local and cloud entries, the person's own key for a cloud one, no model hard-wired), the adapters, frame spec, `soyeht avatar frame` and `check`, the `avatar-builder` skill, preset pack generation with Qwen-Image 2.1 | M | 3 | 0 |
-| 9b | `soyeht avatar build` in Rust: landmarks through `ort`, the per-face regions derived from them (mouth box, ellipses, eye regions, warp regions), mouth mesh, diff rectangles, atlas, package carrying the warp regions; reproduces the lab's avatar A from its frames and builds the spike's three faces | L | 6 | 3, 9a |
-| 10 | Configuration screens: Mac and iOS (SwiftUI), desktop (GPUI); picker, upload, generate (with the image model choice from the catalogue) and progress, harness, STT, TTS, persona, test voice | L | 5 | 1, 4, 5, 6, 9a |
+| 9b | `soyeht avatar build` in Rust, and the engine's side of a build (the call that starts it, the build state and failure kind, the package hash, the progress event, the ranged read of a ready package, each with its owner and its expiry, and their migration): landmarks through `ort`, the per-face regions derived from them (mouth box, ellipses, eye regions, warp regions), mouth mesh, diff rectangles, atlas, package carrying the warp regions; reproduces the lab's avatar A from its frames and builds the spike's three faces | L | 6 | 3, 9a |
+| 10 | Configuration screens: Mac and iOS (SwiftUI), desktop (GPUI); picker, upload, generate (with the image model choice from the catalogue) and progress, harness, STT, TTS, persona, test voice | L | 5 | 1, 4, 5, 6, 9a, 9b (progress) |
 | 11 | The avatar pane: stage plus transcript plus composer on all clients, speak-replies toggle, voice on and off | M | 3 | 4, 5, 7 |
-| 12 | Library: rename, delete, export and import a package file, reuse across workspaces, phone fetches the package | M | 2 | 1, 4 |
+| 12 | Library: rename, delete, export and import a package file, reuse across workspaces, phone fetches the package | M | 2 | 1, 4, 9b |
 | 13 | A project file as a web page (section 9) | S | 1 | none |
 | 14 | QA and hardening: voice matrix on real devices and the VMs, App Store strings and privacy answers, license notices, docs, the preset pack's notice | M | 4 | all |
 

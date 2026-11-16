@@ -13,6 +13,8 @@ pub enum Error {
     Closed,
     /// The engine did not answer in time.
     Timeout,
+    /// The view is limited to the origin of a page the engine serves, and the address is not in it.
+    OutsidePage,
     /// The engine or the page refused: a script that threw, a capture it could not make.
     Page(&'static str),
 }
@@ -24,6 +26,7 @@ impl fmt::Display for Error {
             Self::Unavailable(why) => write!(f, "the web view is not available: {why}"),
             Self::Closed => f.write_str("the web view is closed"),
             Self::Timeout => f.write_str("the web view did not answer in time"),
+            Self::OutsidePage => f.write_str("the address is outside the page of this view"),
             Self::Page(what) => write!(f, "the page could not be read: {what}"),
         }
     }

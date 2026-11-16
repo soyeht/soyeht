@@ -121,12 +121,22 @@ fn upload_reference(attachment: &PromptAttachment) -> Option<AttachmentRef> {
 }
 
 fn upload_error(error: soyeht_protocol::Error) -> errors::Error {
-    match error {
-        soyeht_protocol::Error::AttachmentTooLarge => errors::attachment_limit_exceeded(format!(
+    upload_failure(
+        error,
+        format!(
             "Attachments are limited to {} files and {} MiB per prompt",
             limits::PROMPT_ATTACHMENTS,
             limits::PROMPT_ATTACHMENT_TOTAL_BYTES / MEBIBYTE
-        )),
+        ),
+    )
+}
+
+/// What a failed commit of uploaded bytes is to the client: `attachment_limit_exceeded`, saying
+/// `too_large`, when the transfer outgrew the connection's bound, and `invalid_params` for any
+/// other failure (bytes never sent, a repeated transfer, a size that does not match).
+pub(crate) fn upload_failure(error: soyeht_protocol::Error, too_large: String) -> errors::Error {
+    match error {
+        soyeht_protocol::Error::AttachmentTooLarge => errors::attachment_limit_exceeded(too_large),
         error => errors::invalid(format!("Attachment transfer failed: {error}")),
     }
 }
@@ -155,7 +165,7 @@ fn validate_description(attachment: &PromptAttachment) -> Result<()> {
     }
     if let Some(thumbnail) = &attachment.thumbnail {
         let image = STANDARD.decode(thumbnail).unwrap_or_default();
-        let picture = image.starts_with(b"\x89PNG\r\n\x1a\n") || image.starts_with(b"\xff\xd8\xff");
+        let picture = crate::png::has_signature(&image) || image.starts_with(b"\xff\xd8\xff");
         if !picture || image.len() > limits::PROMPT_ATTACHMENT_THUMBNAIL_BYTES {
             return Err(errors::invalid(format!(
                 "An attachment thumbnail must be a PNG or JPEG of at most {} KiB",

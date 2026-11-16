@@ -176,7 +176,7 @@ struct PhoneWebPane: View {
         Text(pane.title?.isEmpty == false ? pane.title ?? pane.name : pane.name)
           .font(.system(.title3, design: .rounded, weight: .bold))
           .multilineTextAlignment(.center)
-        Text(pane.url ?? "No address")
+        Text(WebPaneCaption.text(for: pane))
           .font(.system(.footnote, design: .monospaced))
           .foregroundStyle(PhonePalette.secondary)
           .multilineTextAlignment(.center)
@@ -190,7 +190,7 @@ struct PhoneWebPane: View {
           .frame(maxWidth: 260)
       }
       .buttonStyle(.borderedProminent)
-      Text("The page stays on your Mac. This device shows its title and address only.")
+      Text(WebPaneCaption.explanation(for: pane))
         .font(.footnote)
         .foregroundStyle(PhonePalette.secondary)
         .multilineTextAlignment(.center)

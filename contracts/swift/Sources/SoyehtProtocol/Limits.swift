@@ -83,6 +83,8 @@ public enum ProtocolLimits {
     public static let webReadLinks = 100
     public static let webReadBytes = 524288
     public static let webAgentImageBytes = 262144
+    public static let webProjectFileBytes = 16777216
+    public static let webProjectPageConnections = 32
     public static let promptAttachments = 20
     public static let promptAttachmentBytes = 10485760
     public static let promptAttachmentTotalBytes = 20971520
@@ -132,6 +134,28 @@ public enum ProtocolLimits {
     public static let inkCandidateBytes = 2048
     /// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
     public static let inkDeadlineSec = 10
+    /// The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.
+    public static let avatarCount = 200
+    /// The longest avatar name (in characters); the `maxLength` of `Avatar.name`.
+    public static let avatarNameChars = 80
+    /// The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.
+    public static let avatarPictureBytes = 10485760
+    /// The largest width or height, in pixels, the PNG header of a source picture may declare.
+    public static let avatarPictureDimension = 4096
+    /// The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.
+    public static let avatarPersonaChars = 16000
+    /// The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.
+    public static let avatarProviderIdChars = 64
+    /// The longest voice identifier (in characters) of an `AvatarVoice`.
+    public static let avatarVoiceIdChars = 128
+    /// The longest language tag (in characters) of an `AvatarHearing`; the length a BCP 47 tag may have.
+    public static let avatarLanguageChars = 35
+    /// The longest model or effort name (in characters) of a binding.
+    public static let avatarSettingChars = 128
+    /// The longest image provider or image model catalogue id (in characters) of an avatar.
+    public static let avatarCatalogueIdChars = 128
+    /// The longest `Avatar.kind` (in characters).
+    public static let avatarKindChars = 32
 }
 
 public enum ProtocolVersion {

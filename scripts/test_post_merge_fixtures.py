@@ -25,6 +25,9 @@ import post_merge_hosts
 # (a full disk, a network that is down), as a failure of the host and not of a commit does;
 # the file FAKE_CONTROL_ONCE makes the first `--only` run on a commit without `broken` fail (the
 # failure removes the file), as a flake of the step on the last green commit does; FAKE_INFRA=1 makes the gate unable to start;
+# FAKE_BARRIER=DIR makes each run wait (10 s at most) until two runs are inside it and fail when the other half
+# never starts; FAKE_SLOW_LOCAL=SECONDS makes a run that is not on the host wait that long;
+# FAKE_STEP_EXIT=N makes the failing step exit with N, as a step that exits 2 does;
 # FAKE_TRACE=FILE records each run's directory and arguments; FAKE_SEEDS=FILE records the
 # SOYEHT_GATE_FUZZ_SEED and the SOYEHT_FUZZ_SEED each run was given; FAKE_EVENTS=DIR keeps the
 # `--event-file` of each run as DIR/<HEAD sha>.json. `--list` names a step per area:
@@ -40,6 +43,12 @@ step="${FAKE_STEP:-unit}"
 [[ -z "${FAKE_SEEDS:-}" ]] || echo "$(git rev-parse HEAD) ${SOYEHT_GATE_FUZZ_SEED:-unset} ${SOYEHT_FUZZ_SEED:-unset}" >> "$FAKE_SEEDS"
 [[ -z "${FAKE_EVENTS:-}" || -z "$event" ]] || cp "$event" "$FAKE_EVENTS/$(git rev-parse HEAD).json"
 [[ -z "${FAKE_INFRA:-}" ]] || exit 71
+[[ -z "${FAKE_SLOW_LOCAL:-}" || "$PWD" == *remote-gate* ]] || sleep "$FAKE_SLOW_LOCAL"
+if [[ -n "${FAKE_BARRIER:-}" ]]; then  # both halves must be running at once
+    : > "$FAKE_BARRIER/$$"
+    for _ in $(seq 100); do (($(ls "$FAKE_BARRIER" | wc -l) >= 2)) && break; sleep 0.1; done
+    (($(ls "$FAKE_BARRIER" | wc -l) >= 2)) || { echo "check_all: FAILED step barrier (the other half never started)" >&2; exit 1; }
+fi
 status=0
 if [[ -n "$only" ]]; then
     known=0; for id in unit eng sw tcc snap; do [[ ",$only," == *",$id,"* ]] && known=1; done
@@ -51,6 +60,7 @@ if [[ -n "$only" ]]; then
 fi
 [[ -e broken ]] && status=1
 [[ -z "${FAKE_HOST_BROKEN:-}" ]] || status=1
+((status)) && status="${FAKE_STEP_EXIT:-$status}"  # a step's own exit code, which may be one of the gate's
 printf '{"latest":{"steps":[{"id":"%s","area":"always","seconds":1.0,"status":%s}]}}' "$step" "$status" > "$timings"
 ((status)) && echo "check_all: FAILED step $step (area always, exit 1)" >&2
 exit "$status"

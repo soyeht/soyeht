@@ -28,23 +28,8 @@ public enum NemotronEngine {
     availability: Self.availability,
     make: { NemotronRecognizer() })
 
-  /// The CoreML bundle needs an arm64 chip. On iPhone and iPad the weights and the compiled
-  /// models take more than a gigabyte of memory, so devices below 6 GB of RAM keep Apple's
-  /// engine.
+  /// The CoreML bundle needs an arm64 chip and, on iPhone and iPad, 6 GB of memory.
   @Sendable static func availability() -> DictationAvailability {
-    #if arch(arm64)
-      #if os(iOS)
-        guard ProcessInfo.processInfo.physicalMemory >= minimumMemory else {
-          return .unavailable("Needs a device with at least 6 GB of memory")
-        }
-      #endif
-      return .available
-    #else
-      return .unavailable("Needs Apple silicon")
-    #endif
+    LocalModelAvailability.appleSiliconWithEnoughMemory()
   }
-
-  #if os(iOS)
-    private static let minimumMemory: UInt64 = 6 << 30
-  #endif
 }

@@ -104,6 +104,7 @@ export interface Pane {
   "url"?: string;
   "title"?: string;
   "viewport"?: WebViewport;
+  "projectPath"?: string;
   "incognito"?: boolean;
   "webSession"?: WebSessionState;
   "writingKind"?: WritingKind;
@@ -2951,7 +2952,7 @@ export interface EditorReviewRequestedEvent {
 
 export type ClientCapability = "web_host";
 
-export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push" | "ink-recognition" | "pairing-code";
+export type EngineCapability = "terminal" | "workspaces" | "snapshot-parts" | "event-replay" | "terminal-replay" | "device-pairing" | "workspace-tasks" | "subscription-usage" | "push" | "ink-recognition" | "pairing-code" | "avatars";
 
 export type WebInteractionMode = "structured" | "human";
 
@@ -3058,7 +3059,8 @@ export interface WebElementPackage {
 }
 
 export interface WebOpenParams {
-  "url": string;
+  "url"?: string;
+  "path"?: string;
   "workspaceId"?: Id;
   "newPane"?: boolean;
   "incognito"?: boolean;
@@ -3636,6 +3638,110 @@ export interface InkRecognizeResult {
 
 export type InkUnsupportedReason = "no_os_support" | "language_pack_missing" | "model_not_installed";
 
+export interface AvatarVoice {
+  "providerId": string;
+  "voiceId": string;
+}
+
+export interface AvatarHearing {
+  "providerId": string;
+  "language"?: string;
+}
+
+export interface Avatar {
+  "avatarId": Id;
+  "name": string;
+  "kind": string;
+  "sourceHash": string;
+  "imageProvider"?: string;
+  "imageModel"?: string;
+  "voice"?: AvatarVoice;
+  "createdAt": string;
+}
+
+export interface AvatarBinding {
+  "workspaceId": Id;
+  "avatarId": Id;
+  "harness": Id;
+  "model"?: string;
+  "effort"?: string;
+  "hearing"?: AvatarHearing;
+  "voice"?: AvatarVoice;
+  "persona": string;
+  "revision": Decimal;
+}
+
+export interface AvatarListParams {
+
+}
+
+export interface AvatarListResult {
+  "avatars": Array<Avatar>;
+  "bindings": Array<AvatarBinding>;
+}
+
+export interface AvatarCreateParams {
+  "name": string;
+  "kind": string;
+  "picture": AttachmentRef;
+  "imageProvider"?: string;
+  "imageModel"?: string;
+  "voice"?: AvatarVoice;
+  "idempotencyKey": Id;
+}
+
+export interface AvatarCreateResult {
+  "avatar": Avatar;
+}
+
+export interface AvatarRenameParams {
+  "avatarId": Id;
+  "name": string;
+  "idempotencyKey": Id;
+}
+
+export interface AvatarRenameResult {
+  "avatar": Avatar;
+}
+
+export interface AvatarDeleteParams {
+  "avatarId": Id;
+  "idempotencyKey": Id;
+}
+
+export interface AvatarDeleteResult {
+  "avatarId": Id;
+  "removed": boolean;
+}
+
+export interface AvatarAssignParams {
+  "workspaceId": Id;
+  "avatarId": Id;
+  "harness": Id;
+  "model"?: string;
+  "effort"?: string;
+  "hearing"?: AvatarHearing;
+  "voice"?: AvatarVoice;
+  "persona"?: string;
+  "baseRevision": Decimal;
+  "idempotencyKey": Id;
+}
+
+export interface AvatarAssignResult {
+  "binding": AvatarBinding;
+}
+
+export interface AvatarChangedEvent {
+  "eventId": Decimal;
+  "at": string;
+  "actor"?: Actor;
+  "avatarId": Id;
+  "avatar"?: Avatar;
+  "workspaceId"?: Id;
+  "binding"?: AvatarBinding;
+  "removed"?: boolean;
+}
+
 export interface Methods {
   "hello": { params: HelloParams; result: Welcome };
   "state.snapshot": { params: StateSnapshotParams; result: StateSnapshotResult };
@@ -3789,6 +3895,11 @@ export interface Methods {
   "writing.beat.delete": { params: WritingBeatDeleteParams; result: WritingBeatResult };
   "pane.experiment.hook": { params: PaneExperimentHookParams; result: PaneExperimentHookResult };
   "ink.recognize": { params: InkRecognizeParams; result: InkRecognizeResult };
+  "avatar.list": { params: AvatarListParams; result: AvatarListResult };
+  "avatar.create": { params: AvatarCreateParams; result: AvatarCreateResult };
+  "avatar.rename": { params: AvatarRenameParams; result: AvatarRenameResult };
+  "avatar.delete": { params: AvatarDeleteParams; result: AvatarDeleteResult };
+  "avatar.assign": { params: AvatarAssignParams; result: AvatarAssignResult };
 }
 
 export interface Events {
@@ -3869,6 +3980,7 @@ export interface Events {
   "web.console_counts": WebConsoleCountsEvent;
   "web.agent_driving": WebAgentDrivingEvent;
   "writing.changed": WritingChangedEvent;
+  "avatar.changed": AvatarChangedEvent;
 }
 export type EventName = keyof Events;
 export interface EventDescriptor {
@@ -3953,4 +4065,5 @@ export const eventRegistry = {
   "web.console_counts": { paramsType: "WebConsoleCountsEvent", durable: false },
   "web.agent_driving": { paramsType: "WebAgentDrivingEvent", durable: false },
   "writing.changed": { paramsType: "WritingChangedEvent", durable: true },
+  "avatar.changed": { paramsType: "AvatarChangedEvent", durable: true },
 } as const satisfies Record<EventName, EventDescriptor>;

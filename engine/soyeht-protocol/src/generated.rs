@@ -362,6 +362,8 @@ pub struct Pane {
     pub title: Option<String>,
     #[serde(rename = "viewport", skip_serializing_if = "Option::is_none")]
     pub viewport: Option<WebViewport>,
+    #[serde(rename = "projectPath", skip_serializing_if = "Option::is_none")]
+    pub project_path: Option<String>,
     #[serde(rename = "incognito", skip_serializing_if = "Option::is_none")]
     pub incognito: Option<bool>,
     #[serde(rename = "webSession", skip_serializing_if = "Option::is_none")]
@@ -5384,6 +5386,8 @@ pub enum EngineCapability {
     InkRecognition,
     #[serde(rename = "pairing-code")]
     PairingCode,
+    #[serde(rename = "avatars")]
+    Avatars,
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum WebInteractionMode {
@@ -5624,8 +5628,10 @@ pub struct WebElementPackage {
 }
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct WebOpenParams {
-    #[serde(rename = "url")]
-    pub url: String,
+    #[serde(rename = "url", skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(rename = "path", skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
     #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<Id>,
     #[serde(rename = "newPane", skip_serializing_if = "Option::is_none")]
@@ -6652,6 +6658,166 @@ pub enum InkUnsupportedReason {
     #[serde(rename = "model_not_installed")]
     ModelNotInstalled,
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarVoice {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    #[serde(rename = "voiceId")]
+    pub voice_id: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarHearing {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    #[serde(rename = "language", skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Avatar {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: String,
+    #[serde(rename = "sourceHash")]
+    pub source_hash: String,
+    #[serde(rename = "imageProvider", skip_serializing_if = "Option::is_none")]
+    pub image_provider: Option<String>,
+    #[serde(rename = "imageModel", skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "createdAt")]
+    pub created_at: String,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarBinding {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "hearing", skip_serializing_if = "Option::is_none")]
+    pub hearing: Option<AvatarHearing>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "persona")]
+    pub persona: String,
+    #[serde(rename = "revision")]
+    pub revision: Decimal,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarListParams {}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarListResult {
+    #[serde(rename = "avatars")]
+    pub avatars: Vec<Avatar>,
+    #[serde(rename = "bindings")]
+    pub bindings: Vec<AvatarBinding>,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarCreateParams {
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "kind")]
+    pub kind: String,
+    #[serde(rename = "picture")]
+    pub picture: AttachmentRef,
+    #[serde(rename = "imageProvider", skip_serializing_if = "Option::is_none")]
+    pub image_provider: Option<String>,
+    #[serde(rename = "imageModel", skip_serializing_if = "Option::is_none")]
+    pub image_model: Option<String>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarCreateResult {
+    #[serde(rename = "avatar")]
+    pub avatar: Avatar,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarRenameParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarRenameResult {
+    #[serde(rename = "avatar")]
+    pub avatar: Avatar,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarDeleteParams {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarDeleteResult {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "removed")]
+    pub removed: bool,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarAssignParams {
+    #[serde(rename = "workspaceId")]
+    pub workspace_id: Id,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "harness")]
+    pub harness: Id,
+    #[serde(rename = "model", skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(rename = "effort", skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>,
+    #[serde(rename = "hearing", skip_serializing_if = "Option::is_none")]
+    pub hearing: Option<AvatarHearing>,
+    #[serde(rename = "voice", skip_serializing_if = "Option::is_none")]
+    pub voice: Option<AvatarVoice>,
+    #[serde(rename = "persona", skip_serializing_if = "Option::is_none")]
+    pub persona: Option<String>,
+    #[serde(rename = "baseRevision")]
+    pub base_revision: Decimal,
+    #[serde(rename = "idempotencyKey")]
+    pub idempotency_key: Id,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarAssignResult {
+    #[serde(rename = "binding")]
+    pub binding: AvatarBinding,
+}
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AvatarChangedEvent {
+    #[serde(rename = "eventId")]
+    pub event_id: Decimal,
+    #[serde(rename = "at")]
+    pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "avatar", skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<Avatar>,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
+    pub binding: Option<AvatarBinding>,
+    #[serde(rename = "removed", skip_serializing_if = "Option::is_none")]
+    pub removed: Option<bool>,
+}
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
@@ -6959,6 +7125,16 @@ pub enum Request {
     PaneExperimentHook(PaneExperimentHookParams),
     #[serde(rename = "ink.recognize")]
     InkRecognize(InkRecognizeParams),
+    #[serde(rename = "avatar.list")]
+    AvatarList(AvatarListParams),
+    #[serde(rename = "avatar.create")]
+    AvatarCreate(AvatarCreateParams),
+    #[serde(rename = "avatar.rename")]
+    AvatarRename(AvatarRenameParams),
+    #[serde(rename = "avatar.delete")]
+    AvatarDelete(AvatarDeleteParams),
+    #[serde(rename = "avatar.assign")]
+    AvatarAssign(AvatarAssignParams),
 }
 pub const METHODS: &[(&str, &str, &str, bool)] = &[
     ("hello", "HelloParams", "Welcome", false),
@@ -7608,6 +7784,31 @@ pub const METHODS: &[(&str, &str, &str, bool)] = &[
         "InkRecognizeResult",
         false,
     ),
+    ("avatar.list", "AvatarListParams", "AvatarListResult", false),
+    (
+        "avatar.create",
+        "AvatarCreateParams",
+        "AvatarCreateResult",
+        true,
+    ),
+    (
+        "avatar.rename",
+        "AvatarRenameParams",
+        "AvatarRenameResult",
+        true,
+    ),
+    (
+        "avatar.delete",
+        "AvatarDeleteParams",
+        "AvatarDeleteResult",
+        true,
+    ),
+    (
+        "avatar.assign",
+        "AvatarAssignParams",
+        "AvatarAssignResult",
+        true,
+    ),
 ];
 pub const PANE_ROUTE_METHODS: &[(&str, &str)] = &[
     ("pane.role.set", "paneId"),
@@ -7825,6 +8026,8 @@ pub enum EventName {
     WebAgentDriving,
     #[serde(rename = "writing.changed")]
     WritingChanged,
+    #[serde(rename = "avatar.changed")]
+    AvatarChanged,
 }
 impl EventName {
     pub const fn as_str(self) -> &'static str {
@@ -7906,6 +8109,7 @@ impl EventName {
             Self::WebConsoleCounts => "web.console_counts",
             Self::WebAgentDriving => "web.agent_driving",
             Self::WritingChanged => "writing.changed",
+            Self::AvatarChanged => "avatar.changed",
         }
     }
 }
@@ -8299,6 +8503,11 @@ pub const EVENTS: &[EventDescriptor] = &[
     EventDescriptor {
         name: EventName::WritingChanged,
         params_type: "WritingChangedEvent",
+        durable: true,
+    },
+    EventDescriptor {
+        name: EventName::AvatarChanged,
+        params_type: "AvatarChangedEvent",
         durable: true,
     },
 ];
@@ -9099,6 +9308,22 @@ pub struct WritingChangedDraft {
 impl EventParams for WritingChangedDraft {
     const NAME: EventName = EventName::WritingChanged;
 }
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct AvatarChangedDraft {
+    #[serde(rename = "avatarId")]
+    pub avatar_id: Id,
+    #[serde(rename = "avatar", skip_serializing_if = "Option::is_none")]
+    pub avatar: Option<Avatar>,
+    #[serde(rename = "workspaceId", skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<Id>,
+    #[serde(rename = "binding", skip_serializing_if = "Option::is_none")]
+    pub binding: Option<AvatarBinding>,
+    #[serde(rename = "removed", skip_serializing_if = "Option::is_none")]
+    pub removed: Option<bool>,
+}
+impl EventParams for AvatarChangedDraft {
+    const NAME: EventName = EventName::AvatarChanged;
+}
 pub mod method {
     pub const HELLO: &str = "hello";
     pub const STATE_SNAPSHOT: &str = "state.snapshot";
@@ -9252,6 +9477,11 @@ pub mod method {
     pub const WRITING_BEAT_DELETE: &str = "writing.beat.delete";
     pub const PANE_EXPERIMENT_HOOK: &str = "pane.experiment.hook";
     pub const INK_RECOGNIZE: &str = "ink.recognize";
+    pub const AVATAR_LIST: &str = "avatar.list";
+    pub const AVATAR_CREATE: &str = "avatar.create";
+    pub const AVATAR_RENAME: &str = "avatar.rename";
+    pub const AVATAR_DELETE: &str = "avatar.delete";
+    pub const AVATAR_ASSIGN: &str = "avatar.assign";
 }
 pub mod method_family {
     pub const PAIR: &[&str] = &[super::method::PAIR_BEGIN, super::method::PAIR_PROVE];
@@ -9301,6 +9531,11 @@ pub mod method_family {
         super::method::HARNESS_CUSTOM_CREATE,
         super::method::HARNESS_CUSTOM_UPDATE,
         super::method::HARNESS_CUSTOM_REMOVE,
+    ];
+    pub const ATTACHMENTS: &[&str] = &[
+        super::method::PANE_PROMPT,
+        super::method::WRITING_FORMAT,
+        super::method::AVATAR_CREATE,
     ];
 }
 pub mod event {
@@ -9381,6 +9616,7 @@ pub mod event {
     pub const WEB_CONSOLE_COUNTS: &str = "web.console_counts";
     pub const WEB_AGENT_DRIVING: &str = "web.agent_driving";
     pub const WRITING_CHANGED: &str = "writing.changed";
+    pub const AVATAR_CHANGED: &str = "avatar.changed";
 }
 
 pub fn error_code(kind: &ErrorKind) -> i64 {

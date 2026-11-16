@@ -35,6 +35,20 @@ struct ModelCacheLocation: Sendable {
     HuggingFaceDownloader.weightsExist(in: flat) ? flat : hub
   }
 
+  /// Written into the folder after a complete download and load, so a download that was cut
+  /// short does not count as installed.
+  private static let installedMarker = ".soyeht-installed"
+
+  var isInstalled: Bool {
+    FileManager.default.fileExists(
+      atPath: directory.appendingPathComponent(Self.installedMarker).path)
+  }
+
+  /// Records that the model in `directory` was downloaded and loaded completely.
+  func markInstalled() throws {
+    try Data().write(to: directory.appendingPathComponent(Self.installedMarker))
+  }
+
   /// Deletes every folder this model could live in, then the empty folders the downloader made
   /// around it, so the cache root is gone too when no other model uses it. Does nothing for a
   /// model that was never downloaded.

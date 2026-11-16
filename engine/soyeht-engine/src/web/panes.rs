@@ -22,6 +22,8 @@ pub(crate) struct NewWebPane<'a> {
     pub name: Option<&'a str>,
     pub url: Option<&'a NormalizedUrl>,
     pub incognito: bool,
+    /// The file a project page shows, as the pane's `projectPath`.
+    pub project_path: Option<&'a str>,
 }
 
 impl Core {
@@ -68,6 +70,7 @@ impl Core {
                 name: request.name.as_deref(),
                 url: url.as_ref(),
                 incognito: request.incognito.unwrap_or(false),
+                project_path: None,
             },
         )
     }
@@ -80,7 +83,7 @@ impl Core {
         intent: NewWebPane<'_>,
     ) -> Result<Value> {
         self.ensure_web_pane_capacity(&intent.workspace.workspace_id)?;
-        let pane = web_pane(intent.workspace, intent.name, intent.url, intent.incognito)?;
+        let pane = web_pane(&intent)?;
         let saved = StoredPane {
             pane: pane.clone(),
             closed: false,
@@ -167,14 +170,10 @@ impl Core {
     }
 }
 
-fn web_pane(
-    workspace: &soyeht_protocol::Workspace,
-    name: Option<&str>,
-    url: Option<&NormalizedUrl>,
-    incognito: bool,
-) -> Result<Pane> {
+fn web_pane(intent: &NewWebPane<'_>) -> Result<Pane> {
+    let incognito = intent.incognito;
     Ok(Pane {
-        url: url.map(|value| value.as_str().to_owned()),
+        url: intent.url.map(|value| value.as_str().to_owned()),
         viewport: Some(viewport(
             WebViewportPreset::Responsive,
             Some(DEFAULT_VIEWPORT_WIDTH),
@@ -183,6 +182,7 @@ fn web_pane(
             DEFAULT_ZOOM_PERCENT,
         )?),
         incognito: Some(incognito),
+        project_path: intent.project_path.map(str::to_owned),
         web_session: Some(if incognito {
             WebSessionState::Incognito
         } else {
@@ -190,9 +190,9 @@ fn web_pane(
         }),
         ..model::new_pane(
             PaneMode::Web,
-            workspace.workspace_id.clone(),
-            name.unwrap_or("Web"),
-            workspace.path.clone(),
+            intent.workspace.workspace_id.clone(),
+            intent.name.unwrap_or("Web"),
+            intent.workspace.path.clone(),
         )
     })
 }
@@ -219,12 +219,13 @@ mod tests {
         }))
         .unwrap();
         let url = NormalizedUrl::parse(request.url.as_deref().unwrap()).unwrap();
-        let pane = web_pane(
-            &workspace,
-            request.name.as_deref(),
-            Some(&url),
-            request.incognito.unwrap_or(false),
-        )
+        let pane = web_pane(&NewWebPane {
+            workspace: &workspace,
+            name: request.name.as_deref(),
+            url: Some(&url),
+            incognito: request.incognito.unwrap_or(false),
+            project_path: None,
+        })
         .unwrap();
         assert_eq!(pane.url.as_deref(), Some("http://localhost:5173/"));
         assert_eq!(pane.web_session, Some(WebSessionState::Incognito));

@@ -1,0 +1,33 @@
+{
+  "description": "Where a pane that shows a project file as a page may go (contract 11, section 5b). `page` is the address the engine holds for the pane; `target` is an address its page, a link of it or a command asks to load. A host (the Mac, the desktop client) refuses the navigation unless `same` is true: the target has the page's scheme, host and port. The engine applies the same rule to web.navigate. A target that is not an http or https address with a plain authority is never the same origin. Every client passes the same cases (soyeht_protocol::web::same_origin; ProjectPageOrigin in apps/shared).",
+  "cases": [
+    { "name": "another file of the page", "page": "http://127.0.0.1:5000/0123/index.html", "target": "http://127.0.0.1:5000/0123/other.html", "same": true },
+    { "name": "the same address", "page": "http://127.0.0.1:5000/0123/index.html", "target": "http://127.0.0.1:5000/0123/index.html", "same": true },
+    { "name": "another path of the same origin", "page": "http://127.0.0.1:5000/0123/index.html", "target": "http://127.0.0.1:5000/other", "same": true },
+    { "name": "a query and a fragment", "page": "http://127.0.0.1:5000/0123/index.html", "target": "http://127.0.0.1:5000/0123/index.html?x=1#top", "same": true },
+    { "name": "scheme and host are not case sensitive", "page": "http://127.0.0.1:5000/a", "target": "HTTP://127.0.0.1:5000/b", "same": true },
+    { "name": "a name is not case sensitive", "page": "http://LOCALHOST:5000/a", "target": "http://localhost:5000/b", "same": true },
+    { "name": "no path at all", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:5000", "same": true },
+    { "name": "the default port is the port", "page": "http://127.0.0.1/a", "target": "http://127.0.0.1:80/b", "same": true },
+    { "name": "another port of this machine", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:5001/a", "same": false },
+    { "name": "localhost is another host than 127.0.0.1", "page": "http://127.0.0.1:5000/a", "target": "http://localhost:5000/a", "same": false },
+    { "name": "another scheme", "page": "http://127.0.0.1:5000/a", "target": "https://127.0.0.1:5000/a", "same": false },
+    { "name": "another host", "page": "http://127.0.0.1:5000/a", "target": "http://example.com:5000/a", "same": false },
+    { "name": "a host that starts like the page's", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:5000.example.com/a", "same": false },
+    { "name": "user information that names the page and goes elsewhere", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:5000@example.com/a", "same": false },
+    { "name": "user information on the right host is not a plain authority", "page": "http://127.0.0.1:5000/a", "target": "http://user@127.0.0.1:5000/a", "same": false },
+    { "name": "a backslash ends no authority", "page": "http://127.0.0.1:5000/a", "target": "http://example.com\\@127.0.0.1:5000/a", "same": false },
+    { "name": "a script", "page": "http://127.0.0.1:5000/a", "target": "javascript:alert(1)", "same": false },
+    { "name": "a file", "page": "http://127.0.0.1:5000/a", "target": "file:///etc/passwd", "same": false },
+    { "name": "a data address", "page": "http://127.0.0.1:5000/a", "target": "data:text/html,x", "same": false },
+    { "name": "a blob address", "page": "http://127.0.0.1:5000/a", "target": "blob:http://127.0.0.1:5000/0123", "same": false },
+    { "name": "a relative address", "page": "http://127.0.0.1:5000/a", "target": "/other", "same": false },
+    { "name": "an empty target", "page": "http://127.0.0.1:5000/a", "target": "", "same": false },
+    { "name": "a page that is not a web address", "page": "about:blank", "target": "about:blank", "same": false },
+    { "name": "an empty authority", "page": "http://127.0.0.1:5000/a", "target": "http:///a", "same": false },
+    { "name": "a port that is not a number", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:x/a", "same": false },
+    { "name": "an address with a space", "page": "http://127.0.0.1:5000/a", "target": "http://127.0.0.1:5000/a b", "same": false },
+    { "name": "an IPv6 loopback page", "page": "http://[::1]:5000/a", "target": "http://[::1]:5000/b", "same": true },
+    { "name": "an IPv6 loopback and another port", "page": "http://[::1]:5000/a", "target": "http://[::1]:5001/b", "same": false }
+  ]
+}

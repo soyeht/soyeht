@@ -12,17 +12,13 @@ import SoyehtClient
 final class NemotronModelHolder: @unchecked Sendable {
   static let shared = NemotronModelHolder()
 
-  /// Written after a complete download and load, so a download that was cut short does not
-  /// count as installed.
-  private static let installedMarker = ".soyeht-installed"
   /// `fromPretrained` spends the first 70% of its progress on the download and the rest on
   /// compiling the CoreML models.
   private static let downloadShare = 0.7
 
-  private let lock = NSLock()
-  private var model: NemotronStreamingASRModel?
+  private let loaded = LoadedModel<NemotronStreamingASRModel>()
 
-  var current: NemotronStreamingASRModel? { lock.withLock { model } }
+  var current: NemotronStreamingASRModel? { loaded.current }
 
   private let location: ModelCacheLocation
 
@@ -33,38 +29,28 @@ final class NemotronModelHolder: @unchecked Sendable {
     self.location = location
   }
 
-  var isInstalled: Bool {
-    FileManager.default.fileExists(
-      atPath: location.directory.appendingPathComponent(Self.installedMarker).path)
-  }
+  var isInstalled: Bool { location.isInstalled }
 
   /// Loads the installed model from disk, or downloads it first when it is not installed. The
   /// app only reaches the download branch from the Install button.
   func install(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
-    let directory = location.directory
-    let marker = directory.appendingPathComponent(Self.installedMarker)
-    let loaded: NemotronStreamingASRModel
-    if FileManager.default.fileExists(atPath: marker.path) {
-      loaded = try await NemotronStreamingASRModel.fromLocal(
-        bundleDir: directory, computeUnits: .all
+    let model: NemotronStreamingASRModel
+    if location.isInstalled {
+      model = try await NemotronStreamingASRModel.fromLocal(
+        bundleDir: location.directory, computeUnits: .all
       ) { _, _ in report(.preparing) }
     } else {
-      loaded = try await NemotronStreamingASRModel.fromPretrained(computeUnits: .all) {
+      model = try await NemotronStreamingASRModel.fromPretrained(computeUnits: .all) {
         fraction, _ in
         report(
           fraction >= Self.downloadShare ? .preparing : .downloading(fraction / Self.downloadShare))
       }
-      try Data().write(to: marker)
+      try location.markInstalled()
     }
-    lock.withLock { model = loaded }
+    loaded.set(model)
   }
 
-  /// Drops the loaded model and deletes the files and the folders around them, which frees the
-  /// disk and leaves nothing behind.
-  func remove() throws {
-    lock.withLock { model = nil }
-    try location.removeAll()
-  }
+  func remove() throws { try loaded.remove(files: location) }
 }
 
 /// One streaming session, serialized.

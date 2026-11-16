@@ -183,6 +183,7 @@ impl Core {
         soyeht_ptyd::shell::warm_default_login_shell();
         log_stale_export_cleanup(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
+        crate::avatars::sweep_orphans(directory, &store);
         let workspaces = store.workspaces().map_err(errors::storage)?;
         for line in crate::workspace_layout::fallback_diagnostics(
             workspaces
@@ -255,8 +256,10 @@ impl Core {
         // The event streams of the file followers raise the tick, which sleeps until a deadline.
         let kick = core.background.kicker();
         core.project_watches.kicked_by(Arc::clone(&kick));
+        core.web.pages.kicked_by(Arc::clone(&kick));
         core.skill_watches.kicked_by(kick);
         core.restore_panes(directory)?;
+        core.serve_project_pages_again();
         core.restore_experiment_captures()?;
         if let Err(error) = core.start_skills() {
             // Skills are optional: the engine serves everything else without them.
@@ -685,6 +688,7 @@ impl Core {
         self.isolated("local_servers", Self::advance_local_servers);
         self.isolated("input_receipts", Self::flush_input_receipts);
         self.isolated("web_commands", Self::advance_web_commands);
+        self.isolated("project_pages", Self::reload_project_pages);
         if self.ensure_supervisor() == crate::supervisor_link::Link::Down {
             return Ok(());
         }

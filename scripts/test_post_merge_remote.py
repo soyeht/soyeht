@@ -14,19 +14,25 @@ from unittest import mock
 import gate_remote
 import post_merge_gate
 import post_merge_hosts
+import post_merge_records
 from test_post_merge_fixtures import RemoteHostCase, git, isolate_environment
 
 
 class RemoteGateTests(RemoteHostCase):
     """--remote: engine, desktop and e2e steps through scripts/remote_gate.sh, the rest here."""
 
-    def test_remote_steps_run_on_the_host_first_and_the_rest_here(self):
+    def halves(self):
+        """The runs of the host's half and of this machine's half, whichever started first."""
+        runs = self.runs()
+        return ([run for run in runs if "remote-gate" in run[0]], [run for run in runs if "remote-gate" not in run[0]])
+
+    def test_remote_steps_run_on_the_host_and_the_rest_here(self):
         head = self.add("two", {"b": "2"})
         self.assertEqual(self.run_remote(head), 0)
         record = self.record(head)
         self.assertEqual(record["result"], "pass")
         self.assertEqual(record["remote"], "linux-host")
-        (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
+        ([(remote_directory, remote_arguments)], [(local_directory, local_arguments)]) = self.halves()
         self.assertIn("remote-gate/tree", remote_directory)
         self.assertEqual(remote_arguments.split()[0], "only=eng,snap")
         self.assertNotIn("remote-gate", local_directory)
@@ -51,7 +57,7 @@ class RemoteGateTests(RemoteHostCase):
         self.assertEqual(pull_request["title"], "Drop a step")
         self.assertIn("Verification change: dropped on purpose", pull_request["body"])
 
-    def test_a_remote_failure_names_the_step_and_the_culprit_without_running_the_rest_here(self):
+    def test_a_remote_failure_names_the_step_and_the_culprit_and_the_search_runs_only_that_step_on_the_host(self):
         self.assertEqual(self.run_remote(self.shas[0]), 0)
         self.add("two", {"b": "2"})
         culprit = self.add("breaks the engine step", {"broken": "x"})
@@ -63,7 +69,9 @@ class RemoteGateTests(RemoteHostCase):
         self.assertEqual(record["failed_step"], "eng")
         self.assertEqual(record["culprit"]["sha"], culprit)
         self.assertEqual([step["id"] for step in record["steps"]], ["eng"])
-        self.assertTrue(all("remote-gate" in directory for directory, _ in self.runs()))
+        remote, local = self.halves()
+        self.assertEqual(len(local), 1)  # the local half of the first run, which ran with the host's
+        self.assertTrue(remote)  # the rerun and the probes of the search ran the failing step on the host only
 
     def test_a_local_failure_is_found_after_the_remote_steps_pass(self):
         self.assertEqual(self.run_remote(self.shas[0]), 0)
@@ -283,7 +291,8 @@ done <<< "$rows"
 [[ -z "${FAKE_EMPTY_PLAN:-}" ]] || selected=""
 if ((list)); then printf '%s' "$selected"; exit 0; fi
 echo "$PWD tier=$tier only=$only base=$base event=$event engine=${SOYEHT_GATE_ENGINE_TEST_ARGS:-}" >> "${FAKE_TRACE:?}"
-[[ -z "${FAKE_WINDOWS_SKIP:-}" ]] || echo "check_all: skipped the Windows lint; run: rustup target add x86_64-pc-windows-msvc"
+[[ -z "${FAKE_SLOW_LOCAL:-}" || "$PWD" == *remote-gate* ]] || sleep "$FAKE_SLOW_LOCAL"
+[[ -z "${FAKE_WINDOWS_SKIP:-}" ]] || echo "check_all: SKIPPED engine:clippy-windows: the Rust target x86_64-pc-windows-msvc is not installed"
 steps=""; status=0
 while read -r area tiers id; do
     [[ -n "$id" ]] || continue
@@ -495,31 +504,57 @@ class PullRequestGateTests(RemoteHostCase):
         git(self.root, "checkout", "--", "b")
         self.assertEqual(self.split_gate()[0], 0)
 
-    def test_a_host_that_skipped_the_windows_lint_is_warned_about_loudly(self):
+    def test_a_host_that_skipped_a_check_is_warned_about_loudly_with_the_step_and_the_reason(self):
         with mock.patch.dict(os.environ, {"FAKE_WINDOWS_SKIP": "1"}):
             code, output = self.split_gate()
         self.assertEqual(code, 0)
-        self.assertIn("WARNING: linux-host skipped the Windows lint", output)
+        self.assertIn("WARNING: linux-host ran with less than its steps name; "
+                      "check_all: SKIPPED engine:clippy-windows: the Rust target", output)
         self.assertNotIn("WARNING", self.split_gate()[1])
+
+    def test_the_summaries_name_the_steps_that_passed_without_checking_all_they_name(self):
+        steps = [{"id": "a", "seconds": 1.0}, {"id": "w:lint", "seconds": 0.0, "skipped": "no target", "host": "h"}]
+        line = gate_remote.report("f" * 40, self.remote, steps, 0, 3.0)
+        self.assertIn("SKIPPED (checked less than their names say): w:lint", line)
+        self.assertNotIn("SKIPPED", gate_remote.report("f" * 40, self.remote, steps[:1], 0, 3.0))
+        record = {"result": "pass", "sha": "f" * 40, "duration_seconds": 3.0, "steps": steps}
+        self.assertIn("SKIPPED (checked less than their names say; the reasons are in the record and the log): w:lint",
+                      post_merge_records.report(record))
+        self.assertNotIn("SKIPPED", post_merge_records.report({**record, "steps": steps[:1]}))
+
+    def test_a_host_that_could_not_run_the_gate_stops_the_mac_half_of_the_pre_merge_gate_too(self):
+        died = 'if [[ "$*" == *"--sha"* ]]; then exit 255; fi\nexec ' + str(self.fake_ssh) + ' "$@"'
+        started = time.monotonic()
+        with self.ssh_script(died), mock.patch.dict(os.environ, {"FAKE_SLOW_LOCAL": "60"}):
+            code, _ = self.split_gate()
+        self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
+        self.assertLess(time.monotonic() - started, 30)
+
+    def test_the_bundle_leaves_the_host_even_when_the_host_output_cannot_be_appended(self):
+        remote = post_merge_hosts.Remote("linux-host", str(self.host_checkout))
+        log = self.root.parent / "run.log"
+        with mock.patch.object(post_merge_gate, "append_remote_output", side_effect=RuntimeError("full")), \
+                self.assertRaises(RuntimeError):
+            post_merge_gate.split_gate(self.root, self.shas[0], None, log, self.root.parent / "t.json",
+                                       ["bash", "scripts/check_all.sh"], remote, tier="fast", ship=True,
+                                       concurrent=True)
+        self.assertEqual(list(self.host_state().glob("*.bundle")), [])
 
     def test_a_gate_that_could_not_run_outranks_a_step_that_failed(self):
         busy = 'if [[ "$*" == *"--sha"* ]]; then exit 75; fi\nexec ' + str(self.fake_ssh) + ' "$@"'
         with self.ssh_script(busy), mock.patch.dict(os.environ, {"FAKE_STEP": "sw"}):
             code, output = self.split_gate()
         self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
-        self.assertIn("check_all: FAILED step sw", output)  # the local half ran and failed too
         self.assertEqual(post_merge_gate.combine_codes(1, 1), 1)
         self.assertEqual(post_merge_gate.combine_codes(1, 78), 78)
 
-    def test_ssh_dying_while_both_halves_run_records_no_remote_times(self):
+    def test_ssh_dying_while_both_halves_run_stops_the_local_half_and_records_no_times(self):
         died = 'if [[ "$*" == *"--sha"* ]]; then exit 255; fi\nexec ' + str(self.fake_ssh) + ' "$@"'
         with self.ssh_script(died):
             code, output = self.split_gate()
         self.assertEqual(code, post_merge_gate.INFRASTRUCTURE_EXIT)
         self.assertIn("cannot reach linux-host over ssh", output)
-        self.assertEqual(len(self.sides()[1]), 1)  # the local half still ran
-        steps = json.loads(self.timings.read_text())["latest"]["steps"]
-        self.assertEqual([step["id"] for step in steps], ["unit", "sw"])
+        self.assertFalse(self.timings.exists())  # nothing the stopped local half did counts
 
     def test_an_interrupt_stops_the_host_run_and_removes_the_bundle(self):
         pid_file = self.root.parent / "ssh.pid"
@@ -529,7 +564,7 @@ class PullRequestGateTests(RemoteHostCase):
                 time.sleep(0.05)
             raise KeyboardInterrupt
 
-        with self.ssh_script(hung), mock.patch.object(post_merge_gate, "run_local_steps", side_effect=interrupted):
+        with self.ssh_script(hung), mock.patch.object(post_merge_gate, "start_local_steps", side_effect=interrupted):
             with self.assertRaises(KeyboardInterrupt):
                 self.split_gate()
         with self.assertRaises(ProcessLookupError):
@@ -621,18 +656,25 @@ class PumpTests(unittest.TestCase):
 
     def test_a_sink_that_fails_is_dropped_and_the_output_is_still_drained_and_scanned(self):
         # More than a pipe holds (64 KB), then the line the scan looks for.
-        script = "head -c 300000 /dev/zero | tr '\\0' x; echo; echo 'check_all: skipped the Windows lint; run: x'"
+        script = "head -c 300000 /dev/zero | tr '\\0' x; echo; echo 'check_all: SKIPPED a:b: why'"
         process = self.start(script, BrokenSink())
         self.assertEqual(post_merge_gate.wait_process(process), 0)
-        self.assertTrue(process.pump.windows_lint_skipped)
+        self.assertEqual(process.pump.skipped, ["check_all: SKIPPED a:b: why"])
         self.assertIsNone(process.pump.sink)
 
-    def test_the_lint_line_is_found_across_two_reads_and_a_good_sink_gets_everything(self):
+    def test_the_skipped_line_is_found_across_two_reads_and_a_good_sink_gets_everything(self):
         sink = io.BytesIO()
-        process = self.start("printf 'check_all: skipped the Wi'; sleep 0.5; printf 'ndows lint; run: x\\n'", sink)
+        process = self.start("printf 'check_all: SKIP'; sleep 0.5; printf 'PED a:b: why\\nlater\\n'", sink)
         self.assertEqual(post_merge_gate.wait_process(process), 0)
-        self.assertTrue(process.pump.windows_lint_skipped)
-        self.assertEqual(sink.getvalue(), b"check_all: skipped the Windows lint; run: x\n")
+        self.assertEqual(process.pump.skipped, ["check_all: SKIPPED a:b: why"])
+        self.assertEqual(sink.getvalue(), b"check_all: SKIPPED a:b: why\nlater\n")
+
+    def test_only_a_line_that_starts_with_the_marker_counts_and_the_last_line_needs_no_newline(self):
+        process = self.start("echo 'x check_all: SKIPPED not at the start'; printf 'check_all: SKIPPED last: no newline'",
+                             io.BytesIO())
+        self.assertEqual(post_merge_gate.wait_process(process), 0)
+        process.pump.join(10)
+        self.assertEqual(process.pump.skipped, ["check_all: SKIPPED last: no newline"])
 
 
 @contextlib.contextmanager

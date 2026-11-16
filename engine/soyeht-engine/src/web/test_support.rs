@@ -1,9 +1,9 @@
 //! What the web tests share: a JSON-RPC request, a dispatched reply, the next JSON frame
 //! of a connection's outbox, a temporary workspace root, and a workspace with a web pane.
 
-use crate::{core::Core, dispatch::Outcome, outbox};
+use crate::{core::Core, dispatch::Outcome, model::RunningPane, outbox, screen::Screen};
 use serde_json::{Value, json};
-use soyeht_protocol::frame::Frame;
+use soyeht_protocol::{Actor, PaneMode, Role, frame::Frame};
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -90,4 +90,31 @@ pub(super) fn create_web_pane(core: &mut Core, connection: &str, root: &Path) ->
         .as_str()
         .unwrap()
         .to_owned()
+}
+
+/// Makes `caller` an agent bound to a pane of its own, as the engine knows an agent's connection:
+/// the pane is a copy of `web_pane` turned into an agent pane, and `root` holds its session.
+pub(super) fn bind_agent(core: &mut Core, caller: &str, web_pane: &str, root: &Path) {
+    let mut agent = core.panes[web_pane].stored.clone();
+    agent.pane.pane_id = "agent-pane".into();
+    agent.pane.mode = PaneMode::Agent;
+    agent.pane.url = None;
+    agent.pane.title = None;
+    agent.pane.viewport = None;
+    agent.pane.incognito = None;
+    agent.pane.web_session = None;
+    let agent_screen = Screen::open(&root.join("sessions/agent-pane"), false).unwrap();
+    core.panes.insert(
+        agent.pane.pane_id.clone(),
+        RunningPane {
+            stored: agent,
+            screen: agent_screen,
+        },
+    );
+    core.clients.get_mut(caller).unwrap().actor = Some(Actor {
+        role: Role::Agent,
+        client: "bound-agent".into(),
+        device_id: None,
+        pane_id: Some("agent-pane".into()),
+    });
 }

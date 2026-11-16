@@ -25,6 +25,10 @@ public struct DictationModelInfo: Sendable {
   public let sizeDescription: String
   public let licenseName: String
   public let licenseURL: URL?
+  /// Whether the license allows a product to be sold with the model. The configuration screen
+  /// labels a model that does not ("research use only") before its first use; nothing enforces
+  /// it.
+  public let commercialUse: Bool
   public let install: DictationModelInstaller
   /// Whether the whole model is on disk.
   public let isInstalled: @Sendable () -> Bool
@@ -33,12 +37,14 @@ public struct DictationModelInfo: Sendable {
 
   public init(
     sizeDescription: String, licenseName: String, licenseURL: URL? = nil,
-    install: @escaping DictationModelInstaller, isInstalled: @escaping @Sendable () -> Bool,
+    commercialUse: Bool = true, install: @escaping DictationModelInstaller,
+    isInstalled: @escaping @Sendable () -> Bool,
     remove: @escaping @Sendable () throws -> Void
   ) {
     self.sizeDescription = sizeDescription
     self.licenseName = licenseName
     self.licenseURL = licenseURL
+    self.commercialUse = commercialUse
     self.install = install
     self.isInstalled = isInstalled
     self.remove = remove

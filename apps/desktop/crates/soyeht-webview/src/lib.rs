@@ -38,6 +38,7 @@ mod world;
 
 pub use error::{Error, Result};
 pub use keys::{Keysym, keysym_for_key};
+pub use policy::PageLimit;
 pub use types::{
     Button, Frame, KeyInput, Modifiers, Navigation, PageState, Placement, Pointer, Rect,
     ScrollInput, ViewOptions, ViewSink, ViewUpdate, WindowHandle,

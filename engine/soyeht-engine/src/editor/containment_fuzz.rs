@@ -171,6 +171,37 @@ fn a_workspace_path_never_resolves_or_creates_anything_outside_the_workspace() {
     });
 }
 
+/// A project page is served from the file the same resolution names, so the same hostile
+/// spellings name nothing outside the workspace, and its directory is below the workspace.
+#[test]
+fn a_project_page_resolves_nothing_outside_the_workspace_and_no_hidden_or_unusable_name() {
+    use crate::web::PageFile;
+    let fixture = Fixture::new("project-page");
+    let before = fixture.outside();
+    fuzz_bytes(
+        "engine-project-page-containment",
+        CASES,
+        &corpus(),
+        |input| {
+            let relative = Fixture::spelling(input);
+            if let Ok(page) = PageFile::resolve(&fixture.root, &relative) {
+                let (file, root) = page.paths();
+                assert!(file.starts_with(&fixture.root), "{relative:?}");
+                assert!(root.starts_with(&fixture.root), "{relative:?}");
+                let below = file.strip_prefix(&fixture.root).unwrap();
+                assert!(
+                    below.components().all(|part| part
+                        .as_os_str()
+                        .to_str()
+                        .is_some_and(soyeht_web::name_allowed)),
+                    "{relative:?} resolved to {file:?}"
+                );
+            }
+            fixture.unchanged_outside(&before, &relative);
+        },
+    );
+}
+
 #[test]
 fn an_agents_text_access_follows_no_link_and_never_touches_a_file_outside_the_worktree() {
     let fixture = Fixture::new("agent");

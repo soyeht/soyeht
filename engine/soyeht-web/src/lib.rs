@@ -5,6 +5,7 @@ mod command;
 mod element;
 mod error;
 mod local_server;
+mod project_page;
 mod reference;
 mod ring;
 mod snapshot;
@@ -14,6 +15,10 @@ pub use command::{DEFAULT_ZOOM_PERCENT, command_response_budget, validate_comman
 pub use element::{ElementCapture, build_element_package};
 pub use error::{Error, Result};
 pub use local_server::{CwdObservation, LocalServerScan, ServerTitle};
+pub use project_page::{
+    RangeAnswer, byte_range, content_security_policy, content_type, host_is_page, name_allowed,
+    page_url, requested_parts,
+};
 pub use reference::NavigationReferences;
 pub use ring::{ConsoleMetadata, ConsoleRing, NetworkMetadata, NetworkRing, RingPage};
 pub use snapshot::{SnapshotNodeInput, build_snapshot};

@@ -115,13 +115,17 @@ class LoadRuleTests(RemoteHostCase):
         self.assertEqual(record["flaky_steps"][0]["load"], record["load"], "the ledger keeps the host's load")
         self.assertIn("busy; rerun after waiting", record["note"])
         self.assertEqual(self.pauses, [post_merge_hosts.LOAD_POLL_SECONDS])
-        first, rerun, *tail = self.runs()
+        # The two halves of the first run start together, in either order; then the rerun on the host.
+        (first, other), rerun, *tail = self.runs()[:2], *self.runs()[2:]
+        host_first = next(run for run in (first, other) if "remote-gate/tree" in run[0])
+        self.assertTrue(host_first[1].startswith("only=tm"))
         self.assertTrue(all("remote-gate/tree" in directory and arguments.startswith("only=tm")
-                            for directory, arguments in (first, rerun)))
+                            for directory, arguments in (host_first, rerun)))
         self.assertEqual(rerun[1], "only=tm")
-        # What the failed run never reached: the host's step there, the Mac's step here.
-        self.assertEqual([(("remote-gate" in directory), arguments.split()[0]) for directory, arguments in tail],
-                         [(True, "only=editor-performance:rust"), (False, "only=unit")])
+        # What the failed run never reached: the host's step there, the Mac's step here (the stand-in
+        # records only the step it fails, so the Mac's half of the first run left no times), together.
+        self.assertEqual(sorted(("remote-gate" in directory, arguments.split()[0]) for directory, arguments in tail),
+                         [(False, "only=unit"), (True, "only=editor-performance:rust")])
 
     def test_a_step_without_a_latency_limit_is_rerun_at_once_whatever_the_load(self):
         head, code = self.fail_under_load("unit")
@@ -158,10 +162,10 @@ class LoadRuleTests(RemoteHostCase):
         head = self.add("two", {"b": "2"})
         with mock.patch.dict(os.environ, {"FAKE_STEP": "editor-performance:rust"}):
             self.assertEqual(self.run_remote(head), 0)
-        (remote_directory, remote_arguments), (local_directory, local_arguments) = self.runs()
+        (remote_directory, remote_arguments), = [run for run in self.runs() if "remote-gate" in run[0]]
+        (local_directory, local_arguments), = [run for run in self.runs() if "remote-gate" not in run[0]]
         self.assertIn("remote-gate/tree", remote_directory)
         self.assertEqual(remote_arguments.split()[0], "only=tm,editor-performance:rust")
-        self.assertNotIn("remote-gate", local_directory)
         self.assertEqual(local_arguments.split()[0], "only=unit")
 
     def test_a_remote_step_is_judged_by_the_load_of_the_host_it_ran_on(self):
