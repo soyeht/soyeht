@@ -26,7 +26,6 @@ pub(super) fn pack(texel: [u8; 4]) -> u32 {
     u32::from_le_bytes(texel)
 }
 
-#[cfg(test)]
 pub(super) fn unpack(texel: u32) -> [u8; 4] {
     texel.to_le_bytes()
 }
@@ -47,6 +46,55 @@ fn add(a: u32, b: u32) -> u32 {
         (sum | (over * 255)) & LANES_RB
     };
     lanes(a & LANES_RB, b & LANES_RB) | (lanes((a >> 8) & LANES_RB, (b >> 8) & LANES_RB) << 8)
+}
+
+/// The channels of a texel as floating point numbers, for the sums of a reduction.
+type Channels = [f32; 4];
+
+fn channels(texel: u32) -> Channels {
+    unpack(texel).map(f32::from)
+}
+
+fn pack_mean(c: Channels) -> u32 {
+    pack(c.map(|v| (v + 0.5) as u8))
+}
+
+/// Every row of `from` (`rows` of `columns` texels) reduced to `to` columns by an area average.
+fn reduce_rows(from: &[Channels], columns: usize, to: usize) -> Vec<Channels> {
+    let step = columns as f32 / to as f32;
+    // For each column of the result: the first column it covers, and the share of each.
+    let spans: Vec<(usize, Vec<f32>)> = (0..to)
+        .map(|i| {
+            let (start, end) = (i as f32 * step, (i + 1) as f32 * step);
+            let first = start as usize;
+            let last = (end.ceil() as usize).min(columns);
+            let shares = (first..last)
+                .map(|c| ((c + 1) as f32).min(end) - (c as f32).max(start))
+                .map(|share| share / step)
+                .collect();
+            (first, shares)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(to * from.len() / columns);
+    for row in from.chunks_exact(columns) {
+        for (first, shares) in &spans {
+            let mut sum = [0.0; 4];
+            for (texel, share) in row[*first..].iter().zip(shares) {
+                for k in 0..4 {
+                    sum[k] += texel[k] * share;
+                }
+            }
+            out.push(sum);
+        }
+    }
+    out
+}
+
+/// The texels of a picture of `columns` by `rows`, with the rows and columns exchanged.
+fn transpose<T: Copy>(from: &[T], columns: usize, rows: usize) -> Vec<T> {
+    (0..columns)
+        .flat_map(|c| (0..rows).map(move |r| from[r * columns + c]))
+        .collect()
 }
 
 /// The texel `t / 256` of the way from `a` to `b`, for `t` of 0 to 255, rounded: a texel mixed
@@ -70,6 +118,16 @@ pub(super) fn over(below: u32, texel: u32, coverage: u32) -> u32 {
             let laid = scale(texel, coverage);
             add(laid, scale(below, ONE - (laid >> 24)))
         }
+    }
+}
+
+/// `a` and `b` mixed, `b` taken `coverage` of 256: every channel, the opacity too, so a clear texel
+/// mixes in as clear.
+pub(super) fn mix(a: u32, b: u32, coverage: u32) -> u32 {
+    match coverage.min(ONE) {
+        0 => a,
+        ONE => b,
+        c => lerp(a, b, c),
     }
 }
 
@@ -127,6 +185,32 @@ impl Pixmap {
     #[cfg(test)]
     pub(super) fn at(&self, index: usize) -> [u8; 4] {
         unpack(self.texels[index])
+    }
+
+    /// The picture reduced to `width` by `height` pixels by an area average: each pixel is the mean
+    /// of the part of this picture it covers, by the share of each texel it covers, taken on the
+    /// premultiplied channels (a box filter, separable, with no negative lobes and no ringing). It
+    /// is the filter every size of the avatar is made with, so that a picture drawn smaller than its
+    /// canvas does not shimmer when it moves. A size that is not smaller is the picture as it is.
+    pub(super) fn downscaled(&self, width: u32, height: u32) -> Pixmap {
+        if width >= self.width && height >= self.height {
+            return self.clone();
+        }
+        let (width, height) = (width.clamp(1, self.width), height.clamp(1, self.height));
+        let source: Vec<Channels> = self.texels.iter().map(|t| channels(*t)).collect();
+        let across = reduce_rows(&source, self.width as usize, width as usize);
+        // The same down the columns: turn the picture on its side, reduce it, turn it back.
+        let turned = transpose(&across, width as usize, self.height as usize);
+        let down = reduce_rows(&turned, self.height as usize, height as usize);
+        let texels = transpose(&down, height as usize, width as usize)
+            .into_iter()
+            .map(pack_mean)
+            .collect();
+        Pixmap {
+            width,
+            height,
+            texels,
+        }
     }
 
     /// Makes this picture the same as `other` without a new allocation when the sizes agree.
@@ -241,5 +325,43 @@ mod tests {
         picture.lay_over(0, 0, pack([250, 250, 250, 254]), 256);
         assert_eq!(picture.at(0)[3], 255);
         assert!(picture.at(0)[..3].iter().all(|c| *c >= 250));
+    }
+
+    #[test]
+    fn a_picture_reduced_is_the_mean_of_what_each_pixel_covers() {
+        // A checkerboard of black and white halves to grey, however it is cut.
+        let mut bytes = Vec::new();
+        for y in 0..4u8 {
+            for x in 0..4u8 {
+                let v = if (x + y) % 2 == 0 { 0 } else { 200 };
+                bytes.extend([v, v, v, 255]);
+            }
+        }
+        let picture = Pixmap::from_straight_rgba(4, 4, &bytes).unwrap();
+        assert_eq!(picture.downscaled(2, 2).at(0), [100, 100, 100, 255]);
+        assert_eq!(picture.downscaled(1, 1).at(0), [100, 100, 100, 255]);
+        // A size that is not smaller is the picture.
+        assert_eq!(picture.downscaled(4, 4), picture);
+        assert_eq!(picture.downscaled(9, 9), picture);
+    }
+
+    #[test]
+    fn a_reduction_by_a_fraction_weighs_the_texels_by_the_share_they_cover() {
+        // Three texels into two: the middle one is shared half and half.
+        let picture =
+            Pixmap::from_straight_rgba(3, 1, &[0, 0, 0, 255, 90, 90, 90, 255, 180, 180, 180, 255])
+                .unwrap();
+        let reduced = picture.downscaled(2, 1);
+        assert_eq!(reduced.at(0), [30, 30, 30, 255]);
+        assert_eq!(reduced.at(1), [150, 150, 150, 255]);
+    }
+
+    #[test]
+    fn a_clear_texel_mixes_in_as_clear() {
+        let red = pack([200, 0, 0, 255]);
+        let clear = pack([0, 0, 0, 0]);
+        assert_eq!(unpack(mix(red, clear, 128)), [100, 0, 0, 128]);
+        assert_eq!(mix(red, clear, 0), red);
+        assert_eq!(mix(red, clear, 256), clear);
     }
 }

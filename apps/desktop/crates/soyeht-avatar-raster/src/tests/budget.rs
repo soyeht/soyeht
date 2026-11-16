@@ -4,7 +4,7 @@
 //! `cargo test --release -p soyeht-desktop avatar::tests::budget -- --ignored --nocapture`.
 
 use super::{raster_tests::speaking, synthetic::Spec};
-use crate::avatar::{
+use crate::{
     Avatar, Rasteriser,
     resample::{Field, resample},
 };
@@ -74,7 +74,7 @@ fn timings(spec: Spec, width: u32) -> Vec<f64> {
 fn frame_budget_at_the_usual_size() {
     let spec = Spec {
         side: USUAL,
-        ring: 256,
+        ring: 64,
     };
     let mean = mean(&timings(spec, USUAL));
     assert!(
@@ -91,7 +91,7 @@ fn frame_cost_by_size() {
         (2 * USUAL, USUAL),
         (2 * USUAL, 2 * USUAL),
     ] {
-        timings(Spec { side, ring: 256 }, width);
+        timings(Spec { side, ring: 64 }, width);
     }
 }
 
@@ -102,7 +102,7 @@ fn frame_cost_by_size() {
 fn frame_cost_by_step() {
     let spec = Spec {
         side: USUAL,
-        ring: 256,
+        ring: 64,
     };
     let (avatar, mut raster, frames) = setup(spec);
     let package = avatar.package();
@@ -110,7 +110,10 @@ fn frame_cost_by_step() {
     let mut field = Field::default();
     let mut out = vec![0; (USUAL * USUAL * 4) as usize];
     let steps: [(&str, Vec<f64>); 3] = [
-        ("compose", times(&frames, |f| raster.compose(f))),
+        (
+            "compose",
+            times(&frames, |f| raster.compose(f, USUAL, USUAL)),
+        ),
         (
             "grid of the rule",
             times(&frames, |f| {

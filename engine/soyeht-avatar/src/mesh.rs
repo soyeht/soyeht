@@ -107,24 +107,28 @@ impl MeshPart {
     }
 }
 
-/// A part of the mouth laid over the picture, once: `under` is what is below it, `layers` are the
-/// texel each drawing's picture gives at this pixel with the `Layer::alpha` of the drawing, and
-/// `coverage` is the opacity of the part at this pixel (the feather of its corners), 0 to 1.
-/// Every colour is premultiplied RGBA of 0 to 255. Each layer is laid over what the layers before
-/// it made of the picture (`texel * a + picture * (1 - a * texel alpha)`, starting from `under`),
-/// which mixes the drawings by their weights, and the result takes the place of `under` by
-/// `coverage`. The feather is applied once, here, and never once for each layer: laying each layer
-/// over the picture with the feather would count it once for each drawing in play, and the edge of
-/// the part would step when a layer came in.
+/// A part of the mouth laid over the picture, once. `layers` are the texel each drawing's
+/// picture gives at this pixel with the `Layer::alpha` of the drawing, `under` is what is below
+/// the part and `coverage` is the opacity of the part at this pixel (the feather of its corners
+/// times `MeshPart::opacity`), 0 to 1. Every colour is premultiplied RGBA of 0 to 255.
+///
+/// The layers are first **mixed by their weights**, each over the mix before it
+/// (`mix = texel * a + mix * (1 - a)`, `a` the layer's alpha, the first being 1): the texel's own
+/// opacity is part of the colour that is mixed, so a clear texel of a heavy drawing makes the mix
+/// clearer in proportion to its weight and a drawing coming in at a tiny weight changes the mix by
+/// a tiny amount, whatever the texels' opacity. Then the mix is laid over `under` once, by
+/// `coverage` (`mix * c + under * (1 - c * mix alpha)`). The feather counts once, however many
+/// drawings are in play: laying each layer over the picture with the feather would count it once
+/// for each drawing, and the edge of the part would step when a layer came in.
 pub fn composite(under: [f64; 4], layers: &[([f64; 4], f64)], coverage: f64) -> [f64; 4] {
-    let mut picture = under;
+    let mut mix = [0.0; 4];
     for (texel, alpha) in layers {
         let a = alpha.clamp(0.0, 1.0);
-        let keep = 1.0 - a * texel[3] / 255.0;
-        picture = [0, 1, 2, 3].map(|c| texel[c] * a + picture[c] * keep);
+        mix = [0, 1, 2, 3].map(|c| texel[c] * a + mix[c] * (1.0 - a));
     }
     let c = coverage.clamp(0.0, 1.0);
-    [0, 1, 2, 3].map(|k| under[k] + (picture[k] - under[k]) * c)
+    let keep = 1.0 - c * mix[3] / 255.0;
+    [0, 1, 2, 3].map(|k| mix[k] * c + under[k] * keep)
 }
 
 impl MouthModel {

@@ -8,65 +8,72 @@ use serde_json::{Value, json};
 use super::numbers;
 use super::package::{remove, replace};
 use crate::mesh::composite;
-use crate::package::Package;
+use crate::package::{Package, blend_work};
 use crate::tests::fixtures::{assets, package_json};
 
-/// The area the triangles of the resting drawing cover, the three parts together, and the same
-/// scaled about the middle of the canvas.
-fn rest_area(package: &Package) -> f64 {
-    package
-        .mouth
-        .parts
-        .iter()
-        .map(|part| {
-            let rest = &part.shapes[0].positions;
-            part.triangles
-                .as_chunks::<3>()
-                .0
-                .iter()
-                .map(|t| {
-                    let at = |i: u32| (rest[2 * i as usize], rest[2 * i as usize + 1]);
-                    let (a, b, c) = (at(t[0]), at(t[1]), at(t[2]));
-                    0.5 * ((b.0 - a.0) * (c.1 - a.1) - (c.0 - a.0) * (b.1 - a.1)).abs()
-                })
-                .sum::<f64>()
-        })
-        .sum()
-}
-
-/// The rest drawing blown up until its triangles cover `share` canvas areas (the limit is one).
-fn draw_work_case(package: &Package, share: f64, name: &str, expect: &str) -> Value {
-    let canvas = f64::from(package.canvas.width) * f64::from(package.canvas.height);
-    let factor = (share * canvas / rest_area(package)).sqrt();
+/// The patch that scales the resting drawing of every part by `factor` about the middle of the
+/// canvas (positions to 5 decimals, as the file holds them), and the package it makes.
+fn scaled_rest(package: &Package, factor: f64) -> (Vec<Value>, Package) {
     let middle = [
         f64::from(package.canvas.width) / 2.0,
         f64::from(package.canvas.height) / 2.0,
     ];
-    let patch: Vec<Value> = package
-        .mouth
-        .parts
-        .iter()
-        .enumerate()
-        .map(|(i, part)| {
-            let scaled: Vec<f64> = part.shapes[0]
-                .positions
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .flat_map(|p| {
-                    [
-                        ((middle[0] + (p[0] - middle[0]) * factor) * 1e5).round() / 1e5,
-                        ((middle[1] + (p[1] - middle[1]) * factor) * 1e5).round() / 1e5,
-                    ]
-                })
-                .collect();
-            replace(
-                &format!("/mouth/parts/{i}/shapes/0/positions"),
-                json!(scaled),
-            )
-        })
-        .collect();
+    let mut made = package.clone();
+    let mut patch = Vec::new();
+    for (i, part) in made.mouth.parts.iter_mut().enumerate() {
+        for point in part.shapes[0].positions.as_chunks_mut::<2>().0 {
+            for k in 0..2 {
+                point[k] = ((middle[k] + (point[k] - middle[k]) * factor) * 1e5).round() / 1e5;
+            }
+        }
+        patch.push(replace(
+            &format!("/mouth/parts/{i}/shapes/0/positions"),
+            json!(part.shapes[0].positions),
+        ));
+    }
+    (patch, made)
+}
+
+/// The resting drawing blown up until the work of the mouth (`blend_work`) is `share` canvases.
+fn draw_work_case(package: &Package, share: f64, name: &str, expect: &str) -> Value {
+    // The work grows with the factor: find it by halving.
+    let (mut low, mut high) = (1.0, 64.0);
+    for _ in 0..60 {
+        let middle = (low + high) / 2.0;
+        if blend_work(&scaled_rest(package, middle).1) < share {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    let (patch, _) = scaled_rest(package, low);
     json!({ "name": name, "patch": patch, "expect": expect })
+}
+
+/// Two drawings of the inner mouth with no area at all (every corner on one line through the
+/// centre of the fan, each drawing on its own line) whose corners blend, half and half, into a
+/// triangle: the first corner of the fan is `reach` and `2 reach` from the centre along the
+/// first line in one drawing, and `2 reach` and `reach` along the second line in the other, the
+/// other corners at the centre. The seven other drawings are the base's, around the centre.
+fn blended_triangle_case(package: &Package, reach: f64, name: &str, expect: &str) -> Value {
+    let rest = &package.mouth.parts[2].shapes[0].positions;
+    let centre = [rest[rest.len() - 2], rest[rest.len() - 1]];
+    let drawing = |first: [f64; 2], second: [f64; 2]| {
+        let mut positions: Vec<f64> = rest.chunks(2).flat_map(|_| centre).collect();
+        for (slot, offset) in [(0, first), (2, second)] {
+            positions[slot] = centre[0] + offset[0];
+            positions[slot + 1] = centre[1] + offset[1];
+        }
+        json!(positions)
+    };
+    json!({
+        "name": name,
+        "patch": [
+            replace("/mouth/parts/2/shapes/0/positions", drawing([reach, 0.0], [2.0 * reach, 0.0])),
+            replace("/mouth/parts/2/shapes/1/positions", drawing([0.0, 2.0 * reach], [0.0, reach])),
+        ],
+        "expect": expect,
+    })
 }
 
 /// A drawing with no picture of its own: a part that hides when empty (the inner mouth) may have
@@ -94,17 +101,29 @@ pub(super) fn unpictured_cases() -> Vec<Value> {
     ]
 }
 
-/// A drawing whose triangles cover more than one canvas is refused: what a renderer fills for a
-/// frame is bounded.
+/// The work of a mouth, `blend_work`, is at most one canvas: what a renderer fills for a frame is
+/// bounded, however the drawings blend.
 pub(super) fn draw_work_cases() -> Vec<Value> {
     let package = Package::load(&package_json().to_string(), &assets())
         .unwrap_or_else(|_| unreachable!("the base is valid"));
     vec![
-        draw_work_case(&package, 0.99, "a drawing covering 0.99 canvases", "ok"),
+        draw_work_case(&package, 0.99, "a mouth that works 0.99 canvases", "ok"),
         draw_work_case(
             &package,
             1.01,
-            "a drawing covering 1.01 canvases",
+            "a mouth that works 1.01 canvases",
+            "tooLarge",
+        ),
+        blended_triangle_case(
+            &package,
+            40.0,
+            "two drawings with no area that blend into triangles of well under a canvas",
+            "ok",
+        ),
+        blended_triangle_case(
+            &package,
+            60.0,
+            "two drawings with no area that blend into triangles of over a canvas",
             "tooLarge",
         ),
     ]
@@ -132,7 +151,7 @@ pub(super) fn run_composite(case: &Value) -> Value {
 }
 
 /// A part laid over a picture once: one to three layers, three coverages, three texel alphas, and
-/// a layer that is all but absent.
+/// a layer that is all but absent, and mixes of clear and opaque texels.
 pub(super) fn composite_cases() -> Vec<Value> {
     // Straight colours of the drawings, premultiplied by the alpha of the texel.
     let straight = [
@@ -173,6 +192,28 @@ pub(super) fn composite_cases() -> Vec<Value> {
         "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": texel(1, 128.0), "alpha": 0.5 }],
         "coverage": 0.5,
     });
+    // The drawings are mixed by their weights, whatever the opacity of their texels: a clear texel
+    // of a heavy drawing clears the mix in proportion to its weight.
+    let mixed = json!({
+        "name": "an opaque and a clear texel at equal weights, over a picture",
+        "under": [120, 80, 40, 255],
+        "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": [0, 0, 0, 0], "alpha": 0.5 }],
+        "coverage": 1.0,
+    });
+    // A drawing that comes in under the layer threshold and over it, in front of a drawing of a
+    // clear texel that has all the weight: the picture is the same to under a 255th.
+    let before = json!({
+        "name": "a clear texel with all the weight, the drawing before it under the threshold",
+        "under": [120, 80, 40, 255],
+        "layers": [{ "texel": [0, 0, 0, 0], "alpha": 1.0 }],
+        "coverage": 1.0,
+    });
+    let after = json!({
+        "name": "the same with the drawing before it over the threshold",
+        "under": [120, 80, 40, 255],
+        "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": [0, 0, 0, 0], "alpha": 0.99989 }],
+        "coverage": 1.0,
+    });
     // A drawing that comes in at a weight of 0.0002 changes a feathered pixel by under a 255th.
     let one = json!({
         "name": "a feathered pixel, one layer",
@@ -186,7 +227,7 @@ pub(super) fn composite_cases() -> Vec<Value> {
         "layers": [{ "texel": texel(0, 255.0), "alpha": 1.0 }, { "texel": texel(1, 255.0), "alpha": 0.0002 }],
         "coverage": 0.5,
     });
-    for mut case in [clear, one, two] {
+    for mut case in [clear, mixed, before, after, one, two] {
         case["expected"] = run_composite(&case);
         cases.push(case);
     }

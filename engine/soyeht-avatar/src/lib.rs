@@ -54,8 +54,8 @@ pub use mesh::{Layer, composite};
 pub use mouth::Mouth;
 pub use package::{
     AssetInfo, Atlas, Chest, EYE_IDS, ErrorKind, FORMAT, FileDecl, MAX_DOCUMENT_BYTES,
-    MAX_FILE_BYTES, MAX_FILES, MeshPart, MouthModel, Package, PackageError, PartKind, Patch,
-    Region, ShapeMesh, Size, VERSION, Warp, png_size,
+    MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, MeshPart, MouthModel, Package, PackageError,
+    PartKind, Patch, Region, ShapeMesh, Size, VERSION, Warp, plain_png_path, png_size,
 };
 pub use params::{MorphWeights, Params, Shape, weights_from_params};
 pub use phoneme::{Kind, Phoneme};

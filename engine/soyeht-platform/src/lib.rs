@@ -30,6 +30,7 @@
 //!
 //! The crate has no Soyeht dependencies.
 
+pub mod cpu;
 pub mod crash;
 pub mod diagnostics;
 pub mod dialog;

@@ -4,7 +4,7 @@
 //! space; the proportions are the canvas's, so one description gives a 96 pixel avatar for the
 //! tests and a larger one for the frame budget.
 
-use crate::avatar::{Avatar, LoadError, Pixmap};
+use crate::{Avatar, LoadError, Pixmap};
 use serde_json::{Value, json};
 use soyeht_avatar::{AssetInfo, EYE_IDS, Package, Shape};
 use std::f64::consts::TAU;

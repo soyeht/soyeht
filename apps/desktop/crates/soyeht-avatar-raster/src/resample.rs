@@ -96,7 +96,8 @@ impl Field {
         let places = places(warp, pose.zoom.max(1e-6), scale);
         let at = |x: u32, y: u32| {
             let [sx, sy] = warp.source_point(pose, f64::from(x) / scale.0, f64::from(y) / scale.1);
-            [sx as f32, sy as f32]
+            // The rule answers in pixels of the canvas; the picture read is at the size of the output.
+            [(sx * scale.0) as f32, (sy * scale.1) as f32]
         };
         let cells = (
             out.0.div_ceil(COARSE) as usize,
@@ -216,7 +217,7 @@ fn blue_first(texel: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::avatar::pixmap::pack;
+    use crate::pixmap::pack;
 
     #[test]
     fn an_opaque_texel_swaps_red_and_blue_and_a_clear_one_is_nothing() {

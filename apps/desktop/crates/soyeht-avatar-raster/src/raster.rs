@@ -24,7 +24,7 @@ use super::{
     resample::{Field, resample},
     triangles::{Corner, Reading, fill},
 };
-use soyeht_avatar::{Frame, MeshPart};
+use soyeht_avatar::{Frame, MeshPart, eye_frame};
 use std::sync::Arc;
 
 /// A picture drawn, borrowed from the rasteriser until its next frame.
@@ -36,9 +36,66 @@ pub struct Picture<'a> {
     pub bgra: &'a [u8],
 }
 
+/// The pictures of the avatar at the size of the picture drawn: the base, the eye frames and the
+/// atlas of the mouth, each reduced once by an area average (see `Pixmap::downscaled`) so that
+/// drawing from them is a read at about one texel for each pixel, however small the picture is.
+struct Level {
+    width: u32,
+    base: Pixmap,
+    atlas: Pixmap,
+    /// The eye frames by id, with the rectangle each takes at this size.
+    eyes: Vec<(String, [u32; 4], Pixmap)>,
+    /// Pixels of this level for a pixel of the canvas, across and down.
+    scale: (f32, f32),
+}
+
+impl Level {
+    fn new(avatar: &Avatar, width: u32, height: u32) -> Self {
+        let canvas = avatar.package().canvas;
+        let scale = (
+            width as f32 / canvas.width as f32,
+            height as f32 / canvas.height as f32,
+        );
+        let reduced = |picture: &Pixmap| {
+            let size = |side: u32, by: f32| ((side as f32 * by).round() as u32).max(1);
+            picture.downscaled(
+                size(picture.width(), scale.0),
+                size(picture.height(), scale.1),
+            )
+        };
+        let eyes = avatar
+            .eyes()
+            .iter()
+            .map(|patch| {
+                // The rectangle covers the pixels the patch touches, so it never leaves a seam.
+                let [x, y, w, h] = patch.rect;
+                let left = (x as f32 * scale.0).floor() as u32;
+                let top = (y as f32 * scale.1).floor() as u32;
+                let right = ((x + w) as f32 * scale.0).ceil() as u32;
+                let bottom = ((y + h) as f32 * scale.1).ceil() as u32;
+                let rect = [left, top, (right - left).max(1), (bottom - top).max(1)];
+                (
+                    patch.id.clone(),
+                    rect,
+                    patch.picture.downscaled(rect[2], rect[3]),
+                )
+            })
+            .collect();
+        Self {
+            width,
+            base: avatar.base().downscaled(width, height),
+            atlas: reduced(avatar.atlas()),
+            eyes,
+            scale,
+        }
+    }
+}
+
 pub struct Rasteriser {
     avatar: Arc<Avatar>,
-    /// The base picture with this frame's eyes and mouth on it, in the pixels of the canvas.
+    /// The pictures at the size last drawn; made again when the size changes.
+    level: Option<Level>,
+    /// The base picture with this frame's eyes and mouth on it, at the size of the picture.
     composed: Pixmap,
     field: Field,
     out: Vec<u8>,
@@ -49,26 +106,27 @@ impl Rasteriser {
         let composed = avatar.base().clone();
         Self {
             avatar,
+            level: None,
             composed,
             field: Field::default(),
             out: Vec::new(),
         }
     }
 
-    /// The size a picture of `width` pixels across has: the canvas's proportions, at least one
-    /// pixel each way.
+    /// The size a picture of `width` pixels across has: the canvas's proportions, never larger
+    /// than the canvas and at least one pixel each way.
     pub fn output_size(&self, width: u32) -> (u32, u32) {
         let canvas = self.avatar.package().canvas;
-        let width = width.max(1);
+        let width = width.clamp(1, canvas.width);
         let height =
             (u64::from(width) * u64::from(canvas.height)).div_ceil(u64::from(canvas.width));
         (width, u32::try_from(height).unwrap_or(u32::MAX).max(1))
     }
 
-    /// Draws `frame` as a picture `width` pixels across.
+    /// Draws `frame` as a picture `width` pixels across (see `output_size`).
     pub fn render(&mut self, frame: &Frame, width: u32) -> Picture<'_> {
         let (width, height) = self.output_size(width);
-        self.compose(frame);
+        self.compose(frame, width, height);
         let package = self.avatar.package();
         let canvas = (package.canvas.width, package.canvas.height);
         self.field
@@ -82,16 +140,32 @@ impl Rasteriser {
         }
     }
 
-    /// Steps 1 and 2: the base picture, the eyes and the mouth, in the pixels of the canvas.
-    pub(super) fn compose(&mut self, frame: &Frame) {
-        let avatar = Arc::clone(&self.avatar);
-        self.composed.copy_from(avatar.base());
-        if let Some(patch) = avatar.eye_patch(frame.acting.eye) {
-            lay_patch(&mut self.composed, &patch.picture, patch.rect);
+    /// Steps 1 and 2: the base picture, the eyes and the mouth, at the size of the picture.
+    pub(super) fn compose(&mut self, frame: &Frame, width: u32, height: u32) {
+        if self.level.as_ref().is_none_or(|level| level.width != width) {
+            self.level = Some(Level::new(&self.avatar, width, height));
+        }
+        let Some(level) = &self.level else {
+            return;
+        };
+        self.composed.copy_from(&level.base);
+        let wanted = eye_frame(frame.acting.eye);
+        if let Some((_, rect, picture)) = level
+            .eyes
+            .iter()
+            .find(|(id, _, _)| Some(id.as_str()) == wanted)
+        {
+            lay_patch(&mut self.composed, picture, *rect);
         }
         let weights = frame.weights.all();
-        for part in avatar.package().mouth.in_drawing_order() {
-            draw_part(&mut self.composed, avatar.atlas(), part, &weights);
+        for part in self.avatar.package().mouth.in_drawing_order() {
+            draw_part(
+                &mut self.composed,
+                &level.atlas,
+                level.scale,
+                part,
+                &weights,
+            );
         }
     }
 }
@@ -105,11 +179,17 @@ fn lay_patch(target: &mut Pixmap, patch: &Pixmap, rect: [u32; 4]) {
     }
 }
 
-/// One part of the mouth, at the geometry of the weights: each triangle is drawn once, reading the
+/// One part of the mouth, at the geometry of the weights (in pixels of the canvas, times `scale`): each triangle is drawn once, reading the
 /// cell of every drawing that takes part, and the part is laid over the picture once. The
 /// drawings are mixed with each other, never one by one with what is below, so a drawing coming
 /// in or out changes the colour of the part and not the edge of it.
-fn draw_part(target: &mut Pixmap, atlas: &Pixmap, part: &MeshPart, weights: &[f64; 9]) {
+fn draw_part(
+    target: &mut Pixmap,
+    atlas: &Pixmap,
+    scale: (f32, f32),
+    part: &MeshPart,
+    weights: &[f64; 9],
+) {
     let drawn: Vec<(&[f64], f32)> = part
         .layers(weights)
         .iter()
@@ -140,7 +220,7 @@ fn draw_part(target: &mut Pixmap, atlas: &Pixmap, part: &MeshPart, weights: &[f6
                 .and_then(|a| a.get(i))
                 .map_or(1.0, |a| *a as f32);
             Some(Corner {
-                at: [at[0] as f32, at[1] as f32],
+                at: [at[0] as f32 * scale.0, at[1] as f32 * scale.1],
                 feather: feather * opacity,
             })
         });

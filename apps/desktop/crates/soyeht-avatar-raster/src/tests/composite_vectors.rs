@@ -3,7 +3,7 @@
 //! rasteriser works in 256ths on bytes, so it agrees with the file's floating point to a couple of
 //! units of 255.
 
-use crate::avatar::pixmap::{over, pack, unpack};
+use crate::pixmap::{mix, over, pack, unpack};
 use std::path::PathBuf;
 
 const UNITS: i32 = 2;
@@ -26,13 +26,13 @@ fn the_rasteriser_composites_a_part_as_the_vectors_say() {
     assert!(cases.len() >= 27);
     for case in cases {
         let under = pack(bytes(colour(&case["under"])));
-        // The part is mixed from clear and laid over the picture below once, at its coverage:
-        // the same as laying each layer over the picture below and mixing at the coverage.
+        // The layers are mixed by their weights from a clear picture, and the mix is laid over
+        // the picture below once, at the coverage.
         let mut picture = 0;
         for layer in case["layers"].as_array().unwrap() {
             let texel = pack(bytes(colour(&layer["texel"])));
             let covers = (layer["alpha"].as_f64().unwrap() * 256.0).round() as u32;
-            picture = over(picture, texel, covers);
+            picture = mix(picture, texel, covers);
         }
         let covers = (case["coverage"].as_f64().unwrap() * 256.0).round() as u32;
         let got = unpack(over(under, picture, covers));

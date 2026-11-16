@@ -1,5 +1,5 @@
 use super::synthetic::{BASE, MARKER, Spec, eye_colour, shape_colour};
-use crate::avatar::{Picture, Rasteriser, resample::Field};
+use crate::{Picture, Rasteriser, resample::Field};
 use soyeht_avatar::{
     ActingFrame, Audio, EYE_IDS, Eye, Frame, Gaze, Lid, MorphWeights, Params, Pose, Runtime, Shape,
     State, Tune, weights_from_params,
@@ -253,7 +253,12 @@ fn the_grid_reads_where_the_rule_says() {
                 (f64::from(x) + 0.5) * f64::from(LARGE) / f64::from(out.0),
                 (f64::from(y) + 0.5) * f64::from(LARGE) / f64::from(out.1),
             );
+            // The rule answers in pixels of the canvas, the field in pixels of the output.
             let exact = package.warp.source_point(&pose, cx, cy);
+            let exact = [
+                exact[0] * f64::from(out.0) / f64::from(LARGE),
+                exact[1] * f64::from(out.1) / f64::from(LARGE),
+            ];
             let (read, _, _) = field.row_run(x, y);
             worst = worst
                 .max((exact[0] - f64::from(read[0])).abs())
@@ -329,4 +334,53 @@ fn the_inner_mouth_does_not_pop_in_when_a_drawing_passes_the_layer_threshold() {
         bgra: &under,
     };
     assert_eq!(changed(&before, &over, 8), 0);
+}
+
+#[test]
+fn a_picture_drawn_smaller_does_not_shimmer_as_the_head_sways() {
+    // A bar a few pixels wide, moved a canvas pixel at a time while the picture is drawn four
+    // times smaller: the bar's total light stays the same, because the pictures are reduced by
+    // an area average first. Four taps of a point sample would see it come and go.
+    let mut raster = rasteriser(SPEC);
+    let [mx, my, m] = SPEC.marker();
+    let width = SPEC.side / 4;
+    let light = |raster: &mut Rasteriser, shift: f64| -> f64 {
+        let pose = Pose {
+            head_x: shift,
+            ..NEUTRAL
+        };
+        let picture = raster.render(&frame(rest(), OPEN_EYES, pose), width);
+        let mut sum = 0.0;
+        for y in my / 4 - 2..(my + m) / 4 + 3 {
+            for x in mx / 4 - 2..(mx + m) / 4 + 4 {
+                let seen = rgba(&picture, x, y);
+                sum += f64::from(seen[0]) - f64::from(BASE[0]);
+            }
+        }
+        sum
+    };
+    let lights: Vec<f64> = [0.0, 1.0, 2.0, 3.0, 1.5, 0.5]
+        .iter()
+        .map(|shift| light(&mut raster, *shift))
+        .collect();
+    let (low, high) = lights
+        .iter()
+        .fold((f64::MAX, f64::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
+    assert!(high > 0.0 && (high - low) / high < 0.04, "{lights:?}");
+}
+
+#[test]
+fn a_size_drawn_again_is_the_same_picture() {
+    let mut raster = rasteriser(SPEC);
+    let wanted = frame(
+        towards_a(0.4),
+        OPEN_EYES,
+        Pose {
+            rot: 1.5,
+            ..NEUTRAL
+        },
+    );
+    let first = raster.render(&wanted, SPEC.side / 2).bgra.to_vec();
+    raster.render(&wanted, SPEC.side / 4);
+    assert_eq!(raster.render(&wanted, SPEC.side / 2).bgra, first);
 }

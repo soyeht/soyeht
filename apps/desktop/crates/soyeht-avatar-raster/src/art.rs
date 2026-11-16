@@ -7,22 +7,16 @@
 use super::pixmap::Pixmap;
 use serde::Deserialize;
 use soyeht_avatar::{
-    AssetInfo, ErrorKind, Eye, FileDecl, MAX_DOCUMENT_BYTES, MAX_FILE_BYTES, MAX_FILES, Package,
-    PackageError, eye_frame, png_size,
+    AssetInfo, ErrorKind, FileDecl, MAX_DOCUMENT_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES,
+    Package, PackageError, plain_png_path, png_size,
 };
-use soyeht_platform::log::Failure;
-use std::{
-    fs::File,
-    io::{self, Cursor, Read},
-    path::{Component, Path},
-};
+use soyeht_platform::{fs::read_regular_under, log::Failure};
+use std::{collections::HashMap, io, io::Cursor, path::Path};
 
 /// The document of a package folder.
 const MANIFEST: &str = "avatar.json";
 /// The most a decoder may allocate for one picture: a 2048 by 2048 picture is 16 MiB of texels.
 const DECODE_BUDGET: u64 = 64 * 1024 * 1024;
-/// The PNG signature and its header chunk: what `png_size` reads.
-const PNG_HEADER: u64 = 24;
 
 /// Why an avatar did not load.
 #[derive(Debug)]
@@ -108,10 +102,9 @@ impl Avatar {
         &self.atlas
     }
 
-    /// The frame that draws what the eyes do, if the base picture's open eyes are not it.
-    pub(super) fn eye_patch(&self, eye: Eye) -> Option<&EyePatch> {
-        let id = eye_frame(eye)?;
-        self.eyes.iter().find(|patch| patch.id == id)
+    /// The eye frames, with the rectangle each takes on the canvas.
+    pub(super) fn eyes(&self) -> &[EyePatch] {
+        &self.eyes
     }
 }
 
@@ -122,10 +115,14 @@ struct Listing {
     files: Vec<FileDecl>,
 }
 
-/// Loads the package in `dir`. The document is checked against the files it lists before any
-/// picture is decoded, and a path it names that leaves the folder is never opened.
+/// Loads the package in `dir`. The names the document lists are checked against the package
+/// rule for a path (`plain_png_path`) before anything is opened, and every file is opened once, without
+/// following a link, only if it is a regular file (`soyeht_platform::fs::read_regular_under`): the
+/// bytes that were measured for the load rules are the bytes that are decoded. The document is
+/// checked against the files before any picture is decoded.
 pub fn load_folder(dir: &Path) -> Result<Avatar, LoadError> {
-    let json = read_limited(&dir.join(MANIFEST), MAX_DOCUMENT_BYTES as u64)?;
+    let json = read_regular_under(dir, Path::new(MANIFEST), MAX_DOCUMENT_BYTES as u64)
+        .map_err(|error| LoadError::Io(error.kind()))?;
     let json = String::from_utf8(json).map_err(|_| {
         LoadError::Package(PackageError {
             kind: ErrorKind::Malformed,
@@ -134,58 +131,50 @@ pub fn load_folder(dir: &Path) -> Result<Avatar, LoadError> {
     })?;
     // A document that does not parse has no listing: the load rules then name what is wrong.
     let declared = serde_json::from_str::<Listing>(&json).map_or_else(|_| Vec::new(), |l| l.files);
-    let assets: Vec<AssetInfo> = declared
-        .iter()
-        .take(MAX_FILES + 1)
-        .filter_map(|file| asset_info(dir, &file.path))
-        .collect();
+    let (assets, mut files) = read_listed(dir, &declared);
     let package = Package::load(&json, &assets).map_err(LoadError::Package)?;
     Avatar::from_pictures(package, |path| {
-        let relative = plain_relative(path).ok_or(LoadError::Picture)?;
-        decode(&read_limited(&dir.join(relative), MAX_FILE_BYTES)?)
+        decode(&files.remove(path).ok_or(LoadError::Picture)?)
     })
 }
 
-/// A path of the package folder that stays inside it: relative, with plain names only.
-fn plain_relative(path: &str) -> Option<&Path> {
-    let path = Path::new(path);
-    let plain = path
-        .components()
-        .all(|part| matches!(part, Component::Normal(_)));
-    (plain && path.components().next().is_some()).then_some(path)
-}
-
-/// The size in bytes and the dimensions of a listed picture. A file that cannot be opened or a
-/// path that leaves the folder gets no entry, so the load rules report it as missing.
-fn asset_info(dir: &Path, path: &str) -> Option<AssetInfo> {
-    let relative = plain_relative(path)?;
-    let Ok(file) = File::open(dir.join(relative)) else {
-        return None;
-    };
-    let Ok(meta) = file.metadata() else {
-        return None;
-    };
-    let mut header = Vec::new();
-    // A header that cannot be read leaves the size unknown, which the load rules refuse.
-    let read = file.take(PNG_HEADER).read_to_end(&mut header);
-    let size = read.is_ok().then(|| png_size(&header)).flatten();
-    Some(AssetInfo {
-        path: path.to_owned(),
-        bytes: meta.len(),
-        size,
-    })
-}
-
-/// The bytes of a file of at most `limit` bytes.
-fn read_limited(path: &Path, limit: u64) -> Result<Vec<u8>, LoadError> {
-    let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|file| file.take(limit + 1).read_to_end(&mut bytes))
-        .map_err(|error| LoadError::Io(error.kind()))?;
-    if bytes.len() as u64 > limit {
-        return Err(LoadError::Io(io::ErrorKind::InvalidData));
+/// The pictures a document lists, read once each: what the load rules need to know of them, and
+/// their bytes. A name that is not a plain path is not opened, and neither is one past the limits
+/// of the load rules (it is told to the rules as larger than they allow, which refuses it); a file
+/// that cannot be read at all is told to the rules as missing.
+fn read_listed(dir: &Path, declared: &[FileDecl]) -> (Vec<AssetInfo>, HashMap<String, Vec<u8>>) {
+    let (mut assets, mut files) = (Vec::new(), HashMap::new());
+    let mut total = 0u64;
+    for file in declared.iter().take(MAX_FILES + 1) {
+        if !plain_png_path(&file.path) {
+            continue;
+        }
+        let too_large = AssetInfo {
+            path: file.path.clone(),
+            bytes: MAX_FILE_BYTES + 1,
+            size: None,
+        };
+        if total > MAX_TOTAL_BYTES {
+            assets.push(too_large);
+            continue;
+        }
+        match read_regular_under(dir, Path::new(&file.path), MAX_FILE_BYTES) {
+            Ok(bytes) => {
+                total += bytes.len() as u64;
+                assets.push(AssetInfo {
+                    path: file.path.clone(),
+                    bytes: bytes.len() as u64,
+                    size: png_size(&bytes),
+                });
+                files.insert(file.path.clone(), bytes);
+            }
+            // Larger than a picture may be, or not a regular file at all.
+            Err(error) if error.kind() == io::ErrorKind::InvalidData => assets.push(too_large),
+            // Missing, unreadable or behind a link: the rules say it is not there.
+            Err(error) => soyeht_platform::log::failure("avatar.file_unreadable", &error),
+        }
     }
-    Ok(bytes)
+    (assets, files)
 }
 
 /// A PNG as a premultiplied picture.

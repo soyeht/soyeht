@@ -11,7 +11,7 @@
 //! belongs to the triangle whose edge runs one way): a feathered part drawn at less than full
 //! opacity shows no seam and no double-drawn line.
 
-use super::pixmap::{Pixmap, over};
+use super::pixmap::{Pixmap, mix};
 
 /// Corner coordinates are kept in this many parts of a pixel.
 const SUBPIXEL: i64 = 16;
@@ -59,11 +59,14 @@ fn edge(a: Snapped, b: Snapped, p: Snapped) -> i64 {
     (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
 }
 
-/// Whether a pixel exactly on the edge `a` to `b` is this triangle's. The same edge walked the
-/// other way (by the neighbour) answers the opposite.
+/// Whether a pixel exactly on the edge `a` to `b` is this triangle's: the top-left rule. The
+/// triangle is walked so that its inside is on the positive side of its edges (`edge`) with y
+/// going down, which makes a top edge one that runs to the right (`dy == 0, dx > 0`) and a left
+/// edge one that runs up (`dy < 0`). The same edge walked the other way, by the neighbour, answers
+/// the opposite.
 fn owns_edge(a: Snapped, b: Snapped) -> bool {
     let (dx, dy) = (b.x - a.x, b.y - a.y);
-    dy > 0 || (dy == 0 && dx > 0)
+    dy < 0 || (dy == 0 && dx > 0)
 }
 
 /// Which edges of the triangle (the one opposite each corner) it owns, for the pixels exactly on them.
@@ -154,7 +157,7 @@ pub(super) fn fill(
             let mut picture = 0;
             for (us, vs, covers) in &reads[..readings.len()] {
                 let texel = source.sample(dot(&e, us), dot(&e, vs));
-                picture = over(picture, texel, *covers);
+                picture = mix(picture, texel, *covers);
             }
             let coverage = dot(&e, &feather).round().clamp(0.0, WHOLE);
             target.lay_over(x as u32, y, picture, coverage as u32);
@@ -428,5 +431,29 @@ mod tests {
         super::fill(&mut two, &white, triangle, &[reading(1.0), reading(0.5)]);
         assert_eq!(one, two);
         assert_eq!(one.at(0), [100, 100, 100, 255]);
+    }
+
+    #[test]
+    fn a_pixel_exactly_on_a_shared_edge_is_the_triangle_whose_top_or_left_it_is() {
+        let white = flat(1, 1, [255, 255, 255, 255]);
+        let red = flat(1, 1, [255, 0, 0, 255]);
+        // Two rectangles that share the vertical edge x = 2.5, the centre of the pixel column 2;
+        // the right one has it as its left edge.
+        let mut target = flat(6, 6, [0, 0, 0, 255]);
+        quad(&mut target, &white, [0.0, 0.0, 2.5, 6.0], 1.0);
+        quad(&mut target, &red, [2.5, 0.0, 6.0, 6.0], 1.0);
+        assert!((0..6).all(|y| target.at(y * 6 + 2) == [255, 0, 0, 255]));
+        assert!((0..6).all(|y| target.at(y * 6 + 1) == [255, 255, 255, 255]));
+        // The same with the shared edge y = 2.5, a top edge of the lower rectangle.
+        let mut target = flat(6, 6, [0, 0, 0, 255]);
+        quad(&mut target, &white, [0.0, 0.0, 6.0, 2.5], 1.0);
+        quad(&mut target, &red, [0.0, 2.5, 6.0, 6.0], 1.0);
+        assert!((0..6).all(|x| target.at(2 * 6 + x) == [255, 0, 0, 255]));
+        assert!((0..6).all(|x| target.at(6 + x) == [255, 255, 255, 255]));
+        // And on the outside of a lone rectangle, the right and the bottom edges are not drawn.
+        let mut target = flat(6, 6, [0, 0, 0, 255]);
+        quad(&mut target, &white, [0.5, 0.5, 2.5, 2.5], 1.0);
+        assert_eq!(target.at(6 + 1), [255, 255, 255, 255]);
+        assert_eq!(target.at(2 * 6 + 2), [0, 0, 0, 255]);
     }
 }

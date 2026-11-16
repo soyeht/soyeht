@@ -2,14 +2,12 @@
 //! cost on a machine (`examples/avatar_stage.rs`). A script plays the conversation's four states
 //! in turn, with the level of a voice while it speaks, so the energy-only mouth moves.
 
-use super::{
-    art::load_folder,
-    view::{AvatarStage, Drive, Driver},
-};
+use super::view::{AvatarStage, Drive, Driver};
 use crate::{gallery::open_centered, theme::ThemeName};
 use gpui::{App, AppContext};
 use gpui_platform::application;
 use soyeht_avatar::{Audio, State};
+use soyeht_avatar_raster::load_folder;
 use soyeht_platform::log;
 use std::{path::PathBuf, sync::Arc};
 

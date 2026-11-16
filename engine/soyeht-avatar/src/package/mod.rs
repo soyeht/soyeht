@@ -9,14 +9,16 @@ pub(crate) mod limits;
 mod model;
 mod png;
 mod validate;
+#[cfg(test)]
+pub(crate) use validate::blend_work;
 
-pub use limits::{MAX_DOCUMENT_BYTES, MAX_FILE_BYTES, MAX_FILES};
+pub use limits::{MAX_DOCUMENT_BYTES, MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES};
 pub use model::{
     Atlas, Chest, EYE_IDS, FORMAT, FileDecl, MeshPart, MouthModel, Package, PartKind, Patch,
     Region, ShapeMesh, Size, VERSION, Warp,
 };
 pub use png::png_size;
-pub use validate::{AssetInfo, ErrorKind, PackageError};
+pub use validate::{AssetInfo, ErrorKind, PackageError, plain_png_path};
 
 impl Package {
     /// Parse a package document and check every load rule against the files the caller has.

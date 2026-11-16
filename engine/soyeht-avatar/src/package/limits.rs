@@ -14,7 +14,7 @@ pub(crate) const MAX_SIDE: u32 = 2048;
 pub const MAX_FILES: usize = 64;
 /// One picture file, and all of them together (bytes).
 pub const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
-pub(crate) const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
+pub const MAX_TOTAL_BYTES: u64 = 8 * 1024 * 1024;
 /// The pictures once decoded, in pixels (four bytes each when decoded: 32 megabytes). A few
 /// kilobytes of PNG can hold a 2048 by 2048 picture, so the file bytes alone do not bound this.
 pub(crate) const MAX_PIXELS: u64 = 8 * 1024 * 1024;
@@ -30,9 +30,9 @@ pub(crate) const MAX_TRIANGLES: usize = 6000;
 /// continuous. A power of 8 made the share go from a tenth to nine tenths while the weight moved a
 /// fifth: about one frame, a swap of the pictures.
 pub(crate) const MAX_TEXTURE_POWER: f64 = 2.0;
-/// How many canvas areas the triangles of one drawing may cover, its three parts together. A mouth
-/// is a small part of a face (the lab's covers a twentieth of its canvas), and every drawing taking
-/// part in a frame is drawn over the one before, so what a renderer fills for a frame is bounded by
-/// this times the canvas times the drawings that take part; a package of thousands of overlapping
-/// triangles the size of the canvas is refused.
+/// How many canvases of work (`validate::blend_work`) the triangles of a mouth may add up to. A
+/// mouth is a small part of a face (the lab's adds up to a quarter of its canvas), and every
+/// drawing taking part in a frame is drawn over the one before, so what a renderer fills for a
+/// frame is bounded by this times the drawings that take part; a package of thousands of
+/// overlapping triangles the size of the canvas, or of drawings that blend into them, is refused.
 pub(crate) const MAX_DRAW_AREA: f64 = 1.0;
