@@ -183,6 +183,7 @@ impl Core {
         soyeht_ptyd::shell::warm_default_login_shell();
         log_stale_export_cleanup(directory);
         let mut store = Store::open(directory).map_err(errors::storage)?;
+        crate::avatars::sweep_orphans(directory, &store);
         let workspaces = store.workspaces().map_err(errors::storage)?;
         for line in crate::workspace_layout::fallback_diagnostics(
             workspaces
