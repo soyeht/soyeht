@@ -1,6 +1,6 @@
 {
   "central_objects": {
-    "core_impl_files": 100,
+    "core_impl_files": 101,
     "core_open_fields": 42,
     "engine_client_extension_files": 43,
     "workbench_impl_files": 77
@@ -28,7 +28,7 @@
     },
     "engine": {
       "clones": 263,
-      "duplicated_lines": 1982
+      "duplicated_lines": 1983
     },
     "ios": {
       "clones": 4,

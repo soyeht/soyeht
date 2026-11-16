@@ -27,7 +27,7 @@ use crate::{
 };
 use soyeht_ptyd::{
     client::{Client, IO_TIMEOUT},
-    wire::{FEATURE_PANE_BINDING, Request, Response},
+    wire::{FEATURE_FOREGROUND, FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
     sync::{
@@ -82,6 +82,8 @@ pub struct Supervisor {
     generation: u32,
     /// Whether the supervisor accepts the pane binding in a terminal's environment.
     pane_binding: bool,
+    /// Whether the supervisor answers `Foreground`, the programs a terminal runs (ADR 0165).
+    foreground: bool,
 }
 
 impl Supervisor {
@@ -90,6 +92,7 @@ impl Supervisor {
             id: Arc::from(port.supervisor_id()),
             generation: port.supervisor_generation(),
             pane_binding: port.supports(FEATURE_PANE_BINDING),
+            foreground: port.supports(FEATURE_FOREGROUND),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -108,6 +111,11 @@ impl Supervisor {
     /// Whether a terminal started through this link may carry its pane binding (ADR 0165).
     pub(crate) fn takes_pane_binding(&self) -> bool {
         self.pane_binding
+    }
+
+    /// Whether this link may ask what a terminal runs in its foreground (ADR 0165).
+    pub(crate) fn reports_foreground(&self) -> bool {
+        self.foreground
     }
 
     /// Whether a call left the stream in an unknown state. Such a handle only fails.

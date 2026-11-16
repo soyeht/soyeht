@@ -3,6 +3,7 @@ use crate::{
     child::{Child, Reach},
     io::Output,
 };
+use soyeht_platform::process::inspect::{Program, foreground_of_terminal};
 use std::{
     fs::File,
     io,
@@ -29,6 +30,11 @@ impl Terminal {
         }
         Ok(())
     }
+}
+
+/// The program that leads the foreground process group of `terminal`.
+pub(super) fn foreground(terminal: &Terminal, _child: &Child) -> io::Result<Vec<Program>> {
+    foreground_of_terminal(&terminal.0)
 }
 
 /// Opens a pseudo terminal of `rows` x `cols`; returns `(master, slave)`, both close-on-exec.

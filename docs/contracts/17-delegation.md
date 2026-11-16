@@ -282,6 +282,16 @@ directions. A helper reaches its parent only through its report. The web family 
 creates a pane); those are the workspace's ordinary web panes and count against `webPanesPerWorkspace`. A helper
 is a worker, never the chief. Delegated helpers are left out of every other pane's `agent.list`.
 
+**What `agent.list` lists.** The agent panes the caller can message, in every workspace with its own first, and the
+terminal panes whose foreground program is a known harness (Claude Code, Codex, OpenCode or Cursor Agent), each as
+`{paneId, name, harness, kind, workspaceName}` with `kind` `agent` or `terminal`, and for a terminal the harness's name
+as `harness` (contract 08, ADR 0165, contract 05 "The harness a terminal pane runs"). A terminal that runs a shell or
+any other program is not listed. The terminals are as fresh as one second: a list asked after a longer quiet waits for a
+new read of the terminals, which runs off the engine's lock; it answers with what is known when the supervisor is away,
+does not list the `foreground` feature, or fails (contract 05). A listed terminal is named, not yet addressable: `agent.message` to it answers
+`not_found` with "A terminal pane cannot receive messages yet" until a terminal can receive (ADR 0165, slice 5), so a
+sender must not be told it can be reached.
+
 ## 8. Delivery, the mode, permissions and what is data
 
 ### The report path
