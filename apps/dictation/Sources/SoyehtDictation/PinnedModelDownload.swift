@@ -1,3 +1,4 @@
+import CoreML
 import CryptoKit
 import Foundation
 import SoyehtClient
@@ -142,5 +143,25 @@ enum PinnedDownload {
       try FileManager.default.removeItem(at: target)
     }
     try FileManager.default.moveItem(at: temporary, to: target)
+  }
+}
+
+extension PinnedDownload {
+  /// Fetches a pinned model (or, when it is `installed`, checks it) and loads the compiled CoreML
+  /// program called `compiled` that it holds, for the Neural Engine and the CPU. Only a fetch reports
+  /// a download; the load reports that it is preparing.
+  static func loadCompiled(
+    _ model: PinnedModel, compiled: String, in directory: URL, installed: Bool,
+    report: @escaping @Sendable (DictationModelStage) -> Void
+  ) async throws -> MLModel {
+    try await fetch(model, to: directory, offline: installed) {
+      if !installed { report(.downloading($0)) }
+    }
+    report(.preparing)
+    let configuration = MLModelConfiguration()
+    configuration.computeUnits = .cpuAndNeuralEngine
+    return try MLModel(
+      contentsOf: directory.appendingPathComponent(compiled, isDirectory: true),
+      configuration: configuration)
   }
 }

@@ -38,15 +38,9 @@ final class SmartTurnModelHolder: LocalModelHolder<MLModel>, @unchecked Sendable
     location: ModelCacheLocation = ModelCacheLocation(modelId: PinnedModel.smartTurn.repository)
   ) {
     super.init(location: location) { installed, directory, report in
-      try await PinnedDownload.fetch(
-        .smartTurn, to: directory, offline: installed
-      ) { if !installed { report(.downloading($0)) } }
-      report(.preparing)
-      let configuration = MLModelConfiguration()
-      configuration.computeUnits = .cpuAndNeuralEngine
-      return try MLModel(
-        contentsOf: directory.appendingPathComponent(Self.compiledModel, isDirectory: true),
-        configuration: configuration)
+      try await PinnedDownload.loadCompiled(
+        .smartTurn, compiled: Self.compiledModel, in: directory, installed: installed,
+        report: report)
     }
   }
 }

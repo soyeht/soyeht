@@ -40,15 +40,9 @@ final class SileroModelHolder: LocalModelHolder<MLModel>, @unchecked Sendable {
     location: ModelCacheLocation = ModelCacheLocation(modelId: PinnedModel.sileroVAD.repository)
   ) {
     super.init(location: location) { installed, directory, report in
-      try await PinnedDownload.fetch(
-        .sileroVAD, to: directory, offline: installed
-      ) { if !installed { report(.downloading($0)) } }
-      report(.preparing)
-      let configuration = MLModelConfiguration()
-      configuration.computeUnits = .cpuAndNeuralEngine
-      let model = try MLModel(
-        contentsOf: directory.appendingPathComponent(Self.compiledModel, isDirectory: true),
-        configuration: configuration)
+      let model = try await PinnedDownload.loadCompiled(
+        .sileroVAD, compiled: Self.compiledModel, in: directory, installed: installed,
+        report: report)
       try SileroVoiceActivity.checkFrameSize(of: model)
       return model
     }
