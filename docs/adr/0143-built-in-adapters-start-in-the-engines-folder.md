@@ -39,7 +39,8 @@ started in, read from the public source of the pinned version, with nothing inst
   `apiKeyHelper` set by the project is not seen before the first session. That is the one
   behaviour that changes, and it is the intended one: a project must not choose a program the
   adapter runs before the person has opened its session.
-- **codex-acp 1.11.0**: every thread call passes the request's `cwd`.
+- **codex-acp 1.11.0 and 2.6.0**: every thread call passes the request's `cwd`. In 2.6.0 the
+  process folder is read only to explain a configuration error for a deleted working directory.
 - **gemini-cli 0.59.0**: loads its settings by the session's `cwd`.
 - **pi-acp 0.0.33**: `session/new` and `session/load` require an absolute `cwd`, load the project's
   prompts, skills and settings from it and start the agent process in it; no `process.cwd()`.

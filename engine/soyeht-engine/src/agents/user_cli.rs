@@ -643,7 +643,7 @@ mod tests {
             .unwrap()
             .package;
         for other in [
-            "@agentclientprotocol/codex-acp@1.11.0".to_owned(),
+            "@agentclientprotocol/codex-acp@2.6.0".to_owned(),
             format!("{name}-extra@1.0.0"),
             name.clone(),
         ] {

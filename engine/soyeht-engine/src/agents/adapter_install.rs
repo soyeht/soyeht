@@ -84,7 +84,7 @@ pub(crate) const LOCKED: [Locked; 2] = [
     },
     Locked {
         package: "@agentclientprotocol/codex-acp",
-        version: "1.11.0",
+        version: "2.6.0",
         name: "codex-acp",
         entry: "@agentclientprotocol/codex-acp/dist/index.js",
         manifest: include_str!("adapter_locks/codex-acp/package.json"),

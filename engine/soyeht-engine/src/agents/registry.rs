@@ -15,7 +15,7 @@ pub(super) const BUILTIN_PREFIX: &str = "registry.";
 const BUILTIN_SNAPSHOT: &str = include_str!("acp_registry_snapshot.json");
 const BUILTIN_AGENT_COUNT: usize = 41;
 const SOURCE_DIGEST: &str = "2e0ddd7be13f676b48158f266ba8d64a29da7c80e971b493664ed993dd99e295";
-const SNAPSHOT_DIGEST: &str = "d5421aa23e295ef272bc2276f318bf521429f0d8a5b3b7e266876b8e131e6450";
+const SNAPSHOT_DIGEST: &str = "17f1b6ca4637dc09ea75c6c3323beddf40ab6530e8e514b80e3ca2288ad60653";
 
 /// Whether a built-in harness has been checked against the real program (ADR 0143). The
 /// catalogue lists an `Experimental` one nowhere, so no new pane starts on it; a pane already bound
@@ -608,7 +608,7 @@ pub(super) mod tests {
         assert_eq!(codex.local_commands, ["codex"]);
         assert_eq!(
             codex.launch.args,
-            ["--yes", "@agentclientprotocol/codex-acp@1.11.0"]
+            ["--yes", "@agentclientprotocol/codex-acp@2.6.0"]
         );
         assert!(
             codex

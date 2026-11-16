@@ -64,7 +64,7 @@ fn the_catalogue_names_the_package_of_a_runner_adapter_and_whether_it_is_locked(
     );
     assert_eq!(
         package("registry.codex-acp"),
-        Some(("@agentclientprotocol/codex-acp@1.11.0".to_owned(), true))
+        Some(("@agentclientprotocol/codex-acp@2.6.0".to_owned(), true))
     );
     // Fetched by the runner, nothing checked.
     assert_eq!(

@@ -94,11 +94,15 @@ Raw terminal panes continue to exist and do not use this path.
    reads); older adapters put it on the spawning Agent call as
    `_meta.claudeCode.toolResponse.resolvedModel`, whose `agentId` names the
    subagent session. That call updates the row and never becomes a tool row.
-   Codex reports no model. Codex's collaboration
-   `wait` calls (`_meta.codex.collaboration.tool: "wait"`) on subagents the
-   pane tracks never become tool rows either: an empty `receiverThreadIds`
-   counts as tied only while the pane tracks a subagent, and a wait naming a
-   session it does not track stays a tool row. Clients show a waiting status
+   The Codex adapter reports it the same way from 2.x on (1.x reported none).
+   Codex adapter 1.x marked its collaboration `wait` calls
+   (`_meta.codex.collaboration.tool: "wait"`) and those on subagents the
+   pane tracks never became tool rows: an empty `receiverThreadIds`
+   counted as tied only while the pane tracks a subagent, and a wait naming a
+   session it does not track stayed a tool row. The 2.x adapter (pinned since
+   2.6.0) no longer sends that `_meta`, so its `wait` calls (title `wait`,
+   `rawInput.senderThreadId` and `receiverThreadIds`) show as tool rows until
+   the rule reads the new shape. Clients show a waiting status
    while the transcript ends in running subagent rows. Times are wall-clock
    times the engine observed live; a replay leaves them absent. Permission,
    file and terminal requests from a reported subagent session are accepted
@@ -157,8 +161,8 @@ shows those names; the harness decides which actions it asks about.
   in full, whichever harness sends it (codex-acp: kind `execute` with
   `rawInput {server, tool, arguments}`; claude-acp: tool name
   `mcp__<server>__<tool>`). Pane ids of the same workspace show as pane names.
-  codex-acp 1.11.0 sends only the tool call id, kind and status in the
-  request; the engine judges every request on the tool call as last reported
+  codex-acp 1.11.0 sent only the tool call id, kind and status in the
+  request (2.6.0 adds the title and `rawInput`); the engine judges every request on the tool call as last reported
   by `session/update` in the same prompt, overlaid with the request's own
   fields. An `execute` request with neither a command nor this shape is refused.
 - A user's `allow_always` selection applies only to this pane (DECIDED,
