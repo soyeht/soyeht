@@ -3,11 +3,15 @@
 
 use super::*;
 use crate::{
-    agents::{Changes, configuration::requested_option, state::Phase, state::State},
+    agents::{
+        Changes,
+        configuration::requested_option,
+        state::{HarnessSwitchCheckpoint, Phase, State},
+    },
     panes::Extras,
 };
 use soyeht_protocol::{
-    ConfigValue, PaneConfigSetParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
+    ConfigValue, PaneCloseParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
     PaneRenameParams, PaneState, Role,
 };
 
@@ -63,11 +67,6 @@ fn create_request(request: &AvatarAssignParams, avatar_name: &str) -> PaneCreate
     }
 }
 
-fn named_pane(mut result: Value, pane_id: &str) -> Value {
-    result["paneId"] = Value::String(pane_id.to_owned());
-    result
-}
-
 /// What the assignment changes, in the words of the generated types.
 pub(super) struct Assignment<'a> {
     pub(super) request: &'a AvatarAssignParams,
@@ -86,6 +85,9 @@ pub(super) fn start(
     params: &Value,
     assignment: Assignment<'_>,
 ) -> Result<Outcome> {
+    // A pane that failed for good, or that cannot be switched, goes in the same call: a workspace
+    // has one avatar pane.
+    close_open(core, connection, &assignment.binding.workspace_id)?;
     let create = create_request(assignment.request, &assignment.avatar.name);
     let binding = assignment.binding;
     let event = binding_event(&binding)?;
@@ -122,12 +124,35 @@ fn binding_event(binding: &AvatarBinding) -> Result<(String, Value)> {
     })
 }
 
+/// Whether the harness of the pane cannot be switched as it is: it asks for a sign-in, is coming
+/// back, or failed. `pane.harness.switch` refuses such a pane, so the assignment replaces it.
+fn refuses_switch(state: &State) -> bool {
+    matches!(
+        state.phase,
+        Phase::NeedsLogin | Phase::Faulted | Phase::Recovering
+    )
+}
+
+/// Closes the avatar panes the workspace has open.
+fn close_open(core: &mut Core, connection: &str, workspace_id: &str) -> Result<()> {
+    let panes: Vec<String> = open_panes(core, workspace_id).cloned().collect();
+    for pane_id in panes {
+        let close = PaneCloseParams {
+            pane_id,
+            idempotency_key: Uuid::new_v4().to_string(),
+        };
+        core.pane_edit(connection, method::PANE_CLOSE, &model::to_value(&close)?)?;
+    }
+    Ok(())
+}
+
 /// Records the binding of a workspace that has its avatar pane open, and brings the pane to it:
-/// a harness that is not the pane's goes through `pane.harness.switch`, a model or effort the
-/// session announces through `pane.config.set`, and a persona or avatar that changed is owed to
-/// the next prompt of a harness with no system prompt (a harness with one reads it when its
-/// session next opens). The pane is changed first, so a refusal of the switch or of the option
-/// leaves the binding as it was.
+/// a harness that is not the pane's goes through `pane.harness.switch` (a pane that cannot be
+/// switched is replaced), and the model and effort that differ from the session's, with a persona
+/// or avatar that changed, are recorded on the pane in one change (the model and effort are applied
+/// one at a time when the pane is idle, the persona is owed to its next prompt). The pane is changed
+/// first, so a refusal leaves the binding as it was. While a switch runs the binding keeps the
+/// harness, model and effort the pane has: the end of the switch records the new ones.
 pub(super) fn update(
     core: &mut Core,
     connection: &str,
@@ -135,14 +160,18 @@ pub(super) fn update(
     pane_id: &str,
     assignment: Assignment<'_>,
 ) -> Result<Outcome> {
+    let mut state = core.agent_state(pane_id)?;
+    let switches = state.launch.id != assignment.binding.harness;
+    if switches && refuses_switch(&state) {
+        return start(core, connection, params, assignment);
+    }
     let Assignment {
         request,
         avatar,
-        binding,
+        mut binding,
         before,
     } = assignment;
-    let state = core.agent_state(pane_id)?;
-    if state.launch.id != binding.harness {
+    if switches {
         let switch = PaneHarnessSwitchParams {
             pane_id: pane_id.to_owned(),
             harness: binding.harness.clone(),
@@ -152,26 +181,31 @@ pub(super) fn update(
             idempotency_key: Uuid::new_v4().to_string(),
         };
         core.agent_harness_switch(connection, &model::to_value(&switch)?)?;
-    } else {
-        for (key, wanted) in [("model", &binding.model), ("effort", &binding.effort)] {
-            set_option(core, connection, pane_id, key, wanted.as_deref())?;
+        if let Some(before) = &before {
+            binding.harness.clone_from(&before.harness);
+            binding.model.clone_from(&before.model);
+            binding.effort.clone_from(&before.effort);
         }
-        let changed = before.as_ref().is_none_or(|before| {
+    } else {
+        let persona_changed = before.as_ref().is_none_or(|before| {
             before.persona != binding.persona || before.avatar_id != binding.avatar_id
         });
+        let mut changed = request_options(&mut state, &binding);
+        if persona_changed {
+            crate::agents::persona::owe(&mut state);
+            changed = true;
+        }
         if changed {
-            owe_persona(core, pane_id)?;
+            let saved = core.pane(pane_id)?.stored.clone();
+            core.commit_agent(saved, state, Changes::default(), None, json!({}))?;
         }
     }
     let name = avatar.name.clone();
     let event = binding_event(&binding)?;
-    let result = named_pane(
-        model::to_value(&AvatarAssignResult {
-            binding: binding.clone(),
-            pane_id: None,
-        })?,
-        pane_id,
-    );
+    let result = model::to_value(&AvatarAssignResult {
+        binding: binding.clone(),
+        pane_id: Some(pane_id.to_owned()),
+    })?;
     let reply = core
         .mutate(connection, method::AVATAR_ASSIGN, params, |tx| {
             library::bind_in(tx, &binding)?;
@@ -182,47 +216,20 @@ pub(super) fn update(
     Ok(Outcome::Reply(reply))
 }
 
-/// Sets the model or effort the pane's session announces, when it differs from the one it has.
-fn set_option(
-    core: &mut Core,
-    connection: &str,
-    pane_id: &str,
-    key: &str,
-    wanted: Option<&str>,
-) -> Result<()> {
-    let state = core.agent_state(pane_id)?;
-    let Some((wanted, option)) = wanted.zip(requested_option(&state.options, key)) else {
-        return Ok(());
-    };
-    if option.current_value == ConfigValue::V0(wanted.to_owned()) {
-        return Ok(());
+/// Asks for the model and effort of the binding that the session does not have: both go to the
+/// pane's requested options, which the engine applies one at a time when the pane is idle.
+fn request_options(state: &mut State, binding: &AvatarBinding) -> bool {
+    let mut changed = false;
+    for (key, wanted) in [("model", &binding.model), ("effort", &binding.effort)] {
+        let Some(wanted) = wanted else { continue };
+        let wanted = ConfigValue::V0(wanted.clone());
+        let current = requested_option(&state.options, key).map(|option| &option.current_value);
+        if current != Some(&wanted) && state.requested_options.get(key) != Some(&wanted) {
+            state.requested_options.insert(key.to_owned(), wanted);
+            changed = true;
+        }
     }
-    let set = PaneConfigSetParams {
-        pane_id: pane_id.to_owned(),
-        config_id: option.id.clone(),
-        value: ConfigValue::V0(wanted.to_owned()),
-        idempotency_key: Uuid::new_v4().to_string(),
-    };
-    core.agent_method(
-        connection,
-        method::PANE_CONFIG_SET,
-        &model::to_value(&set)?,
-        Vec::new(),
-    )?;
-    Ok(())
-}
-
-/// Marks the open pane as owing its persona to its next prompt, when its harness has no system
-/// prompt to carry it.
-fn owe_persona(core: &mut Core, pane_id: &str) -> Result<()> {
-    let mut state = core.agent_state(pane_id)?;
-    crate::agents::persona::mark_pending(&mut state);
-    if !state.persona_pending {
-        return Ok(());
-    }
-    let saved = core.pane(pane_id)?.stored.clone();
-    core.commit_agent(saved, state, Changes::default(), None, json!({}))?;
-    Ok(())
+    changed
 }
 
 /// Names the pane for the avatar. The change is made already: a pane that cannot be renamed keeps
@@ -245,8 +252,15 @@ fn rename(core: &mut Core, connection: &str, pane_id: &str, name: &str) {
 
 /// The panes that carry the avatar's name are named for it again after it was renamed.
 pub(super) fn follow_rename(core: &mut Core, connection: &str, avatar: &Avatar) {
-    let Ok(bindings) = library::bindings(&core.store) else {
-        return;
+    let bindings = match library::bindings(&core.store) {
+        Ok(bindings) => bindings,
+        Err(error) => {
+            soyeht_platform::log::failure(
+                "engine.avatar_pane_rename_failed",
+                &errors::storage(error),
+            );
+            return;
+        }
     };
     for binding in bindings.iter().filter(|b| b.avatar_id == avatar.avatar_id) {
         let panes: Vec<String> = open_panes(core, &binding.workspace_id).cloned().collect();
@@ -256,7 +270,8 @@ pub(super) fn follow_rename(core: &mut Core, connection: &str, avatar: &Avatar) 
     }
 }
 
-/// What the person chose for the avatar's pane when they switched its harness.
+/// What a switch of the avatar pane's harness chose: the harness, and the model and effort it asked
+/// for (the checkpoint of the switch holds them).
 pub(crate) struct Choice {
     harness: String,
     model: Option<String>,
@@ -264,16 +279,12 @@ pub(crate) struct Choice {
 }
 
 impl Choice {
-    /// The harness, model and effort of a pane's new session, when the pane is an avatar's.
-    pub(crate) fn of(state: &State) -> Option<Self> {
-        let option = |key: &str| match state.requested_options.get(key) {
-            Some(ConfigValue::V0(value)) => Some(value.clone()),
-            _ => None,
-        };
+    /// The choice of the switch `checkpoint` describes, when the pane is an avatar's.
+    pub(crate) fn of(state: &State, checkpoint: &HarnessSwitchCheckpoint) -> Option<Self> {
         state.avatar.then(|| Self {
-            harness: state.launch.id.clone(),
-            model: option("model"),
-            effort: option("effort"),
+            harness: checkpoint.to_harness.clone(),
+            model: checkpoint.model.clone(),
+            effort: checkpoint.effort.clone(),
         })
     }
 }
@@ -296,6 +307,12 @@ fn record_switch(core: &mut Core, workspace_id: &str, choice: Choice) -> Result<
         .revision
         .parse()
         .map_err(|_| errors::internal("A stored binding has no revision"))?;
+    if (&binding.harness, &binding.model, &binding.effort)
+        == (&choice.harness, &choice.model, &choice.effort)
+    {
+        // The assignment that started the switch recorded it already.
+        return Ok(());
+    }
     binding.harness = choice.harness;
     binding.model = choice.model;
     binding.effort = choice.effort;

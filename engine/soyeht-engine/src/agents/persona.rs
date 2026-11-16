@@ -7,11 +7,13 @@
 //! - **The session's system prompt**, when the adapter advertises the ACP `systemPrompt` capability
 //!   (`session/new` and `session/load` carry it, appended to the harness's own prompt). An adapter
 //!   that does not advertise it ignores the field without an error, so it is never sent to one.
-//! - **A block ahead of the first prompt** otherwise: when a session is created (or the person
-//!   changed the persona of an open pane) the state is marked `persona_pending`, and the next
-//!   `session/prompt` that is built carries the persona as a text block before the prompt's own.
-//!   It is no prompt of the queue: it cannot be removed, paused, or overtaken, it costs no turn, and
-//!   it reaches the harness before anything the person wrote.
+//! - **A block ahead of a prompt** otherwise: when a session is created the state is marked
+//!   `persona_pending`, and so is the state of an open pane whose persona the person changed, on
+//!   every adapter (the system prompt of one that has it catches up when its session next opens).
+//!   The next `session/prompt` that is built carries the persona as a text block before the prompt's
+//!   own, and the pane owes it until the harness has answered that prompt. It is no prompt of the
+//!   queue: it cannot be removed, paused, or overtaken, it costs no turn, and it reaches the harness
+//!   before anything the person wrote.
 //!
 //! A file in the project folder (`AGENTS.md`, `CLAUDE.md`) is not used: the harnesses read them,
 //! but a workspace can be a folder the person already has with such a file, and Soyeht never writes
@@ -33,6 +35,9 @@ const BLOCK_LABEL: &str = "Standing instructions for this conversation (they com
 
 /// The last line of the block, so a replay of the session can tell where the block ends.
 const BLOCK_END: &str = "(End of the standing instructions.)";
+/// The last line of the block as a persona that holds it is delivered: the full stop of that line
+/// goes, so the line that ends the block is the engine's alone.
+const ESCAPED_END: &str = "(End of the standing instructions)";
 
 fn compose(persona: &Persona) -> String {
     let identity = format!(
@@ -79,46 +84,140 @@ pub(crate) fn system_prompt(state: &State, persona: Option<&str>, mut session: V
     session
 }
 
-/// Marks an avatar pane whose adapter has no system prompt as owing its persona to the next prompt.
-/// A session that was just created, and a persona that was just changed, are the moments.
+/// Marks an avatar pane whose adapter has no system prompt as owing its persona to the next prompt:
+/// a session that was just created has not been told, unless its adapter took the system prompt.
 pub(crate) fn mark_pending(state: &mut State) {
     state.persona_pending = state.avatar && !accepts_system_prompt(state);
+    state.persona_carried_by = None;
 }
 
-/// `prompt`, the `session/prompt` request about to be sent, with the persona as the text block ahead
-/// of its own when the pane owes it. The mark is cleared whether or not there was a text to carry.
+/// Marks an avatar pane whose persona or avatar was changed as owing the persona to its next prompt,
+/// whatever its adapter: the system prompt of one that has it catches up when its session next opens.
+pub(crate) fn owe(state: &mut State) {
+    state.persona_pending |= state.avatar;
+}
+
+/// `prompt`, the `session/prompt` request about to be sent for the queued prompt `prompt_id`, with
+/// the persona as the text block ahead of its own when the pane owes it. The pane keeps owing it:
+/// [`answered`] settles it when the harness has the prompt.
 pub(crate) fn ahead_of(
     store: &impl StorePort,
     state: &mut State,
-    workspace_id: &str,
+    (workspace_id, prompt_id): (&str, &str),
     mut prompt: Value,
 ) -> Result<Value> {
-    if !std::mem::take(&mut state.persona_pending) {
+    if !state.persona_pending {
         return Ok(prompt);
     }
-    if let (Some(text), Some(blocks)) = (
-        text(store, state, workspace_id)?,
-        prompt["prompt"].as_array_mut(),
-    ) {
+    let Some(text) = text(store, state, workspace_id)? else {
+        // The workspace has no avatar any more: nothing is owed.
+        state.persona_pending = false;
+        return Ok(prompt);
+    };
+    if let Some(blocks) = prompt["prompt"].as_array_mut() {
+        let text = text.replace(BLOCK_END, ESCAPED_END);
         blocks.insert(
             0,
             json!({"type":"text","text":format!("{BLOCK_LABEL}\n\n{text}\n\n{BLOCK_END}")}),
         );
+        state.persona_carried_by = Some(prompt_id.to_owned());
     }
     Ok(prompt)
 }
 
-/// `text`, a user message the harness replays from the session, without the persona block the
-/// engine put ahead of a prompt: the transcript shows what the person wrote. The block is told by
-/// its first and last lines, so it goes whichever persona it carried and whether the harness
-/// replays it as a message of its own or joined to the prompt's text.
-pub(crate) fn strip_replayed<'a>(state: &State, text: &'a str) -> &'a str {
-    if !state.avatar {
-        return text;
+/// The harness answered the prompt `prompt_id`. When it carried the persona and the answer is not an
+/// error (a turn that was cancelled is an answer), the pane no longer owes it; after an error, or a
+/// process that was lost, it still does, and the next prompt carries it.
+pub(crate) fn answered(state: &mut State, prompt_id: &str, delivered: bool) {
+    if state.persona_carried_by.as_deref() != Some(prompt_id) {
+        return;
     }
-    text.strip_prefix(BLOCK_LABEL)
-        .and_then(|block| block.split_once(BLOCK_END))
-        .map_or(text, |(_, after)| after.trim_start_matches('\n'))
+    state.persona_carried_by = None;
+    if delivered {
+        state.persona_pending = false;
+    }
+}
+
+/// How far the replay of a user message is from knowing whether it begins with a persona block.
+#[derive(Debug, Clone)]
+enum Replay {
+    /// What came so far could still be the start of the label.
+    Undecided,
+    /// The label was seen: everything up to the end line is the block.
+    Dropping,
+    /// The message is the person's.
+    Passing,
+}
+
+/// The replay of one user message, chunk by chunk under one message id: an adapter splits a long
+/// block, and joins a short one to the text after it.
+#[derive(Debug, Clone)]
+pub(crate) struct Replayed {
+    message_id: Option<String>,
+    held: String,
+    phase: Replay,
+}
+
+impl Replayed {
+    /// Whether `message_id` is not the message this is the replay of.
+    pub(crate) fn is_another(&self, message_id: Option<&str>) -> bool {
+        self.message_id.as_deref() != message_id
+    }
+
+    fn new(message_id: Option<&str>) -> Self {
+        Self {
+            message_id: message_id.map(str::to_owned),
+            held: String::new(),
+            phase: Replay::Undecided,
+        }
+    }
+}
+
+/// The text a user message that was held back for a message that ended: what could have been the start
+/// of a label and never was one, and its message id.
+pub(crate) fn finish_replayed(state: &mut State) -> Option<(String, Option<String>)> {
+    let replayed = state.persona_replay.take()?;
+    let held = matches!(replayed.phase, Replay::Undecided).then_some(replayed.held)?;
+    (!held.is_empty()).then_some((held, replayed.message_id))
+}
+
+/// `chunk`, a chunk of a replayed user message, without the persona block the engine put ahead of a
+/// prompt: the transcript shows what the person wrote. An empty answer says to show nothing yet. A
+/// text that begins like the label is held until it is known to be the block, which goes whole, up to
+/// its last line, or not, which is shown as it came.
+pub(crate) fn filter_replayed(state: &mut State, message_id: Option<&str>, chunk: &str) -> String {
+    if !state.avatar {
+        return chunk.to_owned();
+    }
+    let replayed = state
+        .persona_replay
+        .get_or_insert_with(|| Replayed::new(message_id));
+    if replayed.message_id.as_deref() != message_id
+        || matches!(replayed.phase, Replay::Passing) && chunk.starts_with(BLOCK_LABEL)
+    {
+        *replayed = Replayed::new(message_id);
+    }
+    if matches!(replayed.phase, Replay::Passing) {
+        return chunk.to_owned();
+    }
+    replayed.held.push_str(chunk);
+    if matches!(replayed.phase, Replay::Undecided) {
+        if replayed.held.starts_with(BLOCK_LABEL) {
+            replayed.phase = Replay::Dropping;
+        } else if BLOCK_LABEL.starts_with(replayed.held.as_str()) {
+            return String::new();
+        } else {
+            replayed.phase = Replay::Passing;
+            return std::mem::take(&mut replayed.held);
+        }
+    }
+    let Some((_, after)) = replayed.held.split_once(BLOCK_END) else {
+        return String::new();
+    };
+    let after = after.trim_start_matches('\n').to_owned();
+    replayed.held.clear();
+    replayed.phase = Replay::Passing;
+    after
 }
 
 #[cfg(test)]

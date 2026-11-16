@@ -221,57 +221,130 @@ fn an_assignment_names_a_harness_the_profile_has_whether_or_not_a_pane_is_open()
 }
 
 #[test]
-fn a_changed_harness_switches_the_open_pane_and_the_binding_follows_the_pane() {
-    let mut rig = Rig::new();
+fn a_changed_harness_switches_the_open_pane_and_the_binding_keeps_what_the_pane_has_until_it_ends()
+{
+    let (mut rig, avatar, workspace) = project();
     rig.add_harness("avatar-other");
-    let avatar = rig.avatar("Sabio");
-    let workspace = rig.workspace("project");
     let pane = started(&mut rig, &workspace, &avatar);
     let switching = rig
         .assign(
             &workspace,
             &avatar.avatar_id,
             "1",
-            json!({"harness": "avatar-other", "model": "m2"}),
+            json!({"harness": "avatar-other", "model": "m2", "effort": "high"}),
         )
         .unwrap();
     assert_eq!(pane_of(&switching), pane);
     let checkpoint = rig.core.agent_state(&pane).unwrap().harness_switch.unwrap();
     assert_eq!(checkpoint.to_harness, "avatar-other");
-    // The pane switches by itself later; when it has, the binding says the harness it has.
-    let mut state = rig.core.agent_state(&pane).unwrap();
-    state.launch.id = "avatar-switched".into();
-    state.requested_options.insert(
-        "model".into(),
-        soyeht_protocol::ConfigValue::V0("m3".into()),
-    );
-    let choice = super::super::Choice::of(&state).unwrap();
-    super::super::follow_switch(&mut rig.core, &workspace, choice);
+    assert_eq!(checkpoint.model.as_deref(), Some("m2"));
+    assert_eq!(checkpoint.effort.as_deref(), Some("high"));
+    // The pane is on the harness it had, and so is the binding: the end of the switch records the
+    // new one (a test of the commit is in `switching`), and a switch that fails never does.
+    assert_eq!(switching["binding"]["harness"], rig.harness);
     let listed = rig.call("avatar.list", json!({})).unwrap();
-    let binding = &listed["bindings"][0];
-    assert_eq!(binding["harness"], "avatar-switched");
-    assert_eq!(binding["model"], "m3");
-    assert_eq!(binding["revision"], "3");
-    assert_eq!(rig.changes().last().unwrap()["binding"], *binding);
+    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
+    assert_eq!(listed["bindings"][0]["revision"], "2");
+}
+
+/// The announcement of a session that offers a model and an effort.
+fn announce(rig: &mut Rig, pane: &str, model: &str, effort: &str) {
+    let option = |id: &str, category: &str, current: &str| {
+        json!({"id": id, "name": id, "category": category, "type": "select",
+            "currentValue": current,
+            "options": [{"value": "a", "name": "A"}, {"value": "b", "name": "B"}]})
+    };
+    let options = soyeht_acp::config::Options::from_response(&json!({"configOptions": [
+        option("model", "model", model), option("effort", "thought_level", effort)]}))
+    .unwrap();
+    rig.core.agents.get_mut(pane).unwrap().state.options = options;
 }
 
 #[test]
-fn a_pane_that_failed_for_good_is_not_answered_with_and_the_next_assignment_starts_another() {
+fn a_changed_model_and_effort_are_both_asked_for_in_one_change() {
+    use soyeht_protocol::ConfigValue::V0;
+    let (mut rig, avatar, workspace) = project();
+    let pane = started(&mut rig, &workspace, &avatar);
+    announce(&mut rig, &pane, "a", "a");
+    let wanted = json!({"model": "b", "effort": "b"});
+    let changed = rig
+        .assign(&workspace, &avatar.avatar_id, "1", wanted)
+        .unwrap();
+    assert_eq!(pane_of(&changed), pane);
+    let state = rig.core.agent_state(&pane).unwrap();
+    // Both wait for the pane to be idle, and the engine applies them one at a time.
+    assert_eq!(state.requested_options["model"], V0("b".into()));
+    assert_eq!(state.requested_options["effort"], V0("b".into()));
+    assert!(state.operation.is_none() && state.needs_configuration());
+    // What the session has already is not asked for again.
+    rig.core
+        .agents
+        .get_mut(&pane)
+        .unwrap()
+        .state
+        .requested_options
+        .clear();
+    let same = json!({"model": "a", "effort": "b"});
+    rig.assign(&workspace, &avatar.avatar_id, "2", same)
+        .unwrap();
+    let state = rig.core.agent_state(&pane).unwrap();
+    assert!(!state.requested_options.contains_key("model"));
+    assert_eq!(state.requested_options["effort"], V0("b".into()));
+}
+
+#[test]
+fn a_changed_persona_is_owed_to_a_pane_whose_adapter_has_a_system_prompt_too() {
+    let (mut rig, avatar, workspace) = project();
+    let pane = started(&mut rig, &workspace, &avatar);
+    rig.core.agents.get_mut(&pane).unwrap().state.initialized =
+        Some(crate::test_panes::initialization(true));
+    assert_eq!(
+        system_prompt_text(&session_request(&rig, &pane)),
+        "You are Sabio, the avatar agent of this project."
+    );
+    assigned(&mut rig, &workspace, &avatar, "1", "Changed.");
+    // The next prompt carries it, and the system prompt catches up when the session next opens.
+    assert!(rig.core.agent_state(&pane).unwrap().persona_pending);
+    assert!(system_prompt_text(&session_request(&rig, &pane)).ends_with("Changed."));
+}
+
+#[test]
+fn a_pane_that_cannot_be_switched_is_replaced_when_another_harness_is_asked_for() {
+    use crate::agents::state::Phase;
+    let (mut rig, avatar, workspace) = project();
+    rig.add_harness("avatar-other");
+    let stuck = started(&mut rig, &workspace, &avatar);
+    rig.core.agents.get_mut(&stuck).unwrap().state.phase = Phase::NeedsLogin;
+    // The same harness stays: the person signs in to it.
+    assigned(&mut rig, &workspace, &avatar, "1", "");
+    assert_eq!(open_panes(&rig, &workspace), vec![stuck.clone()]);
+    let other = json!({"harness": "avatar-other"});
+    let moved = rig
+        .assign(&workspace, &avatar.avatar_id, "2", other)
+        .unwrap();
+    let new = pane_of(&moved);
+    assert_ne!(new, stuck);
+    assert_eq!(open_panes(&rig, &workspace), vec![new.clone()]);
+    assert_eq!(moved["binding"]["harness"], "avatar-other");
+    assert_eq!(
+        rig.core.agent_state(&new).unwrap().launch.id,
+        "avatar-other"
+    );
+}
+
+#[test]
+fn a_pane_that_failed_for_good_is_closed_when_the_next_assignment_starts_another() {
     let (mut rig, avatar, workspace) = project();
     let dead = started(&mut rig, &workspace, &avatar);
     rig.core.agents.get_mut(&dead).unwrap().state.phase = crate::agents::state::Phase::Faulted;
-    let next = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "1", json!({}))
-            .unwrap(),
-    );
+    let next = pane_of(&assigned(&mut rig, &workspace, &avatar, "1", ""));
     assert_ne!(next, dead);
-    assert!(open_panes(&rig, &workspace).contains(&next));
-    // The one that works is the workspace's now.
-    let again = pane_of(
-        &rig.assign(&workspace, &avatar.avatar_id, "2", json!({}))
-            .unwrap(),
+    // A workspace has one avatar pane, and it is the one that works.
+    assert_eq!(open_panes(&rig, &workspace), vec![next.clone()]);
+    assert_eq!(
+        pane_of(&assigned(&mut rig, &workspace, &avatar, "2", "")),
+        next
     );
-    assert_eq!(again, next);
 }
 
 #[test]

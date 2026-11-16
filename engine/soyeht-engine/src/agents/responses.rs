@@ -605,6 +605,7 @@ pub(crate) fn prompt_response(
     {
         return Err(errors::internal("Prompt response belongs to another turn"));
     }
+    super::persona::answered(state, context, result.is_ok());
     let cancel_requested = state.cancel_at_ms.is_some();
     let authentication_required = matches!(
         &result,

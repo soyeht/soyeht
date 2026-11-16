@@ -94,7 +94,7 @@ impl Core {
         )?;
         self.carry_queue(candidate, &original, incorporated_pending)?;
         candidate.state.harness_switch = None;
-        let avatar_choice = crate::avatars::Choice::of(&candidate.state);
+        let avatar_choice = crate::avatars::Choice::of(&candidate.state, &checkpoint);
         candidate.state.requested_options.clear();
         candidate.state.acknowledged_offset = candidate.decoder.next_offset();
         candidate.state.phase = Phase::Ready;

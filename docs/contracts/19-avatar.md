@@ -100,18 +100,27 @@ any other durable one).
     binding and the failed pane, as `pane.create` leaves a pane that failed to start;
   - a workspace whose avatar pane is open and alive gets no other. The binding is replaced and `paneId`
     names that pane, which is changed in the same call, **before** the binding, so a refusal leaves the
-    binding as it was: a `harness` that is not the pane's is `pane.harness.switch` (with the call's
-    `model` and `effort`, and the errors of that method, `pane_busy` among them; the switch finishes
-    after the reply, as it does for that method); a `model` or `effort` the pane's session has
-    announced and that differs is `pane.config.set`; one the session has not announced yet is not
-    applied; and a changed persona or avatar is given to the harness as section 6 says;
+    binding as it was:
+    - a `harness` that is not the pane's is `pane.harness.switch` (with the call's `model` and `effort`,
+      and the errors of that method, `pane_busy` among them; the switch finishes after the reply, as it
+      does for that method). **Until the switch ends the binding keeps the harness, model and effort the
+      pane has**, and the reply says so; the end of the switch records the harness, model and effort it
+      asked for, one revision on, with `avatar.changed` (nothing is recorded again when the binding
+      already says so), and a switch that fails records nothing, so the binding never names a harness the
+      pane is not on. A pane that `pane.harness.switch` refuses for its phase (it asks for a sign-in, is
+      coming back, or failed) is **replaced**: it is closed and another is started with the harness
+      asked for, in the same call;
+    - a `model` or `effort` that is not the session's is put in the pane's requested options, both in
+      one change, and the engine applies them one at a time when the pane is idle (`pane.config_changed`,
+      or `pane.config_failed` for one the session does not offer);
+    - a changed persona or avatar is owed to the pane's next prompt, whatever its adapter has (section
+      6);
   - an avatar pane that **failed for good** (its agent is faulted, or its pane is dead) is not the
-    workspace's: the call starts another and leaves the failed one for the person to close;
+    workspace's: the call closes it and starts another, so a workspace has one avatar pane;
   - the pane is named for the avatar, and is named again when the avatar is renamed or another avatar
     is given;
-  - a `pane.harness.switch` of the avatar pane is the avatar thinking with another harness: when the switch
-    ends, the binding takes the pane's harness, model and effort, one revision on, and `avatar.changed`
-    says so.
+  - a `pane.harness.switch` of the avatar pane that a person asks for directly is the avatar thinking
+    with another harness: the same rule records the harness, model and effort it asked for when it ends.
 - `project.folder.create {name, idempotencyKey}` -> `{path}`: makes an empty folder for a project that
   is not an app or a repository (a book being read, a school subject) under `<data>/projects/`, owner-only,
   named from `name` (composed to NFC, lower-case letters and digits joined by hyphens, at most
@@ -163,16 +172,23 @@ harness in `docs/research/avatar-persona-delivery.md`:
 1. an adapter that advertises the ACP `systemPrompt` session capability (an unstable field of the
    protocol) gets it as the session's system prompt, appended, in `session/new` and in `session/load`
    (it is sent only to such an adapter: the two measured that do not advertise it ignore the field
-   without an error). A persona the person changed applies **the next time such a session opens**, a
-   restart of the process or of the engine, or a harness switch; the open session keeps the one it was
-   opened with;
-2. any other is owed the persona by its **next prompt**: when a session of the pane is created, and when
-   the persona or the avatar of the open pane changed, the pane is marked, and the next `session/prompt`
-   the engine builds has the persona as a text block ahead of its own, after a line saying these are
-   standing instructions from the application, and before a last line that ends the block. It is no
-   prompt of the queue: it cannot be removed, paused or overtaken by the person's prompts, it costs no
-   turn, and it is not shown as a message (a replay of the session cuts the block out by its first and
-   last lines). A `session/load` does not send it again: the conversation it loads has it.
+   without an error). The open session keeps the persona it was opened with: a persona the person
+   changed reaches the next prompt as in 2, and the system prompt catches up the next time such a
+   session opens (a restart of the process or of the engine, or a harness switch);
+2. any other is owed the persona by its **next prompt**. The pane is marked when a session of it is
+   created (an adapter with a system prompt is not marked by that) and when the persona or the avatar of
+   the open pane changed (on every adapter). The next `session/prompt` the engine builds has the persona
+   as a text block ahead of its own, after a line saying these are standing instructions from the
+   application, and before a last line, `(End of the standing instructions.)`, that ends the block; a
+   persona that holds that line is delivered with the full stop of it removed, so the line that ends
+   the block is the engine's alone. The pane keeps owing the persona **until the harness has answered
+   the prompt that carried it** (a turn that was cancelled is an answer): a prompt that fails, or a
+   process that is lost with it, leaves the pane owing it and the next prompt carries it again. It is no
+   prompt of the queue: it cannot be removed, paused or overtaken by the person's prompts, and it costs
+   no turn. It is not shown as a message: a replay of the session (`session/load`) holds the text of a
+   user message while it could still be the block, whole, in chunks, or joined to the text after it, and
+   cuts it out between the first line and the end line (a message that only began like the first line
+   is shown whole). A `session/load` does not send the block again: the conversation it loads has it.
 
 The text is read from the binding each time it is delivered (and when a harness switch opens its
 candidate session), so the persona the person saved last is the one the next delivery carries. At the

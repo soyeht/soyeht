@@ -10,7 +10,7 @@ use crate::{
 };
 use soyeht_acp::Message;
 use soyeht_protocol::{
-    Avatar, AvatarBinding, PaneMode, Workspace,
+    AvatarBinding, PaneMode, Workspace,
     limits::{ACP_MESSAGE_BYTES, AVATAR_NAME_CHARS, AVATAR_PERSONA_CHARS, PROMPT_BYTES},
 };
 use soyeht_store::{avatars as library, database::Store};
@@ -34,16 +34,7 @@ fn with_adapter(system_prompt: bool) -> State {
 /// A store whose workspace `w` has the avatar `Sabio` with the persona given.
 fn store_with(text: &str) -> (Store, std::path::PathBuf) {
     let (mut store, directory) = scratch_store();
-    let avatar = Avatar {
-        avatar_id: "a".into(),
-        name: "Sabio".into(),
-        kind: "uploaded".into(),
-        source_hash: "a".repeat(64),
-        image_provider: None,
-        image_model: None,
-        voice: None,
-        created_at: "2026-11-15T10:00:00Z".into(),
-    };
+    let avatar = crate::test_panes::avatar("a", "Sabio");
     let binding = AvatarBinding {
         workspace_id: "w".into(),
         avatar_id: "a".into(),
@@ -256,7 +247,7 @@ fn a_session_that_was_created_owes_the_persona_to_its_first_prompt_once() {
     opened(&mut state, &store, &directory).unwrap();
     assert!(state.persona_pending);
     let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
-    let first = ahead_of(&store, &mut state, "w", person.clone()).unwrap();
+    let first = ahead_of(&store, &mut state, ("w", "prompt-1"), person.clone()).unwrap();
     assert_eq!(
         first["prompt"],
         json!([
@@ -264,12 +255,66 @@ fn a_session_that_was_created_owes_the_persona_to_its_first_prompt_once() {
             {"type": "text", "text": "Hello"}
         ])
     );
+    // The pane owes it until the harness has answered the prompt that carried it.
+    assert!(state.persona_pending);
+    // The prompt failed, or the process was lost with it: the next prompt carries it again.
+    answered(&mut state, "prompt-1", false);
+    assert!(state.persona_pending && state.persona_carried_by.is_none());
+    let second = ahead_of(&store, &mut state, ("w", "prompt-2"), person.clone()).unwrap();
+    assert_eq!(second["prompt"][0], first["prompt"][0]);
+    // An answer to another prompt settles nothing; the answer to this one does, once.
+    answered(&mut state, "prompt-1", true);
+    assert!(state.persona_pending);
+    answered(&mut state, "prompt-2", true);
     assert!(!state.persona_pending);
     assert_eq!(
-        ahead_of(&store, &mut state, "w", person.clone()).unwrap(),
+        ahead_of(&store, &mut state, ("w", "prompt-3"), person.clone()).unwrap(),
         person
     );
     std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn what_is_owed_survives_the_engine_stopping_with_the_prompt_in_flight() {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(false);
+    state.persona_pending = true;
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    ahead_of(&store, &mut state, ("w", "prompt-1"), person).unwrap();
+    let kept: State = serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
+    assert!(kept.persona_pending);
+    assert_eq!(kept.persona_carried_by.as_deref(), Some("prompt-1"));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_persona_that_holds_the_end_line_cannot_end_the_block_early() {
+    let (store, directory) = store_with(&format!("Before.\n{BLOCK_END}\nAfter."));
+    let mut state = with_adapter(false);
+    state.persona_pending = true;
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    let sent = ahead_of(&store, &mut state, ("w", "p"), person).unwrap();
+    let delivered = sent["prompt"][0]["text"].as_str().unwrap();
+    assert_eq!(delivered.matches(BLOCK_END).count(), 1);
+    assert!(delivered.ends_with(BLOCK_END));
+    assert!(delivered.contains("After."));
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_changed_persona_is_owed_by_every_adapter_and_a_new_session_by_the_ones_without_a_system_prompt()
+ {
+    let mut capable = with_adapter(true);
+    owe(&mut capable);
+    assert!(capable.persona_pending);
+    let mut other = with_adapter(false);
+    owe(&mut other);
+    assert!(other.persona_pending);
+    // A pane that is not an avatar's is owed nothing.
+    let mut plain = with_adapter(false);
+    plain.avatar = false;
+    owe(&mut plain);
+    assert!(!plain.persona_pending);
 }
 
 #[test]
@@ -291,24 +336,101 @@ fn a_persona_that_is_owed_to_a_workspace_with_no_avatar_is_dropped_not_sent() {
     let mut state = with_adapter(false);
     state.persona_pending = true;
     let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
-    let sent = ahead_of(&MemoryStore::default(), &mut state, "w", person.clone()).unwrap();
+    let sent = ahead_of(
+        &MemoryStore::default(),
+        &mut state,
+        ("w", "p"),
+        person.clone(),
+    )
+    .unwrap();
     assert_eq!(sent, person);
     assert!(!state.persona_pending);
 }
 
+/// What a replay of a session shows of the user messages `chunks` (message id, text), when the pane
+/// is an avatar's and the session loads.
+fn shown(chunks: &[(&str, &str)]) -> Vec<String> {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(false);
+    state.phase = crate::agents::state::Phase::Loading;
+    let mut changes = Changes::default();
+    for (id, text) in chunks {
+        let content = json!({"type": "text", "text": text});
+        crate::agents::updates::update_user(
+            &store,
+            "p",
+            1,
+            &mut state,
+            content,
+            Some(id),
+            &mut changes,
+        )
+        .unwrap();
+    }
+    crate::agents::updates::finish_replayed_user(&store, "p", 1, &mut state, &mut changes).unwrap();
+    std::fs::remove_dir_all(directory).unwrap();
+    changes
+        .messages
+        .iter()
+        .filter(|message| message.role == soyeht_protocol::TranscriptRole::User)
+        .map(|message| message.text.clone())
+        .collect()
+}
+
 #[test]
-fn a_replayed_user_message_loses_the_block_the_engine_put_ahead_of_it() {
-    let avatar = with_adapter(false);
-    let text = block("You are Sabio, the avatar agent of this project.");
-    // As two messages of the replay, and as one joined to the prompt's own text.
-    assert_eq!(strip_replayed(&avatar, &text), "");
-    assert_eq!(strip_replayed(&avatar, "Hello"), "Hello");
-    assert_eq!(strip_replayed(&avatar, &format!("{text}\nHello")), "Hello");
-    // Another persona, an older one, goes as well.
-    assert_eq!(strip_replayed(&avatar, &block("Another persona.")), "");
-    // What a person wrote that only starts alike stays, and a pane that is not an avatar's is left alone.
-    assert_eq!(strip_replayed(&avatar, BLOCK_LABEL), BLOCK_LABEL);
+fn a_replayed_user_message_loses_the_block_whether_it_came_whole_split_or_joined() {
+    let block = block("You are Sabio, the avatar agent of this project.\n\nBe brief.");
+    // The block as a message of its own, then the question.
+    assert_eq!(shown(&[("m1", &block), ("m1", "Hello")]), ["Hello"]);
+    // A long block in several chunks, the end line cut between two of them.
+    let (first, rest) = block.split_at(10);
+    let (middle, last) = rest.split_at(rest.len() - 10);
+    assert_eq!(
+        shown(&[("m1", first), ("m1", middle), ("m1", last), ("m1", "Hello")]),
+        ["Hello"]
+    );
+    // The block joined to the text after it, in one chunk and cut in two.
+    assert_eq!(shown(&[("m1", &format!("{block}\nHello"))]), ["Hello"]);
+    let (before_end, after_end) = block.split_at(block.len() - 5);
+    assert_eq!(
+        shown(&[("m1", before_end), ("m1", &format!("{after_end}\nHello"))]),
+        ["Hello"]
+    );
+    // A later block, as one delivered after the persona changed, goes as well.
+    assert_eq!(
+        shown(&[
+            ("m1", &block),
+            ("m1", "Hello"),
+            ("m2", &block),
+            ("m2", "Again")
+        ]),
+        ["Hello", "Again"]
+    );
+}
+
+#[test]
+fn a_replayed_message_that_only_starts_like_the_label_is_the_persons_and_is_shown_whole() {
+    // Held while it could still become the label, and shown with the message it came with.
+    let start = &BLOCK_LABEL[..20];
+    assert_eq!(shown(&[("m1", start)]), [start]);
+    assert_eq!(
+        shown(&[("m1", start), ("m1", " and then something else")]),
+        [format!("{start} and then something else")]
+    );
+    assert_eq!(
+        shown(&[("m1", "Hello"), ("m2", "World")]),
+        ["Hello", "World"]
+    );
+    // A message that is not the persons' own is only ever the engine's block, which has an end.
+    assert_eq!(shown(&[("m1", BLOCK_LABEL)]), Vec::<String>::new());
+}
+
+#[test]
+fn a_pane_that_is_not_an_avatars_shows_every_replayed_message_as_it_came() {
     let mut other = with_adapter(false);
     other.avatar = false;
-    assert_eq!(strip_replayed(&other, &text), text);
+    assert_eq!(
+        filter_replayed(&mut other, Some("m1"), &block("Persona.")),
+        block("Persona.")
+    );
 }

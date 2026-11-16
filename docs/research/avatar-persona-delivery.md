@@ -87,6 +87,13 @@ Reading the table (every cell but the block row is one run):
 - **What a replay shows.** `session/load` replays the user's message. The Claude and Codex adapters
   replay the block and the question as two messages; OpenCode replays them as one message with a line
   break between. Soyeht cuts the block out of a replayed message by its first and last lines.
+- **A persona of a few thousand characters** (4693 characters: the persona of the other runs and sixty
+  lines of facts) as the block, **2 runs per harness**: honoured at the first answer in 6 of 6; the next
+  answer after `session/load` was still the persona's in 5 of the 5 that loaded (the OpenCode load of
+  the first run answered a service error). The replay: Claude and Codex gave the block back as **one
+  message of 4830 characters** and the question as another; OpenCode as **one message of 4867
+  characters**, the block and the question joined. None of the adapters measured split a block of that
+  size into chunks, so a replay in chunks is covered by the engine's tests and not by a measurement.
 - **The files**: `AGENTS.md` is read by the three harnesses that were reached, the Claude adapter
   included; `CLAUDE.md` by Claude Code only. Cursor Agent was not reached, so nothing is claimed for it.
 - **Codex takes a per-launch configuration** through the adapter's environment (`CODEX_CONFIG`), which
@@ -111,11 +118,14 @@ The channel follows the table, and nothing in it is a rule about behaviour (`age
 1. An adapter that advertises `systemPrompt` is sent the persona as the session's system prompt,
    appended, in `session/new` and in `session/load`.
 2. Any other harness is owed the persona by its next prompt: when its session has been **created**
-   (`session/new` answered, not tried) and when the person changed the persona of the open pane, the
-   pane is marked, and the next `session/prompt` the engine builds carries the persona as a text block
-   ahead of its own. It is no prompt of the queue, so it cannot be removed, paused, or overtaken by a
-   prompt the person wrote, and it costs no turn. A `session/load` does not send it again: the
-   conversation it loads has it.
+   (`session/new` answered, not tried) and, on every adapter, when the person changed the persona of
+   the open pane, the pane is marked, and the next `session/prompt` the engine builds carries the
+   persona as a text block ahead of its own. The pane owes it until the harness has answered that
+   prompt: a prompt that fails or a process that is lost with it leaves the debt, and the next prompt
+   carries it again (an engine rule: the failure is not something a headless probe can produce on
+   demand, so **a failed first prompt is unmeasured** with the harnesses). It is no prompt of the
+   queue, so it cannot be removed, paused, or overtaken by a prompt the person wrote, and it costs no
+   turn. A `session/load` does not send it again: the conversation it loads has it.
 3. A file in the project folder is not used. The harnesses measured read `AGENTS.md`, but a workspace
    can be a folder the person already has, with a file of their own, and Soyeht writes in the
    person's folder nothing the person did not ask for.
@@ -131,7 +141,7 @@ offers the person, not something the engine adds.
 ```python
 """Persona delivery probe: drives one ACP agent headless over stdio, one case per run.
 
-usage: PROBE_DIR=<scratch folder> [MODEL=<model id>] [RESEND=0] persona_probe.py HARNESS CASE [--restart]
+usage: PROBE_DIR=<scratch folder> [MODEL=<model id>] [RESEND=0] [PERSONA_LONG=1] persona_probe.py HARNESS CASE [--restart]
 HARNESS: claude | codex | opencode | cursor
 CASE: control | system | file-agents | file-claude | first | first-quiet | prepend | codexcfg
   prepend: the persona as a text block ahead of the question, in one prompt
@@ -153,6 +163,12 @@ PERSONA = (
     "Your name is Marlow, the chief agent of this project. Begin every reply with the exact "
     "word Marlow: followed by one short sentence. Never use Markdown."
 )
+if os.environ.get("PERSONA_LONG"):
+    # A persona of a few thousand characters, the way a person would write one.
+    PERSONA += "\n" + "\n".join(
+        f"Fact {n}: the project keeps its notes about topic {n} in a folder of its own."
+        for n in range(1, 61)
+    )
 QUESTION = "Who are you? Answer in one sentence."
 ADAPTERS = {
     "claude": (["npx", "--yes", "@agentclientprotocol/claude-agent-acp@0.100.0"], {}),
@@ -328,7 +344,8 @@ def main():
                 {"sessionId": session, "prompt": [{"type": "text", "text": QUESTION}]},
             )
             out["after_load"] = text
-            out["replayed_user_chunks"] = again.user_chunks
+            out["replayed_user_chunk_lengths"] = [len(c or "") for c in again.user_chunks]
+            out["persona_chars"] = len(PERSONA)
             out["honoured_after_load"] = text.strip().lstrip("*_` ").startswith("Marlow")
         again.close()
     else:

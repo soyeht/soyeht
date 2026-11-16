@@ -387,3 +387,17 @@ pub(crate) fn initialization(system_prompt: bool) -> soyeht_acp::session::Initia
         "agentCapabilities": {"sessionCapabilities": capabilities}}))
     .unwrap()
 }
+
+/// An avatar of the library, with the name given.
+pub(crate) fn avatar(avatar_id: &str, name: &str) -> soyeht_protocol::Avatar {
+    soyeht_protocol::Avatar {
+        avatar_id: avatar_id.into(),
+        name: name.into(),
+        kind: "uploaded".into(),
+        source_hash: "a".repeat(64),
+        image_provider: None,
+        image_model: None,
+        voice: None,
+        created_at: "2026-11-15T10:00:00Z".into(),
+    }
+}

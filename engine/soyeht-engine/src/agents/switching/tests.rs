@@ -5,7 +5,7 @@ use crate::{
     model::{RunningPane, StoredPane},
     screen::Screen,
 };
-use soyeht_protocol::{HarnessLaunch, Pane, PaneMode, PaneState};
+use soyeht_protocol::{AvatarBinding, HarnessLaunch, Pane, PaneMode, PaneState};
 use std::fs;
 
 /// Records a switch of the test agent to "other" that must be ready by `deadline`.
@@ -21,6 +21,8 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
         to_name: "Other".into(),
         candidate_instance_key: "candidate-key".into(),
         previous_queue_paused: false,
+        model: None,
+        effort: None,
     });
     core.agents.get_mut("agent").unwrap().state = state;
     core.agents.set_switch(
@@ -47,6 +49,14 @@ fn arm_switch(core: &mut Core, deadline: Instant) {
             deadline,
         },
     );
+}
+
+/// The request that started the switch is waiting for its result.
+fn await_switch_result(core: &mut Core) {
+    StorePort::mutate(&mut core.store, "scope", "key", "switch", |_| {
+        Ok((json!({"_nativePending": "candidate-key"}), Vec::new()))
+    })
+    .unwrap();
 }
 
 /// A candidate process of `saved`, running the session `state` in `phase`.
@@ -152,11 +162,7 @@ fn a_switch_past_its_deadline_restores_the_pane_and_retires_the_candidate() {
         .checked_sub(Duration::from_secs(1))
         .expect("the clock has run for a second");
     arm_switch(&mut core, past);
-    // The request that started the switch is waiting for its result.
-    StorePort::mutate(&mut core.store, "scope", "key", "switch", |_| {
-        Ok((json!({"_nativePending": "candidate-key"}), Vec::new()))
-    })
-    .unwrap();
+    await_switch_result(&mut core);
     let candidate = candidate_with(
         core.panes["agent"].stored.clone(),
         core.agents.agent("agent").state.clone(),
@@ -343,4 +349,86 @@ fn the_candidate_of_an_avatar_pane_is_the_avatars_and_is_owed_its_persona() {
     let mut ordinary = candidate_under_ceiling("codex", "agent", "auto");
     core.carry_queue(&mut ordinary, &original, &[]).unwrap();
     assert!(!ordinary.state.persona_pending);
+}
+
+/// The binding of the workspace of the test agent, with the harness, model and effort given.
+fn seed_binding(core: &mut Core, harness: &str, model: Option<&str>, effort: Option<&str>) {
+    use soyeht_store::avatars as library;
+    let avatar = crate::test_panes::avatar("avatar", "Sabio");
+    let binding = soyeht_protocol::AvatarBinding {
+        workspace_id: "workspace".into(),
+        avatar_id: "avatar".into(),
+        harness: harness.into(),
+        model: model.map(str::to_owned),
+        effort: effort.map(str::to_owned),
+        hearing: None,
+        voice: None,
+        persona: String::new(),
+        revision: "1".into(),
+    };
+    crate::ports::StorePort::mutate(&mut core.store, "test", "seed-avatar", "seed", |tx| {
+        library::insert_in(tx, &avatar)?;
+        library::bind_in(tx, &binding)?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+}
+
+/// A switch of the avatar pane to "other" with the model and effort given, committed by the engine.
+fn commit_avatar_switch(core: &mut Core) {
+    arm_switch(core, Instant::now() + Duration::from_secs(30));
+    let agent = core.agents.get_mut("agent").unwrap();
+    agent.state.avatar = true;
+    let checkpoint = agent.state.harness_switch.as_mut().unwrap();
+    checkpoint.model = Some("m2".into());
+    checkpoint.effort = Some("high".into());
+    core.agents.take_switch("agent");
+    await_switch_result(core);
+    let mut candidate = candidate_under_ceiling("codex", "agent", "auto");
+    candidate.state.avatar = true;
+    core.commit_switch_candidate("agent", "Other", &mut candidate, &[])
+        .unwrap();
+}
+
+fn avatar_changes(core: &mut Core) -> usize {
+    core.store
+        .replay(0)
+        .unwrap()
+        .1
+        .iter()
+        .filter(|event| event.method == "avatar.changed")
+        .count()
+}
+
+/// The binding after the commit of a switch of the avatar pane that the binding `(harness, model)`
+/// started from, and how many `avatar.changed` the commit published.
+fn after_the_commit(
+    harness: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> (AvatarBinding, usize) {
+    let (mut core, _directory) = crate::test_panes::core_with_agent(&[]);
+    seed_binding(&mut core, harness, model, effort);
+    commit_avatar_switch(&mut core);
+    let binding = soyeht_store::avatars::binding(&core.store, "workspace")
+        .unwrap()
+        .unwrap();
+    (binding, avatar_changes(&mut core))
+}
+
+#[test]
+fn the_end_of_a_switch_of_an_avatar_pane_records_the_harness_model_and_effort_it_asked_for() {
+    let (binding, changes) = after_the_commit("test", Some("m1"), None);
+    assert_eq!(binding.harness, "other");
+    assert_eq!(binding.model.as_deref(), Some("m2"));
+    assert_eq!(binding.effort.as_deref(), Some("high"));
+    assert_eq!(binding.revision, "2");
+    assert_eq!(changes, 1);
+}
+
+#[test]
+fn a_switch_the_assignment_recorded_already_is_not_recorded_again() {
+    let (binding, changes) = after_the_commit("other", Some("m2"), Some("high"));
+    assert_eq!(binding.revision, "1");
+    assert_eq!(changes, 0);
 }
