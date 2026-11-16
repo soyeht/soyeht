@@ -295,13 +295,7 @@ mod tests {
     use serde_json::json;
     use soyeht_protocol::HarnessLaunch;
 
-    fn wait(receivers: &[&str]) -> serde_json::Value {
-        json!({"toolCallId":"call_1","title":"wait","_meta":{"codex":{"collaboration":
-            {"tool":"wait","senderThreadId":"parent","receiverThreadIds":receivers}}}})
-    }
-
-    #[test]
-    fn only_waits_on_tracked_subagents_fold_into_their_rows() {
+    fn new_state() -> State {
         let launch = HarnessLaunch {
             id: "registry.codex-acp".into(),
             name: "Codex".into(),
@@ -310,7 +304,17 @@ mod tests {
             version: "1".into(),
             environment: None,
         };
-        let mut state = State::new(launch, "digest".into(), None).unwrap();
+        State::new(launch, "digest".into(), None).unwrap()
+    }
+
+    fn wait(receivers: &[&str]) -> serde_json::Value {
+        json!({"toolCallId":"call_1","title":"wait","_meta":{"codex":{"collaboration":
+            {"tool":"wait","senderThreadId":"parent","receiverThreadIds":receivers}}}})
+    }
+
+    #[test]
+    fn only_waits_on_tracked_subagents_fold_into_their_rows() {
+        let mut state = new_state();
         // Before any subagent runs, a wait is the agent's own tool call.
         assert!(!awaits_subagents(&state, &wait(&[])));
         state.subagents.insert(
@@ -340,15 +344,7 @@ mod tests {
 
     #[test]
     fn a_wait_is_folded_from_its_first_report_to_the_one_that_ends_it() {
-        let launch = HarnessLaunch {
-            id: "registry.codex-acp".into(),
-            name: "Codex".into(),
-            command: "codex".into(),
-            args: vec![],
-            version: "1".into(),
-            environment: None,
-        };
-        let mut state = State::new(launch, "digest".into(), None).unwrap();
+        let mut state = new_state();
         let done = |id: &str| json!({"sessionUpdate":"tool_call_update","toolCallId":id,"status":"completed"});
         // Before any subagent runs, the wait is the agent's own tool call, and so is its end.
         assert!(!folds_wait(&mut state, "early", &wait_start("early", &[])));
