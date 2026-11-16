@@ -434,3 +434,38 @@ fn a_pane_that_is_not_an_avatars_shows_every_replayed_message_as_it_came() {
         block("Persona.")
     );
 }
+
+#[test]
+fn a_persona_saved_while_a_prompt_streams_is_not_settled_by_that_prompts_answer() {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(false);
+    state.persona_pending = true;
+    let person = json!({"sessionId": "native-1", "prompt": [{"type": "text", "text": "Hello"}]});
+    ahead_of(&store, &mut state, ("w", "prompt-1"), person).unwrap();
+    // The person changes the persona while prompt-1, which carried the old one, is answered.
+    owe(&mut state);
+    assert!(state.persona_carried_by.is_none());
+    answered(&mut state, "prompt-1", true);
+    assert!(state.persona_pending);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_block_whose_end_never_comes_does_not_swallow_what_the_person_wrote_after_it() {
+    let filler = "x".repeat(PROMPT_BYTES + BLOCK_END.len());
+    let long = format!("{BLOCK_LABEL}\n\n{filler}");
+    let shown = shown(&[("m1", &long), ("m2", "Hello")]);
+    assert_eq!(shown, [long, "Hello".to_owned()]);
+}
+
+#[test]
+fn a_load_starts_a_replay_afresh() {
+    let (store, directory) = store_with("Be brief.");
+    let mut state = with_adapter(false);
+    filter_replayed(&mut state, Some("m1"), BLOCK_LABEL);
+    assert!(state.persona_replay.is_some());
+    state.session_id = Some("native-1".into());
+    opening(&store, &directory, &mut state);
+    assert!(state.persona_replay.is_none());
+    std::fs::remove_dir_all(directory).unwrap();
+}

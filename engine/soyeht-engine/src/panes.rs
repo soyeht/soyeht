@@ -99,7 +99,7 @@ fn new_agent(
 pub(crate) type Reply = (Value, Vec<(String, Value)>);
 
 type ReplyFn<'a> = Box<dyn FnOnce(&str) -> Result<Reply> + 'a>;
-type ApplyFn<'a> = Box<dyn FnOnce(&Change<'_>) -> StoreResult<()> + 'a>;
+type ApplyFn<'a> = Box<dyn FnOnce(&Change<'_>, &str) -> StoreResult<()> + 'a>;
 
 /// What a pane that is made as part of another request adds to `pane.create`.
 pub(crate) struct Extras<'a> {
@@ -108,7 +108,7 @@ pub(crate) struct Extras<'a> {
     /// Takes the new pane's id and answers with the request's reply and the events that go ahead
     /// of the pane's own.
     pub(crate) reply: ReplyFn<'a>,
-    /// Writes what the request changes, in the change that stores the pane.
+    /// Writes what the request changes, in the change that stores the pane, which it is told the id of.
     pub(crate) apply: ApplyFn<'a>,
 }
 
@@ -220,26 +220,16 @@ impl Core {
         self.create_process_pane(connection, (method::PANE_CREATE, params), &create, None)
     }
 
-    /// Creates the process pane `create` describes, in one change with whatever `extras` adds. The
-    /// request that asked for it is `(method, params)`, whose idempotency key makes a repeat answer
-    /// with the stored reply and start nothing.
-    pub(crate) fn create_process_pane(
-        &mut self,
+    /// The agent `create` asks for, and the package the request acknowledges, after the checks that can
+    /// refuse it: an unknown harness, and a package nobody acknowledged (ADR 0143: such an agent starts
+    /// only once a person acknowledged that exact package, and this request's own acknowledgement
+    /// counts). `None` for a pane that is not an agent's.
+    fn agent_to_start(
+        &self,
         connection: &str,
-        (request, params): (&str, &Value),
         create: &PaneCreateParams,
-        extras: Option<Extras<'_>>,
-    ) -> Result<Outcome> {
-        let defaults = pane_defaults(&self.store)?;
-        let mut agent = new_agent(&self.directory, &self.store, create)?;
-        let extras = extras.map(|extras| {
-            if let Some(agent) = agent.as_mut() {
-                (extras.setup)(agent);
-            }
-            (extras.reply, extras.apply)
-        });
-        // An agent that downloads a package unchecked starts only once a person acknowledged
-        // that exact package (ADR 0143): this request's own acknowledgement counts.
+    ) -> Result<(Option<crate::agents::state::State>, Option<String>)> {
+        let agent = new_agent(&self.directory, &self.store, create)?;
         let acknowledging = agent
             .as_ref()
             .map(|agent| {
@@ -257,6 +247,37 @@ impl Core {
             })
             .transpose()?
             .flatten();
+        Ok((agent, acknowledging))
+    }
+
+    /// Whether the pane `create` describes would be refused for what it asks (see `agent_to_start`),
+    /// before anything is changed for it.
+    pub(crate) fn check_agent_pane(
+        &self,
+        connection: &str,
+        create: &PaneCreateParams,
+    ) -> Result<()> {
+        self.agent_to_start(connection, create).map(drop)
+    }
+
+    /// Creates the process pane `create` describes, in one change with whatever `extras` adds. The
+    /// request that asked for it is `(method, params)`, whose idempotency key makes a repeat answer
+    /// with the stored reply and start nothing.
+    pub(crate) fn create_process_pane(
+        &mut self,
+        connection: &str,
+        (request, params): (&str, &Value),
+        create: &PaneCreateParams,
+        extras: Option<Extras<'_>>,
+    ) -> Result<Outcome> {
+        let defaults = pane_defaults(&self.store)?;
+        let (mut agent, acknowledging) = self.agent_to_start(connection, create)?;
+        let extras = extras.map(|extras| {
+            if let Some(agent) = agent.as_mut() {
+                (extras.setup)(agent);
+            }
+            (extras.reply, extras.apply)
+        });
         let acknowledged_at = self.now_ms();
         let (saved, terminal_harness) =
             self.prepare_process_pane(create, &defaults, agent.as_ref())?;
@@ -282,7 +303,7 @@ impl Core {
                 tx.insert_pane_launch(&saved.pane.pane_id, session)?;
             }
             if let Some(apply) = apply {
-                apply(tx)?;
+                apply(tx, &saved.pane.pane_id)?;
             }
             Ok((result, events))
         })?;

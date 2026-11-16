@@ -80,6 +80,7 @@ pub(crate) fn open(
         changes.clear_replay = true;
         state.replay_role = None;
         state.replay_user = None;
+        state.persona_replay = None;
         state.replay_continuation_turn = false;
         state.open_messages.clear();
         // A switched session starts at the switch, so its marker leads the

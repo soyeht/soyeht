@@ -481,3 +481,138 @@ fn an_agent_and_a_chief_cannot_make_a_project_folder() {
     }
     assert!(!rig.directory.join(PROJECTS).exists());
 }
+
+/// The announcement of a session that offers a model and no effort.
+fn announce_model_only(rig: &mut Rig, pane: &str, model: &str) {
+    let options = soyeht_acp::config::Options::from_response(&json!({"configOptions": [
+        {"id": "model", "name": "model", "category": "model", "type": "select",
+         "currentValue": model, "options": [{"value": "a", "name": "A"}, {"value": "b", "name": "B"}]}]}))
+    .unwrap();
+    rig.core.agents.get_mut(pane).unwrap().state.options = options;
+}
+
+#[test]
+fn a_selector_the_session_does_not_offer_is_not_asked_for_and_the_pane_keeps_taking_prompts() {
+    let (mut rig, avatar, workspace) = project();
+    let pane = started(&mut rig, &workspace, &avatar);
+    // Nothing is announced yet: nothing is asked for, so nothing holds the queue back.
+    let wanted = json!({"model": "b", "effort": "high"});
+    rig.assign(&workspace, &avatar.avatar_id, "1", wanted).unwrap();
+    assert!(!rig.core.agent_state(&pane).unwrap().needs_configuration());
+    // The model the session has now offers no effort: the effort stays in the binding only.
+    announce(&mut rig, &pane, "a", "a");
+    rig.assign(&workspace, &avatar.avatar_id, "2", json!({"model": "b", "effort": "a"}))
+        .unwrap();
+    assert_eq!(rig.core.agent_state(&pane).unwrap().requested_options.len(), 1);
+    rig.core.agents.get_mut(&pane).unwrap().state.requested_options.clear();
+    announce_model_only(&mut rig, &pane, "b");
+    let moved = json!({"model": "b", "effort": "low"});
+    let answered = rig.assign(&workspace, &avatar.avatar_id, "3", moved).unwrap();
+    assert_eq!(answered["binding"]["effort"], "low");
+    assert!(!rig.core.agent_state(&pane).unwrap().needs_configuration());
+}
+
+#[test]
+fn a_pane_that_is_coming_back_is_not_replaced_and_the_switch_says_it_is_busy() {
+    use crate::agents::state::Phase;
+    let (mut rig, avatar, workspace) = project();
+    rig.add_harness("avatar-other");
+    let pane = started(&mut rig, &workspace, &avatar);
+    rig.core.agents.get_mut(&pane).unwrap().state.phase = Phase::Recovering;
+    let other = json!({"harness": "avatar-other"});
+    let busy = rig.assign(&workspace, &avatar.avatar_id, "1", other);
+    assert_eq!(kind(&busy), ErrorKind::PaneBusy);
+    assert_eq!(open_panes(&rig, &workspace), vec![pane]);
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["bindings"][0]["revision"], "1");
+}
+
+/// Queues `text` on the pane, durably.
+fn queue(rig: &mut Rig, pane: &str, text: &str) -> String {
+    let mut state = rig.core.agent_state(pane).unwrap();
+    let item = state
+        .enqueue(text.into(), soyeht_protocol::PromptOrigin::Human, "t".into())
+        .unwrap();
+    let saved = rig.core.panes[pane].stored.clone();
+    rig.core
+        .commit_agent(saved, state, crate::agents::Changes::default(), None, json!({}))
+        .unwrap();
+    item.prompt_id
+}
+
+#[test]
+fn a_replaced_pane_gives_its_queued_prompts_to_the_new_one_in_order() {
+    use crate::agents::state::Phase;
+    let (mut rig, avatar, workspace) = project();
+    rig.add_harness("avatar-other");
+    let stuck = started(&mut rig, &workspace, &avatar);
+    let ids = [queue(&mut rig, &stuck, "first"), queue(&mut rig, &stuck, "second")];
+    rig.core.agents.get_mut(&stuck).unwrap().state.phase = Phase::NeedsLogin;
+    let other = json!({"harness": "avatar-other"});
+    let new = pane_of(&rig.assign(&workspace, &avatar.avatar_id, "1", other).unwrap());
+    let carried: Vec<String> = rig
+        .core
+        .agent_state(&new)
+        .unwrap()
+        .queue
+        .iter()
+        .map(|prompt| prompt.prompt_id.clone())
+        .collect();
+    assert_eq!(carried, ids);
+    // The rows of the store follow: the new pane has them, the closed one does not.
+    let stored = |rig: &Rig, pane: &str| -> Vec<String> {
+        soyeht_store::agents::queue(&rig.core.store, pane)
+            .unwrap()
+            .into_iter()
+            .map(|prompt| prompt.prompt_id)
+            .collect()
+    };
+    assert_eq!(stored(&rig, &new), ids);
+    assert!(stored(&rig, &stuck).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn a_replacement_that_is_refused_leaves_the_pane_and_the_binding_as_they_were() {
+    use crate::agents::state::Phase;
+    use std::os::unix::fs::PermissionsExt;
+    let (mut rig, avatar, workspace) = project();
+    let stuck = started(&mut rig, &workspace, &avatar);
+    rig.core.agents.get_mut(&stuck).unwrap().state.phase = Phase::NeedsLogin;
+    // A harness that can be resolved (it runs) and not started (its program cannot be read).
+    let program = rig.directory.join("unreadable-agent");
+    std::fs::copy(std::env::current_exe().unwrap(), &program).unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o111)).unwrap();
+    if std::fs::read(&program).is_ok() {
+        return; // The tests run as a user that reads everything.
+    }
+    rig.call(
+        "harness.custom.create",
+        json!({"harness": {"id": "avatar-unreadable", "name": "x",
+            "command": program.to_string_lossy(), "args": [], "version": "1"}}),
+    )
+    .unwrap();
+    let refused = rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "1",
+        json!({"harness": "avatar-unreadable"}),
+    );
+    assert!(refused.is_err());
+    assert_eq!(open_panes(&rig, &workspace), vec![stuck]);
+    let listed = rig.call("avatar.list", json!({})).unwrap();
+    assert_eq!(listed["bindings"][0]["revision"], "1");
+    assert_eq!(listed["bindings"][0]["harness"], rig.harness);
+}
+
+#[test]
+fn a_changed_persona_is_owed_while_a_switch_runs_too() {
+    let (mut rig, avatar, workspace) = project();
+    rig.add_harness("avatar-other");
+    let pane = started(&mut rig, &workspace, &avatar);
+    let both = json!({"harness": "avatar-other", "persona": "New persona."});
+    rig.assign(&workspace, &avatar.avatar_id, "1", both).unwrap();
+    let state = rig.core.agent_state(&pane).unwrap();
+    // If the switch fails the pane stays on its harness, and its next prompt carries the new persona.
+    assert!(state.harness_switch.is_some() && state.persona_pending);
+}

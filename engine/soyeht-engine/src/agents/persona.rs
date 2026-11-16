@@ -27,6 +27,7 @@ use crate::{
     ports::StorePort,
 };
 use serde_json::{Value, json};
+use soyeht_protocol::limits::PROMPT_BYTES;
 use soyeht_store::avatars::Persona;
 
 /// What the block ahead of a prompt says it is, so the harness does not read it as the person's words.
@@ -95,6 +96,8 @@ pub(crate) fn mark_pending(state: &mut State) {
 /// whatever its adapter: the system prompt of one that has it catches up when its session next opens.
 pub(crate) fn owe(state: &mut State) {
     state.persona_pending |= state.avatar;
+    // A prompt that is streaming carried the persona the pane had: its answer does not settle this one.
+    state.persona_carried_by = None;
 }
 
 /// `prompt`, the `session/prompt` request about to be sent for the queued prompt `prompt_id`, with
@@ -201,6 +204,11 @@ pub(crate) fn filter_replayed(state: &mut State, message_id: Option<&str>, chunk
         return chunk.to_owned();
     }
     replayed.held.push_str(chunk);
+    if replayed.held.len() > BLOCK_LABEL.len() + PROMPT_BYTES + BLOCK_END.len() {
+        // An end line that never comes must not swallow what the person wrote after it.
+        replayed.phase = Replay::Passing;
+        return std::mem::take(&mut replayed.held);
+    }
     if matches!(replayed.phase, Replay::Undecided) {
         if replayed.held.starts_with(BLOCK_LABEL) {
             replayed.phase = Replay::Dropping;

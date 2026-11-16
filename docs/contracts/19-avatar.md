@@ -107,16 +107,22 @@ any other durable one).
       pane has**, and the reply says so; the end of the switch records the harness, model and effort it
       asked for, one revision on, with `avatar.changed` (nothing is recorded again when the binding
       already says so), and a switch that fails records nothing, so the binding never names a harness the
-      pane is not on. A pane that `pane.harness.switch` refuses for its phase (it asks for a sign-in, is
-      coming back, or failed) is **replaced**: it is closed and another is started with the harness
-      asked for, in the same call;
-    - a `model` or `effort` that is not the session's is put in the pane's requested options, both in
-      one change, and the engine applies them one at a time when the pane is idle (`pane.config_changed`,
-      or `pane.config_failed` for one the session does not offer);
+      pane is not on. A pane that `pane.harness.switch` refuses and that will not become switchable by itself
+      (it asks for a sign-in, or failed) is **replaced**: after the checks that can refuse the new pane
+      (a harness that cannot be resolved, a package nobody acknowledged) the old one is closed and
+      another is started with the harness asked for, in the same call. The prompts the old pane had
+      queued go to the new one, in order; its conversation does not. A pane that is coming back after a
+      process was lost is not replaced: the switch answers `pane_busy`, and the caller tries again;
+    - a `model` or `effort` that the session announces and that differs is put in the pane's requested
+      options, both in one change, and the engine applies them one at a time when the pane is idle
+      (`pane.config_changed`). One the session does not announce (the model it has now offers no effort)
+      is not asked for, because a request for a selector the session does not offer stops the pane's
+      queue; the binding keeps it;
     - a changed persona or avatar is owed to the pane's next prompt, whatever its adapter has (section
       6);
   - an avatar pane that **failed for good** (its agent is faulted, or its pane is dead) is not the
-    workspace's: the call closes it and starts another, so a workspace has one avatar pane;
+    workspace's: the call starts another, after the same checks, and closes the failed one, so a
+    workspace has one avatar pane. Its queued prompts go to the new pane, its conversation does not;
   - the pane is named for the avatar, and is named again when the avatar is renamed or another avatar
     is given;
   - a `pane.harness.switch` of the avatar pane that a person asks for directly is the avatar thinking

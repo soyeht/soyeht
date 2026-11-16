@@ -2,6 +2,7 @@
 //! keeping it in step with the binding, and the binding in step with it.
 
 use super::*;
+use soyeht_store::agents;
 use crate::{
     agents::{
         Changes,
@@ -11,7 +12,7 @@ use crate::{
     panes::Extras,
 };
 use soyeht_protocol::{
-    ConfigValue, PaneCloseParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
+    PromptItem, ConfigValue, PaneCloseParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
     PaneRenameParams, PaneState, Role,
 };
 
@@ -78,24 +79,29 @@ pub(super) struct Assignment<'a> {
 
 /// Binds the avatar and starts its pane in one change: the pane is an agent of the binding's
 /// harness, named for the avatar, and the workspace's `chief` from its first session. The lead
-/// prompt of `pane.role.set` is not queued: the persona says what the avatar is for.
+/// prompt of `pane.role.set` is not queued: the persona says what the avatar is for. A pane of the
+/// workspace that failed for good, or that cannot be switched, is closed in the same call (a
+/// workspace has one avatar pane), after the checks that can refuse the new one, and the prompts it
+/// had queued go to the new pane, in order; the conversation does not.
 pub(super) fn start(
     core: &mut Core,
     connection: &str,
     params: &Value,
     assignment: Assignment<'_>,
 ) -> Result<Outcome> {
-    // A pane that failed for good, or that cannot be switched, goes in the same call: a workspace
-    // has one avatar pane.
-    close_open(core, connection, &assignment.binding.workspace_id)?;
     let create = create_request(assignment.request, &assignment.avatar.name);
+    core.check_agent_pane(connection, &create)?;
+    let carried = queued_prompts(core, &assignment.binding.workspace_id);
+    close_open(core, connection, &assignment.binding.workspace_id)?;
     let binding = assignment.binding;
     let event = binding_event(&binding)?;
     let applied = binding.clone();
+    let prompts: Vec<PromptItem> = carried.iter().map(|(_, prompt)| prompt.clone()).collect();
     let extras = Extras {
-        setup: Box::new(|state: &mut State| {
+        setup: Box::new(move |state: &mut State| {
             state.avatar = true;
             state.mcp_role = Role::Chief;
+            state.restore_queue(prompts);
         }),
         reply: Box::new(move |pane_id| {
             let result = AvatarAssignResult {
@@ -104,7 +110,15 @@ pub(super) fn start(
             };
             Ok((model::to_value(&result)?, vec![event]))
         }),
-        apply: Box::new(move |tx| library::bind_in(tx, &applied)),
+        apply: Box::new(move |tx, pane_id| {
+            library::bind_in(tx, &applied)?;
+            // The queue rows belong to the pane: the closed one gives them up, and the new one has them.
+            for (old_pane, prompt) in &carried {
+                agents::remove_prompt(tx, old_pane, &prompt.prompt_id)?;
+                agents::enqueue_prompt(tx, pane_id, prompt)?;
+            }
+            Ok(())
+        }),
     };
     core.create_process_pane(
         connection,
@@ -112,6 +126,19 @@ pub(super) fn start(
         &create,
         Some(extras),
     )
+}
+
+/// The prompts the open avatar panes of the workspace have queued, with the pane each is queued in.
+fn queued_prompts(core: &Core, workspace_id: &str) -> Vec<(String, PromptItem)> {
+    open_panes(core, workspace_id)
+        .filter_map(|pane_id| core.agents.get(pane_id).map(|agent| (pane_id, &agent.state)))
+        .flat_map(|(pane_id, state)| {
+            state
+                .queue
+                .iter()
+                .map(move |prompt| (pane_id.clone(), prompt.clone()))
+        })
+        .collect()
 }
 
 fn binding_event(binding: &AvatarBinding) -> Result<(String, Value)> {
@@ -124,13 +151,12 @@ fn binding_event(binding: &AvatarBinding) -> Result<(String, Value)> {
     })
 }
 
-/// Whether the harness of the pane cannot be switched as it is: it asks for a sign-in, is coming
-/// back, or failed. `pane.harness.switch` refuses such a pane, so the assignment replaces it.
+/// Whether the pane's harness cannot be switched and will not become switchable by itself: it asks for
+/// a sign-in or failed. `pane.harness.switch` refuses such a pane, so the assignment replaces it. A pane
+/// that is coming back (`Recovering`, for seconds after a process was lost) is not replaced: the
+/// switch answers `pane_busy` and the caller tries again.
 fn refuses_switch(state: &State) -> bool {
-    matches!(
-        state.phase,
-        Phase::NeedsLogin | Phase::Faulted | Phase::Recovering
-    )
+    matches!(state.phase, Phase::NeedsLogin | Phase::Faulted)
 }
 
 /// Closes the avatar panes the workspace has open.
@@ -148,9 +174,10 @@ fn close_open(core: &mut Core, connection: &str, workspace_id: &str) -> Result<(
 
 /// Records the binding of a workspace that has its avatar pane open, and brings the pane to it:
 /// a harness that is not the pane's goes through `pane.harness.switch` (a pane that cannot be
-/// switched is replaced), and the model and effort that differ from the session's, with a persona
-/// or avatar that changed, are recorded on the pane in one change (the model and effort are applied
-/// one at a time when the pane is idle, the persona is owed to its next prompt). The pane is changed
+/// switched is replaced), and the model and effort the session announces and that differ, with a
+/// persona or avatar that changed, are recorded on the pane in one change (the model and effort are
+/// applied one at a time when the pane is idle, the persona is owed to its next prompt, also when a
+/// switch runs and fails). The pane is changed
 /// first, so a refusal leaves the binding as it was. While a switch runs the binding keeps the
 /// harness, model and effort the pane has: the end of the switch records the new ones.
 pub(super) fn update(
@@ -160,7 +187,7 @@ pub(super) fn update(
     pane_id: &str,
     assignment: Assignment<'_>,
 ) -> Result<Outcome> {
-    let mut state = core.agent_state(pane_id)?;
+    let state = core.agent_state(pane_id)?;
     let switches = state.launch.id != assignment.binding.harness;
     if switches && refuses_switch(&state) {
         return start(core, connection, params, assignment);
@@ -186,19 +213,21 @@ pub(super) fn update(
             binding.model.clone_from(&before.model);
             binding.effort.clone_from(&before.effort);
         }
-    } else {
-        let persona_changed = before.as_ref().is_none_or(|before| {
-            before.persona != binding.persona || before.avatar_id != binding.avatar_id
-        });
-        let mut changed = request_options(&mut state, &binding);
-        if persona_changed {
-            crate::agents::persona::owe(&mut state);
-            changed = true;
-        }
-        if changed {
-            let saved = core.pane(pane_id)?.stored.clone();
-            core.commit_agent(saved, state, Changes::default(), None, json!({}))?;
-        }
+    }
+    // What the pane is changed by, apart from the harness: in one change. The persona is owed
+    // whether or not a switch runs, which may fail and leave the pane on the persona it had.
+    let persona_changed = before.as_ref().is_none_or(|before| {
+        before.persona != binding.persona || before.avatar_id != binding.avatar_id
+    });
+    let mut state = core.agent_state(pane_id)?;
+    let mut changed = !switches && request_options(&mut state, &binding);
+    if persona_changed {
+        crate::agents::persona::owe(&mut state);
+        changed = true;
+    }
+    if changed {
+        let saved = core.pane(pane_id)?.stored.clone();
+        core.commit_agent(saved, state, Changes::default(), None, json!({}))?;
     }
     let name = avatar.name.clone();
     let event = binding_event(&binding)?;
@@ -217,14 +246,18 @@ pub(super) fn update(
 }
 
 /// Asks for the model and effort of the binding that the session does not have: both go to the
-/// pane's requested options, which the engine applies one at a time when the pane is idle.
+/// pane's requested options, which the engine applies one at a time when the pane is idle. Only a
+/// selector the session announces now is asked for: the engine stops the pane's queue while it holds
+/// a request for a selector the session does not offer, so a value for one that is not there (the
+/// model the session has now offers no effort) stays in the binding and is not asked for.
 fn request_options(state: &mut State, binding: &AvatarBinding) -> bool {
     let mut changed = false;
     for (key, wanted) in [("model", &binding.model), ("effort", &binding.effort)] {
         let Some(wanted) = wanted else { continue };
         let wanted = ConfigValue::V0(wanted.clone());
         let current = requested_option(&state.options, key).map(|option| &option.current_value);
-        if current != Some(&wanted) && state.requested_options.get(key) != Some(&wanted) {
+        let differs = current.is_some_and(|current| current != &wanted);
+        if differs && state.requested_options.get(key) != Some(&wanted) {
             state.requested_options.insert(key.to_owned(), wanted);
             changed = true;
         }
