@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 mod migrations;
 
-pub const SCHEMA_VERSION: u32 = 37;
+pub const SCHEMA_VERSION: u32 = 38;
 
 #[derive(Debug)]
 pub enum Error {
@@ -99,6 +99,9 @@ pub enum Error {
     InvalidHarnessSignIn,
     InvalidAdapterAcknowledgement,
     InvalidProjectTrust,
+    InvalidAvatar,
+    AvatarInUse,
+    StaleAvatarBinding,
     TestFixture(&'static str),
 }
 impl fmt::Display for Error {
@@ -204,6 +207,9 @@ impl fmt::Display for Error {
             Self::InvalidHarnessSignIn => f.write_str("invalid harness sign-in"),
             Self::InvalidAdapterAcknowledgement => f.write_str("invalid adapter acknowledgement"),
             Self::InvalidProjectTrust => f.write_str("invalid project trust"),
+            Self::InvalidAvatar => f.write_str("invalid avatar"),
+            Self::AvatarInUse => f.write_str("an open workspace has this avatar"),
+            Self::StaleAvatarBinding => f.write_str("the avatar binding changed since it was read"),
             Self::TestFixture(message) => f.write_str(message),
         }
     }
@@ -218,7 +224,8 @@ impl From<&Error> for ErrorKind {
             Error::IdempotencyConflict => ErrorKind::IdempotencyConflict,
             Error::CursorTooOld => ErrorKind::CursorTooOld,
             Error::DiskFull => ErrorKind::DiskFull,
-            Error::TaskVersionConflict => ErrorKind::StaleVersion,
+            Error::TaskVersionConflict | Error::StaleAvatarBinding => ErrorKind::StaleVersion,
+            Error::AvatarInUse => ErrorKind::PaneBusy,
             Error::TaskDependencyCycle => ErrorKind::DependencyCycle,
             Error::TaskReservationConflict => ErrorKind::TaskHasOwner,
             Error::SubitemNotFound => ErrorKind::NotFound,
@@ -260,7 +267,8 @@ impl From<&Error> for ErrorKind {
             | Error::TranscriptPageTooLarge
             | Error::InvalidEditorFile
             | Error::InvalidFileHistoryLimit
-            | Error::InvalidFileReplacement => ErrorKind::InvalidParams,
+            | Error::InvalidFileReplacement
+            | Error::InvalidAvatar => ErrorKind::InvalidParams,
             _ => ErrorKind::InternalError,
         }
     }

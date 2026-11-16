@@ -135,6 +135,28 @@ pub const INK_DURATION_MS: usize = 3600000;
 pub const INK_CANDIDATE_BYTES: usize = 2048;
 /// The longest the engine takes to answer one `ink.recognize` request, the wait behind other recognitions included; one that outlives it is answered with `internal_error`.
 pub const INK_DEADLINE_SEC: usize = 10;
+/// The most avatars the library holds. `avatar.create` beyond it is `invalid_params`.
+pub const AVATAR_COUNT: usize = 200;
+/// The longest avatar name (in characters); the `maxLength` of `Avatar.name`.
+pub const AVATAR_NAME_CHARS: usize = 80;
+/// The largest source picture (a PNG) `avatar.create` takes; a larger one is `attachment_limit_exceeded`.
+pub const AVATAR_PICTURE_BYTES: usize = 10485760;
+/// The largest width or height, in pixels, the PNG header of a source picture may declare.
+pub const AVATAR_PICTURE_DIMENSION: usize = 4096;
+/// The longest persona text (in characters) of a binding; the `maxLength` of `AvatarBinding.persona`. Never written to a log.
+pub const AVATAR_PERSONA_CHARS: usize = 16000;
+/// The longest speech provider identifier (in characters) of an `AvatarVoice` or `AvatarHearing`.
+pub const AVATAR_PROVIDER_ID_CHARS: usize = 64;
+/// The longest voice identifier (in characters) of an `AvatarVoice`.
+pub const AVATAR_VOICE_ID_CHARS: usize = 128;
+/// The longest language tag (in characters) of an `AvatarHearing`; the length a BCP 47 tag may have.
+pub const AVATAR_LANGUAGE_CHARS: usize = 35;
+/// The longest model or effort name (in characters) of a binding.
+pub const AVATAR_SETTING_CHARS: usize = 128;
+/// The longest image provider or image model catalogue id (in characters) of an avatar.
+pub const AVATAR_CATALOGUE_ID_CHARS: usize = 128;
+/// The longest `Avatar.kind` (in characters).
+pub const AVATAR_KIND_CHARS: usize = 32;
 pub const FRAME_KIND_JSON: u8 = 1;
 pub const FRAME_KIND_TERMINAL: u8 = 2;
 pub const FRAME_KIND_ATTACHMENT: u8 = 3;
