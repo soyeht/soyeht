@@ -2,7 +2,6 @@
 //! keeping it in step with the binding, and the binding in step with it.
 
 use super::*;
-use soyeht_store::agents;
 use crate::{
     agents::{
         Changes,
@@ -12,9 +11,10 @@ use crate::{
     panes::Extras,
 };
 use soyeht_protocol::{
-    PromptItem, ConfigValue, PaneCloseParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
-    PaneRenameParams, PaneState, Role,
+    ConfigValue, PaneCloseParams, PaneCreateParams, PaneHarnessSwitchParams, PaneMode,
+    PaneRenameParams, PaneState, PromptItem, Role,
 };
+use soyeht_store::agents;
 
 /// The avatar panes the workspace has open, alive or not.
 fn open_panes<'a>(core: &'a Core, workspace_id: &'a str) -> impl Iterator<Item = &'a String> {
@@ -131,7 +131,11 @@ pub(super) fn start(
 /// The prompts the open avatar panes of the workspace have queued, with the pane each is queued in.
 fn queued_prompts(core: &Core, workspace_id: &str) -> Vec<(String, PromptItem)> {
     open_panes(core, workspace_id)
-        .filter_map(|pane_id| core.agents.get(pane_id).map(|agent| (pane_id, &agent.state)))
+        .filter_map(|pane_id| {
+            core.agents
+                .get(pane_id)
+                .map(|agent| (pane_id, &agent.state))
+        })
         .flat_map(|(pane_id, state)| {
             state
                 .queue

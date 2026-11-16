@@ -507,17 +507,34 @@ fn a_selector_the_session_does_not_offer_is_not_asked_for_and_the_pane_keeps_tak
     let pane = started(&mut rig, &workspace, &avatar);
     // Nothing is announced yet: nothing is asked for, so nothing holds the queue back.
     let wanted = json!({"model": "b", "effort": "high"});
-    rig.assign(&workspace, &avatar.avatar_id, "1", wanted).unwrap();
+    rig.assign(&workspace, &avatar.avatar_id, "1", wanted)
+        .unwrap();
     assert!(!rig.core.agent_state(&pane).unwrap().needs_configuration());
     // The model the session has now offers no effort: the effort stays in the binding only.
     announce(&mut rig, &pane, "a", "a");
-    rig.assign(&workspace, &avatar.avatar_id, "2", json!({"model": "b", "effort": "a"}))
-        .unwrap();
-    assert_eq!(rig.core.agent_state(&pane).unwrap().requested_options.len(), 1);
-    rig.core.agents.get_mut(&pane).unwrap().state.requested_options.clear();
+    rig.assign(
+        &workspace,
+        &avatar.avatar_id,
+        "2",
+        json!({"model": "b", "effort": "a"}),
+    )
+    .unwrap();
+    assert_eq!(
+        rig.core.agent_state(&pane).unwrap().requested_options.len(),
+        1
+    );
+    rig.core
+        .agents
+        .get_mut(&pane)
+        .unwrap()
+        .state
+        .requested_options
+        .clear();
     announce_model_only(&mut rig, &pane, "b");
     let moved = json!({"model": "b", "effort": "low"});
-    let answered = rig.assign(&workspace, &avatar.avatar_id, "3", moved).unwrap();
+    let answered = rig
+        .assign(&workspace, &avatar.avatar_id, "3", moved)
+        .unwrap();
     assert_eq!(answered["binding"]["effort"], "low");
     assert!(!rig.core.agent_state(&pane).unwrap().needs_configuration());
 }
@@ -541,11 +558,21 @@ fn a_pane_that_is_coming_back_is_not_replaced_and_the_switch_says_it_is_busy() {
 fn queue(rig: &mut Rig, pane: &str, text: &str) -> String {
     let mut state = rig.core.agent_state(pane).unwrap();
     let item = state
-        .enqueue(text.into(), soyeht_protocol::PromptOrigin::Human, "t".into())
+        .enqueue(
+            text.into(),
+            soyeht_protocol::PromptOrigin::Human,
+            "t".into(),
+        )
         .unwrap();
     let saved = rig.core.panes[pane].stored.clone();
     rig.core
-        .commit_agent(saved, state, crate::agents::Changes::default(), None, json!({}))
+        .commit_agent(
+            saved,
+            state,
+            crate::agents::Changes::default(),
+            None,
+            json!({}),
+        )
         .unwrap();
     item.prompt_id
 }
@@ -553,9 +580,15 @@ fn queue(rig: &mut Rig, pane: &str, text: &str) -> String {
 #[test]
 fn a_replaced_pane_gives_its_queued_prompts_to_the_new_one_in_order() {
     let (mut rig, avatar, workspace, stuck) = stuck_pane();
-    let ids = [queue(&mut rig, &stuck, "first"), queue(&mut rig, &stuck, "second")];
+    let ids = [
+        queue(&mut rig, &stuck, "first"),
+        queue(&mut rig, &stuck, "second"),
+    ];
     let other = json!({"harness": "avatar-other"});
-    let new = pane_of(&rig.assign(&workspace, &avatar.avatar_id, "1", other).unwrap());
+    let new = pane_of(
+        &rig.assign(&workspace, &avatar.avatar_id, "1", other)
+            .unwrap(),
+    );
     let carried: Vec<String> = rig
         .core
         .agent_state(&new)
@@ -615,7 +648,8 @@ fn a_changed_persona_is_owed_while_a_switch_runs_too() {
     rig.add_harness("avatar-other");
     let pane = started(&mut rig, &workspace, &avatar);
     let both = json!({"harness": "avatar-other", "persona": "New persona."});
-    rig.assign(&workspace, &avatar.avatar_id, "1", both).unwrap();
+    rig.assign(&workspace, &avatar.avatar_id, "1", both)
+        .unwrap();
     let state = rig.core.agent_state(&pane).unwrap();
     // If the switch fails the pane stays on its harness, and its next prompt carries the new persona.
     assert!(state.harness_switch.is_some() && state.persona_pending);
