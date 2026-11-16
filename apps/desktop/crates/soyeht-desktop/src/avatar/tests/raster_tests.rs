@@ -6,6 +6,9 @@ use soyeht_avatar::{
 };
 use std::sync::Arc;
 
+/// A canvas of the usual size, for the tests that need a face as large as a real one.
+const LARGE: u32 = 2 * 256;
+
 pub(super) const SPEC: Spec = Spec {
     side: 160,
     ring: 32,
@@ -71,6 +74,21 @@ fn column_count(picture: &Picture, x: u32, colour: [u8; 4]) -> usize {
     (0..picture.height)
         .filter(|y| rgba(picture, x, *y) == colour)
         .count()
+}
+
+/// The frames of a speaking avatar, stepped at 60 Hz by the level of a made-up voice.
+pub(super) fn speaking(runtime: &mut Runtime, count: usize) -> Vec<Frame> {
+    (0..count)
+        .map(|i| {
+            let t = i as f64 / 60.0;
+            let db = -40.0 + 22.0 * (0.5 + 0.5 * (t * 22.0).sin());
+            let audio = Some(Audio {
+                position: t,
+                db: Some(db),
+            });
+            runtime.step(1.0 / 60.0, State::Speaking, audio)
+        })
+        .collect()
 }
 
 fn rasteriser(spec: Spec) -> Rasteriser {
@@ -205,7 +223,11 @@ fn the_same_frame_draws_the_same_pixels() {
 
 #[test]
 fn the_grid_reads_where_the_rule_says() {
-    let package = Spec { side: 512, ring: 8 }.package();
+    let package = Spec {
+        side: LARGE,
+        ring: 8,
+    }
+    .package();
     let pose = Pose {
         rot: 3.0,
         head_x: 4.0,
@@ -221,15 +243,15 @@ fn the_grid_reads_where_the_rule_says() {
         zoom: 1.05,
     };
     let canvas = (package.canvas.width, package.canvas.height);
-    let out = (512, 400);
+    let out = (LARGE, 400);
     let mut field = Field::default();
     field.fill(&package.warp, &pose, canvas, out);
     let mut worst = 0.0_f64;
     for y in (0..out.1).step_by(3) {
         for x in (0..out.0).step_by(2) {
             let (cx, cy) = (
-                (f64::from(x) + 0.5) * 512.0 / f64::from(out.0),
-                (f64::from(y) + 0.5) * 512.0 / f64::from(out.1),
+                (f64::from(x) + 0.5) * f64::from(LARGE) / f64::from(out.0),
+                (f64::from(y) + 0.5) * f64::from(LARGE) / f64::from(out.1),
             );
             let exact = package.warp.source_point(&pose, cx, cy);
             let (read, _, _) = field.row_run(x, y);
@@ -238,7 +260,7 @@ fn the_grid_reads_where_the_rule_says() {
                 .max((exact[1] - f64::from(read[1])).abs());
         }
     }
-    // The strongest pose the acting layer makes, on a face drawn 512 across: a fifth of a pixel.
+    // The strongest pose the acting layer makes, on a face drawn at the usual size: a fifth of a pixel.
     assert!(worst < 0.2, "the grid is {worst} pixels off the rule");
 }
 
@@ -248,14 +270,7 @@ fn a_spoken_clip_animates_the_avatar_and_every_frame_is_whole() {
     let mut raster = Rasteriser::new(Arc::clone(&avatar));
     let mut runtime = Runtime::new(avatar.package(), Tune::default(), 7);
     let mut distinct = std::collections::HashSet::new();
-    for i in 0..180 {
-        let t = f64::from(i) / 60.0;
-        let db = -40.0 + 22.0 * (0.5 + 0.5 * (t * 22.0).sin());
-        let audio = Some(Audio {
-            position: t,
-            db: Some(db),
-        });
-        let wanted = runtime.step(1.0 / 60.0, State::Speaking, audio);
+    for wanted in speaking(&mut runtime, 180) {
         let picture = raster.render(&wanted, SPEC.side);
         assert_eq!(picture.bgra.len(), (SPEC.side * SPEC.side * 4) as usize);
         assert!(picture.bgra.as_chunks::<4>().0.iter().all(|p| p[3] == 255));

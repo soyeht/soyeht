@@ -6,8 +6,8 @@ use super::{
     art::load_folder,
     view::{AvatarStage, Drive, Driver},
 };
-use crate::theme::ThemeName;
-use gpui::{App, AppContext, Bounds, WindowBounds, WindowOptions, px, size};
+use crate::{gallery::open_centered, theme::ThemeName};
+use gpui::{App, AppContext};
 use gpui_platform::application;
 use soyeht_avatar::{Audio, State};
 use soyeht_platform::log;
@@ -65,18 +65,9 @@ pub fn run_stage(folder: PathBuf, theme: ThemeName) {
         }
     };
     application().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(WINDOW.0), px(WINDOW.1)), cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..WindowOptions::default()
-            },
-            |_, cx| cx.new(|_| AvatarStage::new(avatar, Script { clock: 0.0 }, 1, theme.palette())),
-        );
-        if opened.is_err() {
-            cx.quit();
-        }
-        cx.activate(true);
+        open_centered(cx, WINDOW, move |_, cx| {
+            cx.new(|_| AvatarStage::new(avatar, Script { clock: 0.0 }, 1, theme.palette()))
+        });
     });
 }
 

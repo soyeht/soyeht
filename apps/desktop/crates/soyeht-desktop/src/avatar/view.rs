@@ -6,10 +6,13 @@
 //! itself, so it animates for as long as it is shown.
 
 use super::{art::Avatar, raster::Rasteriser};
-use crate::theme::Palette;
+use crate::{
+    picture::{paint_picture, painted, swap_picture},
+    theme::Palette,
+};
 use gpui::{
-    Bounds, Context, IntoElement, ParentElement, Pixels, Render, RenderImage, Styled, Window,
-    canvas, div, point, px, rgb, size,
+    Bounds, Context, IntoElement, ParentElement, Pixels, Render, RenderImage, Styled, Window, div,
+    point, px, rgb, size,
 };
 use soyeht_avatar::{Audio, Runtime, State, Tune};
 use std::{sync::Arc, time::Instant};
@@ -117,34 +120,21 @@ fn contained(bounds: Bounds<Pixels>, canvas: soyeht_avatar::Size) -> Bounds<Pixe
 
 impl Render for AvatarStage {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let entity = cx.entity();
-        div().size_full().bg(rgb(self.palette.face)).child(
-            canvas(
-                |bounds, _, _| bounds,
-                move |bounds, _, window, cx| {
-                    entity.update(cx, |stage, _| stage.paint(bounds, window));
-                },
-            )
-            .size_full(),
-        )
+        div()
+            .size_full()
+            .bg(rgb(self.palette.face))
+            .child(painted(cx.entity(), Self::paint).size_full())
     }
 }
 
 impl AvatarStage {
-    fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window) {
+    fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window, _: &mut Context<Self>) {
         let shown = contained(bounds, self.avatar.package().canvas);
-        if let Some(image) = self.frame(shown, window.scale_factor())
-            && let Some(old) = self.picture.replace(image)
-            && window.drop_image(old).is_err()
-        {
-            // The picture was already gone from the atlas.
+        if let Some(image) = self.frame(shown, window.scale_factor()) {
+            swap_picture(window, &mut self.picture, image, |image| image);
         }
-        if let Some(image) = &self.picture
-            && window
-                .paint_image(shown, gpui::Corners::default(), Arc::clone(image), 0, false)
-                .is_err()
-        {
-            // The picture could not be uploaded; the next one is tried at the next frame.
+        if let Some(image) = &self.picture {
+            paint_picture(window, shown, image);
         }
         window.request_animation_frame();
     }

@@ -35,6 +35,7 @@ mod os_notify;
 mod pairing_ui;
 mod pane_floors;
 mod pane_ui;
+mod picture;
 mod pointer;
 mod popup_fit;
 mod prefs;

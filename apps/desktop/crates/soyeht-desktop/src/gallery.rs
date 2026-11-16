@@ -12,8 +12,8 @@ use crate::{
     },
 };
 use gpui::{
-    App, AppContext, Bounds, Context, Div, IntoElement, ParentElement, Render, Styled, Window,
-    WindowBounds, WindowOptions, div, px, rgb, size,
+    App, AppContext, Bounds, Context, Div, Entity, IntoElement, ParentElement, Render, Styled,
+    Window, WindowBounds, WindowOptions, div, px, rgb, size,
 };
 use gpui_platform::application;
 
@@ -120,21 +120,28 @@ impl Render for Gallery {
 /// Opens one window with the gallery in `theme` and runs until it closes.
 pub fn run(theme: ThemeName) {
     application().run(move |cx: &mut App| {
-        let bounds = Bounds::centered(None, size(px(SIZE.0), px(SIZE.1)), cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(bounds)),
-                ..WindowOptions::default()
-            },
-            |_, cx| {
-                cx.new(|_| Gallery {
-                    palette: theme.palette(),
-                })
-            },
-        );
-        if opened.is_err() {
-            cx.quit();
-        }
-        cx.activate(true);
+        open_centered(cx, SIZE, move |_, cx| {
+            cx.new(|_| Gallery {
+                palette: theme.palette(),
+            })
+        });
     });
+}
+
+/// Opens one window of `extent` points, centred, with the view `build` makes, and brings it to the
+/// front; the program stops when the window cannot be opened.
+pub(crate) fn open_centered<V: Render + 'static>(
+    cx: &mut App,
+    extent: (f32, f32),
+    build: impl FnOnce(&mut Window, &mut App) -> Entity<V> + 'static,
+) {
+    let bounds = Bounds::centered(None, size(px(extent.0), px(extent.1)), cx);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        ..WindowOptions::default()
+    };
+    if cx.open_window(options, build).is_err() {
+        cx.quit();
+    }
+    cx.activate(true);
 }

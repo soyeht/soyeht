@@ -66,6 +66,15 @@ fn owns_edge(a: Snapped, b: Snapped) -> bool {
     dy > 0 || (dy == 0 && dx > 0)
 }
 
+/// Which edges of the triangle (the one opposite each corner) it owns, for the pixels exactly on them.
+fn owned_edges(p: &[Snapped; 3]) -> [bool; 3] {
+    [
+        owns_edge(p[1], p[2]),
+        owns_edge(p[2], p[0]),
+        owns_edge(p[0], p[1]),
+    ]
+}
+
 /// Draws the triangle over `target`: its pixels read `source` once for each of `readings` (at
 /// most `MOST_READINGS`, in the order they are laid), the readings mixed one over another, and
 /// the result laid over the pixel at the interpolated feather (0 to 1).
@@ -97,11 +106,7 @@ pub(super) fn fill(
     // The pixels whose centres can be inside: the box of the corners, in whole pixels.
     let (min_x, max_x) = bounds(p.map(|s| s.x), target.width());
     let (min_y, max_y) = bounds(p.map(|s| s.y), target.height());
-    let owns = [
-        owns_edge(p[1], p[2]),
-        owns_edge(p[2], p[0]),
-        owns_edge(p[0], p[1]),
-    ];
+    let owns = owned_edges(&p);
     // What each corner holds, as a weight of its edge function: the attribute at a pixel is the
     // sum over the three edges of the edge's value there times its corner's attribute, over the
     // area. The edge values change by a constant from one pixel to the next along a row.
@@ -378,11 +383,7 @@ mod tests {
             if edge(p[0], p[1], p[2]) < 0 {
                 p.swap(1, 2);
             }
-            let owns = [
-                owns_edge(p[1], p[2]),
-                owns_edge(p[2], p[0]),
-                owns_edge(p[0], p[1]),
-            ];
+            let owns = owned_edges(&p);
             for y in 0..40_i64 {
                 let centre_y = y * SUBPIXEL + SUBPIXEL / 2;
                 let brute: Vec<i64> = (0..40)

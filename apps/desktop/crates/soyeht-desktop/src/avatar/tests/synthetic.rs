@@ -2,7 +2,7 @@
 //! a frame says which picture it was read from. The lips and the inner mouth are rings of
 //! `ring` vertices around the mouth's centre, sized by the drawing's anchor in the parameter
 //! space; the proportions are the canvas's, so one description gives a 96 pixel avatar for the
-//! tests and a 512 pixel one for the frame budget.
+//! tests and a larger one for the frame budget.
 
 use crate::avatar::{Avatar, LoadError, Pixmap};
 use serde_json::{Value, json};
