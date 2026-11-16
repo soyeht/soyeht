@@ -11,6 +11,7 @@ name = "soyeht"
 path = "src/main.rs"
 
 [dependencies]
+soyeht-image = { path = "../soyeht-image" }
 soyeht-platform = { path = "../soyeht-platform" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 soyeht-service = { path = "../soyeht-service" }
@@ -22,6 +23,8 @@ uuid.workspace = true
 workspace = true
 
 [dev-dependencies]
+png.workspace = true
+soyeht-avatar = { path = "../soyeht-avatar" }
 soyeht-platform = { path = "../soyeht-platform", features = ["test-support"] }
 soyeht-ptyd = { path = "../soyeht-ptyd" }
 soyeht-store = { path = "../soyeht-store", features = ["test-support"] }

@@ -52,13 +52,19 @@ Each layer depends only on the layers listed above it.
      aligner and the acting layer. It has no Soyeht dependencies, no IO and no async runtime.
      The Swift and desktop renderers pass the same vectors (`contracts/vectors/avatar-*.json`),
      and `apps/desktop` and `soyeht-cli` (`soyeht avatar build`) may depend on it.
+   - `soyeht-image`: the image catalogue and the frame tooling of an avatar (ADR 0166): the image
+     providers as data (a descriptor each, local or cloud, no model hard-wired), the adapters
+     that send one edit to a provider with `curl` under `soyeht-process` and the person's own
+     key (kept in an owner-only file, never on a command line), the frame spec and the
+     deterministic check of an edited frame. It depends on `soyeht-platform` and
+     `soyeht-process`; `soyeht-cli` (`soyeht avatar frame` and `check`) uses it.
    - `soyeht-service`: the service seam (ADR 0114), which renders and registers the launchd
      agent, systemd user unit or Task Scheduler task that starts the engine and the supervisor
      at login. Only the command line uses it; the engine does not register itself, and the Mac app
      registers the services by running the `soyeht` command line it carries in its bundle (ADR 0120).
 4. `engine/soyeht-engine`: assembles the crates above behind one local socket
-   and WebSocket API. The `soyeht-cli` binary uses protocol, platform and service
-   (its tests also use ptyd and store); the `soyeht-mcp` binary uses protocol, platform
+   and WebSocket API. The `soyeht-cli` binary uses protocol, platform, service and image
+   (its tests also use ptyd, store and avatar); the `soyeht-mcp` binary uses protocol, platform
    and skills. Neither depends on the engine crate.
 5. `apps/shared` (`SoyehtClient`): the shared Swift client. It holds the engine
    client, replicas, presentation policies, layout math and the theme. Put logic

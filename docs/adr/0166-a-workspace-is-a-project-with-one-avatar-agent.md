@@ -537,6 +537,23 @@ Total of the slices: **68 agent-days** (3 + 3 + 3 + 5 + 5 + 5 + 4 + 6 + 5 + 5 + 
 - The slice-0 spike either confirms these numbers or replaces them within 3 working days. It has not run
   yet, so nothing here has been confirmed by it. Do not announce a launch date before it.
 
+## Slice 9a: what was built
+
+Built: the image catalogue, the adapters, the frame spec, `soyeht avatar` (`providers`, `frames`,
+`frame`, `check`, `key`) and the `avatar-builder` skill, in the crate `soyeht-image` (layer 3, in
+`scripts/check_layers.py` and `AGENTS.md`) and `soyeht-skills`; see `docs/avatar-image-catalogue.md`.
+The catalogue's first list (question 4 below): `qwen-image-2.1-comfyui`, a local ComfyUI entry that
+carries the project's recipe as data, and `openai-compatible-image-edit`, a cloud entry for any
+service that answers the OpenAI image-edit request, with the person's own address, model and key.
+The image providers' keys live on the build host, in an owner-only file per provider; the engine
+never receives them. The harness's own image tool needs no adapter: an agent makes the frame with
+it and runs `check` on the file.
+
+Not built, and not measured: the preset pack (the GPU host was not available), the thresholds of
+the check (they are data in `frames.json` and are set from the first real outputs), and the cost
+per image of a cloud entry. `check` has no landmark test; it arrives with the build of slice 9b.
+Delivering the skill to the build pane is the build job's (slices 1 and 2).
+
 ## Questions for the owner
 
 Answered on 2026-11-15 (see "Owner decisions"):
