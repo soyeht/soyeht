@@ -23,12 +23,14 @@ enum AvatarFixture {
     let json: Data
 
     /// The files the package lists, as a caller that has read the folder would report them.
-    var assets: [AvatarAssetInfo] {
-      images.map { path, bitmap in
-        AvatarAssetInfo(
-          path: path, bytes: 100,
-          size: AvatarSize(width: UInt32(bitmap.width), height: UInt32(bitmap.height)))
-      }
+    var assets: [AvatarAssetInfo] { AvatarFixture.assets(of: images) }
+  }
+
+  static func assets(of images: [String: AvatarBitmap]) -> [AvatarAssetInfo] {
+    images.map { path, bitmap in
+      AvatarAssetInfo(
+        path: path, bytes: 100,
+        size: AvatarSize(width: UInt32(bitmap.width), height: UInt32(bitmap.height)))
     }
   }
 
@@ -114,13 +116,9 @@ enum AvatarFixture {
       "eyes": .array(eyes), "warp": warp(k),
     ])
     let data = try JSONEncoder().encode(doc)
-    let assets = images.map { path, bitmap in
-      AvatarAssetInfo(
-        path: path, bytes: 100,
-        size: AvatarSize(width: UInt32(bitmap.width), height: UInt32(bitmap.height)))
-    }
     return Made(
-      package: try AvatarPackage.load(json: data, assets: assets), images: images, canvas: canvas,
+      package: try AvatarPackage.load(json: data, assets: assets(of: images)), images: images,
+      canvas: canvas,
       json: data)
   }
 
