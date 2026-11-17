@@ -77,10 +77,15 @@ final class SileroVoiceActivity: VoiceActivityDetecting, @unchecked Sendable {
     }
   }
 
-  func probability(of frame: [Float]) throws -> Double {
-    guard frame.count == Self.chunkSize else {
-      throw VoiceModelError.frameSize(expected: Self.chunkSize, got: frame.count)
+  /// A frame of another size is an error, not a silence (and not a trap).
+  static func requireFrame(_ frame: [Float]) throws {
+    guard frame.count == chunkSize else {
+      throw VoiceModelError.frameSize(expected: chunkSize, got: frame.count)
     }
+  }
+
+  func probability(of frame: [Float]) throws -> Double {
+    try Self.requireFrame(frame)
     return try lock.withLock {
       do {
         return try predict(context + frame, then: frame)
@@ -115,10 +120,7 @@ final class SileroVoiceActivity: VoiceActivityDetecting, @unchecked Sendable {
       let nextC = output.featureValue(for: "c_out")?.multiArrayValue,
       let probability = output.featureValue(for: "probability")?.multiArrayValue
     else { throw VoiceModelError.prediction("the model returned no probability") }
-    let speech = try Self.value(of: probability)
-    guard (0...1).contains(speech) else {
-      throw VoiceModelError.prediction("the model returned a probability outside 0 to 1")
-    }
+    let speech = try VoiceModelError.probability(try Self.value(of: probability))
     hidden = nextH
     cell = nextC
     context = Array(frame.suffix(Self.contextSamples))

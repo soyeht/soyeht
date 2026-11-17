@@ -18,6 +18,15 @@ public enum VoiceModelError: LocalizedError, Equatable {
   case frameSize(expected: Int, got: Int)
   case prediction(String)
 
+  /// `value` when it is a probability. A NaN or a number outside 0 to 1 is a model that went wrong,
+  /// which is not a silence nor a finished turn.
+  public static func probability(_ value: Double) throws -> Double {
+    guard (0...1).contains(value) else {
+      throw VoiceModelError.prediction("the model returned \(value), which is not a probability")
+    }
+    return value
+  }
+
   public var errorDescription: String? {
     switch self {
     case .frameSize(let expected, let got):
