@@ -5,6 +5,8 @@ import Foundation
 @MainActor protocol AudioCapturing: AnyObject {
   func start(_ sink: @escaping MicrophoneCapture.Sink) throws
   func stop()
+  /// The capture ended without `stop()`: the audio it joined went away and could not be given back.
+  var onEnded: (@MainActor (any Error) -> Void)? { get set }
 }
 
 extension MicrophoneCapture: AudioCapturing {}
@@ -53,6 +55,10 @@ extension MicrophoneCapture: AudioCapturing {}
     let recording = Recording(limit: WaveAudio.recordingSampleRate * Self.maximumSeconds)
     let resampler = try AudioResampler(sampleRate: Double(WaveAudio.recordingSampleRate))
     try capture.start(Self.sink(resampler, recording))
+    capture.onEnded = { [weak self] error in
+      self?.cancel()
+      onEvent(.failed(error.localizedDescription))
+    }
     self.recording = recording
     self.options = options
     self.onEvent = onEvent

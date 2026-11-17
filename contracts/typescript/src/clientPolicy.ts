@@ -88,6 +88,7 @@ export const clientPolicy = {
     "probeTimeoutMs": 1500,
     "halfDuplexTailMs": 300,
     "watchdogMs": 3000,
+    "firstBufferMs": 10000,
     "outputTickMs": 16,
     "continuers": "mhm|mmm|mm hmm|uh huh|hmm|aham|uhum",
     "scriptsWithoutBlanks": "1000-109F|1780-17FF|0E00-0EFF|3040-30FF|3400-4DBF|4E00-9FFF|F900-FAFF|20000-2A6DF",

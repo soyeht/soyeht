@@ -199,6 +199,23 @@ developer runs no server and receives nothing, so no category applies.
 | Push token | Not requested in 0.1.0 | The release engine never offers push, so the app never asks Apple for a token. | `PhoneNotifications.swift:86-100` |
 | Crash logs | None from the app itself; Apple may pass crash logs of people who chose "Share with App Developers" through App Store Connect | That is Apple's service. | PRIVACY.md "Crash reports and diagnostics" |
 
+### The voice loop: strings and answers to change before the avatar pane ships
+
+Nothing in the app opens the voice loop yet, so this release keeps its microphone and speech-recognition
+usage strings and its answers as they are. They must change in the change that wires the avatar pane
+(ADR 0166, slices 10 and 11), because the loop is not dictation:
+
+- The microphone is open from the moment the person starts the conversation until they stop it, not
+  while a button is held: the usage string must say so.
+- Where the language cannot be recognised on the device, a probe (the recognizer that listens to someone
+  talking over the avatar) sends audio to Apple's recognition service even though the person did not tap
+  anything for it; the speech-recognition usage string and the privacy answers must say that audio may be
+  processed by Apple while a conversation runs.
+- A cloud voice or recognizer is chosen by name and shows what it receives before its first use; the
+  answers must describe the providers the app offers at that point.
+- The two optional models (Silero VAD and Smart Turn, about 1 MB and 17 MB) are downloaded from the model
+  host after the person presses Install, like the dictation model above: nothing about the person is sent.
+
 ### Data types to tick: none
 
 Contact info, health and fitness, financial info, location, sensitive info, contacts, user
