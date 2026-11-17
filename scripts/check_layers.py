@@ -46,6 +46,7 @@ BLOCKS = (
     "soyeht-skills",
     "soyeht-ink",
     "soyeht-avatar",
+    "soyeht-image",
 )
 LAYERS: dict[str, set[str]] = {
     # Layer 2: wire models and rules, and the operating-system seams.
@@ -68,6 +69,8 @@ LAYERS: dict[str, set[str]] = {
         # `soyeht avatar build` loads, validates and writes packages with the same crate the
         # desktop draws from (ADR 0166).
         "soyeht-avatar",
+        # `soyeht avatar frame` and `check` read the image catalogue and the frame spec.
+        "soyeht-image",
     },
     "soyeht-mcp": {"soyeht-protocol", "soyeht-platform", "soyeht-skills"},
     # Layer 7: the Rust desktop client, its own workspace.
