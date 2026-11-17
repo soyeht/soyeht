@@ -162,6 +162,7 @@ pub const VOICE_BARGE_IN_MS: u64 = 350;
 pub const VOICE_PROBE_TIMEOUT_MS: u64 = 1500;
 pub const VOICE_HALF_DUPLEX_TAIL_MS: u64 = 300;
 pub const VOICE_WATCHDOG_MS: u64 = 3000;
+pub const VOICE_FIRST_BUFFER_MS: u64 = 10000;
 pub const VOICE_OUTPUT_TICK_MS: u64 = 16;
 pub const VOICE_CONTINUERS: &str = "mhm|mmm|mm hmm|uh huh|hmm|aham|uhum";
 pub const VOICE_SCRIPTS_WITHOUT_BLANKS: &str =

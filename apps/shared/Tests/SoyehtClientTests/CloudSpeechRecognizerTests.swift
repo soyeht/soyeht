@@ -8,6 +8,7 @@ import Testing
 @MainActor private final class FakeCapture: AudioCapturing {
   private(set) var sink: MicrophoneCapture.Sink?
   private(set) var stops = 0
+  var onEnded: (@MainActor (any Error) -> Void)?
 
   func start(_ sink: @escaping MicrophoneCapture.Sink) throws { self.sink = sink }
   func stop() { stops += 1 }
@@ -69,6 +70,17 @@ import Testing
   #expect(
     String(decoding: sent.httpBody ?? Data(), as: UTF8.self).contains(
       "name=\"prompt\"\r\n\r\nSoyeht"))
+}
+
+@MainActor @Test func aCaptureThatEndsWithoutBeingStoppedIsReportedAsAFailure() throws {
+  struct Gone: LocalizedError { var errorDescription: String? { "The audio went away." } }
+  let rig = Rig()
+  var received: [SpeechEvent] = []
+  try rig.recognizer.start(SpeechSessionOptions()) { received.append($0) }
+  try hear(rig.capture)
+  rig.capture.onEnded?(Gone())
+  #expect(received == [.failed("The audio went away.")])
+  #expect(rig.transport.requests.isEmpty)
 }
 
 @MainActor @Test func nothingIsSentWhileTheListenerIsStillListening() throws {
