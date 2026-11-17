@@ -12,9 +12,9 @@ apps/desktop/ and apps/android/, the Package.resolved files of the Swift package
 apps/android/app/build.gradle.kts and scripts/third_party/. Do not edit it:
     uv run python scripts/third_party_notices.py generate
 
-1. Components (890)
+1. Components (893)
 
-Rust crates (818)
+Rust crates (819)
   accesskit 0.24.1  (MIT OR Apache-2.0)  [apps/desktop]
       following: MIT
       https://github.com/AccessKit/accesskit
@@ -51,7 +51,7 @@ Rust crates (818)
       following: MIT
       https://github.com/gimli-rs/addr2line
       Copyright (c) 2016-2018 The gimli Developers
-  adler2 2.0.1  (0BSD OR MIT OR Apache-2.0)  [apps/android, apps/desktop]
+  adler2 2.0.1  (0BSD OR MIT OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/oyvindln/adler2
   aes 0.8.4  (MIT OR Apache-2.0)  [apps/desktop]
@@ -672,7 +672,7 @@ Rust crates (818)
   fax 0.2.7  (MIT)  [apps/android, apps/desktop]
       https://github.com/pdf-rs/fax
       Copyright © 2021 The pdf-rs contributers.
-  fdeflate 0.3.7  (MIT OR Apache-2.0)  [apps/android, apps/desktop]
+  fdeflate 0.3.7  (MIT OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/image-rs/fdeflate
   fiat-crypto 0.2.9  (MIT OR Apache-2.0 OR BSD-1-Clause)  [apps/android, apps/desktop, engine]
@@ -687,6 +687,10 @@ Rust crates (818)
       https://github.com/petgraph/fixedbitset
       Copyright (c) 2015-2017
   flate2 1.1.10  (MIT OR Apache-2.0)  [apps/android, apps/desktop]
+      following: MIT
+      https://github.com/rust-lang/flate2-rs
+      Copyright (c) 2014-2026 Alex Crichton
+  flate2 1.1.11  (MIT OR Apache-2.0)  [engine]
       following: MIT
       https://github.com/rust-lang/flate2-rs
       Copyright (c) 2014-2026 Alex Crichton
@@ -1215,14 +1219,14 @@ Rust crates (818)
   minimal-lexical 0.2.1  (MIT/Apache-2.0)  [apps/android]
       following: MIT
       https://github.com/Alexhuszagh/minimal-lexical
-  miniz_oxide 0.8.9  (MIT OR Zlib OR Apache-2.0)  [apps/android, apps/desktop]
+  miniz_oxide 0.8.9  (MIT OR Zlib OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
       Copyright 2013-2014 RAD Game Tools and Valve Software
       Copyright 2010-2014 Rich Geldreich and Tenacious Software LLC
       Copyright (c) 2017 Frommi
       Copyright (c) 2017-2024 oyvindln
-  miniz_oxide 0.9.1  (MIT OR Zlib OR Apache-2.0)  [apps/android, apps/desktop]
+  miniz_oxide 0.9.1  (MIT OR Zlib OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide
       Copyright 2013-2014 RAD Game Tools and Valve Software
@@ -1494,7 +1498,7 @@ Rust crates (818)
       following: MIT
       https://github.com/image-rs/image-png
       Copyright (c) 2015 nwin
-  png 0.18.1  (MIT OR Apache-2.0)  [apps/android, apps/desktop]
+  png 0.18.1  (MIT OR Apache-2.0)  [apps/android, apps/desktop, engine]
       following: MIT
       https://github.com/image-rs/image-png
       Copyright (c) 2015 nwin
@@ -1890,7 +1894,7 @@ Rust crates (818)
       following: MIT
       https://github.com/RustCrypto/traits/tree/master/signature
       Copyright (c) 2018-2023 RustCrypto Developers
-  simd-adler32 0.3.10  (MIT)  [apps/android, apps/desktop]
+  simd-adler32 0.3.10  (MIT)  [apps/android, apps/desktop, engine]
       https://github.com/mcountryman/simd-adler32
       Copyright (c) [2021] [Marvin Countryman]
   simd_helpers 0.1.0  (MIT)  [apps/desktop]
@@ -2874,7 +2878,7 @@ Rust crates (818)
       https://github.com/unicode-org/icu4x
   zerovec-derive 0.11.6  (Unicode-3.0)  [apps/desktop, engine]
       https://github.com/unicode-org/icu4x
-  zlib-rs 0.6.8  (Zlib)  [apps/android, apps/desktop]
+  zlib-rs 0.6.8  (Zlib)  [apps/android, apps/desktop, engine]
       https://github.com/trifectatechfoundation/zlib-rs
       (C) 2024 Trifecta Tech Foundation
   zmij 1.0.23  (MIT)  [apps/android, apps/desktop, engine]
@@ -3062,7 +3066,7 @@ Fonts and icons (7)
   Nunito  (OFL-1.1)
       https://github.com/googlefonts/nunito
 
-Speech models, dictionaries and pronunciation tables (4)
+Speech models, dictionaries and pronunciation tables (6)
   Kokoro English pronunciation dictionaries (us_gold, us_silver)  (Apache-2.0)
       https://huggingface.co/aufklarer/Kokoro-82M-CoreML
       downloaded with the model; the model card states Apache-2.0 for the dictionaries and gives no upstream source for their data
@@ -3079,6 +3083,14 @@ Speech models, dictionaries and pronunciation tables (4)
       https://github.com/open-dict-data/ipa-dict
       bundled in the app with the KokoroTTS target of speech-swift, which offers no language but English
       license: as stated by the comment of PronunciationDicts.swift in the pinned revision (ipa-dict, MIT); the upstream license file was not read
+  Silero VAD CoreML (aufklarer/Silero-VAD-v6.2.1-CoreML) 523876545a57961474fee9df913e833e130560b8  (MIT)
+      https://huggingface.co/aufklarer/Silero-VAD-v6.2.1-CoreML
+      the voice-activity model of the voice loop, downloaded after the person presses Install and never bundled; fetched at this commit and checked against the SHA-256 of each file (PinnedModelDownload.swift)
+      license: the model card metadata (license: mit), read on 2026-11-16; base model snakers4/silero-vad, whose LICENSE file is the MIT license of the Silero Team (read on 2026-11-16)
+  Smart Turn v3.2 CoreML (aufklarer/Smart-Turn-v3.2-CoreML) 75f069717f500947195fa1945c46ddb472559cff  (BSD-2-Clause)
+      https://huggingface.co/aufklarer/Smart-Turn-v3.2-CoreML
+      the end-of-turn model of the voice loop, downloaded after the person presses Install and never bundled; fetched at this commit and checked against the SHA-256 of each file (PinnedModelDownload.swift)
+      license: the model card metadata (license: bsd-2-clause) and the LICENSE file of the repository, a BSD 2-Clause notice of Daily for the upstream pipecat-ai/smart-turn-v3 weights (read on 2026-11-16)
 
 2. License and notice texts
 
@@ -4945,7 +4957,8 @@ Used by: chrono 0.4.45
 
 ----------------------------------------------------------------------------------------------------
 Text 18 of 92: BSD-2-Clause
-Used by: arrayref 0.3.9
+Used by: arrayref 0.3.9, Smart Turn v3.2 CoreML (aufklarer/Smart-Turn-v3.2-CoreML)
+    75f069717f500947195fa1945c46ddb472559cff
 ----------------------------------------------------------------------------------------------------
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -6583,100 +6596,6 @@ DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
 Text 44 of 92: MIT
-Used by: mlx-swift 0.31.6
-----------------------------------------------------------------------------------------------------
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of this software and associated documentation files (the
-"Software"), to deal in the Software without restriction, including
-without limitation the rights to use, copy, modify, merge, publish,
-distribute, sublicense, and/or sell copies of the Software, and to
-permit persons to whom the Software is furnished to do so, subject to
-the following conditions:
-
-The above copyright notice and this permission notice shall be
-included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
-LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
-WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
---- Optional exception to the license ---
-
-As an exception, if, as a result of your compiling your source code, portions
-of this Software are embedded into a machine-executable object form of such
-source code, you may redistribute such embedded portions in such object form
-without including the above copyright and permission notices.
-
-----------------------------------------------------------------------------------------------------
-Text 45 of 92: MIT
-Used by: wayland-protocols 0.32.13
-----------------------------------------------------------------------------------------------------
-Permission is hereby granted, free of charge, to any person obtaining a
-copy of this software and associated documentation files (the "Software"),
-to deal in the Software without restriction, including without limitation
-the rights to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice (including the next
-paragraph) shall be included in all copies or substantial portions of the
-Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
----
-
-The above is the version of the MIT "Expat" License used by X.org:
-
-    http://cgit.freedesktop.org/xorg/xserver/tree/COPYING
-
-----------------------------------------------------------------------------------------------------
-Text 46 of 92: MIT
-Used by: rustybuzz 0.20.1, uds_windows 1.2.1, windows 0.57.0, windows 0.61.3, windows 0.62.2,
-    windows-collections 0.2.0, windows-collections 0.3.2, windows-core 0.57.0, windows-core 0.61.2,
-    windows-core 0.62.2, windows-future 0.2.1, windows-future 0.3.2, windows-implement 0.57.0,
-    windows-implement 0.60.2, windows-interface 0.57.0, windows-interface 0.59.3, windows-link
-    0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-numerics 0.3.1, windows-registry
-    0.5.3, windows-result 0.1.2, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.4.2,
-    windows-strings 0.5.1, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.60.2, windows-sys
-    0.61.2, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.1.0,
-    windows-threading 0.2.1, windows-version 0.1.7, windows_aarch64_gnullvm 0.52.6,
-    windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1,
-    windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6,
-    windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1,
-    windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.52.6,
-    windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1
-----------------------------------------------------------------------------------------------------
-Permission is hereby granted, free of charge, to any person obtaining a copy
-    of this software and associated documentation files (the "Software"), to deal
-    in the Software without restriction, including without limitation the rights
-    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-    copies of the Software, and to permit persons to whom the Software is
-    furnished to do so, subject to the following conditions:
-
-    The above copyright notice and this permission notice shall be included in all
-    copies or substantial portions of the Software.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-    SOFTWARE
-
-----------------------------------------------------------------------------------------------------
-Text 47 of 92: MIT
 Used by: accesskit 0.24.1, accesskit_atspi_common 0.18.1, accesskit_consumer 0.36.0,
     accesskit_consumer 0.37.0, accesskit_consumer 0.38.0, accesskit_macos 0.26.3, accesskit_unix
     0.21.1, accesskit_windows 0.33.1, addr2line 0.25.1, adler2 2.0.1, aes 0.8.4, ahash 0.8.12,
@@ -6713,18 +6632,19 @@ Used by: accesskit 0.24.1, accesskit_atspi_common 0.18.1, accesskit_consumer 0.3
     equivalent 1.0.2, equivalent 1.0.3, erased-serde 0.4.10, errno 0.3.14, etagere 0.2.15, euclid
     0.22.14, event-listener 5.4.2, event-listener-strategy 0.5.4, eventsource 1.5.1,
     fallible-iterator 0.3.0, fallible-streaming-iterator 0.1.9, fastrand 2.5.0, fiat-crypto 0.2.9,
-    filedescriptor 0.8.3, fixedbitset 0.5.7, flate2 1.1.10, float-cmp 0.9.0, float-ord 0.3.2, flume
-    0.11.1, fnv 1.0.7, font-types 0.11.3, font-types 0.12.6, fontconfig-parser 0.5.8, fontdb 0.23.0,
-    foreign-types 0.5.0, foreign-types-macros 0.2.4, foreign-types-shared 0.3.1, form_urlencoded
-    1.2.2, freetype-sys 0.20.1, fs-err 2.11.0, fsevent-sys 4.1.0, futures 0.3.34, futures-channel
-    0.3.34, futures-concurrency 7.7.1, futures-core 0.3.34, futures-executor 0.3.34, futures-io
-    0.3.34, futures-lite 2.6.1, futures-macro 0.3.34, futures-sink 0.3.34, futures-task 0.3.34,
-    futures-util 0.3.34, generic-array 0.14.7, getrandom 0.2.17, getrandom 0.3.4, getrandom 0.4.3,
-    gif 0.14.2, gimli 0.32.3, glob 0.3.4, globset 0.4.20, glow 0.17.0, goblin 0.8.2, gpu-allocator
-    0.28.0, gpu-descriptor 0.3.2, gpu-descriptor-types 0.2.0, grid 1.0.1, h2 0.4.19, harfrust 0.5.2,
-    hash32 0.3.1, hashbrown 0.14.5, hashbrown 0.15.5, hashbrown 0.16.1, hashbrown 0.17.1, heapless
-    0.9.3, heck 0.5.0, hermit-abi 0.5.3, hex 0.4.3, hkdf 0.12.4, hmac 0.12.1, home 0.5.12, http
-    1.5.0, http-body 1.1.0, httparse 1.10.1, hybrid-array 0.4.15, iana-time-zone 0.1.65,
+    filedescriptor 0.8.3, fixedbitset 0.5.7, flate2 1.1.10, flate2 1.1.11, float-cmp 0.9.0,
+    float-ord 0.3.2, flume 0.11.1, fnv 1.0.7, font-types 0.11.3, font-types 0.12.6,
+    fontconfig-parser 0.5.8, fontdb 0.23.0, foreign-types 0.5.0, foreign-types-macros 0.2.4,
+    foreign-types-shared 0.3.1, form_urlencoded 1.2.2, freetype-sys 0.20.1, fs-err 2.11.0,
+    fsevent-sys 4.1.0, futures 0.3.34, futures-channel 0.3.34, futures-concurrency 7.7.1,
+    futures-core 0.3.34, futures-executor 0.3.34, futures-io 0.3.34, futures-lite 2.6.1,
+    futures-macro 0.3.34, futures-sink 0.3.34, futures-task 0.3.34, futures-util 0.3.34,
+    generic-array 0.14.7, getrandom 0.2.17, getrandom 0.3.4, getrandom 0.4.3, gif 0.14.2, gimli
+    0.32.3, glob 0.3.4, globset 0.4.20, glow 0.17.0, goblin 0.8.2, gpu-allocator 0.28.0,
+    gpu-descriptor 0.3.2, gpu-descriptor-types 0.2.0, grid 1.0.1, h2 0.4.19, harfrust 0.5.2, hash32
+    0.3.1, hashbrown 0.14.5, hashbrown 0.15.5, hashbrown 0.16.1, hashbrown 0.17.1, heapless 0.9.3,
+    heck 0.5.0, hermit-abi 0.5.3, hex 0.4.3, hkdf 0.12.4, hmac 0.12.1, home 0.5.12, http 1.5.0,
+    http-body 1.1.0, httparse 1.10.1, hybrid-array 0.4.15, iana-time-zone 0.1.65,
     iana-time-zone-haiku 0.1.2, idna 1.1.0, idna_adapter 1.2.2, ignore 0.4.33, imagesize 0.14.0,
     indexmap 2.14.2, inout 0.1.4, interpolate_name 0.2.4, inventory 0.3.25, io-surface 0.16.1,
     is-docker 0.2.0, is-wsl 0.4.0, itertools 0.14.0, itoa 1.0.18, jni-sys 0.3.1, jni-sys 0.4.1,
@@ -6773,69 +6693,170 @@ Used by: accesskit 0.24.1, accesskit_atspi_common 0.18.1, accesskit_consumer 0.3
     semver 1.0.28, serde 1.0.229, serde_bytes 0.11.19, serde_core 1.0.229, serde_derive 1.0.229,
     serde_derive_internals 0.30.0, serde_fmt 1.1.0, serde_json 1.0.151, serde_json 1.0.154,
     serde_repr 0.1.21, serde_urlencoded 0.7.1, sha1 0.11.0, sha2 0.10.9, signal-hook-registry 1.4.8,
-    signature 2.2.0, simd-adler32 0.3.10, simd_helpers 0.1.0, simplecss 0.2.2, siphasher 1.0.4,
-    skrifa 0.40.0, skrifa 0.44.0, slab 0.4.12, smallvec 1.16.0, smallvec 1.16.2, smawk 0.3.3, smol
-    2.0.2, smol_str 0.3.6, socket2 0.6.5, spin 0.10.1, spin 0.9.9, spki 0.7.3, sqlite-wasm-rs 0.5.5,
-    stable_deref_trait 1.2.1, stacker 0.1.25, static_assertions 1.1.0, streaming-iterator 0.1.9,
-    strict-num 0.1.1, strsim 0.11.1, strum 0.27.2, strum_macros 0.27.2, sval 2.22.0, sval_buffer
-    2.22.0, sval_dynamic 2.22.0, sval_fmt 2.22.0, sval_json 2.22.0, sval_nested 2.22.0, sval_ref
-    2.22.0, sval_serde 2.22.0, svg_fmt 0.4.5, svgtypes 0.16.1, swash 0.2.10, swiftterm
-    1.20.0-soyeht.2, syn 2.0.119, syn 3.0.5, syn 3.0.6, syn 3.0.9, synstructure 0.13.2, synstructure
-    0.14.0, sys-locale 0.3.2, sysinfo 0.31.4, taffy 0.10.1, tao-core-video-sys 0.2.0,
-    tauri-winrt-notification 0.8.1, tempfile 3.27.0, termcolor 1.4.1, textwrap 0.16.4, thiserror
-    1.0.69, thiserror 2.0.20, thiserror 2.0.21, thiserror-impl 1.0.69, thiserror-impl 2.0.20,
-    thiserror-impl 2.0.21, tiff 0.11.3, time 0.3.55, time-core 0.1.9, tinyvec 1.13.3, tokio 1.53.1,
-    tokio 1.53.2, tokio-macros 2.7.2, tokio-rustls 0.26.6, tokio-tungstenite 0.30.0, tokio-util
-    0.7.19, toml 0.5.11, toml_datetime 1.1.2+spec-1.1.0, toml_edit 0.25.16+spec-1.1.0, toml_parser
-    1.1.4+spec-1.1.0, tracing 0.1.44, tracing-attributes 0.1.31, tracing-core 0.1.36, tree-sitter
-    0.27.0, tree-sitter-bash 0.25.1, tree-sitter-json 0.24.8, tree-sitter-language 0.1.8,
-    tree-sitter-md 0.5.3, tree-sitter-python 0.25.0, tree-sitter-rust 0.24.2, tree-sitter-swift
-    0.7.3, tree-sitter-typescript 0.23.2, ttf-parser 0.25.1, tungstenite 0.30.0, typeid 1.0.3,
-    typenum 1.20.1, unicase 2.10.0, unicode-bidi 0.3.18, unicode-bidi-mirroring 0.4.0, unicode-ccc
-    0.4.0, unicode-ident 1.0.24, unicode-ident 1.0.26, unicode-ident 1.0.27, unicode-properties
-    0.1.4, unicode-script 0.5.8, unicode-segmentation 1.13.3, unicode-vo 0.1.0, unicode-width 0.2.2,
-    unicode-width 0.2.3, unicode-xid 0.2.6, url 2.5.8, usvg 0.46.0, utf8_iter 1.0.4, uuid 1.26.1,
-    uuid 1.27.0, uuid 1.29.0, value-bag 1.14.1, value-bag-serde1 1.14.1, value-bag-sval2 1.14.1,
-    vt100 0.16.2, vte 0.15.0, waker-fn 1.2.0, walkdir 2.5.0, wasi 0.11.1+wasi-snapshot-preview1,
-    wasip2 1.0.4+wasi-0.2.12, wasm-bindgen 0.2.128, wasm-bindgen 0.2.129, wasm-bindgen 0.2.130,
-    wasm-bindgen-futures 0.4.79, wasm-bindgen-macro 0.2.128, wasm-bindgen-macro 0.2.129,
-    wasm-bindgen-macro 0.2.130, wasm-bindgen-macro-support 0.2.128, wasm-bindgen-macro-support
-    0.2.129, wasm-bindgen-macro-support 0.2.130, wasm-bindgen-shared 0.2.128, wasm-bindgen-shared
-    0.2.129, wasm-bindgen-shared 0.2.130, wasm_thread 0.3.3, wayland-backend 0.3.17, wayland-client
-    0.31.15, wayland-cursor 0.31.14, wayland-protocols 0.32.13, wayland-protocols-wlr 0.3.12,
-    wayland-scanner 0.31.11, wayland-sys 0.31.11, web-sys 0.3.106, web-time 1.1.0, webview2-com
-    0.39.1, webview2-com-macros 0.8.1, webview2-com-sys 0.39.1, weedle2 5.0.0, weezl 0.1.12, wgpu
-    29.0.3, wgpu-core 29.0.3, wgpu-core-deps-apple 29.0.3, wgpu-core-deps-emscripten 29.0.3,
-    wgpu-core-deps-windows-linux-android 29.0.3, wgpu-hal 29.0.3, wgpu-naga-bridge 29.0.3,
-    wgpu-types 29.0.3, which 6.0.3, whisperkit 1.1.0, winapi 0.3.9, winapi-i686-pc-windows-gnu
-    0.4.0, winapi-util 0.1.11, winapi-x86_64-pc-windows-gnu 0.4.0, windows-capture 1.5.0, winnow
-    0.7.15, winnow 1.0.4, winsafe 0.0.19, wio 0.2.2, wit-bindgen 0.57.1, x11 2.21.0, x11-clipboard
-    0.9.3, x11rb 0.13.2, x11rb-protocol 0.13.2, xcb 1.7.1, xcursor 0.3.11, xim-ctext 0.3.0,
-    xim-parser 0.2.1, xkbcommon 0.8.0, xkeysym 0.2.1, xmlwriter 0.1.0, y4m 0.8.0, yazi 0.2.1,
-    yeslogic-fontconfig-sys 6.0.1, yyjson 0.12.0, zbus 5.19.0, zbus-lockstep 0.5.2,
-    zbus-lockstep-macros 0.5.2, zbus_macros 5.19.0, zbus_names 4.3.4, zbus_xml 5.2.1, zcheapstr
-    1.1.0, zed-font-kit 0.14.1-zed, zed-xim 0.4.0-zed, zeno 0.3.3, zerocopy 0.8.62, zerocopy 0.8.63,
-    zerocopy-derive 0.8.62, zerocopy-derive 0.8.63, zeroize 1.9.0, zeroize 1.9.1, zeroize_derive
-    1.5.0, zmij 1.0.23, zune-core 0.5.3, zune-inflate 0.2.54, zune-jpeg 0.5.15, zvariant 5.15.0,
-    zvariant_derive 5.15.0, zvariant_utils 4.2.0
+    signature 2.2.0, Silero VAD CoreML (aufklarer/Silero-VAD-v6.2.1-CoreML)
+    523876545a57961474fee9df913e833e130560b8, simd-adler32 0.3.10, simd_helpers 0.1.0, simplecss
+    0.2.2, siphasher 1.0.4, skrifa 0.40.0, skrifa 0.44.0, slab 0.4.12, smallvec 1.16.0, smallvec
+    1.16.2, smawk 0.3.3, smol 2.0.2, smol_str 0.3.6, socket2 0.6.5, spin 0.10.1, spin 0.9.9, spki
+    0.7.3, sqlite-wasm-rs 0.5.5, stable_deref_trait 1.2.1, stacker 0.1.25, static_assertions 1.1.0,
+    streaming-iterator 0.1.9, strict-num 0.1.1, strsim 0.11.1, strum 0.27.2, strum_macros 0.27.2,
+    sval 2.22.0, sval_buffer 2.22.0, sval_dynamic 2.22.0, sval_fmt 2.22.0, sval_json 2.22.0,
+    sval_nested 2.22.0, sval_ref 2.22.0, sval_serde 2.22.0, svg_fmt 0.4.5, svgtypes 0.16.1, swash
+    0.2.10, swiftterm 1.20.0-soyeht.2, syn 2.0.119, syn 3.0.5, syn 3.0.6, syn 3.0.9, synstructure
+    0.13.2, synstructure 0.14.0, sys-locale 0.3.2, sysinfo 0.31.4, taffy 0.10.1, tao-core-video-sys
+    0.2.0, tauri-winrt-notification 0.8.1, tempfile 3.27.0, termcolor 1.4.1, textwrap 0.16.4,
+    thiserror 1.0.69, thiserror 2.0.20, thiserror 2.0.21, thiserror-impl 1.0.69, thiserror-impl
+    2.0.20, thiserror-impl 2.0.21, tiff 0.11.3, time 0.3.55, time-core 0.1.9, tinyvec 1.13.3, tokio
+    1.53.1, tokio 1.53.2, tokio-macros 2.7.2, tokio-rustls 0.26.6, tokio-tungstenite 0.30.0,
+    tokio-util 0.7.19, toml 0.5.11, toml_datetime 1.1.2+spec-1.1.0, toml_edit 0.25.16+spec-1.1.0,
+    toml_parser 1.1.4+spec-1.1.0, tracing 0.1.44, tracing-attributes 0.1.31, tracing-core 0.1.36,
+    tree-sitter 0.27.0, tree-sitter-bash 0.25.1, tree-sitter-json 0.24.8, tree-sitter-language
+    0.1.8, tree-sitter-md 0.5.3, tree-sitter-python 0.25.0, tree-sitter-rust 0.24.2,
+    tree-sitter-swift 0.7.3, tree-sitter-typescript 0.23.2, ttf-parser 0.25.1, tungstenite 0.30.0,
+    typeid 1.0.3, typenum 1.20.1, unicase 2.10.0, unicode-bidi 0.3.18, unicode-bidi-mirroring 0.4.0,
+    unicode-ccc 0.4.0, unicode-ident 1.0.24, unicode-ident 1.0.26, unicode-ident 1.0.27,
+    unicode-properties 0.1.4, unicode-script 0.5.8, unicode-segmentation 1.13.3, unicode-vo 0.1.0,
+    unicode-width 0.2.2, unicode-width 0.2.3, unicode-xid 0.2.6, url 2.5.8, usvg 0.46.0, utf8_iter
+    1.0.4, uuid 1.26.1, uuid 1.27.0, uuid 1.29.0, value-bag 1.14.1, value-bag-serde1 1.14.1,
+    value-bag-sval2 1.14.1, vt100 0.16.2, vte 0.15.0, waker-fn 1.2.0, walkdir 2.5.0, wasi
+    0.11.1+wasi-snapshot-preview1, wasip2 1.0.4+wasi-0.2.12, wasm-bindgen 0.2.128, wasm-bindgen
+    0.2.129, wasm-bindgen 0.2.130, wasm-bindgen-futures 0.4.79, wasm-bindgen-macro 0.2.128,
+    wasm-bindgen-macro 0.2.129, wasm-bindgen-macro 0.2.130, wasm-bindgen-macro-support 0.2.128,
+    wasm-bindgen-macro-support 0.2.129, wasm-bindgen-macro-support 0.2.130, wasm-bindgen-shared
+    0.2.128, wasm-bindgen-shared 0.2.129, wasm-bindgen-shared 0.2.130, wasm_thread 0.3.3,
+    wayland-backend 0.3.17, wayland-client 0.31.15, wayland-cursor 0.31.14, wayland-protocols
+    0.32.13, wayland-protocols-wlr 0.3.12, wayland-scanner 0.31.11, wayland-sys 0.31.11, web-sys
+    0.3.106, web-time 1.1.0, webview2-com 0.39.1, webview2-com-macros 0.8.1, webview2-com-sys
+    0.39.1, weedle2 5.0.0, weezl 0.1.12, wgpu 29.0.3, wgpu-core 29.0.3, wgpu-core-deps-apple 29.0.3,
+    wgpu-core-deps-emscripten 29.0.3, wgpu-core-deps-windows-linux-android 29.0.3, wgpu-hal 29.0.3,
+    wgpu-naga-bridge 29.0.3, wgpu-types 29.0.3, which 6.0.3, whisperkit 1.1.0, winapi 0.3.9,
+    winapi-i686-pc-windows-gnu 0.4.0, winapi-util 0.1.11, winapi-x86_64-pc-windows-gnu 0.4.0,
+    windows-capture 1.5.0, winnow 0.7.15, winnow 1.0.4, winsafe 0.0.19, wio 0.2.2, wit-bindgen
+    0.57.1, x11 2.21.0, x11-clipboard 0.9.3, x11rb 0.13.2, x11rb-protocol 0.13.2, xcb 1.7.1, xcursor
+    0.3.11, xim-ctext 0.3.0, xim-parser 0.2.1, xkbcommon 0.8.0, xkeysym 0.2.1, xmlwriter 0.1.0, y4m
+    0.8.0, yazi 0.2.1, yeslogic-fontconfig-sys 6.0.1, yyjson 0.12.0, zbus 5.19.0, zbus-lockstep
+    0.5.2, zbus-lockstep-macros 0.5.2, zbus_macros 5.19.0, zbus_names 4.3.4, zbus_xml 5.2.1,
+    zcheapstr 1.1.0, zed-font-kit 0.14.1-zed, zed-xim 0.4.0-zed, zeno 0.3.3, zerocopy 0.8.62,
+    zerocopy 0.8.63, zerocopy-derive 0.8.62, zerocopy-derive 0.8.63, zeroize 1.9.0, zeroize 1.9.1,
+    zeroize_derive 1.5.0, zmij 1.0.23, zune-core 0.5.3, zune-inflate 0.2.54, zune-jpeg 0.5.15,
+    zvariant 5.15.0, zvariant_derive 5.15.0, zvariant_utils 4.2.0
 ----------------------------------------------------------------------------------------------------
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
 
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+----------------------------------------------------------------------------------------------------
+Text 45 of 92: MIT
+Used by: mlx-swift 0.31.6
+----------------------------------------------------------------------------------------------------
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+--- Optional exception to the license ---
+
+As an exception, if, as a result of your compiling your source code, portions
+of this Software are embedded into a machine-executable object form of such
+source code, you may redistribute such embedded portions in such object form
+without including the above copyright and permission notices.
+
+----------------------------------------------------------------------------------------------------
+Text 46 of 92: MIT
+Used by: wayland-protocols 0.32.13
+----------------------------------------------------------------------------------------------------
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+---
+
+The above is the version of the MIT "Expat" License used by X.org:
+
+    http://cgit.freedesktop.org/xorg/xserver/tree/COPYING
+
+----------------------------------------------------------------------------------------------------
+Text 47 of 92: MIT
+Used by: rustybuzz 0.20.1, uds_windows 1.2.1, windows 0.57.0, windows 0.61.3, windows 0.62.2,
+    windows-collections 0.2.0, windows-collections 0.3.2, windows-core 0.57.0, windows-core 0.61.2,
+    windows-core 0.62.2, windows-future 0.2.1, windows-future 0.3.2, windows-implement 0.57.0,
+    windows-implement 0.60.2, windows-interface 0.57.0, windows-interface 0.59.3, windows-link
+    0.1.3, windows-link 0.2.1, windows-numerics 0.2.0, windows-numerics 0.3.1, windows-registry
+    0.5.3, windows-result 0.1.2, windows-result 0.3.4, windows-result 0.4.1, windows-strings 0.4.2,
+    windows-strings 0.5.1, windows-sys 0.52.0, windows-sys 0.59.0, windows-sys 0.60.2, windows-sys
+    0.61.2, windows-targets 0.52.6, windows-targets 0.53.5, windows-threading 0.1.0,
+    windows-threading 0.2.1, windows-version 0.1.7, windows_aarch64_gnullvm 0.52.6,
+    windows_aarch64_gnullvm 0.53.1, windows_aarch64_msvc 0.52.6, windows_aarch64_msvc 0.53.1,
+    windows_i686_gnu 0.52.6, windows_i686_gnu 0.53.1, windows_i686_gnullvm 0.52.6,
+    windows_i686_gnullvm 0.53.1, windows_i686_msvc 0.52.6, windows_i686_msvc 0.53.1,
+    windows_x86_64_gnu 0.52.6, windows_x86_64_gnu 0.53.1, windows_x86_64_gnullvm 0.52.6,
+    windows_x86_64_gnullvm 0.53.1, windows_x86_64_msvc 0.52.6, windows_x86_64_msvc 0.53.1
+----------------------------------------------------------------------------------------------------
+Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE
 
 ----------------------------------------------------------------------------------------------------
 Text 48 of 92: MIT

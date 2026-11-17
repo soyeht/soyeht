@@ -1,18 +1,21 @@
-//! Bounded child processes for the usage host: `curl` for HTTPS, `security` for the macOS
+//! Bounded child processes for the usage host: an HTTPS request, `security` for the macOS
 //! keychain and newline-delimited JSON-RPC for the Codex app server.
 //!
-//! Every program the host starts, here and in `terminal.rs`, begins from [`harden`]: a probe is
-//! background work, so it must never open a browser, show a prompt or wait for a person.
-//! `curl` and `security` run through `soyeht_process`, with a deadline and a bounded output;
-//! the JSON-RPC child is interactive and keeps its own deadline. Credentials reach `curl` on standard
-//! input as configuration, never on its command line, and no response body or error text is
-//! logged.
+//! Every program the host starts, here and in `terminal.rs`, begins from [`harden`], except the
+//! request: a probe is background work, so it must never open a browser, show a prompt or wait for
+//! a person. The request is built and run by `soyeht_process::curl`, the one place that builds a
+//! command line for the system's `curl` (so a `.curlrc` of the person, such as a `proxy`, does not
+//! apply to it; the proxy environment variables still do); `security` runs through
+//! `soyeht_process::run`. Both have a deadline and a bounded output; the JSON-RPC child is
+//! interactive and keeps its own deadline. Credentials reach `curl` on standard input as
+//! configuration, never on its command line, and no response body or error text is logged.
 
 use crate::streak::{Streak, first_failure, recovered};
 use soyeht_platform::{
     log::{self, Failure as _},
     process::end_child,
 };
+use soyeht_process::curl;
 use soyeht_protocol::limits;
 use soyeht_usage::host::{HttpRequest, HttpResult, RpcRequest, RpcRun, Secret, SecretRead};
 use std::{
@@ -27,17 +30,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(unix)]
-pub(super) const CURL: &str = "/usr/bin/curl";
-/// Windows ships `curl.exe` in its system folder, which is on the search path.
-#[cfg(windows)]
-pub(super) const CURL: &str = "curl.exe";
 pub(super) const SECURITY: &str = "/usr/bin/security";
 /// A keychain read can wait on the user's answer to the macOS prompt.
 const KEYCHAIN_TIMEOUT: Duration = Duration::from_secs(60);
 /// `security` exits with errSecItemNotFound when the item does not exist.
 const KEYCHAIN_ITEM_NOT_FOUND: i32 = 44;
-const STATUS_MARKER: &[u8] = b"\nSOYEHT_STATUS:";
+/// Redirects a usage request follows, all of them to https.
+const MAX_REDIRECTS: u32 = 3;
 
 /// The failures below repeat on every refresh of the usage rings, so each keeps a streak: the
 /// first failure and each change of kind are logged, and a success ends the streak.
@@ -73,17 +72,15 @@ pub(super) fn harden(_command: &mut Command) {}
 fn run_bounded(
     program: &Path,
     args: &[&str],
-    input: Option<Vec<u8>>,
     timeout: Duration,
 ) -> soyeht_process::Result<soyeht_process::Output> {
     let mut command = Command::new(program);
     harden(&mut command);
     command.args(args);
-    let limits = soyeht_process::Limits::new(timeout, limits::JSON_BYTES);
-    match input {
-        Some(input) => soyeht_process::run_with_input(command, input, limits),
-        None => soyeht_process::run(command, limits),
-    }
+    soyeht_process::run(
+        command,
+        soyeht_process::Limits::new(timeout, limits::JSON_BYTES),
+    )
 }
 
 /// A generic password from the login keychain through `/usr/bin/security`. The first read of
@@ -99,7 +96,7 @@ pub(super) fn keychain_password(
     }
     args.push("-w");
     // A keychain that did not answer in time, or at all, is a read the person did not allow.
-    let Ok(output) = run_bounded(program, &args, None, KEYCHAIN_TIMEOUT) else {
+    let Ok(output) = run_bounded(program, &args, KEYCHAIN_TIMEOUT) else {
         return SecretRead::Denied;
     };
     match output.status.code() {
@@ -117,60 +114,25 @@ pub(super) fn keychain_password(
     }
 }
 
-/// An HTTPS GET through `curl`. Credential headers travel in the configuration curl reads from
-/// standard input.
+/// An HTTPS GET through the runner's `curl` (`soyeht_process::curl`): credential headers travel
+/// in the configuration `curl` reads from standard input, never on its command line.
 pub(super) fn http(program: &Path, request: &HttpRequest) -> HttpResult {
-    let mut config = Vec::new();
-    for (name, value) in &request.secret_headers {
-        // Printable ASCII without quotes or backslashes needs no escaping in curl's config.
-        let quotable = value
-            .expose()
-            .bytes()
-            .all(|byte| (byte.is_ascii_graphic() || byte == b' ') && !matches!(byte, b'"' | b'\\'));
-        if value.expose().is_empty() || !quotable {
-            return HttpResult::TransportFailed;
-        }
-        config.extend_from_slice(format!("header = \"{name}: ").as_bytes());
-        config.extend_from_slice(value.expose().as_bytes());
-        config.extend_from_slice(b"\"\n");
-    }
-    let max_time = request.timeout.as_secs().max(1).to_string();
-    let mut args = vec![
-        "--config",
-        "-",
-        "--silent",
-        "--max-time",
-        &max_time,
-        "--connect-timeout",
-        "10",
-        "--proto",
-        "=https",
-        "--proto-redir",
-        "=https",
-        "--max-redirs",
-        "3",
-        "--location",
-        "--write-out",
-        "\nSOYEHT_STATUS:%{http_code}\nSOYEHT_RETRY:%header{retry-after}\n",
-    ];
-    let headers = request
-        .headers
-        .iter()
-        .map(|(name, value)| format!("{name}: {value}"))
-        .collect::<Vec<_>>();
-    for header in &headers {
-        args.extend(["--header", header.as_str()]);
-    }
-    args.push(&request.url);
-    let timeout = request.timeout + Duration::from_secs(5);
-    match run_bounded(program, &args, Some(config), timeout) {
-        Ok(output) if output.status.code() == Some(0) => {
+    let Ok(call) = http_call(request) else {
+        return HttpResult::TransportFailed;
+    };
+    let timeout = request.timeout.max(Duration::from_secs(1));
+    match call.send(program, timeout, limits::JSON_BYTES) {
+        Ok(response) => {
             recovered(&CURL_RUN);
-            parse_http_output(output.stdout)
+            HttpResult::Response {
+                status: response.status,
+                retry_after_sec: response.retry_after.as_deref().and_then(retry_after),
+                body: response.body,
+            }
         }
         // Any other exit is a transport failure that curl reports on its own.
-        Ok(_) => HttpResult::TransportFailed,
-        Err(error) => {
+        Err(curl::SendError::Exit(_) | curl::SendError::Malformed) => HttpResult::TransportFailed,
+        Err(curl::SendError::Run(error)) => {
             if first_failure(&CURL_RUN, &error.failure_kind()) {
                 log::failure("usage.curl_failed", &error);
             }
@@ -179,29 +141,17 @@ pub(super) fn http(program: &Path, request: &HttpRequest) -> HttpResult {
     }
 }
 
-fn parse_http_output(mut output: Vec<u8>) -> HttpResult {
-    let Some(at) = output
-        .windows(STATUS_MARKER.len())
-        .rposition(|window| window == STATUS_MARKER)
-    else {
-        return HttpResult::TransportFailed;
-    };
-    let metadata = String::from_utf8_lossy(&output.split_off(at + 1)).into_owned();
-    output.truncate(at);
-    let field = |prefix: &str| {
-        metadata
-            .lines()
-            .find_map(|line| line.strip_prefix(prefix).map(str::trim))
-            .filter(|value| !value.is_empty())
-    };
-    match field("SOYEHT_STATUS:").and_then(|value| value.parse::<u16>().ok()) {
-        Some(0) | None => HttpResult::TransportFailed,
-        Some(status) => HttpResult::Response {
-            status,
-            retry_after_sec: field("SOYEHT_RETRY:").and_then(retry_after),
-            body: output,
-        },
+fn http_call(request: &HttpRequest) -> Result<curl::Request, curl::Invalid> {
+    let mut call = curl::Request::new(&request.url)?
+        .https_only()
+        .follow_redirects(MAX_REDIRECTS);
+    for (name, value) in &request.headers {
+        call = call.header(name, value)?;
     }
+    for (name, value) in &request.secret_headers {
+        call = call.secret_header(name, value)?;
+    }
+    Ok(call)
 }
 
 /// `Retry-After` as seconds or an HTTP date, capped at the protocol's longest backoff.
@@ -363,21 +313,10 @@ mod tests {
     }
 
     #[test]
-    fn http_status_and_retry_after_are_split_from_the_body() {
-        let output = b"{\"a\":1}\nSOYEHT_STATUS:429\nSOYEHT_RETRY:17\n".to_vec();
-        assert_eq!(
-            parse_http_output(output),
-            HttpResult::Response {
-                status: 429,
-                retry_after_sec: Some(17),
-                body: b"{\"a\":1}".to_vec()
-            }
-        );
-        assert_eq!(
-            parse_http_output(b"\nSOYEHT_STATUS:000\nSOYEHT_RETRY:\n".to_vec()),
-            HttpResult::TransportFailed
-        );
+    fn retry_after_is_read_as_seconds_or_a_date_and_capped() {
+        assert_eq!(retry_after("17"), Some(17));
         assert_eq!(retry_after("99999"), Some(1_800));
+        assert_eq!(retry_after("not a time"), None);
     }
 
     #[cfg(unix)]

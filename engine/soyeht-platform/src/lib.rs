@@ -44,6 +44,7 @@ pub mod log;
 pub mod net;
 pub mod process;
 pub mod program;
+pub mod secret;
 #[cfg(feature = "tokio")]
 pub mod shutdown;
 pub mod tailscale;

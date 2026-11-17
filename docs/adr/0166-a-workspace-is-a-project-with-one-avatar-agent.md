@@ -311,7 +311,7 @@ the layout rules are):
   | STT | Apple speech, Nemotron 3.5 streaming (exist) | local: a Whisper-class model through whisper.cpp or ONNX, CPU first, GPU when present; cloud |
   | TTS | Apple voices; Kokoro-82M on CoreML (English first, see licenses) | local: Kokoro (English); the system voices where the system has good ones; cloud |
   | Cloud | one generic provider over the **OpenAI-compatible audio endpoints** (a base URL, a key, a model), which covers OpenAI, Groq and the many that copy the shape; ElevenLabs and Deepgram as the first two native adapters | the same |
-  | VAD, turn | Silero VAD v5 and Smart Turn v3.2 (ONNX), CoreML or onnxruntime | the same ONNX files through `ort` |
+  | VAD, turn | Silero VAD and Smart Turn v3.2 as the CoreML conversions, run directly with no runtime library (slice 7 built this: Silero is the 6.2.1 weights, the only conversion that exists, same project and license as v5; each file is fetched at a pinned commit and checked against its checksum) | the ONNX files of the same two models through `ort`: **not the same files** as the Apple ones, so slice 8a pins its own commit and checksums; what the two clients share is the vectors and the model versions |
 
 - **Echo and barge-in per system.** Apple: the audio engine's voice processing (echo cancellation) allows
   full-duplex barge-in over speakers, as in the lab. Windows and Linux: **half-duplex at launch** (the mic is
@@ -456,7 +456,7 @@ unverified.
 | espeak-ng, used by misaki and by Kokoro and Piper paths for the phonemes of Portuguese and most languages | GPL-3 (`COPYING` of the espeak-ng repository read 2026-11-14; the lab's own note says "not for shipping without review") | **Blocker for Portuguese local Kokoro**: cannot link or bundle (ADR 0149). English works with a dictionary phonemizer. A non-copyleft pt-BR phonemizer is a later slice; until then Portuguese local TTS is the system voice or a cloud voice. |
 | sherpa-onnx (an option for STT, VAD, TTS in Rust) | Apache-2.0 for the project (`LICENSE` read 2026-11-14). Whether its Kokoro/Piper path links or loads GPL espeak-ng code is **not verified**: the cmake folder no longer holds an espeak-ng build file, but the source was not read | Do not adopt before reading its build and source; the plan uses `ort` and whisper.cpp directly. |
 | Piper engine (`piper1-gpl`) | GPL-3 | Do not use. |
-| Silero VAD v5 | MIT (`LICENSE` of `snakers4/silero-vad` read on 2026-11-14; its README badge text says "CC BY-NC" but links the MIT file, and the README says MIT) | Ship; re-read the LICENSE at the pinned version in slice 7. |
+| Silero VAD v5, and the 6.2.1 CoreML conversion slice 7 ships | MIT (`LICENSE` of `snakers4/silero-vad` read on 2026-11-14 and again on 2026-11-16; the model card of the conversion says `license: mit`; the README badge text says "CC BY-NC" but links the MIT file, and the README says MIT) | Ship as a download, pinned to a commit and checked by checksum (`scripts/third_party/models.json`). The availability of both CoreML models rests on one repository of the model host (`aufklarer`, the two repositories named in `models.json`); if it disappears, the built-in fallbacks (loudness, the pause) keep working and the install fails with its reason. A mirror under the project's control is a follow-up for the owner. |
 | Smart Turn v3.2 (Daily, pipecat) | BSD-2 (repository `LICENSE` and the model card, read 2026-11-14) | Ship. |
 | Pipecat design | BSD-2 | Design reference only; no dependency. |
 | Whisper large-v3-turbo and whisper.cpp | MIT (model card read 2026-11-14; whisper.cpp not re-read) | Ship as a download. |
@@ -519,8 +519,8 @@ of each slice is included. A slice names its tests.
 | 4 | Swift runtime and rasteriser in `apps/shared`, avatar stage view for Mac and iOS, vector tests | L | 5 | 3 |
 | 5 | GPUI rasteriser and avatar stage on the desktop, frame budget on Windows | L | 5 | 3 |
 | 6 | Voice provider catalogue (Swift): `SpeechSynthesizing`, Apple TTS, OpenAI-compatible cloud STT and TTS, Kokoro CoreML (English), key vault, install flow in ADR 0083's style | L | 4 | none |
-| 7 | Voice loop (Swift): audio session with echo cancellation, Silero and Smart Turn through onnxruntime or CoreML, turn machine, barge-in, sentence chunker, speech text, vectors `voice-turns.json`; Mac and iOS | L | 6 | 6 |
-| 8a | Desktop audio I/O (cpal), Silero and Smart Turn through `ort`, turn machine in Rust, half-duplex, AEC attempt (WebRTC audio processing or speexdsp) | L | 5 | 7 vectors |
+| 7 | Voice loop (Swift): audio session with echo cancellation, Silero and Smart Turn as CoreML models (no onnxruntime), turn machine, barge-in, sentence chunker, speech text, reply feed, vectors `voice-turns.json` and `speech-text.json`, the timings and limits in `x-clientPolicy.voice`; Mac and iOS (built: `docs/contracts/20-voice-loop.md`) | L | 6 | 6 |
+| 8a | Desktop audio I/O (cpal), Silero and Smart Turn through `ort` (the ONNX files of the same versions, their own pinned commit and checksums), turn machine in Rust that passes the vectors of slice 7 and reads `x-clientPolicy.voice`, half-duplex, AEC attempt (WebRTC audio processing or speexdsp) | L | 5 | 7 vectors |
 | 8b | Desktop providers: local Whisper-class STT, Kokoro (English) TTS, cloud adapters, model install and notices | L | 5 | 8a |
 | 9a | The image catalogue (descriptor, registry, local and cloud entries, the person's own key for a cloud one, no model hard-wired), the adapters, frame spec, `soyeht avatar frame` and `check`, the `avatar-builder` skill, preset pack generation with Qwen-Image 2.1 | M | 3 | 0 |
 | 9b | `soyeht avatar build` in Rust, and the engine's side of a build (the call that starts it, the build state and failure kind, the package hash, the progress event, the ranged read of a ready package, each with its owner and its expiry, and their migration): landmarks through `ort`, the per-face regions derived from them (mouth box, ellipses, eye regions, warp regions), mouth mesh, diff rectangles, atlas, package carrying the warp regions; reproduces the lab's avatar A from its frames and builds the spike's three faces | L | 6 | 3, 9a |
@@ -553,6 +553,28 @@ Total of the slices: **68 agent-days** (3 + 3 + 3 + 5 + 5 + 5 + 4 + 6 + 5 + 5 + 
   made (generation, or Windows and Linux voice) or by the spike failing.
 - The slice-0 spike either confirms these numbers or replaces them within 3 working days. It has not run
   yet, so nothing here has been confirmed by it. Do not announce a launch date before it.
+
+## Slice 9a: what was built
+
+Built: the image catalogue, the adapters, the frame spec, `soyeht avatar` (`providers`, `frames`,
+`frame`, `check`, `key`) and the `avatar-builder` skill, in the crate `soyeht-image` (layer 3, in
+`scripts/check_layers.py` and `AGENTS.md`) and `soyeht-skills`; see `docs/avatar-image-catalogue.md`.
+The catalogue's first list (question 4 below): `qwen-image-2.1-comfyui`, a local ComfyUI entry that
+carries the project's recipe as data, and `openai-compatible-image-edit`, a cloud entry for any
+service that answers the OpenAI image-edit request, with the person's own address, model and key.
+The image providers' keys live on the build host, in an owner-only file per provider and address
+(a key given for one address is never sent to another); the engine never receives them. The requests
+go through the one `curl` builder of `soyeht-process`, which the usage readings use too. The harness's own image tool needs no adapter: an agent makes the frame with
+it and runs `check` on the file.
+
+**Untested against any real service.** The ComfyUI recipe and the cloud adapter have met only a
+stand-in server with the real `curl`. The first real `soyeht avatar frame` and `check`, on a real
+ComfyUI server and on a real cloud service, are owed when the GPU host is back.
+
+Not built, and not measured: the preset pack (the GPU host was not available), the thresholds of
+the check (they are data in `frames.json` and are set from the first real outputs), and the cost
+per image of a cloud entry. `check` has no landmark test; it arrives with the build of slice 9b.
+Delivering the skill to the build pane is the build job's (slices 1 and 2).
 
 ## Questions for the owner
 
