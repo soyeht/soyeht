@@ -277,11 +277,7 @@ private func changeAtTheThreshold(inner: AvatarFixture.Inner) throws -> Int {
   mouth["parts"] = .array(parts)
   fields["mouth"] = .object(mouth)
   document = .object(fields)
-  let assets = made.images.map {
-    AvatarAssetInfo(
-      path: $0.key, bytes: 100,
-      size: AvatarSize(width: UInt32($0.value.width), height: UInt32($0.value.height)))
-  }
+  let assets = made.assets
   #expect(throws: AvatarPackageError(kind: .tooLarge, at: "/mouth/parts")) {
     _ = try AvatarPackage.load(json: JSONEncoder().encode(document), assets: assets)
   }

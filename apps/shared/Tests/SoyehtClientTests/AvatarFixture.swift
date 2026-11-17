@@ -21,6 +21,15 @@ enum AvatarFixture {
     let canvas: Int
     /// The document, as `avatar.json` holds it.
     let json: Data
+
+    /// The files the package lists, as a caller that has read the folder would report them.
+    var assets: [AvatarAssetInfo] {
+      images.map { path, bitmap in
+        AvatarAssetInfo(
+          path: path, bytes: 100,
+          size: AvatarSize(width: UInt32(bitmap.width), height: UInt32(bitmap.height)))
+      }
+    }
   }
 
   /// The colour of the eye frame of an id: each frame is a flat patch of its own.

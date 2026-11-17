@@ -181,11 +181,7 @@ private func numbers(in value: Any) -> Int {
 
 @Test func aDocumentThatIsNotPlainJsonObjectBytesIsMalformed() throws {
   let made = try AvatarFixture.make(canvas: 64)
-  let assets = made.images.map {
-    AvatarAssetInfo(
-      path: $0.key, bytes: 100,
-      size: AvatarSize(width: UInt32($0.value.width), height: UInt32($0.value.height)))
-  }
+  let assets = made.assets
   func kind(_ data: Data) -> AvatarPackageErrorKind? {
     do {
       _ = try AvatarPackage.load(json: data, assets: assets)
