@@ -9,6 +9,11 @@ them. Vectors: `contracts/vectors/voice-turns.json` and `contracts/vectors/speec
 `contracts/voice_vectors.py`. Numbers: the `voice` group of `x-clientPolicy` in `contracts/protocol.json`
 (`ClientPolicy.voice...` in Swift, `client_policy::VOICE_...` in Rust).
 
+The Rust implementation of sections 1 to 3 is the `soyeht-voice` crate of the desktop workspace
+(`apps/desktop/crates/soyeht-voice`, slice 8a of ADR 0166): it passes both vector files, and it sits on the
+client's Markdown parser because the speech text is read from it. The audio, the models and the controller
+of the Windows and Linux app are not in it.
+
 The loop runs in the client that has the microphone and speaker. Speech is recognised and spoken on that
 device; only text crosses the wire, as the person's next prompt and the agent's reply. This contract adds
 no method, event or capability: it is the rules two clients must share.

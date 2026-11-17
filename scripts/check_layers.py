@@ -75,6 +75,9 @@ LAYERS: dict[str, set[str]] = {
     # The system web view of the desktop client (ADR 0110): it knows pages and pixels, and no
     # other crate of Soyeht.
     "soyeht-webview": set(),
+    # The pure rules of the voice loop (ADR 0166, contract 20). The speech text reads the shared
+    # Markdown parser, which is the client's, so the crate cannot sit with the engine's blocks.
+    "soyeht-voice": {"soyeht-client", "soyeht-protocol"},
     # Soyeht's Apache-2.0 stand-in for Zed's GPL-3.0 `ztracing` (ADR 0149): a proc-macro that does
     # nothing, patched in for the crate that GPUI's `sum_tree` uses. It depends on nothing.
     "ztracing": set(),

@@ -1,4 +1,5 @@
 {
+  "apps/desktop/crates/soyeht-voice/src/reply_feed.rs::has_pending": "The crate's public surface for the voice loop's controller (the audio part of slice 8a of ADR 0166), which asks whether a reply has more to come; no consumer has landed yet, and the crate's own tests call it.",
   "apps/desktop/crates/ztracing/src/lib.rs::instrument": "A procedural macro: the compiler calls it for the #[instrument] attributes of GPUI's sum_tree, which no Soyeht code references (ADR 0149).",
   "engine/soyeht-avatar/src/clip.rs::with_words": "The crate's public surface for the renderers (slices 4 and 5) and the voice loop (slice 7) of ADR 0166; no consumer has landed yet, and the crate's own tests call it.",
   "engine/soyeht-avatar/src/envelope.rs::from_pcm": "The crate's public surface for the renderers (slices 4 and 5) and the voice loop (slice 7) of ADR 0166; no consumer has landed yet, and the crate's own tests call it.",

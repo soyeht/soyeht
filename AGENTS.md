@@ -82,8 +82,11 @@ Each layer depends only on the layers listed above it.
    the WebSocket, the pairing and the check of the engine's proof: its `device` module, which the
    Android core uses; and the web host the engine's agents
    read a web pane through), `soyeht-webview` the system web view (WebKitGTK on Linux, loaded at
-   run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-desktop` the
-   views, and its `theme` module holds the palettes and tokens generated from
+   run time, ADR 0110; WebView2 on Windows, ADR 0124; no Soyeht dependency), `soyeht-voice` the
+   pure rules of the voice loop (ADR 0166, contract 20: the turn machine, the speech text, the
+   sentence chunker, the reply feed and the heard part, no audio, no clock and no model; the
+   speech text reads the shared Markdown parser, which is `soyeht-client`'s, so the crate sits
+   on it), `soyeht-desktop` the views, and its `theme` module holds the palettes and tokens generated from
    `contracts/design-tokens.json`, the same source the Swift side is generated from. Two small
    crates of ours stand in for dependencies of GPUI whose licenses a product may not ship
    (ADR 0149): `crates/ztracing` for Zed's GPL-3.0 crate of that name, and

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview", "crates/ztracing", "shims/wayland-protocols-plasma"]
+members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-voice", "crates/soyeht-webview", "crates/ztracing", "shims/wayland-protocols-plasma"]
 resolver = "3"
 
 [workspace.package]
@@ -36,6 +36,10 @@ pulldown-cmark = { version = "0.13", default-features = false }
 # Grapheme clusters and the cells a character takes: what a caret moves over and what a line takes.
 unicode-segmentation = "1"
 unicode-width = "0.2"
+# The voice loop compares words in Unicode NFC and by general category (letters, marks and digits),
+# which Rust's `char` methods do not give (contract 20). The engine already depends on the same two.
+icu_normalizer = { version = "2.3", default-features = false, features = ["compiled_data"] }
+icu_properties = "2.3"
 # Calendar arithmetic for the engine's ISO 8601 timestamps. GPUI already brings it into the lockfile.
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 # The QR code of a pairing window: the one encoder, with no dependency of its own (default features
