@@ -131,10 +131,17 @@ pub fn load_folder(dir: &Path) -> Result<Avatar, LoadError> {
     })?;
     // A document that does not parse has no listing: the load rules then name what is wrong.
     let declared = serde_json::from_str::<Listing>(&json).map_or_else(|_| Vec::new(), |l| l.files);
-    let (assets, mut files) = read_listed(dir, &declared);
+    let (assets, files) = read_listed(dir, &declared);
     let package = Package::load(&json, &assets).map_err(LoadError::Package)?;
+    // A file two names share (two eye frames) is decoded once and handed out for both.
+    let mut decoded: HashMap<String, Pixmap> = HashMap::new();
     Avatar::from_pictures(package, |path| {
-        decode(&files.remove(path).ok_or(LoadError::Picture)?)
+        if let Some(picture) = decoded.get(path) {
+            return Ok(picture.clone());
+        }
+        let picture = decode(files.get(path).ok_or(LoadError::Picture)?)?;
+        decoded.insert(path.to_owned(), picture.clone());
+        Ok(picture)
     })
 }
 

@@ -73,6 +73,17 @@ fn the_rules_of_the_package_decide_what_loads() {
 }
 
 #[test]
+fn two_names_that_share_one_picture_file_both_load() {
+    // Two eye frames of the package name the same file: the load rules allow it, and each frame
+    // gets the picture.
+    let folder = Folder::new("shared-file", SPEC);
+    folder.rewrite_document(|d| d["eyes"][1]["file"] = d["eyes"][0]["file"].clone());
+    let avatar = load_folder(&folder.0).unwrap();
+    let eyes = &avatar.package().eyes;
+    assert_eq!(eyes[0].file, eyes[1].file);
+}
+
+#[test]
 fn a_picture_that_is_not_a_png_is_refused_before_it_is_decoded() {
     let folder = Folder::new("notpng", SPEC);
     fs::write(folder.0.join("base.png"), vec![7u8; 4000]).unwrap();
