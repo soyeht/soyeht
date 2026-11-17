@@ -468,7 +468,6 @@ impl VoiceTurnMachine {
             Phase::Waiting | Phase::WaitingReply => {
                 self.phase = Phase::Playing;
                 self.spoken = vec![tokens(text)];
-                self.needs_quiet = false;
                 if self.config.half_duplex {
                     self.voiced = false;
                 }

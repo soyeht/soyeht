@@ -149,6 +149,12 @@ mod tests {
     }
 
     #[test]
+    fn the_blanks_that_are_trimmed_are_the_zs_category_and_the_tab() {
+        assert_eq!(trim_blanks("\u{a0}\t a b \u{3000}"), "a b");
+        assert_eq!(trim_blanks("\u{c}a\u{2028}"), "\u{c}a\u{2028}");
+    }
+
+    #[test]
     fn each_character_of_a_script_with_no_blanks_is_a_word() {
         assert_eq!(words("今日は ok"), ["今", "日", "は", "ok"]);
     }

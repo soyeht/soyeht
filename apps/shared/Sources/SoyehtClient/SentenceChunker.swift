@@ -179,7 +179,8 @@ public struct SentenceChunker: Sendable {
       let at =
         clause.map { $0 + 1 } ?? window.last { scalars[$0].properties.isWhitespace }
         ?? window.upperBound
-      parts.append((text(scalars[from..<at]), at))
+      let part = text(scalars[from..<at])
+      if !part.isEmpty { parts.append((part, at)) }
       from = at
       while from < scalars.count, scalars[from].properties.isWhitespace { from += 1 }
     }

@@ -494,6 +494,156 @@ case("full duplex: speech that goes on past the end of the reply is heard at onc
     frames(3008, 1, 0.9, "hearing", [a("startTurn", 3008, fromMs=1696)]),
 ])
 
+# ---- what the vectors above leave to the code
+def early_end():
+    """A turn whose recognizer gave its final text at 200, before the pause: sent at 450."""
+    return [
+        start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+        step("transcript", 100, "hearing", text="open the", final=False),
+        frames(128, 3, 0.1, "hearing"),
+        step("transcript", 200, "hearing", text="open the file", final=True),
+        frames(224, 8, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
+        step("endOfTurn", 450, "waitingReply", [a("submit", 450, text="open the file", interrupted=False)],
+             id=1, complete=True),
+    ]
+
+def two_recognizers():
+    """The first recognizer ended with "open the" at 200; the person spoke again, and a second one started."""
+    return [
+        start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+        step("transcript", 100, "hearing", text="open the", final=False),
+        frames(128, 3, 0.1, "hearing"),
+        step("transcript", 200, "hearing", text="open the", final=True),
+        frames(224, 1, 0.1, "hearing"),
+        frames(256, 3, 0.9, "hearing", [a("startTurn", 320, fromMs=200)]),
+    ]
+
+case("the voice-gate hold goes on when the reply starts to play", submitted() + [
+    frames(800, 58, 0.9, "waitingReply",
+           [a("probeInterruption", 1120, fromMs=448), a("dropProbe", 2624)]),
+    step("sentenceStarted", 2630, "playing", text="It is half past three."),
+    frames(2656, 11, 0.9, "playing"),
+    frames(3008, 1, 0.1, "playing"),
+    frames(3040, 11, 0.9, "probing", [a("probeInterruption", 3360, fromMs=2688)]),
+])
+case("a probe that ended with its final text while the person goes on talking is followed by a pause first",
+     probing() + [
+    frames(2400, 11, 0.1, "probing", [a("finishProbe", 2720)]),
+    frames(2752, 6, 0.9, "probing"),
+    step("transcript", 2930, "playing", [a("dropProbe", 2930)], text="Uh-huh.", final=True),
+    frames(2944, 11, 0.9, "playing"),
+    frames(3296, 1, 0.1, "playing"),
+    frames(3328, 11, 0.9, "probing", [a("probeInterruption", 3648, fromMs=2976)]),
+])
+case("a probe is finished after exactly the silence time", probing() + [
+    frames(2400, 11, 0.1, "probing", [a("finishProbe", 2720)]),
+], {"silenceMs": 352})
+case("an echo is made of whole words: only the last one may be unfinished", playing() + [
+    frames(2048, 11, 0.9, "probing", [a("probeInterruption", 2368, fromMs=1696)]),
+    step("transcript", 2380, "hearing", [a("stopPlayback", 2380), a("cancelReply", 2380)],
+         text="it i half", final=False),
+])
+# what a turn keeps of the one before
+case("a new turn starts from the audio before its voice, not from where the last recognizer ended",
+     early_end() + [
+    step("sentenceStarted", 460, "playing", text="Done."),
+    step("replyFinished", 470, "waiting"),
+    frames(480, 3, 0.9, "hearing", [a("startTurn", 544, fromMs=128)]),
+])
+case("a probe starts from the audio before its voice, not from where the last recognizer ended",
+     early_end() + [
+    frames(480, 11, 0.9, "probingWait", [a("probeInterruption", 800, fromMs=128)]),
+])
+case("the flag of an interrupted turn goes with an interrupt", probing() + [
+    step("transcript", 2380, "hearing", [a("stopPlayback", 2380), a("cancelReply", 2380)],
+         text="wait", final=False),
+    step("interrupt", 2400, "waiting", [a("discardTurn", 2400)]),
+    frames(2432, 3, 0.9, "hearing", [a("startTurn", 2496, fromMs=2080)]),
+    frames(2528, 11, 0.1, "deciding", [a("checkEndOfTurn", 2848, id=2)]),
+    step("endOfTurn", 2850, "finalizing", [a("finalizeTurn", 2850)], id=2, complete=True),
+    step("transcript", 2900, "waitingReply", [a("submit", 2900, text="thanks", interrupted=False)],
+         text="thanks", final=True),
+])
+case("only the turn that took the reply is marked interrupted", probing() + [
+    step("transcript", 2380, "hearing", [a("stopPlayback", 2380), a("cancelReply", 2380)],
+         text="wait", final=False),
+    frames(2400, 11, 0.1, "deciding", [a("checkEndOfTurn", 2720, id=2)]),
+    step("endOfTurn", 2730, "finalizing", [a("finalizeTurn", 2730)], id=2, complete=True),
+    step("transcript", 2800, "waitingReply", [a("submit", 2800, text="wait", interrupted=True)],
+         text="wait", final=True),
+    step("sentenceStarted", 2900, "playing", text="Yes?"),
+    step("replyFinished", 2950, "waiting"),
+    frames(2976, 3, 0.9, "hearing", [a("startTurn", 3040, fromMs=2624)]),
+    frames(3072, 11, 0.1, "deciding", [a("checkEndOfTurn", 3392, id=3)]),
+    step("endOfTurn", 3400, "finalizing", [a("finalizeTurn", 3400)], id=3, complete=True),
+    step("transcript", 3500, "waitingReply", [a("submit", 3500, text="thanks", interrupted=False)],
+         text="thanks", final=True),
+])
+case("the last partial text heard during the turn is used when the final never comes", [
+    start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+    step("transcript", 100, "hearing", text="open the", final=False),
+    frames(128, 11, 0.1, "deciding", [a("checkEndOfTurn", 448, id=1)]),
+    step("endOfTurn", 450, "finalizing", [a("finalizeTurn", 450)], id=1, complete=True),
+    frames(480, 94, 0.1, "waitingReply",
+           [a("discardTurn", 3456), a("submit", 3456, text="open the", interrupted=False)]),
+])
+case("the partial text of a probe that took the turn is used when the final never comes", probing() + [
+    step("transcript", 2380, "hearing", [a("stopPlayback", 2380), a("cancelReply", 2380)],
+         text="wait", final=False),
+    frames(2400, 11, 0.1, "deciding", [a("checkEndOfTurn", 2720, id=2)]),
+    step("endOfTurn", 2730, "finalizing", [a("finalizeTurn", 2730)], id=2, complete=True),
+    frames(2752, 95, 0.1, "waitingReply",
+           [a("discardTurn", 5760), a("submit", 5760, text="wait", interrupted=True)]),
+])
+case("a turn the recognizer heard nothing of is dropped, whatever the turn before heard", submitted() + [
+    step("sentenceStarted", 2000, "playing", text="It is late."),
+    step("replyFinished", 2010, "waiting"),
+    frames(2048, 3, 0.9, "hearing", [a("startTurn", 2112, fromMs=1696)]),
+    frames(2144, 11, 0.1, "deciding", [a("checkEndOfTurn", 2464, id=2)]),
+    step("endOfTurn", 2470, "finalizing", [a("finalizeTurn", 2470)], id=2, complete=True),
+    frames(2496, 94, 0.1, "waiting", [a("discardTurn", 5472)]),
+])
+case("a second recognizer that heard nothing leaves the words of the first as they were",
+     two_recognizers() + [
+    frames(352, 11, 0.1, "deciding", [a("checkEndOfTurn", 672, id=1)]),
+    step("endOfTurn", 680, "finalizing", [a("finalizeTurn", 680)], id=1, complete=True),
+    frames(704, 94, 0.1, "waitingReply",
+           [a("discardTurn", 3680), a("submit", 3680, text="open the", interrupted=False)]),
+])
+case("an interrupt drops the words the turn had kept", two_recognizers() + [
+    step("interrupt", 330, "waiting", [a("discardTurn", 330)]),
+    frames(352, 3, 0.9, "hearing", [a("startTurn", 416, fromMs=0)]),
+    step("transcript", 430, "hearing", text="hello", final=False),
+    frames(448, 11, 0.1, "deciding", [a("checkEndOfTurn", 768, id=1)]),
+    step("endOfTurn", 770, "finalizing", [a("finalizeTurn", 770)], id=1, complete=True),
+    step("transcript", 800, "waitingReply", [a("submit", 800, text="hello", interrupted=False)],
+         text="hello", final=True),
+])
+# half duplex, again
+case("half duplex: a frame exactly at the end of the tail of an interrupt is heard", submitted() + [
+    step("sentenceStarted", 2000, "playing", text="It is half past three."),
+    frames(2048, 30, 0.9, "playing"),
+    step("interrupt", 4000, "waiting", [a("stopPlayback", 4000), a("cancelReply", 4000)]),
+    frames(4032, 8, 0.9, "waiting"),
+    frames(4288, 3, 0.9, "hearing", [a("startTurn", 4352, fromMs=4288)]),
+], {"halfDuplex": True, "halfDuplexTailMs": 288})
+case("half duplex: a frame exactly at the end of the tail of the speaker is heard", submitted() + [
+    step("sentenceStarted", 2000, "playing", text="It is half past three."),
+    frames(2048, 30, 0.9, "playing"),
+    step("replyFinished", 3000, "waiting"),
+    frames(3008, 9, 0.9, "waiting"),
+    frames(3296, 3, 0.9, "hearing", [a("startTurn", 3360, fromMs=3296)]),
+], {"halfDuplex": True, "halfDuplexTailMs": 296})
+case("half duplex: an interrupt while the person talks leaves no tail", [
+    start(), frames(32, 3, 0.9, "hearing", [a("startTurn", 96, fromMs=0)]),
+    step("interrupt", 150, "waiting", [a("discardTurn", 150)]),
+    frames(160, 3, 0.9, "hearing", [a("startTurn", 224, fromMs=0)]),
+], half)
+case("half duplex: an interrupt while the agent thinks leaves no tail", submitted() + [
+    step("interrupt", 1000, "waiting", [a("cancelReply", 1000)]),
+    frames(1032, 3, 0.9, "hearing", [a("startTurn", 1096, fromMs=680)]),
+], half)
+
 # ---- every phase against every input
 reach = {
     "off": ([], 0),

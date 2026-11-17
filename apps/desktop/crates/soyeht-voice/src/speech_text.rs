@@ -6,7 +6,7 @@ use crate::held_back::held_back;
 use crate::text::{is_letter, is_number, is_pictograph};
 use soyeht_client::markdown::{Block, Run, parse};
 use soyeht_protocol::client_policy::{
-    VOICE_ADDRESS_OPENERS, VOICE_ADDRESS_PREFIXES, VOICE_SENTENCE_STOPS,
+    VOICE_ADDRESS_OPENERS, VOICE_ADDRESS_PREFIXES, VOICE_SENTENCE_STOPS, VOICE_SENTENCE_WIDE_STOPS,
 };
 
 /// The reply as plain lines to read aloud, one per paragraph, heading or list item, joined by
@@ -22,10 +22,11 @@ use soyeht_protocol::client_policy::{
 /// change is held back, and the text ends with a newline when its last line is finished: the next
 /// block has begun, or the reply ends with a blank line.
 pub fn speakable(markdown: &str, streaming: bool) -> String {
+    let normalised = markdown.replace("\r\n", "\n").replace('\r', "\n");
     let source = if streaming {
-        held_back(markdown)
+        held_back(&normalised)
     } else {
-        markdown
+        &normalised
     };
     let blocks = parse(source, streaming);
     let mut lines = lines_of(&blocks);
@@ -109,7 +110,7 @@ fn clean(source: &str) -> Option<String> {
 }
 
 fn is_sentence_stop(character: char) -> bool {
-    VOICE_SENTENCE_STOPS.contains(character)
+    VOICE_SENTENCE_STOPS.contains(character) || VOICE_SENTENCE_WIDE_STOPS.contains(character)
 }
 
 /// `text` without its HTML tags: `<`, then a letter, `/` or `!`, up to the next `>`.

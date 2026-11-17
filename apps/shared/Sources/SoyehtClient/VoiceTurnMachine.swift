@@ -339,7 +339,6 @@ public struct VoiceTurnMachine: Sendable {
     case .waiting, .waitingReply:
       phase = .playing
       spoken = [VoiceText.tokens(text)]
-      needsQuiet = false
       if config.halfDuplex { voiced = false }
     case .playing, .probing:
       spoken = Array((spoken + [VoiceText.tokens(text)]).suffix(2))

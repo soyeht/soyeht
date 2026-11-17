@@ -115,3 +115,9 @@ private func chunker(_ item: JsonValue) throws -> SentenceChunker {
     #expect(heard == (try need(item["heard"].string, "\(name) heard")), "\(name)")
   }
 }
+
+/// JSON has no NaN, so the vector cannot say it: a share that is not a number is none of the sentence.
+@Test func aShareThatIsNotANumberIsNone() {
+  let heard = HeardSpeech.text(played: ["A."], current: "a b", fraction: .nan)
+  #expect(heard == "A.")
+}

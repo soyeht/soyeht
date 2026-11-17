@@ -4,6 +4,7 @@
 """
 
 import json
+from pathlib import Path
 
 CH = {}
 speech = []
@@ -60,6 +61,29 @@ sp("a pair of stars is skipped when looking for a lone one", "It is **very** *go
 sp("a backtick opens and closes code, where a bracket is not a link", "a `b[c` d [e", "a b[c d", streaming=True)
 sp("a bracket not followed by an address is closed", "See [the docs] and [more", "See [the docs] and", streaming=True)
 sp("nothing is held inside a code block", "```\nsee [x", "", streaming=True)
+
+sp("a bare web address keeps the whole run of stops that ended its sentence", "Open https://example.com/x?! Then go.", "Open?! Then go.")
+sp("a bare web address keeps an ellipsis", "Open https://example.com/x… Then go.", "Open… Then go.")
+sp("a bare web address keeps the stop of a script with no blanks", "詳細は https://example.com/x。 次は雨です。", "詳細は。 次は雨です。")
+sp("the scheme of a web address is read in any case", "Open HTTPS://EXAMPLE.COM/X now, or WWW.Example.com later", "Open now, or later")
+sp("a bare web address in closing brackets takes its stop with it: a known limit", "Open (https://example.com/x.) Then go.", "Open Then go.")
+sp("a task list loses its markers in any case", "- [X] done\n- [x] more\n- [ ] todo", "done\nmore\ntodo")
+sp("a comment is a tag and is dropped", "Hello <!-- note --> world", "Hello world")
+sp("a bracket and a letter open a tag, up to the next bracket", "if a <b and c> d", "if a d")
+sp("a bracket and a blank open no tag, nor does a tag that is never closed", "a < b > c <d e", "a < b > c <d e")
+sp("a bracket and a digit open no tag", "I <3 it and 5> 4", "I <3 it and 5> 4")
+sp("a line break of a Windows text is a blank", "line one\r\nline two", "line one line two")
+sp("a line break of an old Mac text is a blank", "line one\rline two", "line one line two")
+sp("a Windows text has its paragraphs and its code block", "Here:\r\n\r\n```\r\nlet x = 1\r\n```\r\n\r\nDone.", "Here:\nDone.")
+sp("a Windows text ends with a newline when its last line is finished", "Done.\r\n\r\n", "Done.\n", streaming=True)
+sp("a Windows text holds back what is unfinished in its last line", "Hello\r\n\r\nSee [the", "Hello\nSee", streaming=True)
+sp("a rule after the last line finishes it", "Hello\n\n---", "Hello\n", streaming=True)
+sp("a table after the last line finishes it", "Hello\n\n| a |\n|---|\n| 1 |", "Hello\n", streaming=True)
+sp("a tab on a blank line is a blank", "Done.\n\t\n", "Done.\n", streaming=True)
+sp("with two open brackets the text is cut at the first", "See [a [b", "See", streaming=True)
+sp("an underscore alone between blanks is not emphasis", "a _ b", "a _ b", streaming=True)
+sp("an underscore between a letter and a digit is inside a word", "the item_2 name", "the item_2 name", streaming=True)
+sp("a fence of tildes is code", "Hello\n\n~~~\nsee [x", "Hello\n", streaming=True)
 
 chunker = []
 def ch(name, updates, config=None):
@@ -149,6 +173,42 @@ ch("a text that changes before anything was cut loses nothing", [
     ("Different words here. Then", False, ["Different words here."]),
 ])
 
+ch("a title before a name is not an end, after a sentence that is long enough to stand alone", [
+    ("Please call my friend Dr. Smith about it today. Thanks", False,
+     ["Please call my friend Dr. Smith about it today."]),
+    ("Please kindly ask Mr. Jones about the meeting today. Then", False,
+     ["Please kindly ask Mr. Jones about the meeting today."]),
+])
+ch("a title or a street abbreviation of Portuguese is not an end either", [
+    ("Por favor ligue para a Sra. Souza sobre isso hoje. Depois", False,
+     ["Por favor ligue para a Sra. Souza sobre isso hoje."]),
+    ("Por favor siga pela Av. Paulista até o final. Depois", False,
+     ["Por favor siga pela Av. Paulista até o final."]),
+    ("Por favor pergunte ao Dr. Silva sobre isso hoje. Depois", False,
+     ["Por favor pergunte ao Dr. Silva sobre isso hoje."]),
+])
+ch("a word that is not an abbreviation ends its sentence at a full stop", [
+    ("Please call my friend Joe. Then", False, ["Please call my friend Joe."]),
+])
+ch("an abbreviation is one with a single stop", [
+    ("Please call my friend Dr.. Smith about it today. Thanks", False,
+     ["Please call my friend Dr..", "Smith about it today."]),
+])
+ch("a lowercase letter that is not ASCII after a full stop keeps the sentence", [
+    ("We bought apples, pears, etc. épicos and more fruit today. Next", False,
+     ["We bought apples, pears, etc. épicos and more fruit today."]),
+])
+ch("a sentence is trimmed of blanks, a no-break space and a tab among them", [
+    ("  \tHello there, my friend.  Then", False, ["Hello there, my friend."]),
+])
+ch("only the blanks of the Zs category and the tab are trimmed: a form feed stays", [
+    ("\fHello there, my friend. Then", False, ["\fHello there, my friend."]),
+])
+ch("a tail over the limit that starts with a blank does not speak an empty sentence", [
+    ("Hello there friend? " + "a" * 45, False, ["Hello there friend?", "a" * 40]),
+    ("Hello there friend? " + "a" * 45, True, ["a" * 5]),
+], {"maximumLength": 40})
+
 stream = []
 def st(name, updates):
     stream.append({"name": name, "updates": [{"markdown": m, "final": f, "emit": e} for m, f, e in updates]})
@@ -212,6 +272,26 @@ rp("a reply that is only code ends with nothing to say", [
     up("a", "```\nmake test\n```", True, [], False),
 ])
 
+rp("a reply that is final stays final", [
+    up("a", "Hello there, my friend.", True, ["Hello there, my friend."], False),
+    up("a", "Hello there, my friend. How are you?", False, [], False),
+])
+rp("a reply that is still arriving holds back what is unfinished", [
+    up("a", "Hello there, my friend. Please look at [this long link. Then", False,
+       ["Hello there, my friend."], True),
+    up("a", "Hello there, my friend. Please look at [this long link](https://example.com/x). Then", False,
+       ["Please look at this long link."], True),
+])
+remembered = json.loads((Path(__file__).resolve().parent / "protocol.json").read_text())[
+    "x-clientPolicy"]["voice"]["repliesRemembered"]
+hello = "Hello there, my friend. How"
+rp("an identity beyond the ones remembered is forgotten, and a late update of it is a new reply", [
+    *[up(f"m{i}", hello, False, ["Hello there, my friend."], True) for i in range(remembered + 1)],
+    {"cancel": True, "pending": False},
+    up("m1", hello, False, [], False, accepted=False),
+    up("m0", hello, False, ["Hello there, my friend."], True),
+])
+
 heard = []
 def hd(name, played, current, fraction, text, timings=None, position=None):
     d = {"name": name, "played": played, "current": current, "fraction": fraction}
@@ -235,8 +315,19 @@ hd("two words by the timings", [], "one two three.", 0.4, "one two", words, 1.2)
 hd("the last word is heard when the whole sentence was", [], "one two three.", 1, "one two three.", words, 2.0)
 hd("the timings win over the share", [], "one two three.", 0.9, "", words, 0.2)
 
+hd("half of three words is one whole word", [], "a b c", 0.5, "a")
+hd("a no-break space is a blank at the start of the cut", ["A."], " hello there", 0.5, "A. hello")
+hd("a word is heard once the next one begins at the position itself", [], "one two three.", 0.2, "one", words, 0.5)
+hd("the last word waits for the whole sentence, even when almost all of it was heard", [], "one two three.", 0.95,
+   "one two", words, 5.0)
+hd("timings that are empty fall back to the share", [], "a b c d", 0.5, "a b", [], 0.0)
+hd("timings out of order: the words heard are counted and that many are taken from the start", [], "one two three.", 0.5,
+   "one", [{"text": "one", "start": 0.0}, {"text": "two", "start": 2.0}, {"text": "three.", "start": 1.0}], 1.5)
+
 def lines_of(items, indent=4):
-    return ",\n".join(" " * indent + json.dumps(i, ensure_ascii=False) for i in items)
+    # A no-break space is written as its escape, so that a reader of the file can see it.
+    return ",\n".join(
+        " " * indent + json.dumps(i, ensure_ascii=False).replace("\u00a0", "\\u00a0") for i in items)
 
 out = '{\n'
 out += '  "policy": "x-clientPolicy.voice",\n'

@@ -37,10 +37,16 @@ const INPUTS: [&str; 8] = [
     "interrupt",
 ];
 
-/// The numbers of the machine a case may override, in whole milliseconds.
 type Setter = fn(&mut VoiceTurnConfig, i64);
 
-const NUMBERS: [(&str, Setter); 5] = [
+/// The times of the machine a case may override, in whole milliseconds, by the name of the policy.
+const TIMES: [(&str, Setter); 10] = [
+    ("frameMs", |config, value| config.frame_ms = value),
+    ("speechStartMs", |config, value| {
+        config.speech_start_ms = value
+    }),
+    ("preRollMs", |config, value| config.pre_roll_ms = value),
+    ("historyMs", |config, value| config.history_ms = value),
     ("silenceMs", |config, value| config.silence_ms = value),
     ("incompleteSilenceMs", |config, value| {
         config.incomplete_silence_ms = value;
@@ -51,6 +57,9 @@ const NUMBERS: [(&str, Setter); 5] = [
     ("bargeInMs", |config, value| config.barge_in_ms = value),
     ("probeTimeoutMs", |config, value| {
         config.probe_timeout_ms = value;
+    }),
+    ("halfDuplexTailMs", |config, value| {
+        config.half_duplex_tail_ms = value;
     }),
 ];
 
@@ -215,13 +224,22 @@ fn config_of(case: &mut Obj<'_>) -> VoiceTurnConfig {
         return config;
     };
     let mut fields = Obj::new(value, format!("{}.config", case.path()));
-    for (key, set) in NUMBERS {
+    for (key, set) in TIMES {
         if fields.has(key) {
             set(&mut config, fields.integer(key));
         }
     }
+    if fields.has("startThreshold") {
+        config.start_threshold = fields.number("startThreshold");
+    }
+    if fields.has("endThreshold") {
+        config.end_threshold = fields.number("endThreshold");
+    }
     if fields.has("halfDuplex") {
         config.half_duplex = fields.boolean("halfDuplex");
+    }
+    if fields.has("continuers") {
+        config.continuers = fields.strings("continuers");
     }
     fields.done();
     config
