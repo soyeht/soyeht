@@ -2,6 +2,7 @@ import CoreML
 import Foundation
 import SoyehtClient
 import Testing
+import os
 
 @testable import SoyehtDictation
 
@@ -36,7 +37,38 @@ private func expectLicenseAndInstall<Made>(_ provider: VoiceModelProvider<Made>)
 }
 
 @Test func theTurnModelReadsTheLastEightSecondsAndLeavesTheFrontZero() {
-  #expect(SmartTurnEndOfTurn.window == 8 * 16_000)
+  let window = SmartTurnEndOfTurn.window
+  #expect(window == 8 * 16_000)
+  let short = SmartTurnEndOfTurn.padded([1, 2, 3])
+  #expect(short.count == window)
+  #expect(short.prefix(window - 3).allSatisfy { $0 == 0 })
+  #expect(Array(short.suffix(3)) == [1, 2, 3])
+  let long = (0..<(window + 10)).map { Float($0) }
+  let kept = SmartTurnEndOfTurn.padded(long)
+  #expect(kept.count == window)
+  #expect(kept.first == 10 && kept.last == Float(window + 9))
+}
+
+@Test func twoInstallsOfOneModelAtOnceLoadItOnce() async throws {
+  let base = FileManager.default.temporaryDirectory.appendingPathComponent(
+    "voice-holder-\(UUID().uuidString)")
+  defer { try? FileManager.default.removeItem(at: base) }
+  let loads = OSAllocatedUnfairLock(initialState: 0)
+  let holder = LocalModelHolder<Int>(
+    location: ModelCacheLocation(modelId: "test/model", base: base)
+  ) { _, directory, _ in
+    loads.withLock { $0 += 1 }
+    try await Task.sleep(for: .milliseconds(100))
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return 7
+  }
+  async let first: Void = holder.install { _ in }
+  async let second: Void = holder.install { _ in }
+  try await first
+  try await second
+  #expect(loads.withLock { $0 } == 1)
+  #expect(holder.current == 7)
+  #expect(holder.isInstalled)
 }
 
 @Test func theLocalVoiceModelsFollowTheLocalMemoryRule() {
@@ -84,18 +116,16 @@ private func expectLicenseAndInstall<Made>(_ provider: VoiceModelProvider<Made>)
 }
 
 @Test func aFrameOfTheWrongSizeIsAnErrorNotASilence() throws {
-  struct Failing: VoiceActivityDetecting {
-    func probability(of frame: [Float]) throws -> Double {
-      guard frame.count == VoiceFrames.size else {
-        throw VoiceModelError.frameSize(expected: VoiceFrames.size, got: frame.count)
-      }
-      return 0
-    }
-
-    func reset() {}
-  }
   #expect(throws: VoiceModelError.frameSize(expected: 512, got: 100)) {
-    try Failing().probability(of: [Float](repeating: 0, count: 100))
+    try SileroVoiceActivity.requireFrame([Float](repeating: 0, count: 100))
+  }
+  try SileroVoiceActivity.requireFrame([Float](repeating: 0, count: 512))
+}
+
+@Test func aNumberThatIsNotAProbabilityIsAnErrorNotAnAnswer() throws {
+  #expect(try VoiceModelError.probability(0.5) == 0.5)
+  for bad in [Double.nan, -0.1, 1.5, .infinity] {
+    #expect(throws: VoiceModelError.self) { try VoiceModelError.probability(bad) }
   }
 }
 

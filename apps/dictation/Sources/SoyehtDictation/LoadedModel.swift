@@ -1,5 +1,6 @@
 import Foundation
 import SoyehtClient
+import os
 
 /// The copy of a model loaded in this process, readable from any thread.
 final class LoadedModel<Model>: @unchecked Sendable {
@@ -47,7 +48,22 @@ class LocalModelHolder<Model>: @unchecked Sendable {
 
   var isInstalled: Bool { location.isInstalled }
 
+  /// The install that is under way, so a second call joins it: two installs of the same files would
+  /// race on moving them into place.
+  private let installing = OSAllocatedUnfairLock<Task<Void, any Error>?>(initialState: nil)
+
   func install(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
+    let task = installing.withLock { running -> Task<Void, any Error> in
+      if let running { return running }
+      let started = Task { try await self.perform(report: report) }
+      running = started
+      return started
+    }
+    defer { installing.withLock { if $0 == task { $0 = nil } } }
+    try await task.value
+  }
+
+  private func perform(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
     let installed = location.isInstalled
     let model = try await load(installed, location.directory, report)
     if !installed { try location.markInstalled() }

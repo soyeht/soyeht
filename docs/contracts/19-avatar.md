@@ -1,7 +1,7 @@
 # Contract 19 · The workspace's avatar
 
-Status: v1, slice 1 of ADR 0166 (the library and the binding; the avatar pane, the build, the package,
-the animation and the voice loop are later slices). Code: `soyeht_engine::avatars`,
+Status: v1, slices 1 and 2 of ADR 0166 (the library, the binding, the project folder and the avatar pane;
+the build, the package, the animation and the voice loop are later slices). Code: `soyeht_engine::avatars`,
 `soyeht_store::avatars`. Limits: `avatar*` of `x-limits` in `contracts/protocol.json`.
 
 A workspace is a project, and it has one avatar agent: a person-shaped face the person talks to by voice
@@ -90,8 +90,53 @@ any other durable one).
   the caller read, or `"0"` when the workspace had none: a different one is `stale_version`, nothing changes,
   and the caller reads again (from `avatar.list` or `avatar.changed`) and decides. So a client holding an old
   copy, a phone that was offline, cannot overwrite what the computer wrote since. `not_found` for a
-  workspace that is closed or unknown and for an unknown avatar. In this slice the engine records the
-  binding; starting the avatar's pane as the workspace's `chief` agent is slice 2.
+  workspace that is closed or unknown and for an unknown avatar. `harness` must be one of the profile's
+  (`harness_unavailable` otherwise), whether or not the workspace has a pane. `acknowledgedPackage` is the
+  one of `pane.create` (ADR 0143), for the pane this call starts or switches. The call also **brings the
+  avatar's pane to the binding** (section 6) and answers `{binding, paneId}`:
+  - a workspace with no avatar pane open that is alive gets one **started**, in the same change as the
+    binding. A request that `pane.create` would refuse (`adapter_not_acknowledged`, a harness that
+    cannot be resolved) leaves no binding. A pane that is created and then fails to start leaves the
+    binding and the failed pane, as `pane.create` leaves a pane that failed to start;
+  - a workspace whose avatar pane is open and alive gets no other. The binding is replaced and `paneId`
+    names that pane, which is changed in the same call, **before** the binding, so a refusal leaves the
+    binding as it was:
+    - a `harness` that is not the pane's is `pane.harness.switch` (with the call's `model` and `effort`,
+      and the errors of that method, `pane_busy` among them; the switch finishes after the reply, as it
+      does for that method). **Until the switch ends the binding keeps the harness, model and effort the
+      pane has**, and the reply says so; the end of the switch records the harness, model and effort it
+      asked for, one revision on, with `avatar.changed` (nothing is recorded again when the binding
+      already says so), and a switch that fails records nothing, so the binding never names a harness the
+      pane is not on. A pane that `pane.harness.switch` refuses and that will not become switchable by itself
+      (it asks for a sign-in, or failed) is **replaced**: after the checks that can refuse the new pane
+      (a harness that cannot be resolved, a package nobody acknowledged) the old one is closed and
+      another is started with the harness asked for, in the same call. The prompts the old pane had
+      queued go to the new one, in order; its conversation does not. A pane that is coming back after a
+      process was lost is not replaced: the switch answers `pane_busy`, and the caller tries again;
+    - a `model` or `effort` that the session announces and that differs is put in the pane's requested
+      options, both in one change, and the engine applies them one at a time when the pane is idle
+      (`pane.config_changed`). One the session does not announce (the model it has now offers no effort)
+      is not asked for, because a request for a selector the session does not offer stops the pane's
+      queue; the binding keeps it;
+    - a changed persona or avatar is owed to the pane's next prompt, whatever its adapter has (section
+      6);
+  - an avatar pane that **failed for good** (its agent is faulted, or its pane is dead) is not the
+    workspace's: the call starts another, after the same checks, and closes the failed one, so a
+    workspace has one avatar pane. Its queued prompts go to the new pane, its conversation does not;
+  - the pane is named for the avatar, and is named again when the avatar is renamed or another avatar
+    is given;
+  - a `pane.harness.switch` of the avatar pane that a person asks for directly is the avatar thinking
+    with another harness: the same rule records the harness, model and effort it asked for when it ends.
+- `project.folder.create {name, idempotencyKey}` -> `{path}`: makes an empty folder for a project that
+  is not an app or a repository (a book being read, a school subject) under `<data>/projects/`, owner-only,
+  named from `name` (composed to NFC, lower-case letters and digits joined by hyphens, at most
+  `projectFolderNameChars` characters; `-2`, `-3` when the name is taken, and a name Windows keeps for a
+  device, `COM1` to `COM9` and `LPT1` to `LPT9` with the superscript digits included, and `CON`, `PRN`,
+  `AUX`, `NUL`, gets a `project-` prefix). `path` is the
+  canonical absolute path, which the client gives to `workspace.create`. `name` is 1 to
+  `projectNameChars` characters after trimming; another is `invalid_params`. The engine writes nothing in
+  the folder and removes nothing from it, closing the workspace included. Only a person calls it (an
+  `agent` or a `chief` gets `forbidden_role`).
 
 Not in this version, and why: building an avatar, its progress and reading its package come with the slice
 that has something to produce a build and a package (slice 9), each with its owner and its expiry. Taking
@@ -113,7 +158,46 @@ starts with an empty library and no binding. Closing a workspace deletes its bin
 
 ## 5. Outside this version
 
-The workspace folder flow, the avatar pane and the persona delivery (slice 2); the package format, the
-runtime and the animation (slices 3 to 5); speech providers and the voice loop (slices 6 to 8); the
-builder, its calls, the `soyeht avatar` commands and the `avatar-builder` skill (slices 9a and 9b); the
-preset pack, which is what produces `kind: preset`; the screens (slices 10 to 12).
+The package format, the runtime and the animation (slices 3 to 5); speech providers and the voice loop
+(slices 6 to 8); the builder, its calls, the `soyeht avatar` commands and the `avatar-builder` skill
+(slices 9a and 9b); the preset pack, which is what produces `kind: preset`; the screens (slices 10 to 12).
+
+## 6. The avatar pane (slice 2)
+
+`avatar.assign` starts the pane as an agent pane of the binding's harness, model and effort, named for
+the avatar, in the workspace's folder, and **as the workspace's `chief`** (contract 08 section 2) from
+its first session. The lead prompt that `pane.role.set` queues for a chief is not queued: what the
+avatar is for is its persona. The pane's agent state carries that it is the avatar's, so a restart, a
+recovery and a harness switch keep it.
+
+**The persona** is plain text: `You are <name>, the avatar agent of this project.`, then the persona of
+the binding. Soyeht adds no other text and no rule; what the avatar does in a project is its own job
+from plain instructions. It reaches the harness by the channel that harness honours, measured per
+harness in `docs/research/avatar-persona-delivery.md`:
+
+1. an adapter that advertises the ACP `systemPrompt` session capability (an unstable field of the
+   protocol) gets it as the session's system prompt, appended, in `session/new` and in `session/load`
+   (it is sent only to such an adapter: the two measured that do not advertise it ignore the field
+   without an error). The open session keeps the persona it was opened with: a persona the person
+   changed reaches the next prompt as in 2, and the system prompt catches up the next time such a
+   session opens (a restart of the process or of the engine, or a harness switch);
+2. any other is owed the persona by its **next prompt**. The pane is marked when a session of it is
+   created (an adapter with a system prompt is not marked by that) and when the persona or the avatar of
+   the open pane changed (on every adapter). The next `session/prompt` the engine builds has the persona
+   as a text block ahead of its own, after a line saying these are standing instructions from the
+   application, and before a last line, `(End of the standing instructions.)`, that ends the block; a
+   persona that holds that line is delivered with the full stop of it removed, so the line that ends
+   the block is the engine's alone. The pane keeps owing the persona **until the harness has answered
+   the prompt that carried it** (a turn that was cancelled is an answer): a prompt that fails, or a
+   process that is lost with it, leaves the pane owing it and the next prompt carries it again. It is no
+   prompt of the queue: it cannot be removed, paused or overtaken by the person's prompts, and it costs
+   no turn. It is not shown as a message: a replay of the session (`session/load`) holds the text of a
+   user message while it could still be the block, whole, in chunks, or joined to the text after it, and
+   cuts it out between the first line and the end line (a message that only began like the first line
+   is shown whole). A `session/load` does not send the block again: the conversation it loads has it.
+
+The text is read from the binding each time it is delivered (and when a harness switch opens its
+candidate session), so the persona the person saved last is the one the next delivery carries. At the
+limits (`avatarPersonaChars`, `avatarNameChars`) the block is within `promptBytes`. No file is written
+in the project folder: a workspace can be a folder the person already has. The persona is never part of
+a log line.

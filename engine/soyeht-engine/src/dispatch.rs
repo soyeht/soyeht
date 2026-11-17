@@ -469,6 +469,9 @@ impl Core {
             method::WRITING_SECTION_LIST => return self.writing_section_list(params),
             method::FILE_SEARCH => return self.file_search(connection, params),
             method::PROJECT_TREE_WATCH => return self.project_tree_watch(connection, params),
+            method::PROJECT_FOLDER_CREATE => {
+                crate::project_folder::create(self, connection, params)?
+            }
             method::PROJECT_ENTRY_RENAME | method::PROJECT_ENTRY_DELETE => {
                 return self.project_entry_request(connection, method, params, None);
             }

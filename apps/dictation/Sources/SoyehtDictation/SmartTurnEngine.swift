@@ -70,20 +70,24 @@ final class SmartTurnEndOfTurn: EndOfTurnDetecting, @unchecked Sendable {
     }
   }
 
+  /// What the model reads: the last eight seconds of the turn, the newest audio last, with zeros in
+  /// front when the turn is shorter.
+  static func padded(_ audio: [Float]) -> [Float] {
+    let tail = audio.suffix(window)
+    return [Float](repeating: 0, count: window - tail.count) + tail
+  }
+
   static func run(_ model: MLModel, on audio: [Float]) throws -> Double {
     let input = try MLMultiArray(shape: [1, NSNumber(value: window)], dataType: .float32)
-    let tail = audio.suffix(window)
-    let offset = window - tail.count
+    let samples = padded(audio)
     input.withUnsafeMutableBytes { raw, _ in
-      let samples = raw.bindMemory(to: Float.self)
-      for index in 0..<offset { samples[index] = 0 }
-      for (index, sample) in tail.enumerated() { samples[offset + index] = sample }
+      raw.bindMemory(to: Float.self).update(fromContentsOf: samples)
     }
     let output = try model.prediction(
       from: MLDictionaryFeatureProvider(dictionary: ["audio": MLFeatureValue(multiArray: input)]))
     guard let result = output.featureValue(for: "probability")?.multiArrayValue else {
       throw VoiceModelError.prediction("the model returned no probability")
     }
-    return result[0].doubleValue
+    return try VoiceModelError.probability(result[0].doubleValue)
   }
 }

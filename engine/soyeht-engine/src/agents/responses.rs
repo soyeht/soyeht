@@ -55,7 +55,7 @@ pub fn call(
     Ok(())
 }
 
-fn open(
+pub(crate) fn open(
     store: &(impl StorePort + TaskStorePort),
     runtime: &Runtime<'_>,
     state: &mut State,
@@ -74,11 +74,13 @@ fn open(
     };
     // A new harness process cannot report the previous one's subagents.
     super::subagents::disconnect_all(store, &saved.pane.pane_id, state, changes)?;
+    let persona = super::persona::text(store, state, &saved.pane.workspace_id)?;
     if let Some(id) = state.session_id.clone() {
         state.phase = Phase::Loading;
         changes.clear_replay = true;
         state.replay_role = None;
         state.replay_user = None;
+        state.persona_replay = None;
         state.replay_continuation_turn = false;
         state.open_messages.clear();
         // A switched session starts at the switch, so its marker leads the
@@ -95,6 +97,7 @@ fn open(
             super::opening::parameters(
                 runtime.data_directory,
                 state,
+                persona.as_deref(),
                 client::load_session_with_mcp(&saved.pane.cwd, &id, &servers),
             )?,
             &Purpose::Load,
@@ -114,6 +117,7 @@ fn open(
             super::opening::parameters(
                 runtime.data_directory,
                 state,
+                persona.as_deref(),
                 client::new_session_with_mcp(&saved.pane.cwd, &servers),
             )?,
             &Purpose::Open,
@@ -447,7 +451,7 @@ fn probe_configuration(
     }
 }
 
-fn session_response(
+pub(crate) fn session_response(
     store: &(impl StorePort + TaskStorePort),
     runtime: &Runtime<'_>,
     state: &mut State,
@@ -500,6 +504,9 @@ fn session_opened(
             ));
         }
         state.session_id = Some(id);
+        // A session that exists now has not been told who the avatar is, unless its adapter took
+        // the persona as the system prompt.
+        super::persona::mark_pending(state);
     }
     if *purpose == Purpose::Load {
         // The replay replaces the stored transcript, so a prompt written while
@@ -599,6 +606,7 @@ pub(crate) fn prompt_response(
     {
         return Err(errors::internal("Prompt response belongs to another turn"));
     }
+    super::persona::answered(state, context, result.is_ok());
     let cancel_requested = state.cancel_at_ms.is_some();
     let authentication_required = matches!(
         &result,
