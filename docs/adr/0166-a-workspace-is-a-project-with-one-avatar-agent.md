@@ -1,9 +1,10 @@
 # ADR 0166: A workspace is a project with one avatar agent
 
-- Status: proposed (phase 1: this design and its estimate only; no product code. The owner decided on
-  2026-11-14 that it is required for 0.1.0)
+- Status: proposed, and being built by slices (slices 1, 3, 6 and 13 are merged, slice 2 is in review,
+  the others are not started). The owner decided on 2026-11-14 that it is required for 0.1.0
 - Date: 2026-11-14; revised 2026-11-15 with the owner's decisions on the image model (see "Owner
-  decisions") and the lab's measurements; slice 1 (PR #265) moved the build call, the package read, the
+  decisions") and the lab's measurements; slice 2 (this change) added `project.folder.create`, which the
+  folder flow needs and the text below did not name, and chose the persona channel by measurement; slice 1 (PR #265) moved the build call, the package read, the
   build state and the progress event to slice 9b and took voice on and off out of the engine. Slice 0 has
   not run yet.
 - Builds on ADR 0083 (dictation engines are a catalogue), ADR 0148 and contract 17 (an agent delegates
@@ -146,7 +147,9 @@ rules; and nothing in the lab runs outside a browser. Avatar **A** needs far les
 - A workspace of any kind needs a folder, because the engine, the editor, the agents' working
   directory and ADR 0154 assume one. "New project" without a folder is a client flow over
   `workspace.create`: the client asks the engine for a new folder under the data directory's
-  projects folder (named from the project name) and passes it as `path`. No protocol change.
+  projects folder (named from the project name) and passes it as `path`. `workspace.create` is not
+  changed. The engine had no call that makes a folder, and a phone cannot make one on the computer, so
+  slice 2 adds `project.folder.create {name}` -> `{path}` (contract 19).
 - What the agent does in a project (marks a book, builds flashcards, tracks spending, opens a panel of
   exercises) is **the agent's job from plain instructions**. Soyeht adds only: the persona text below, the
   existing tools, and the one gap named in section 9 (showing a project file as a page).
@@ -154,7 +157,14 @@ rules; and nothing in the lab runs outside a browser. Avatar **A** needs far les
   spoken sentences, no Markdown, it may open panes to show things) and the person's own instructions.
   It is plain text stored with the workspace binding and given to the agent when the pane starts, through
   whatever instruction channel the harness has (a file in the project folder the harness reads, or the
-  first prompt of the session). Which one per harness is a slice-2 decision made by measurement.
+  first prompt of the session). Which one per harness is a slice-2 decision made by measurement
+  (`docs/research/avatar-persona-delivery.md`): the session's system prompt where the adapter advertises
+  one (Claude Code's does; Codex and OpenCode accept the field and ignore it), and for the others a text
+  block ahead of the next prompt after a session is created (no extra turn, and not a prompt of the
+  queue). No file is written in the project folder, since a workspace can be a folder
+  the person already has. The engine adds only `You are <name>, the avatar agent of this project.`
+  before the persona; the sentences about how the avatar speaks are text the configuration screen
+  offers the person (slice 10).
 
 ### 2. What is stored, in the engine and additive (ADR 0161)
 

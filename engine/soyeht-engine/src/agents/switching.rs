@@ -143,6 +143,8 @@ impl Core {
             to_name: launch.name.clone(),
             candidate_instance_key: Uuid::new_v4().to_string(),
             previous_queue_paused: state.queue_paused,
+            model: params.model.clone(),
+            effort: params.effort.clone(),
         };
         state.harness_switch = Some(checkpoint.clone());
         let mut saved = self.pane(pane)?.stored.clone();

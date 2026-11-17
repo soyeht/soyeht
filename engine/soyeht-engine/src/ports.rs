@@ -15,6 +15,7 @@ use soyeht_store::domain::FinishedInput;
 use soyeht_store::web::{WebPermissionRequest, WebSessionGrant};
 use soyeht_store::{
     agents::{AgentModelRefusal, HarnessReadiness, NativeRequest, Outgoing},
+    avatars::Persona,
     database::{Change, Mutation, Result as StoreResult, Store},
     domain::{ClientFocus, DeviceIdentity, IdempotencyReceipt, InputIntent, PaneRecord},
 };
@@ -186,6 +187,8 @@ pub trait StorePort {
     fn pair_window_active(&self, code: &str, now: i64) -> StoreResult<bool>;
     fn device<T: DeserializeOwned>(&self, id: &str) -> StoreResult<Option<T>>;
     fn agent_runtime(&self, pane: &str) -> StoreResult<Option<State>>;
+    /// The persona of the workspace's avatar (ADR 0166), for the session of its avatar pane.
+    fn avatar_persona(&self, workspace_id: &str) -> StoreResult<Option<Persona>>;
     fn agent_queue(&self, pane: &str) -> StoreResult<Vec<PromptItem>>;
     fn agent_open_requests(&self, pane: &str) -> StoreResult<Vec<NativeRequest>>;
     fn agent_request(&self, request_id: &str) -> StoreResult<Option<NativeRequest>>;
@@ -343,6 +346,10 @@ impl StorePort for Store {
 
     fn agent_runtime(&self, pane: &str) -> StoreResult<Option<State>> {
         soyeht_store::agents::runtime(self, pane)
+    }
+
+    fn avatar_persona(&self, workspace_id: &str) -> StoreResult<Option<Persona>> {
+        soyeht_store::avatars::persona(self, workspace_id)
     }
 
     fn agent_queue(&self, pane: &str) -> StoreResult<Vec<PromptItem>> {
@@ -653,6 +660,10 @@ pub(crate) mod testing {
         }
 
         fn agent_runtime(&self, _pane: &str) -> StoreResult<Option<State>> {
+            Ok(None)
+        }
+
+        fn avatar_persona(&self, _workspace_id: &str) -> StoreResult<Option<Persona>> {
             Ok(None)
         }
 
