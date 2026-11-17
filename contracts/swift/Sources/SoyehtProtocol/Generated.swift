@@ -5844,6 +5844,22 @@ public struct ProjectEntryCreateResult: Codable, Sendable {
     }
 }
 
+public struct ProjectFolderCreateParams: Codable, Sendable {
+    public var `name`: String
+    public var `idempotencyKey`: Id
+    public init(`name`: String, `idempotencyKey`: Id) {
+        self.`name` = `name`
+        self.`idempotencyKey` = `idempotencyKey`
+    }
+}
+
+public struct ProjectFolderCreateResult: Codable, Sendable {
+    public var `path`: String
+    public init(`path`: String) {
+        self.`path` = `path`
+    }
+}
+
 public struct ProjectEntryRenameParams: Codable, Sendable {
     public var `workspaceId`: Id
     public var `from`: String
@@ -8131,8 +8147,9 @@ public struct AvatarAssignParams: Codable, Sendable {
     public var `voice`: AvatarVoice?
     public var `persona`: String?
     public var `baseRevision`: Decimal
+    public var `acknowledgedPackage`: String?
     public var `idempotencyKey`: Id
-    public init(`workspaceId`: Id, `avatarId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `hearing`: AvatarHearing? = nil, `voice`: AvatarVoice? = nil, `persona`: String? = nil, `baseRevision`: Decimal, `idempotencyKey`: Id) {
+    public init(`workspaceId`: Id, `avatarId`: Id, `harness`: Id, `model`: String? = nil, `effort`: String? = nil, `hearing`: AvatarHearing? = nil, `voice`: AvatarVoice? = nil, `persona`: String? = nil, `baseRevision`: Decimal, `acknowledgedPackage`: String? = nil, `idempotencyKey`: Id) {
         self.`workspaceId` = `workspaceId`
         self.`avatarId` = `avatarId`
         self.`harness` = `harness`
@@ -8142,14 +8159,17 @@ public struct AvatarAssignParams: Codable, Sendable {
         self.`voice` = `voice`
         self.`persona` = `persona`
         self.`baseRevision` = `baseRevision`
+        self.`acknowledgedPackage` = `acknowledgedPackage`
         self.`idempotencyKey` = `idempotencyKey`
     }
 }
 
 public struct AvatarAssignResult: Codable, Sendable {
     public var `binding`: AvatarBinding
-    public init(`binding`: AvatarBinding) {
+    public var `paneId`: Id?
+    public init(`binding`: AvatarBinding, `paneId`: Id? = nil) {
         self.`binding` = `binding`
+        self.`paneId` = `paneId`
     }
 }
 
@@ -8280,6 +8300,7 @@ public enum RequestMethod: String, Codable, Sendable, CaseIterable {
     case fileFormat = "file.format"
     case projectTreeList = "project.tree.list"
     case projectTreeWatch = "project.tree.watch"
+    case projectFolderCreate = "project.folder.create"
     case projectEntryCreate = "project.entry.create"
     case projectEntryRename = "project.entry.rename"
     case projectEntryDelete = "project.entry.delete"

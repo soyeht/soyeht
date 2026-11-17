@@ -31,6 +31,7 @@ pub mod orphans;
 pub(crate) mod package_runner;
 pub mod peer;
 pub mod pending;
+pub(crate) mod persona;
 mod pinned_adapter;
 mod prompt_errors;
 pub mod purpose;
