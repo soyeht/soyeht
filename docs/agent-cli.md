@@ -104,3 +104,16 @@ soyeht --profile dev usage list
 soyeht --profile dev usage refresh
 soyeht --profile dev usage refresh codex --idempotency-key usage-refresh-1
 ```
+
+`soyeht avatar` makes and checks the frames of an avatar (ADR 0166, `docs/avatar-image-catalogue.md`).
+It needs no engine: `providers` lists the image catalogue, `frames` the 18 frames, `frame` makes
+one with the provider the person chose, `check` measures an edited frame against its source, and
+`key set PROVIDER [--endpoint URL]` (the key on one line of standard input) and `key clear PROVIDER
+[--endpoint URL]` keep the person's own key for a provider at one address. The key is never printed and
+is never an argument.
+
+```sh
+soyeht --profile dev avatar providers
+soyeht --profile dev avatar frame --provider qwen-image-2.1-comfyui --frame A --source /absolute/face.png --out /absolute/frames/A.png --seed 3
+soyeht --profile dev avatar check --frame A --source /absolute/face.png --image /absolute/frames/A.png --region 410,610,240,150
+```

@@ -2,8 +2,47 @@ use super::*;
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    process::{ExitStatus, Output, Stdio},
     time::Duration,
 };
+
+/// Starts a process with no other start of this test binary in progress, the way every start of
+/// the crate is made. Linux refuses to execute a file that any process holds open for writing
+/// ("Text file busy"), and a process another test thread starts holds a copy of every
+/// descriptor of this one until its `exec`: a launcher written while that happens cannot be run.
+/// The writes of the tests ([`write_executable`]) and their starts both go through the start
+/// lock, so the two never overlap.
+fn started<T>(start: impl FnOnce() -> T) -> T {
+    crate::starting("test", start).unwrap()
+}
+
+/// What `Command::output` gives, with the start made under the start lock.
+fn output_of(command: &mut Command) -> Output {
+    let child = started(|| {
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+    })
+    .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+/// What `Command::status` gives, with the start made under the start lock.
+fn status_of(command: &mut Command) -> ExitStatus {
+    started(|| command.spawn()).unwrap().wait().unwrap()
+}
+
+/// Writes `contents` to `path`, closed, as an executable. Under the start lock (see [`started`]).
+fn write_executable(path: &Path, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    started(|| {
+        fs::write(path, contents)?;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o755))
+    })
+    .unwrap();
+}
 
 /// A machine whose `git` is a launcher that records that it ran. The launcher stands for
 /// the macOS stub that opens the installer.
@@ -13,14 +52,11 @@ struct Launcher {
 
 impl Launcher {
     fn new(label: &str) -> Self {
-        use std::os::unix::fs::PermissionsExt;
         let root = env::temp_dir().join(format!("soyeht-run-git-{label}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(root.join("usr/bin")).unwrap();
         let script = format!("#!/bin/sh\ntouch '{}'\n", root.join("ran").display());
-        let launcher = root.join("usr/bin/git");
-        fs::write(&launcher, script).unwrap();
-        fs::set_permissions(&launcher, fs::Permissions::from_mode(0o755)).unwrap();
+        write_executable(&root.join("usr/bin/git"), &script);
         Self { root }
     }
 
@@ -60,12 +96,10 @@ fn git_is_not_started_when_the_developer_tools_are_missing() {
 
 #[test]
 fn git_starts_when_the_developer_tools_are_present() {
-    use std::os::unix::fs::PermissionsExt;
     let machine = Launcher::new("present");
     let real = machine.root.join("Library/CommandLineTools/usr/bin/git");
     fs::create_dir_all(real.parent().unwrap()).unwrap();
-    fs::write(&real, "#!/bin/sh\n").unwrap();
-    fs::set_permissions(&real, fs::Permissions::from_mode(0o755)).unwrap();
+    write_executable(&real, "#!/bin/sh\n");
     let mut command = Command::new(machine.root.join("usr/bin/git"));
     command.arg("--version");
     let limits = Limits::new(Duration::from_secs(10), 8192);
@@ -119,14 +153,14 @@ fn the_version_of_git_is_read_from_its_first_line() {
 /// `git` in `root` with an identity, for a test's setup. Its standard input is closed: a
 /// program a configuration names reads it.
 fn git_in(root: &Path, arguments: &[&str]) {
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
-        .args(arguments)
-        .stdin(std::process::Stdio::null())
-        .status()
-        .unwrap();
+    let status = status_of(
+        Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(arguments)
+            .stdin(Stdio::null()),
+    );
     assert!(status.success(), "{arguments:?}");
 }
 
@@ -146,7 +180,7 @@ fn add_worktree(root: &Path, name: &str, hardened: bool) {
             .harden_environment(&mut command)
             .unwrap();
     }
-    let output = command.output().unwrap();
+    let output = output_of(&mut command);
     assert!(
         output.status.success(),
         "{}",
@@ -223,12 +257,7 @@ fn a_read_only_command_starts_none_of_the_programs_a_repository_names() {
 
     // The same commands without the hardening do start them, so the check below can fail.
     for arguments in commands {
-        let status = Command::new("git")
-            .arg("-C")
-            .arg(&root)
-            .args(arguments)
-            .output()
-            .unwrap();
+        let status = output_of(Command::new("git").arg("-C").arg(&root).args(arguments));
         assert!(status.status.success(), "{arguments:?}");
     }
     assert!(
@@ -257,15 +286,10 @@ fn the_environment_carries_the_settings_to_a_git_another_program_starts() {
     let limits = Limits::new(Duration::from_secs(30), 1 << 20);
     let root = repository_with_programs("environment");
     let hook = root.join(".git/hooks/post-checkout");
-    fs::write(
+    write_executable(
         &hook,
-        format!("#!/bin/sh\ntouch \"{}/ran-hook\"\n", root.display()),
-    )
-    .unwrap();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
-    }
+        &format!("#!/bin/sh\ntouch \"{}/ran-hook\"\n", root.display()),
+    );
     add_worktree(&root, "control", false);
     assert!(
         programs_that_ran(&root).contains(&"ran-hook".to_owned()),
@@ -281,7 +305,7 @@ fn the_environment_carries_the_settings_to_a_git_another_program_starts() {
         .unwrap()
         .harden_environment(&mut status)
         .unwrap();
-    assert!(status.output().unwrap().status.success());
+    assert!(output_of(&mut status).status.success());
     let ran = programs_that_ran(&root);
     fs::remove_dir_all(&root).unwrap();
     assert!(ran.is_empty(), "{ran:?}");
@@ -298,15 +322,10 @@ fn a_driver_of_an_included_file_is_cleared_whatever_the_condition_of_the_include
     // config file would be read as a comment.
     for name in ["late", "deep"] {
         let script = root.join(format!("{name}.sh"));
-        fs::write(
+        write_executable(
             &script,
-            format!("#!/bin/sh\ntouch '{}/ran-{name}'\ncat\n", root.display()),
-        )
-        .unwrap();
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
-        }
+            &format!("#!/bin/sh\ntouch '{}/ran-{name}'\ncat\n", root.display()),
+        );
     }
     fs::write(
         root.join("extra.cfg"),
@@ -363,12 +382,12 @@ fn a_repository_without_drivers_of_its_own_clears_none() {
     let root = env::temp_dir().join(format!("soyeht-read-only-plain-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(&root).unwrap();
-    let status = Command::new("git")
-        .arg("-C")
-        .arg(&root)
-        .args(["init", "-q"])
-        .status()
-        .unwrap();
+    let status = status_of(
+        Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(["init", "-q"]),
+    );
     assert!(status.success());
     let git = ReadOnlyGit::prepare(&root, limits).unwrap();
     fs::remove_dir_all(&root).unwrap();
