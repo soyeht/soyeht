@@ -6,44 +6,12 @@
 //! real credential.
 
 use std::{
-    fmt,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 /// A credential or cookie value. It never prints, so it cannot reach a log by accident.
-#[derive(Clone, PartialEq, Eq)]
-pub struct Secret(String);
-
-/// Upper bound for one token or cookie value.
-pub const MAX_SECRET_BYTES: usize = 16 * 1024;
-
-impl Secret {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
-    }
-
-    pub fn expose(&self) -> &str {
-        &self.0
-    }
-
-    /// Printable ASCII without whitespace or quotes, within the size bound: safe to place in a
-    /// header without escaping.
-    pub fn is_usable(&self) -> bool {
-        let value = self.0.as_bytes();
-        !value.is_empty()
-            && value.len() <= MAX_SECRET_BYTES
-            && value
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() && !matches!(byte, b'"' | b'\\'))
-    }
-}
-
-impl fmt::Debug for Secret {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("Secret(<redacted>)")
-    }
-}
+pub use soyeht_platform::secret::Secret;
 
 /// The operating system the engine runs on. Credential stores differ: macOS keeps Claude
 /// Code's login in the keychain and browsers' cookie keys in it, Linux keeps the login in a

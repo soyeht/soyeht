@@ -40,6 +40,9 @@ message TARGET TEXT [--reply-to MESSAGE_ID]\n\
 file open WORKSPACE PATH [OPTIONS] | file read FILE [OPTIONS] | file write FILE REVISION START_LINE START_COLUMN END_LINE END_COLUMN TEXT\n\
 file history FILE [OPTIONS] | file revert FILE VERSION REVISION | file search WORKSPACE QUERY [OPTIONS]\n\
 file symbols FILE REVISION | file diff FILE REVISION | usage list | usage refresh [PROVIDER]\n\
+avatar providers | avatar frames | avatar key set PROVIDER | avatar key clear PROVIDER\n\
+avatar frame --provider ID --frame FRAME --source PNG --out PNG [--endpoint URL] [--model NAME] [--seed N] [--extra TEXT] [--timeout SECONDS]\n\
+avatar check --frame FRAME --source PNG --image PNG [--region X,Y,WIDTH,HEIGHT]\n\
 Task create options: --description, --how-to-verify, --harness, --model, --effort,\n\
   --priority, --create-worktree true|false, --permission-mode, --dependencies WS-1,WS-2.\n\
 Task update uses the same editable text, priority and dependency options.\n\

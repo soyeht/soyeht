@@ -18,6 +18,7 @@ pub enum Error {
     MissingPaneBinding,
     PaneBindingNotCurrent,
     Service(soyeht_service::Error),
+    Image(soyeht_image::Error),
     EngineUnavailable(Box<Error>),
 }
 
@@ -70,6 +71,7 @@ start it from a Soyeht terminal pane",
             ),
             Self::PaneBindingNotCurrent => formatter.write_str(PANE_BINDING_NOT_CURRENT),
             Self::Service(error) => write!(formatter, "service: {error}"),
+            Self::Image(error) => error.fmt(formatter),
             Self::EngineUnavailable(error) => {
                 write!(formatter, "cannot connect to the engine: {error}")
             }
@@ -83,6 +85,7 @@ impl std::error::Error for Error {
             Self::Io(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::Json(error) => Some(error),
+            Self::Image(error) => Some(error),
             Self::EngineUnavailable(error) => Some(error),
             _ => None,
         }
@@ -104,6 +107,12 @@ impl From<soyeht_protocol::Error> for Error {
 impl From<soyeht_service::Error> for Error {
     fn from(error: soyeht_service::Error) -> Self {
         Self::Service(error)
+    }
+}
+
+impl From<soyeht_image::Error> for Error {
+    fn from(error: soyeht_image::Error) -> Self {
+        Self::Image(error)
     }
 }
 

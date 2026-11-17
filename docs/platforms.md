@@ -118,6 +118,15 @@ in front); the click is a `desktop.notification_clicked` log line. `SOYEHT_NOTIF
 a failure is a `desktop.notification_failed` log line with its kind. The Windows toast carries the
 PowerShell application identity until a packaged build registers its own.
 
+## Follow-up: the update check's `curl`
+
+The Windows and Linux app's update check (`apps/desktop/crates/soyeht-client/src/update.rs`) runs
+`curl` with its own command line, apart from the engine's one builder (`soyeht_process::curl`,
+used by the usage readings and the image adapters). It already starts `curl` with `--disable`, but
+it finds `curl` on the search path on Unix, a third lookup rule beside the builder's system
+locations and the usage host's former fixed path. Moving it to the builder is a follow-up, left
+out of the avatar work for scope, not for any difference in what it needs.
+
 ## Tests
 
 Tests that need a POSIX shell, `ps`, `perl`, permission modes, or a shell script as

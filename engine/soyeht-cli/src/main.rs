@@ -1,6 +1,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 mod args;
+mod avatar_commands;
 mod commands;
 mod crash_commands;
 mod diagnostics_commands;
@@ -63,13 +64,17 @@ fn run() -> Result<Output> {
         soyeht_platform::dirs::data_base(),
     )?;
     // These commands talk to the system's service manager and the files of the profile, not to
-    // the engine, which may not be running (yet, or any more).
+    // the engine, which may not be running (yet, or any more). `avatar` reads its catalogue and
+    // the pictures it is given.
     match args.first().map(String::as_str) {
         Some("service") => {
             return service_commands::execute(profile, directory, &args[1..]).map(Output::Json);
         }
         Some("uninstall") => {
             return uninstall_commands::execute(profile, directory, &args[1..]).map(Output::Json);
+        }
+        Some("avatar") => {
+            return avatar_commands::execute(directory, &args[1..]).map(Output::Json);
         }
         Some("crash-reports") => {
             return crash_commands::execute(directory, &args[1..]).map(Output::Json);
