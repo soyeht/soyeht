@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Testing
 
@@ -11,6 +12,7 @@ import Testing
   var startCount = 0
   var started = false
   var foreignCaptureActive = false
+  var foreignLeftAt = 0
   private var onSamples: (@Sendable ([Float]) -> Void)?
   var replays: [Int] = []
   var played: [SynthesizedSpeech] = []
@@ -84,11 +86,15 @@ import Testing
 
 private actor FakeVoice: SpeechSynthesizing {
   private(set) var spoken: [String] = []
+  private let delay: Duration
+
+  init(delay: Duration = .zero) { self.delay = delay }
 
   func synthesize(_ text: String, options: SpeechSynthesisOptions) async throws
     -> SynthesizedSpeech
   {
     spoken.append(text)
+    if delay > .zero { try await Task.sleep(for: delay) }
     return SynthesizedSpeech(
       samples: [Float](repeating: 0.2, count: text.count * 160), sampleRate: 16_000)
   }
@@ -123,7 +129,7 @@ private struct ScriptedEndOfTurn: EndOfTurnDetecting {
 /// Everything a test of the loop needs, wired.
 @MainActor private final class Rig {
   let audio = FakeAudio()
-  let voice = FakeVoice()
+  let voice: FakeVoice
   let activity = ScriptedActivity()
   var turns: [VoiceTurn] = []
   var cancelled = 0
@@ -131,9 +137,10 @@ private struct ScriptedEndOfTurn: EndOfTurnDetecting {
   private let box = RecognizerBox()
 
   init(
-    endOfTurn: any EndOfTurnDetecting = SilenceEndOfTurn(),
+    voiceDelay: Duration = .zero, endOfTurn: any EndOfTurnDetecting = SilenceEndOfTurn(),
     options: VoiceLoopOptions = VoiceLoopOptions(), recognizer: FakeRecognizer? = nil
   ) {
+    voice = FakeVoice(delay: voiceDelay)
     let made = box
     controller = VoiceLoopController(
       audio: audio,
@@ -539,6 +546,46 @@ private let reply = "Hi there, friend. How can I help you today?"
   rig.controller.stop()
 }
 
+@MainActor @Test func aMicrophoneThatNeverDeliversAnythingEndsTheLoopAtTheStartDeadline()
+  async throws
+{
+  var options = VoiceLoopOptions()
+  options.watchdog = .milliseconds(30)
+  options.firstBuffer = .milliseconds(120)
+  let rig = Rig(options: options)
+  try await rig.controller.start()
+  try await rig.eventually { rig.controller.phase == .off }
+  #expect(rig.controller.failure == "The microphone did not deliver any audio.")
+  #expect(rig.cancelled == 0)
+}
+
+@MainActor @Test func aSlowVoiceThatFinishesAfterThePersonBeganToTalkIsHeldAndNotMadeAgain()
+  async throws
+{
+  let rig = Rig(voiceDelay: .milliseconds(200))
+  try await rig.controller.start()
+  try await rig.say("run the tests")
+  rig.controller.replyUpdated("Good morning, how are you?", final: true, id: "m1")
+  // The person starts to talk while the voice is still working.
+  await rig.hear(11, level: 0.9)
+  #expect(rig.controller.phase == .probingWait)
+  try await Task.sleep(for: .milliseconds(300))
+  #expect(rig.audio.played.isEmpty)
+  rig.lastRecognizer?.onEvent?(.partial("mhm"))
+  await rig.hear(11, level: 0.1)
+  rig.lastRecognizer?.onEvent?(.final("mhm"))
+  try await rig.eventually { rig.audio.played.count == 1 }
+  #expect(await rig.voice.spoken == ["Good morning, how are you?"])
+}
+
+@MainActor @Test func aRecognizerOfTheLoopNeverStartsFromBeforeADictationLeft() async throws {
+  let rig = Rig()
+  try await rig.controller.start()
+  rig.audio.foreignLeftAt = 100_000
+  await rig.hear(3, level: 0.9)
+  #expect(rig.audio.replays.last == 100_000)
+}
+
 @MainActor @Test func stoppingEndsTheMicrophoneAndWhatIsUnderWay() async throws {
   let rig = Rig()
   try await rig.controller.start()
@@ -619,10 +666,36 @@ private let reply = "Hi there, friend. How can I help you today?"
   session.detach(loops)
 }
 
-@MainActor @Test func aCaptureStillOpenWhenTheLoopStopsDoesNotKeepTheDeviceFromIt() throws {
-  var dropped: MicrophoneCapture? = MicrophoneCapture()
-  weak var weakCapture = dropped
-  dropped = nil
-  #expect(weakCapture == nil)
+@MainActor @Test func aDictationDroppedWhileJoinedLeavesTheLoopHearing() throws {
+  let session = VoiceAudioSession()
+  var capture: MicrophoneCapture? = MicrophoneCapture()
+  capture?.join(session, sink: { _ in })
+  #expect(session.foreignCaptureActive)
+  capture = nil
+  #expect(!session.foreignCaptureActive)
   #expect(MicrophoneCapture.ownEngineCaptures.isEmpty)
+}
+
+@MainActor @Test func aDictationThatLeavesIsRememberedSoNoRecognizerStartsFromBeforeIt() throws {
+  let session = VoiceAudioSession()
+  let capture = MicrophoneCapture()
+  capture.join(session, sink: { _ in })
+  capture.stop()
+  #expect(!session.foreignCaptureActive)
+}
+
+@Test func aCaptureKeepsTheFormatOfItsFirstBuffer() throws {
+  let wide = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+  let narrow = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+  func buffer(_ format: AVAudioFormat, frames: AVAudioFrameCount) throws -> AVAudioPCMBuffer {
+    let made = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+    made.frameLength = frames
+    return made
+  }
+  let keeper = FormatKeeper()
+  #expect(keeper.steady(try buffer(wide, frames: 480))?.format == wide)
+  #expect(keeper.steady(try buffer(wide, frames: 480))?.format == wide)
+  let converted = try #require(keeper.steady(try buffer(narrow, frames: 160)))
+  #expect(converted.format == wide)
+  #expect(converted.frameLength > 0)
 }

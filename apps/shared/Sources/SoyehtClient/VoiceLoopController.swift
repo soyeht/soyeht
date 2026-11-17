@@ -23,8 +23,10 @@ public struct VoiceLoopOptions: Sendable {
   public var vocabulary: [String] = []
   public var voice = SpeechSynthesisOptions()
   public var sentences = SentenceChunker()
-  /// The loop ends with a message when the microphone delivers no audio for this long.
+  /// The loop ends with a message when the microphone delivers no audio for this long, or when it
+  /// delivers none at all within `firstBuffer` of the start.
   public var watchdog = Duration.milliseconds(ClientPolicy.voiceWatchdogMs)
+  public var firstBuffer = Duration.milliseconds(ClientPolicy.voiceFirstBufferMs)
 
   public init() {}
 }
@@ -50,7 +52,8 @@ public enum VoiceLoopError: LocalizedError, Equatable {
 /// words of a cancelled reply are never spoken), `replyEnded` when a turn's reply is over with
 /// nothing to say, and the two callbacks. A reply is spoken whether or not a voice turn preceded it.
 ///
-/// The microphone has one owner (`VoiceAudioSession`): a dictation cannot run while the loop does.
+/// One engine owns the microphone (`VoiceAudioSession`): a dictation that runs while the loop does
+/// shares its session, and the loop hears silence from the microphone meanwhile.
 ///
 /// For the stage: `state`, `phase`, `inputLevel`, `outputLevel`, and `currentSpeech` with
 /// `playbackPosition`, the audio and timings of the sentence being heard.
@@ -97,6 +100,9 @@ public enum VoiceLoopError: LocalizedError, Equatable {
 
   @ObservationIgnored private var replies: ReplyFeed
   @ObservationIgnored private var sentences: [String] = []
+  /// A sentence whose voice is ready but that was not spoken because the person began to talk: it
+  /// is spoken first when the floor is free, with the audio it already has.
+  @ObservationIgnored private var held: (sentence: String, speech: SynthesizedSpeech)?
   @ObservationIgnored private var played: [String] = []
   /// A turn was sent and its reply has not begun: the loop is still thinking, not done.
   @ObservationIgnored private var awaitingReply = false
@@ -128,13 +134,27 @@ public enum VoiceLoopError: LocalizedError, Equatable {
   }
 
   /// When the microphone last delivered a buffer, stamped where it arrives (the audio thread): the
-  /// loop's own work cannot be what makes it late. Nil until the first buffer, which arms the watchdog.
+  /// loop's own work cannot be what makes it late. Until the first buffer, the count is from the
+  /// start, against a longer limit (a Bluetooth microphone takes a while to open).
   private final class AudioStamp: Sendable {
-    private let last = OSAllocatedUnfairLock<SuspendingClock.Instant?>(initialState: nil)
+    private struct Times {
+      var started = SuspendingClock.now
+      var last: SuspendingClock.Instant?
+    }
+    private let times = OSAllocatedUnfairLock(initialState: Times())
 
-    func mark() { last.withLock { $0 = .now } }
-    func reset() { last.withLock { $0 = nil } }
-    func silence() -> Duration? { last.withLock { $0.map { SuspendingClock.now - $0 } } }
+    func mark() { times.withLock { $0.last = .now } }
+    func reset() { times.withLock { $0 = Times() } }
+
+    /// How long the audio has been missing, and whether it has ever come.
+    func silence() -> (duration: Duration, arrived: Bool) {
+      times.withLock {
+        (
+          $0.last.map { SuspendingClock.now - $0 } ?? SuspendingClock.now - $0.started,
+          $0.last != nil
+        )
+      }
+    }
   }
 
   /// Stops the audio of a controller that is dropped while it runs.
@@ -188,7 +208,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
       }
     }
     watching?.cancel()
-    watching = Task { [weak self, watchdog = options.watchdog] in
+    watching = Task { [weak self, watchdog = options.watchdog, first = options.firstBuffer] in
       // Time the process did not run (a stop in a debugger, a suspension) is not the microphone's
       // silence: a wake that is later than the limit starts the count again.
       let beat = watchdog / 3
@@ -199,7 +219,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
         let now = SuspendingClock.now
         let late = now - woke - beat > watchdog
         woke = now
-        if !late { self.checkAudioFlows(within: watchdog) }
+        if !late { self.checkAudioFlows(within: watchdog, firstBuffer: first) }
       }
     }
     send(.start)
@@ -217,6 +237,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     cancelRecognition()
     cutSpeaking()
     sentences = []
+    held = nil
     played = []
     awaitingReply = false
     audio.stop()
@@ -230,9 +251,14 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     failure = reason
   }
 
-  private func checkAudioFlows(within limit: Duration) {
-    guard phase != .off, let silence = audioStamp.silence(), silence > limit else { return }
-    audioFailed("The microphone stopped delivering audio.")
+  private func checkAudioFlows(within limit: Duration, firstBuffer: Duration) {
+    guard phase != .off else { return }
+    let silence = audioStamp.silence()
+    if silence.arrived, silence.duration > limit {
+      audioFailed("The microphone stopped delivering audio.")
+    } else if !silence.arrived, silence.duration > firstBuffer {
+      audioFailed("The microphone did not deliver any audio.")
+    }
   }
 
   // MARK: Microphone
@@ -282,9 +308,11 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     }
     let id = recognition
     let recognizer = makeRecognizer()
+    // Never from before a dictation left: the end of a dictated word is not the start of a turn.
+    let from = max(milliseconds, audio.foreignLeftAt)
     let session = SpeechSessionOptions(language: options.language, vocabulary: options.vocabulary)
     do {
-      try audio.listening(from: milliseconds) {
+      try audio.listening(from: from) {
         try recognizer.start(session) { [weak self] event in self?.recognized(event, of: id) }
       }
       self.recognizer = recognizer
@@ -386,7 +414,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
   private func pump() {
     guard speaking == nil, phase != .off else { return }
     let current = machine.phase
-    if !sentences.isEmpty {
+    if !sentences.isEmpty || held != nil {
       guard Self.mayPlay.contains(current) else { return }
       let epoch = speechEpoch
       speaking = Task { [weak self] in
@@ -414,7 +442,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
         // The avatar does not talk over the person: a sentence is held while they talk, and is
         // spoken when the machine says the floor is free.
         guard Self.mayPlay.contains(machine.phase) else {
-          sentences.insert(sentence, at: 0)
+          held = (sentence, heard)
           upcoming?.speech.cancel()
           return
         }
@@ -433,6 +461,10 @@ public enum VoiceLoopError: LocalizedError, Equatable {
   private func take(
     _ started: (sentence: String, speech: Task<SynthesizedSpeech, any Error>)?
   ) -> (String, Task<SynthesizedSpeech, any Error>)? {
+    if let held {
+      self.held = nil
+      return (held.sentence, Task { held.speech })
+    }
     if let started, !sentences.isEmpty {
       sentences.removeFirst()
       return started
@@ -492,6 +524,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     cutSpeaking()
     replies.cancel()
     sentences = []
+    held = nil
     played = []
     awaitingReply = false
     onCancelReply?()

@@ -42,6 +42,12 @@ import Foundation
 
   public init() {}
 
+  /// A capture that is dropped without `stop()` lets go of the device and of the loop's session.
+  isolated deinit {
+    if let joined { joined.session.detach(joined.token) }
+    closeOwnEngine()
+  }
+
   /// Asks for microphone access; the system answers on a background queue.
   public static func requestAccess() async -> Bool {
     #if os(iOS)
@@ -66,6 +72,10 @@ import Foundation
   /// voice loop runs, the capture joins its echo-cancelled session rather than opening the device.
   public func start(_ sink: @escaping Sink) throws {
     stop()
+    let keeper = FormatKeeper()
+    let sink: Sink = { buffer in
+      if let steady = keeper.steady(buffer) { sink(steady) }
+    }
     self.sink = sink
     if let session = VoiceAudioSession.active {
       joined = (session, session.attach(sink, owner: self))
@@ -153,5 +163,33 @@ import Foundation
   /// Built outside the main actor: the tap block runs on the audio thread.
   nonisolated static func tap(_ sink: @escaping Sink) -> AVAudioNodeTapBlock {
     { buffer, _ in sink(buffer) }
+  }
+}
+
+/// Keeps the buffers of a capture in the format of its first one. A capture that moves from an engine
+/// of its own to the loop's session (or back) changes the format of its audio, and a recognizer that
+/// is in the middle of a request must not see that.
+final class FormatKeeper: @unchecked Sendable {
+  private let lock = NSLock()
+  private var first: AVAudioFormat?
+  private var converter: AudioResampler?
+
+  /// The buffer in the first format, or nil when it cannot be converted (reported once).
+  func steady(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    lock.withLock {
+      guard let first else {
+        first = buffer.format
+        return buffer
+      }
+      if buffer.format == first { return buffer }
+      let resampler = converter ?? AudioResampler(format: first)
+      converter = resampler
+      do {
+        return try resampler.convert(buffer)
+      } catch {
+        ClientDiagnostics.reportOnce("capture_format_change_failed", key: "dictation", error: error)
+        return nil
+      }
+    }
   }
 }

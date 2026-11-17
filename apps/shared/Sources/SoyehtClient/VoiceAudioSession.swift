@@ -19,6 +19,8 @@ import SoyehtProtocol
   /// A capture that the loop did not start (a dictation) is joined: the loop does not take what it
   /// hears for the person's turn.
   var foreignCaptureActive: Bool { get }
+  /// When, on the microphone's clock in milliseconds, the last such capture left.
+  var foreignLeftAt: Int { get }
   /// Plays the speech and returns when it has been heard, or when `stopPlayback` cut it short.
   func play(_ speech: SynthesizedSpeech) async throws
   func stopPlayback()
@@ -67,8 +69,15 @@ enum VoiceAudioError: LocalizedError, Equatable {
   private var playerAttached = false
   private var tapInstalled = false
   private var loopStarting = false
-  /// The captures joined that the loop did not start, by their token.
-  private var foreign: [Int: MicrophoneCapture] = [:]
+  /// The captures joined that the loop did not start, by their token, held weakly: one that is
+  /// dropped is gone, and does not keep the loop deaf.
+  private var foreign: [Int: WeakCapture] = [:]
+  private struct WeakCapture {
+    weak var capture: MicrophoneCapture?
+  }
+  /// When the last of them left, on the audio clock: a recognizer of the loop never starts from
+  /// before it, so the end of a dictated word is not heard as the start of a turn.
+  public private(set) var foreignLeftAt = 0
   private var playerRate = 0.0
   private var playback: Playback?
   private var observers: [any NSObjectProtocol] = []
@@ -141,7 +150,8 @@ enum VoiceAudioError: LocalizedError, Equatable {
     input.reset()
     playerRate = 0
     loopStarting = false
-    let handedBack = Array(foreign.values)
+    foreignLeftAt = 0
+    let handedBack = foreign.values.compactMap(\.capture)
     foreign = [:]
     let wasRunning = running
     running = false
@@ -217,19 +227,21 @@ enum VoiceAudioError: LocalizedError, Equatable {
     try start()
   }
 
-  public var foreignCaptureActive: Bool { !foreign.isEmpty }
+  public var foreignCaptureActive: Bool { foreign.values.contains { $0.capture != nil } }
 
   /// A capture's microphone: the audio from the replay point on (for one the loop starts), then
   /// everything live.
   func attach(_ sink: @escaping MicrophoneCapture.Sink, owner: MicrophoneCapture) -> Int {
     let token = input.attach(sink)
-    if !loopStarting { foreign[token] = owner }
+    if !loopStarting { foreign[token] = WeakCapture(capture: owner) }
     return token
   }
 
   func detach(_ token: Int) {
+    let wasForeign = foreign[token] != nil
     foreign[token] = nil
     input.detach(token)
+    if wasForeign, !foreignCaptureActive { foreignLeftAt = input.elapsedMs }
   }
 
   public var playbackPosition: Double {
@@ -364,6 +376,9 @@ enum VoiceAudioError: LocalizedError, Equatable {
         return next
       }
     }
+
+    /// How much audio the microphone has delivered, in milliseconds.
+    var elapsedMs: Int { lock.withLock { Int(elapsed) } }
 
     func detach(_ token: Int) { lock.withLock { _ = sinks.removeValue(forKey: token) } }
 
