@@ -10,7 +10,7 @@ import SoyehtClient
 ///
 /// The model is not safe for concurrent inference: `KokoroInference` runs every call on one
 /// serial queue.
-final class KokoroModelHolder: @unchecked Sendable {
+final class KokoroModelHolder: LocalModelHolder<KokoroTTSModel>, @unchecked Sendable {
   static let shared = KokoroModelHolder()
 
   /// `fromPretrained` spends the first 70% of its progress on the download and the rest on
@@ -28,35 +28,19 @@ final class KokoroModelHolder: @unchecked Sendable {
     #endif
   }()
 
-  private let loaded = LoadedModel<KokoroTTSModel>()
-  private let location: ModelCacheLocation
-
   init(
     location: ModelCacheLocation = ModelCacheLocation(modelId: KokoroTTSModel.defaultModelId)
   ) {
-    self.location = location
-  }
-
-  var current: KokoroTTSModel? { loaded.current }
-
-  var isInstalled: Bool { location.isInstalled }
-
-  /// Loads the installed model from disk with no network, or downloads it first when it is not
-  /// installed. The app only reaches the download branch from the Install button.
-  func install(report: @escaping @Sendable (DictationModelStage) -> Void) async throws {
-    let installed = location.isInstalled
-    let model = try await KokoroTTSModel.fromPretrained(
-      cacheDir: location.directory, offlineMode: installed, computeUnits: Self.computeUnits
-    ) { fraction, _ in
-      report(
-        installed || fraction >= Self.downloadShare
-          ? .preparing : .downloading(fraction / Self.downloadShare))
+    super.init(location: location) { installed, directory, report in
+      try await KokoroTTSModel.fromPretrained(
+        cacheDir: directory, offlineMode: installed, computeUnits: Self.computeUnits
+      ) { fraction, _ in
+        report(
+          installed || fraction >= Self.downloadShare
+            ? .preparing : .downloading(fraction / Self.downloadShare))
+      }
     }
-    if !installed { try location.markInstalled() }
-    loaded.set(model)
   }
-
-  func remove() throws { try loaded.remove(files: location) }
 }
 
 /// The model's calls, one at a time.

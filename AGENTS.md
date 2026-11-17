@@ -82,7 +82,8 @@ Each layer depends only on the layers listed above it.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
    dictation engines and the text-to-speech providers that need third-party
    dependencies (Nemotron, Kokoro), and the catalogues of both
-   (`DictationCatalogue`, `VoiceCatalogue`; ADR 0083, ADR 0166).
+   (`DictationCatalogue`, `VoiceCatalogue`, and `VoiceModelCatalogue` for the voice loop's
+   voice-activity and end-of-turn models; ADR 0083, ADR 0166).
 6. `apps/mac/Sources` and `apps/ios/Sources`: thin views over `SoyehtClient`.
    They render and forward input. They do not own state rules or wire handling. The Mac
    creates and injects every observable environment object once, in `SoyehtMacApp.swift`
