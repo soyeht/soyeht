@@ -116,7 +116,7 @@ impl Host for SystemHost {
     }
 
     fn http(&self, request: &HttpRequest) -> HttpResult {
-        process::http(Path::new(process::CURL), request)
+        process::http(&soyeht_process::curl::system_program(), request)
     }
 
     #[cfg_attr(

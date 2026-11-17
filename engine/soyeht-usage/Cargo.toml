@@ -11,6 +11,7 @@ base64.workspace = true
 chrono.workspace = true
 rusqlite = { version = "0.40", features = ["bundled", "hooks"] }
 serde_json.workspace = true
+soyeht-platform = { path = "../soyeht-platform" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 uuid.workspace = true
 

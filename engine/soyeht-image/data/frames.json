@@ -1,0 +1,53 @@
+{
+  "check": {
+    "pixelDelta": 24,
+    "block": 16,
+    "activeShare": 0.1
+  },
+  "groups": {
+    "mouth": {
+      "template": "Change only the mouth of the person in the image so that {change}. {keep} The lips keep the same colour and the same style as the original lips.",
+      "keep": "Everything else stays exactly the same as in the image: the eyes, eyebrows, glasses if any, nose, cheeks, jaw line and chin outline, hair, lighting, the style of the picture, the framing and the background.",
+      "minChange": 0.002,
+      "maxChange": 0.15
+    },
+    "blink": {
+      "template": "Change only the eyes of the person in the image so that {change}. {keep}",
+      "keep": "Everything else stays exactly the same as in the image: the mouth, glasses if any, eyebrows, nose, hair, lighting, the style of the picture, the framing and the background.",
+      "minChange": 0.0005,
+      "maxChange": 0.1
+    },
+    "eyes": {
+      "template": "Change only the eyes of the person in the image so that {change}. {keep} The eyes keep the same size, the same colour, the same lashes and the same style as the original eyes.",
+      "keep": "Everything else stays exactly the same as in the image: the head does not turn or move, the eyebrows, glasses if any and their reflections, nose, mouth, cheeks, hair, lighting, the style of the picture, the framing and the background.",
+      "minChange": 0.0005,
+      "maxChange": 0.1
+    },
+    "resting": {
+      "template": "Change only the mouth of the person in the image so that {change}. {keep} The lips keep the same colour and the same style as the original lips.",
+      "keep": "Everything else stays exactly the same as in the image: the eyes, eyebrows, glasses if any, nose, cheeks, jaw line and chin outline, hair, lighting, the style of the picture, the framing and the background.",
+      "minChange": 0.0005,
+      "maxChange": 0.15
+    }
+  },
+  "frames": [
+    {"id": "closed_MBP", "group": "mouth", "change": "the lips are pressed firmly together in a straight closed line, as when saying \"mm\", with no smile and the lips slightly flattened"},
+    {"id": "A", "group": "mouth", "change": "the mouth is open as when saying \"ah\": the jaw slightly lowered, a moderately open oval mouth, the upper front teeth slightly visible, a soft shadowed interior with a little tongue"},
+    {"id": "E", "group": "mouth", "change": "the mouth is slightly open and wide as when saying \"eh\": the lips stretched sideways, a medium opening, the upper teeth visible"},
+    {"id": "I", "group": "mouth", "change": "the lips are spread wide in a gentle smile as when saying \"ee\": the mouth only slightly open, the upper and lower teeth close together, showing as a thin line of teeth"},
+    {"id": "O", "group": "mouth", "change": "the mouth is a rounded open \"O\" of medium size, the lips softly pursed into a circle, a little dark interior visible"},
+    {"id": "U", "group": "mouth", "change": "the lips are pushed forward into a small round pucker as when saying \"oo\", with a very small round opening"},
+    {"id": "FV", "group": "mouth", "change": "the lower lip is tucked slightly under the upper front teeth, as when saying \"f\": the upper front teeth rest on the lower lip, the mouth only slightly open"},
+    {"id": "LDT", "group": "mouth", "change": "the mouth is slightly open as when saying \"la\": the tip of the tongue raised behind the upper front teeth, the upper teeth visible, the lips relaxed"},
+    {"id": "blink", "group": "blink", "change": "both eyes are closed in a gentle blink: the upper eyelids drawn down over the eyes with a thin dark lash line in the same style, no eyeballs visible"},
+    {"id": "half", "group": "eyes", "change": "both eyes are half closed in the middle of a blink: the upper eyelids lowered so they cover the top half of each iris, a thin dark lash line along the lowered lid, the lower half of each iris still visible"},
+    {"id": "left", "group": "eyes", "change": "both eyes look to the left side of the image (the irises and pupils moved toward the left side of each eye), the head stays facing forward"},
+    {"id": "right", "group": "eyes", "change": "both eyes look to the right side of the image (the irises and pupils moved toward the right side of each eye), the head stays facing forward"},
+    {"id": "up", "group": "eyes", "change": "both eyes look upward (the irises and pupils moved toward the top of each eye, the upper eyelid slightly raised), the head stays facing forward"},
+    {"id": "down", "group": "eyes", "change": "both eyes look downward (the irises and pupils moved toward the bottom of each eye, the upper eyelids slightly lowered), the head stays facing forward"},
+    {"id": "upleft", "group": "eyes", "change": "both eyes look up and to the left side of the image, as if thinking (the irises and pupils moved toward the upper left of each eye), the head stays facing forward"},
+    {"id": "soft", "group": "eyes", "change": "both eyes are soft and warm, as when smiling kindly while listening: the lower eyelids pushed up a little and the upper eyelids relaxed a little, the irises still clearly visible and looking straight ahead"},
+    {"id": "smile", "group": "resting", "change": "the lips are closed in a slightly wider, warmer gentle smile than before, the corners of the mouth raised a little more, no teeth visible"},
+    {"id": "hm", "group": "resting", "change": "the lips are closed and gently pressed together with the mouth corners relaxed and slightly turned down, a thoughtful \"hmm\" expression, no teeth visible"}
+  ]
+}
