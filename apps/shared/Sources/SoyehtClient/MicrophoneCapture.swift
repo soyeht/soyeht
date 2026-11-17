@@ -72,7 +72,9 @@ import Foundation
   /// voice loop runs, the capture joins its echo-cancelled session rather than opening the device.
   public func start(_ sink: @escaping Sink) throws {
     stop()
-    let keeper = FormatKeeper()
+    let keeper = FormatKeeper { [weak self] error in
+      Task { @MainActor in self?.fail(error) }
+    }
     let sink: Sink = { buffer in
       if let steady = keeper.steady(buffer) { sink(steady) }
     }
@@ -105,6 +107,14 @@ import Foundation
           false, options: .notifyOthersOnDeactivation)
       }
     #endif
+  }
+
+  /// The audio cannot be given to the sink any more (a change of format that cannot be converted):
+  /// the capture ends and says why, rather than going on with a hole in what the recognizer hears.
+  func fail(_ error: any Error) {
+    guard sink != nil || joined != nil else { return }
+    stop()
+    onEnded?(error)
   }
 
   private func openOwnEngine(_ sink: @escaping Sink) throws {
@@ -170,24 +180,40 @@ import Foundation
 /// of its own to the loop's session (or back) changes the format of its audio, and a recognizer that
 /// is in the middle of a request must not see that.
 final class FormatKeeper: @unchecked Sendable {
+  typealias Conversion = @Sendable (AVAudioPCMBuffer, AVAudioFormat) throws -> AVAudioPCMBuffer
+
   private let lock = NSLock()
+  private let failed: @Sendable (any Error) -> Void
+  private let custom: Conversion?
   private var first: AVAudioFormat?
   private var converter: AudioResampler?
+  private var broken = false
 
-  /// The buffer in the first format, or nil when it cannot be converted (reported once).
+  /// `failed` is told once, when a buffer cannot be converted, and nothing more is passed on.
+  init(
+    convert: Conversion? = nil, failed: @escaping @Sendable (any Error) -> Void
+  ) {
+    self.failed = failed
+    custom = convert
+  }
+
+  /// The buffer in the first format, or nil when it cannot be converted.
   func steady(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
     lock.withLock {
+      guard !broken else { return nil }
       guard let first else {
         first = buffer.format
         return buffer
       }
       if buffer.format == first { return buffer }
-      let resampler = converter ?? AudioResampler(format: first)
-      converter = resampler
       do {
+        if let custom { return try custom(buffer, first) }
+        let resampler = converter ?? AudioResampler(format: first)
+        converter = resampler
         return try resampler.convert(buffer)
       } catch {
-        ClientDiagnostics.reportOnce("capture_format_change_failed", key: "dictation", error: error)
+        broken = true
+        failed(error)
         return nil
       }
     }

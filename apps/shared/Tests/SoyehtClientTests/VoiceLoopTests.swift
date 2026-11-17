@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import Testing
+import os
 
 @testable import SoyehtClient
 
@@ -138,8 +139,14 @@ private struct ScriptedEndOfTurn: EndOfTurnDetecting {
 
   init(
     voiceDelay: Duration = .zero, endOfTurn: any EndOfTurnDetecting = SilenceEndOfTurn(),
-    options: VoiceLoopOptions = VoiceLoopOptions(), recognizer: FakeRecognizer? = nil
+    options requested: VoiceLoopOptions = VoiceLoopOptions(), recognizer: FakeRecognizer? = nil
   ) {
+    // The fake never delivers a buffer unless a test says so: the real 10 s start deadline, in real
+    // time, must not end the loop of a test on a loaded machine.
+    var options = requested
+    if options.firstBuffer == VoiceLoopOptions().firstBuffer {
+      options.firstBuffer = .seconds(3_600)
+    }
     voice = FakeVoice(delay: voiceDelay)
     let made = box
     controller = VoiceLoopController(
@@ -692,10 +699,84 @@ private let reply = "Hi there, friend. How can I help you today?"
     made.frameLength = frames
     return made
   }
-  let keeper = FormatKeeper()
+  let keeper = FormatKeeper { _ in }
   #expect(keeper.steady(try buffer(wide, frames: 480))?.format == wide)
   #expect(keeper.steady(try buffer(wide, frames: 480))?.format == wide)
   let converted = try #require(keeper.steady(try buffer(narrow, frames: 160)))
   #expect(converted.format == wide)
   #expect(converted.frameLength > 0)
+}
+
+@Test func aBufferThatCannotBeConvertedEndsTheCaptureOnceAndIsNotPassedOn() throws {
+  struct Unreadable: Error {}
+  let wide = try #require(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+  let narrow = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+  func buffer(_ format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+    let made = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 160))
+    made.frameLength = 160
+    return made
+  }
+  let told = OSAllocatedUnfairLock(initialState: 0)
+  let keeper = FormatKeeper(
+    convert: { _, _ in throw Unreadable() }, failed: { _ in told.withLock { $0 += 1 } })
+  #expect(keeper.steady(try buffer(wide)) != nil)
+  #expect(keeper.steady(try buffer(narrow)) == nil)
+  #expect(keeper.steady(try buffer(narrow)) == nil)
+  #expect(keeper.steady(try buffer(wide)) == nil)
+  #expect(told.withLock { $0 } == 1)
+}
+
+@MainActor @Test func aCaptureThatCannotKeepItsFormatEndsWithTheReason() throws {
+  struct Unreadable: Error {}
+  let session = VoiceAudioSession()
+  let capture = MicrophoneCapture()
+  var reasons: [String] = []
+  capture.onEnded = { reasons.append(String(describing: $0)) }
+  // Nothing is held: there is nothing to end.
+  capture.fail(Unreadable())
+  #expect(reasons.isEmpty)
+  capture.join(session, sink: { _ in })
+  #expect(session.foreignCaptureActive)
+  capture.fail(Unreadable())
+  #expect(reasons.count == 1)
+  #expect(!session.foreignCaptureActive)
+}
+
+@MainActor @Test func aSessionPassesEventsOnOnlyWhileItLasts() {
+  let session = RecognitionSession()
+  var heard: [SpeechEvent] = []
+  let events = session.begin { heard.append($0) }
+  events(.partial("open"))
+  events(.failed("The audio went away."))
+  session.end()
+  // The system's own cancellation comes after the real reason and does not replace it.
+  events(.failed("The operation was cancelled."))
+  #expect(heard == [.partial("open"), .failed("The audio went away.")])
+  let next = session.begin { heard.append($0) }
+  events(.final("old"))
+  next(.final("new"))
+  #expect(heard.last == .final("new"))
+  #expect(!heard.contains(.final("old")))
+}
+
+@MainActor @Test func aSentenceAfterAHeldOneIsMadeOnceToo() async throws {
+  let rig = Rig(voiceDelay: .milliseconds(200))
+  try await rig.controller.start()
+  try await rig.say("run the tests")
+  rig.controller.replyUpdated(
+    "First we look at the code. Then we run the tests. Last we report the result.", final: true,
+    id: "m1")
+  await rig.hear(11, level: 0.9)
+  #expect(rig.controller.phase == .probingWait)
+  try await Task.sleep(for: .milliseconds(300))
+  #expect(rig.audio.played.isEmpty)
+  rig.lastRecognizer?.onEvent?(.partial("mhm"))
+  await rig.hear(11, level: 0.1)
+  rig.lastRecognizer?.onEvent?(.final("mhm"))
+  try await rig.eventually { rig.audio.played.count == 1 }
+  rig.audio.finishPlayback()
+  try await rig.eventually { rig.audio.played.count == 2 }
+  rig.audio.finishPlayback()
+  try await rig.eventually { rig.audio.played.count == 3 }
+  #expect(await rig.voice.spoken.count == 3)
 }
