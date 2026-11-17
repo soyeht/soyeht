@@ -39,15 +39,14 @@ fn wait(session: &str, id: &str, update: &str, status: &str) -> Value {
         "_meta":{"codex":{"collaboration":collaboration}}})
 }
 
-/// The same call from codex-acp 2.6.0, as the adapter reports it to a client that declares the AIR
-/// extension: no `_meta`, the title and the input on the first report, and on the report that
-/// ends it only the status.
+/// The same call from codex-acp 2.6.0, as captured from the adapter by a client that declares the
+/// AIR extension (thread IDs replaced): no `_meta`, the title and the input on the first report,
+/// and on the report that ends it only the status, since nothing else changed.
 fn wait_2(session: &str, id: &str, update: &str, status: &str) -> Value {
     if update == "tool_call_update" {
         return json!({"sessionUpdate":update,"toolCallId":id,"status":status});
     }
     json!({"sessionUpdate":update,"toolCallId":id,"kind":"other","title":"wait","status":status,
-        "locations":[],
         "rawInput":{"prompt":null,"senderThreadId":session,"receiverThreadIds":[],
             "agentsStates":{},"model":null,"reasoningEffort":null}})
 }

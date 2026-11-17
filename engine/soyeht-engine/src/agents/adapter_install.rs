@@ -71,6 +71,9 @@ pub(crate) struct Locked {
     entry: &'static str,
     manifest: &'static str,
     lock: &'static str,
+    /// Variables the engine gives the adapter's process, each with the one value the supervisor
+    /// admits (`soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF`): fixed here, never from a pane.
+    pub(crate) environment: &'static [(&'static str, &'static str)],
 }
 
 pub(crate) const LOCKED: [Locked; 2] = [
@@ -81,6 +84,7 @@ pub(crate) const LOCKED: [Locked; 2] = [
         entry: "@agentclientprotocol/claude-agent-acp/dist/index.js",
         manifest: include_str!("adapter_locks/claude-agent-acp/package.json"),
         lock: include_str!("adapter_locks/claude-agent-acp/package-lock.json"),
+        environment: &[],
     },
     Locked {
         package: "@agentclientprotocol/codex-acp",
@@ -89,6 +93,7 @@ pub(crate) const LOCKED: [Locked; 2] = [
         entry: "@agentclientprotocol/codex-acp/dist/index.js",
         manifest: include_str!("adapter_locks/codex-acp/package.json"),
         lock: include_str!("adapter_locks/codex-acp/package-lock.json"),
+        environment: &[soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF],
     },
 ];
 
@@ -141,14 +146,37 @@ impl Locked {
 /// The locked adapter `argv` launches, and the arguments after the package: exactly
 /// `npx --yes <package>@<version> ...`.
 fn locked_launch(argv: &[String]) -> Option<(&'static Locked, &[String])> {
+    let (package, rest) = npx_package(argv)?;
+    LOCKED
+        .iter()
+        .find(|locked| package == format!("{}@{}", locked.package, locked.version))
+        .map(|locked| (locked, rest))
+}
+
+/// The package of `npx --yes <package> ...` and the arguments after it.
+fn npx_package(argv: &[String]) -> Option<(&str, &[String])> {
     let [runner, yes, package, rest @ ..] = argv else {
         return None;
     };
-    (package_runner(runner) == Some(PackageRunner::Npx) && yes == "--yes").then_some(())?;
-    LOCKED
-        .iter()
-        .find(|locked| *package == format!("{}@{}", locked.package, locked.version))
-        .map(|locked| (locked, rest))
+    (package_runner(runner) == Some(PackageRunner::Npx) && yes == "--yes")
+        .then_some((package.as_str(), rest))
+}
+
+/// The locked adapter `argv` would start through `npx` at a version the lock is not, and that
+/// version: a launch saved under an older pin. The lock is the only way to start these packages
+/// (ADR 0143), so it is refused, not run unlocked.
+fn stale_locked_launch(argv: &[String]) -> Option<(&'static Locked, &str)> {
+    let (package, _) = npx_package(argv)?;
+    LOCKED.iter().find_map(|locked| {
+        let version = package.strip_prefix(locked.package)?.strip_prefix('@')?;
+        (version != locked.version).then_some((locked, version))
+    })
+}
+
+/// The variables the engine gives the process of the locked adapter `argv` launches: none for any
+/// other launch.
+pub(crate) fn fixed_environment(argv: &[String]) -> &'static [(&'static str, &'static str)] {
+    locked_launch(argv).map_or(&[], |(locked, _)| locked.environment)
 }
 
 /// Whether the start of `argv` may install an adapter first, which the code that sends it must
@@ -303,6 +331,13 @@ pub(crate) fn installed_spawn(profile: &Path, config: Spawn) -> Result<Spawn> {
 }
 
 fn installed_spawn_with(profile: &Path, mut config: Spawn, npm: &str) -> Result<Spawn> {
+    if let Some((locked, version)) = stale_locked_launch(&config.argv) {
+        return Err(errors::harness_unavailable(format!(
+            "{}@{version} is not the version this Soyeht installs ({}), and is not started \
+             through npx",
+            locked.package, locked.version
+        )));
+    }
     let Some((locked, rest)) = locked_launch(&config.argv) else {
         return Ok(config);
     };

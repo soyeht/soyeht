@@ -36,7 +36,8 @@ Security.
 
 - A Codex pane answers with the default model of your own Codex configuration. The adapter it runs carried a Codex
   command line too old for the current models, so the first reply was a "model not supported" error. The adapter
-  is now version 2.6.0, installed from the same kind of lockfile.
+  is now version 2.6.0, installed from the same kind of lockfile; a pane opened before the update moves to it
+  the next time Soyeht starts it. The adapter no longer asks the model for a suggested next message after every turn.
 
 ### Removed
 

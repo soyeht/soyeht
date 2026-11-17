@@ -397,6 +397,28 @@ pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
     ("agent-full-access", "full_access"),
 ];
 
+/// The state of a ready agent of `harness` in `current`, with the mode selector codex-acp 2.6.0
+/// announces to a client that declares the AIR extension (as the engine does): the kind of each
+/// mode under `_meta.jetbrains.air`, `workspace-write` among them, and a permission profile of the
+/// person's, which has no kind.
+pub(crate) fn codex_2_agent(harness: &str, current: &str) -> crate::agents::state::State {
+    let air = |kind: &str| json!({"jetbrains":{"air":{"version":1,"kind":kind}}});
+    let mut state = ready_agent_state();
+    state.launch.id = harness.into();
+    state.options = soyeht_acp::config::Options::from_response(&json!({"configOptions":[{
+        "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":current,
+        "options":[
+            {"group":"sandbox-modes","name":"Sandbox Modes","options":[
+                {"value":"read-only","name":"Read-only","_meta":air("standard")},
+                {"value":"workspace-write","name":"Workspace access","_meta":air("standard")},
+                {"value":"agent","name":"Auto review","_meta":air("auto_review")},
+                {"value":"agent-full-access","name":"Full access","_meta":air("full_access")}]},
+            {"group":"permission-profiles","name":"Permission Profiles","options":[
+                {"value":"permission-profile:work","name":"work"}]}]}]}))
+    .unwrap();
+    state
+}
+
 /// What an agent announced at `initialize`, with or without the ACP `systemPrompt` capability.
 pub(crate) fn initialization(system_prompt: bool) -> soyeht_acp::session::Initialization {
     let capabilities = if system_prompt {

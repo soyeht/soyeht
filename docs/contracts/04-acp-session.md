@@ -99,9 +99,12 @@ Raw terminal panes continue to exist and do not use this path.
    tool rows either. The 1.x adapter marked them on every report
    (`_meta.codex.collaboration.tool: "wait"`); the 2.x adapter sends no such
    `_meta`: the first report is titled `wait` and carries
-   `rawInput.senderThreadId` and `receiverThreadIds`, and the report that ends
-   it only the status. The engine reads either shape on the first report and
-   then recognizes the call by its ID. An empty `receiverThreadIds`
+   `rawInput.senderThreadId` and `receiverThreadIds`, and a later report only
+   the fields that changed (the report that ended the waits captured with
+   2.6.0 had the status alone; one whose `agentsStates` changed would carry
+   `rawInput` again). The engine reads either shape on the first report and
+   then recognizes the call by its session and ID until a report says it
+   ended. An empty `receiverThreadIds`
    counts as tied only while the pane tracks a subagent, and a wait naming a
    session it does not track stays a tool row, along with its later reports. Clients show a waiting status
    while the transcript ends in running subagent rows. Times are wall-clock

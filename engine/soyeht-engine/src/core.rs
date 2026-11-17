@@ -292,7 +292,15 @@ impl Core {
         let repaired_auth =
             state.phase == crate::agents::state::Phase::NeedsLogin && !state.auth_required;
         state.auth_required |= repaired_auth;
-        if state.ensure_binding()? || repaired_auth {
+        // A pane saved under an older pin of a locked adapter starts the catalogue's now (the
+        // saved package would be started through `npx`, unlocked), and saves it.
+        let moved = crate::agents::registry::refreshed_launch(&self.directory, &state.launch);
+        let refreshed = moved.is_some();
+        if let Some(launch) = moved {
+            log::event("engine.agent_launch_refreshed", &[("harness", &launch.id)]);
+            state.launch = launch;
+        }
+        if state.ensure_binding()? || repaired_auth || refreshed {
             StorePort::mutate(
                 &mut self.store,
                 "engine-agent",

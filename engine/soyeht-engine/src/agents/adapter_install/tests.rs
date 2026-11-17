@@ -46,6 +46,55 @@ fn only_the_exact_pinned_launch_of_a_locked_adapter_is_installed() {
     }
 }
 
+/// The variables the engine gives an adapter are those of its own entry of the table, and only for
+/// its exact launch.
+#[test]
+fn only_the_launch_of_a_locked_adapter_is_given_the_variables_of_its_entry() {
+    for locked in &LOCKED {
+        let launch = argv(&["npx", "--yes", &pinned(locked)]);
+        assert_eq!(fixed_environment(&launch), locked.environment);
+        let stale = argv(&["npx", "--yes", &format!("{}@0.0.1", locked.package)]);
+        assert!(fixed_environment(&stale).is_empty());
+    }
+    assert_eq!(
+        LOCKED
+            .iter()
+            .flat_map(|locked| locked.environment)
+            .collect::<Vec<_>>(),
+        [&soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF]
+    );
+    assert!(fixed_environment(&argv(&["npx", "--yes", "@scope/other@1.0.0"])).is_empty());
+}
+
+/// A launch saved under an older pin is not run through `npx` unlocked, which is what a plain
+/// `npx --yes <package>@<version>` of the locked packages would do.
+#[test]
+fn a_locked_package_at_another_version_is_refused_not_started_unlocked() {
+    let profile = soyeht_platform::testing::scratch_dir("adapter-stale-pin");
+    for locked in &LOCKED {
+        let stale = format!("{}@0.0.1", locked.package);
+        assert!(locked_launch(&argv(&["npx", "--yes", &stale])).is_none());
+        let error =
+            installed_spawn(&profile, spawn(&["npx", "--yes", &stale, "--flag"])).unwrap_err();
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::HarnessUnavailable
+        );
+        // The locked version, another package, a package that only starts with the name, and a
+        // launch that is not npx's are not this refusal's.
+        for other in [
+            argv(&["npx", "--yes", &pinned(locked)]),
+            argv(&["npx", "--yes", "@scope/other@0.0.1"]),
+            argv(&["npx", "--yes", &format!("{}-extra@0.0.1", locked.package)]),
+            argv(&["uvx", "--yes", &stale]),
+            argv(&["node", &stale]),
+        ] {
+            assert!(stale_locked_launch(&other).is_none(), "{other:?}");
+        }
+    }
+    std::fs::remove_dir_all(profile).unwrap();
+}
+
 /// What the catalogue tells a picker before the first start: the package a built-in adapter of a
 /// package runner fetches and whether the engine installs it from its lock.
 #[test]

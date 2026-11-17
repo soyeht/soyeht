@@ -195,10 +195,10 @@ mod tests {
 
     #[test]
     fn codex_2_waits_are_recognized_by_their_title_and_input() {
-        // The first report of a wait from codex-acp 2.6.0, as the adapter's tool call contract
-        // makes it for a client that declares the AIR extension: no `_meta.codex`.
+        // The first report of a wait from codex-acp 2.6.0, captured from the adapter by a client
+        // that declares the AIR extension (thread ID replaced): no `_meta.codex`.
         let wait = json!({"sessionUpdate":"tool_call","toolCallId":"call_1","kind":"other",
-            "title":"wait","status":"in_progress","locations":[],
+            "title":"wait","status":"in_progress",
             "rawInput":{"agentsStates":{},"model":null,"prompt":null,"reasoningEffort":null,
                 "receiverThreadIds":[],"senderThreadId":"parent"}});
         assert_eq!(collaboration_wait(&wait), Some(vec![]));
@@ -209,7 +209,8 @@ mod tests {
         let mut spawn = wait.clone();
         spawn["title"] = json!("spawnAgent");
         assert_eq!(collaboration_wait(&spawn), None);
-        // The report that ends it carries only what changed: it is not recognized by itself.
+        // The report that ends it carries only what changed (here the status alone): it is not
+        // recognized by itself.
         let done = json!({"sessionUpdate":"tool_call_update","toolCallId":"call_1",
             "status":"completed"});
         assert_eq!(collaboration_wait(&done), None);

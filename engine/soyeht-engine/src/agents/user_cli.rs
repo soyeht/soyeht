@@ -313,8 +313,9 @@ fn cli_of(argv: &[String]) -> Option<&'static UserCli> {
     })
 }
 
-/// An adapter process ready to be sent: its spawn, as given the person's CLI when it has one, and
-/// the same spawn without it for a supervisor that refuses the variable.
+/// An adapter process ready to be sent: its spawn, as given the person's CLI when it has one and the
+/// variables the engine fixes for the adapter, and the same spawn without them for a supervisor
+/// that refuses a variable (one that outlived an update does not know the newer ones).
 pub(crate) struct Given {
     config: Spawn,
     plain: Option<Spawn>,
@@ -338,17 +339,32 @@ pub(crate) fn prepare(config: Spawn, profile: &Path) -> Result<Given, Error> {
         .then(|| cli_of(&config.argv))
         .flatten()
         .filter(|cli| !config.env.contains_key(cli.variable));
+    let fixed = if config.kind == ProcessKind::PipesAcp {
+        super::adapter_install::fixed_environment(&config.argv)
+    } else {
+        &[]
+    };
     let mut config = super::adapter_install::installed_spawn(profile, config)?;
-    let mut plain = None;
+    let without = config.clone();
+    let mut given = false;
+    for (name, value) in fixed {
+        // A launch that sets one itself keeps its own choice.
+        if !config.env.contains_key(*name) {
+            config.env.insert((*name).into(), (*value).into());
+            given = true;
+        }
+    }
     if let Some(cli) = cli
         && let Choice::Own(path) = settle(cli)
         && let Some(path) = path.to_str()
     {
-        let without = config.clone();
         config.env.insert(cli.variable.into(), path.into());
-        plain = Some(without);
+        given = true;
     }
-    Ok(Given { config, plain })
+    Ok(Given {
+        config,
+        plain: given.then_some(without),
+    })
 }
 
 /// Whether `error` is a supervisor that does not know the variable, as one that outlived an
@@ -751,6 +767,48 @@ mod tests {
             assert!(failed.is_err());
             assert_eq!(calls.get(), 1, "{kind}: {message} was sent again");
         }
+    }
+
+    #[test]
+    fn the_second_adapter_is_given_its_fixed_variable_and_a_supervisor_that_refuses_it_gets_none() {
+        let profile = soyeht_platform::testing::scratch_dir("user-cli-fixed");
+        let index = super::super::adapter_install::LOCKED
+            .iter()
+            .position(|locked| !locked.environment.is_empty())
+            .unwrap();
+        super::super::adapter_install::seed_for_test(&profile, index);
+        let package = super::super::adapter_install::launch_argv_for_test(index)[2].clone();
+        let (name, value) = soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF;
+
+        let given = prepare(adapter(&package, ProcessKind::PipesAcp), &profile).unwrap();
+        assert_eq!(given.config.env.get(name).map(String::as_str), Some(value));
+        assert_eq!(given.plain.as_ref().map(|plain| plain.env.len()), Some(0));
+        // A supervisor that does not know the variable starts it without.
+        let sent = Mutex::new(Vec::new());
+        given
+            .send_with(|config| {
+                let with = config.env.contains_key(name);
+                sent.lock().unwrap().push(with);
+                if with {
+                    Err(refusal(
+                        wire_kind::OPERATION_FAILED,
+                        soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
+                    ))
+                } else {
+                    Ok(instance_of(config))
+                }
+            })
+            .unwrap();
+        assert_eq!(*sent.lock().unwrap(), [true, false]);
+
+        // A sign-in terminal is no adapter process, and a launch that set the variable keeps it.
+        let terminal = prepare(adapter(&package, ProcessKind::Pty), &profile).unwrap();
+        assert!(terminal.config.env.is_empty() && terminal.plain.is_none());
+        let mut own = adapter(&package, ProcessKind::PipesAcp);
+        own.env.insert(name.into(), "true".into());
+        let kept = prepare(own.clone(), &profile).unwrap();
+        assert_eq!((kept.config.env, kept.plain), (own.env, None));
+        std::fs::remove_dir_all(profile).unwrap();
     }
 
     #[test]
