@@ -132,6 +132,19 @@ impl<'a> Obj<'a> {
     }
 }
 
+/// Reads the groups of a vector file with `read`, and fails when the file has a group `read` did not
+/// take.
+pub fn read_groups<'a, T>(
+    file: &'a Value,
+    name: &str,
+    read: impl FnOnce(&mut Groups<'a>) -> T,
+) -> T {
+    let mut groups = Groups::new(file, name);
+    let groups_read = read(&mut groups);
+    groups.done();
+    groups_read
+}
+
 /// The top level of a vector file: its policy tag and the groups it holds, each of which the test
 /// must run.
 pub struct Groups<'a> {

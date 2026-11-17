@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{Groups, Obj, parse};
+use common::{Obj, parse, read_groups};
 use serde_json::Value;
 use soyeht_voice::{
     VoiceTurnAction, VoiceTurnConfig, VoiceTurnInput, VoiceTurnMachine, VoiceTurnPhase,
@@ -75,32 +75,30 @@ struct Vectors<'a> {
 
 impl<'a> Vectors<'a> {
     fn read(file: &'a Value) -> Self {
-        let mut groups = Groups::new(file, "voice-turns");
-        let reach: BTreeMap<&str, &[Value]> = groups
-            .object("reach")
-            .entries()
-            .into_iter()
-            .map(|(name, steps)| {
-                let steps = steps
-                    .as_array()
-                    .unwrap_or_else(|| panic!("the reach {name} is not a list"));
-                (name, steps.as_slice())
-            })
-            .collect();
-        let names: BTreeSet<&str> = PHASES.iter().map(|(name, _)| *name).collect();
-        assert_eq!(
-            reach.keys().copied().collect::<BTreeSet<_>>(),
-            names,
-            "the file names a way to reach each phase and no other"
-        );
-        let cases = groups.group("cases");
-        let pairs = groups.group("pairs");
-        groups.done();
-        Self {
-            reach,
-            cases,
-            pairs,
-        }
+        read_groups(file, "voice-turns", |groups| {
+            let reach: BTreeMap<&str, &[Value]> = groups
+                .object("reach")
+                .entries()
+                .into_iter()
+                .map(|(name, steps)| {
+                    let steps = steps
+                        .as_array()
+                        .unwrap_or_else(|| panic!("the reach {name} is not a list"));
+                    (name, steps.as_slice())
+                })
+                .collect();
+            let names: BTreeSet<&str> = PHASES.iter().map(|(name, _)| *name).collect();
+            assert_eq!(
+                reach.keys().copied().collect::<BTreeSet<_>>(),
+                names,
+                "the file names a way to reach each phase and no other"
+            );
+            Self {
+                reach,
+                cases: groups.group("cases"),
+                pairs: groups.group("pairs"),
+            }
+        })
     }
 }
 

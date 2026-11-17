@@ -4,7 +4,7 @@
 
 mod common;
 
-use common::{Groups, Obj, parse};
+use common::{Obj, parse, read_groups};
 use serde_json::Value;
 use soyeht_protocol::client_policy::{VOICE_SENTENCE_MAX_CHARS, VOICE_SENTENCE_MIN_CHARS};
 use soyeht_voice::{ReplyFeed, SentenceChunker, WordTiming, heard_text, speakable};
@@ -22,16 +22,13 @@ struct Vectors<'a> {
 
 impl<'a> Vectors<'a> {
     fn read(file: &'a Value) -> Self {
-        let mut groups = Groups::new(file, "speech-text");
-        let vectors = Self {
+        read_groups(file, "speech-text", |groups| Self {
             speech_text: groups.group("speechText"),
             chunker: groups.group("chunker"),
             stream: groups.group("stream"),
             replies: groups.group("replies"),
             heard: groups.group("heard"),
-        };
-        groups.done();
-        vectors
+        })
     }
 }
 
