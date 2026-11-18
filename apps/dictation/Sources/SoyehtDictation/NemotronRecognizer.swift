@@ -30,6 +30,10 @@ import SoyehtClient
     let resampler = try AudioResampler(sampleRate: Double(model.config.sampleRate))
     let (samples, continuation) = AsyncThrowingStream.makeStream(of: [Float].self)
     try capture.start(Self.sink(resampler, continuation))
+    capture.onEnded = { [weak self] error in
+      self?.cancel()
+      onEvent(.failed(error.localizedDescription))
+    }
     audio = continuation
     transcribing = Task { [inference = NemotronInference(session)] in
       await Self.transcribe(samples, with: inference, onEvent: onEvent)
