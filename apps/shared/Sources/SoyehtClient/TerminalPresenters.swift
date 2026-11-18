@@ -120,36 +120,40 @@ extension EngineClient: TerminalStreamControl {
   /// declared up and every surface that shows a pane gets its content. Both platforms take it,
   /// the Mac for the terminals it has a surface for and a paired device for those on screen.
   ///
-  /// The terminals of the workspace on screen come first, then the selected pane is loaded, and
-  /// only then the surfaces of other workspaces, one at a time: each replay is up to 2 MiB parsed
-  /// on the main actor, so none waits behind fifty of them. A terminal with no surface yet is not
-  /// subscribed: its output would go nowhere. It asks for its screen when its surface appears.
+  /// The selected pane comes first, then the other terminals of the workspace on screen, then the
+  /// surfaces of other workspaces. Every subscribe waits for the previous replay to be read
+  /// (`TerminalReplayGate`), so the engine never queues more than one tail for the connection, and
+  /// no replay of up to 2 MiB parsed on the main actor waits behind fifty of them. A terminal with
+  /// no surface yet is not subscribed: its output would go nowhere. It asks for its screen when
+  /// its surface appears.
   func settleConnection(followsEveryTerminal: Bool = EngineClient.followsEveryTerminal) async throws
   {
     connectionRevision &+= 1
     connected = true
     connectionText = ActiveProfile.values.connectedText
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
-    var otherSurfaces: [String] = []
-    if followsEveryTerminal {
-      // The tmux-style Mac surface keeps every terminal it has current, including hidden ones.
-      let (shown, others) = macTerminalsToFollow()
-      for paneId in shown { try await subscribe(paneId) }
-      otherSurfaces = others
-    } else {
+    guard followsEveryTerminal else {
       // A paired device follows its selected terminal and the terminals its views show.
       try await subscribeShownTerminals()
+      try await loadSelectedPane()
+      return
     }
-    if let pane = selectedPane {
-      switch pane.mode {
-      case .agent:
-        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
-      case .editor: await loadEditorPane(pane.paneId)
-      case .writing: try await loadWritingPane(pane.paneId)
-      case .terminal, .web: break
-      }
+    // The tmux-style Mac surface keeps every terminal it has current, including hidden ones.
+    var (shown, others) = macTerminalsToFollow()
+    if shown.first == selectedPaneId { try await subscribe(shown.removeFirst()) }
+    try await loadSelectedPane()
+    for paneId in shown + others where connected { try await subscribe(paneId) }
+  }
+
+  private func loadSelectedPane() async throws {
+    guard let pane = selectedPane else { return }
+    switch pane.mode {
+    case .agent:
+      await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
+    case .editor: await loadEditorPane(pane.paneId)
+    case .writing: try await loadWritingPane(pane.paneId)
+    case .terminal, .web: break
     }
-    for paneId in otherSurfaces where connected { try await subscribe(paneId) }
   }
 
   /// The terminals the Mac has a surface for: those of the selected workspace, the selected pane
@@ -179,7 +183,7 @@ extension EngineClient: TerminalStreamControl {
   func unsubscribeAfterSelecting(from old: String) async throws {
     guard isTerminal(old), !terminalPresenters.isPresented(old) else { return }
     try await unsubscribeStream(old)
-    terminalStreams.remove(old)
+    forgetTerminalStream(old)
   }
 
   /// The agent panes among `paneIds`, as the surfaces `hydratePresentedAgentPanes` loads: every

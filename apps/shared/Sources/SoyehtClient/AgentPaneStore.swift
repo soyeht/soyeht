@@ -66,6 +66,13 @@ public final class AgentPaneStore {
     models[paneId]?.attention ?? AgentPaneAttention(nil)
   }
 
+  /// Whether the pane has a permission or a question open. Reading it follows the pane's requests,
+  /// not its transcript.
+  public func isAsking(_ paneId: String) -> Bool {
+    let asks = attention(for: paneId)
+    return asks.permission != nil || asks.elicitation != nil
+  }
+
   /// Questions still waiting for a person, across every pane.
   var openRequestIds: Set<String> {
     Set(

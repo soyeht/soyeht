@@ -78,6 +78,8 @@ public final class EngineClient {
   @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
   var terminalGapTexts: [String: String] = [:]
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
+  /// One terminal replay at a time on the connection (`TerminalReplayGate`).
+  @ObservationIgnored private let replayGate = TerminalReplayGate()
   /// Terminals whose output reached no surface, so the surface that claims the pane next starts
   /// without it and must ask for the screen again.
   @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
@@ -179,6 +181,7 @@ public final class EngineClient {
     resizeGenerations.removeAll()
     terminalSubscriptionsInFlight.removeAll()
     terminalsWithDroppedOutput.removeAll()
+    replayGate.reset()
     if pairedDevice {
       panes = []
       workspaces = []
@@ -339,7 +342,7 @@ public final class EngineClient {
     }
   }
 
-  private func receive(message: JsonValue) throws {
+  func receive(message: JsonValue) throws {
     guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
     if let id = message["id"].string, let request = pending.take(id) {
       request.timeout.cancel()
@@ -416,7 +419,9 @@ public final class EngineClient {
     case .streamGap:
       _ = try terminalStreams.gap(params.decoded(StreamGapEvent.self))
     case .streamReplayDone:
-      _ = try terminalStreams.finish(params.decoded(StreamReplayDoneEvent.self))
+      if let paneId = try terminalStreams.finish(params.decoded(StreamReplayDoneEvent.self)) {
+        replayGate.replayEnded(paneId)
+      }
     case .devicePairRequested, .devicePaired, .deviceRevoked:
       try applyDeviceEvent(eventName, params)
     case .paneUpdate, .panePermissionRequested, .panePermissionAnswered,
@@ -582,10 +587,16 @@ public final class EngineClient {
   func subscribe(_ pane: String) async throws {
     guard !terminalSubscriptionsInFlight.contains(pane) else { return }
     terminalSubscriptionsInFlight.insert(pane)
-    terminalsWithDroppedOutput.remove(pane)
     defer { terminalSubscriptionsInFlight.remove(pane) }
+    // The tail is queued by the engine for this connection, up to `ProtocolLimits.tailBytes`;
+    // the next subscribe waits until this one's replay has been read.
+    guard let turn = await replayGate.enter() else { throw ClientFailure.disconnected }
+    defer { replayGate.leave(turn) }
+    terminalsWithDroppedOutput.remove(pane)
+    replayGate.expectReplay(of: pane)
     _ = try await request(
       .paneStreamSubscribe, .object(["paneId": .string(pane), "from": .string("tail")]))
+    if terminalStreams.contains(pane) { await replayGate.awaitReplayEnd(of: pane) }
   }
   public func refreshTerminal() {
     guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
@@ -622,12 +633,18 @@ public final class EngineClient {
     if !taken && !bytes.isEmpty { terminalsWithDroppedOutput.insert(paneId) }
   }
   var terminalOutputSinkCount: Int { terminalSinks.count }
+  /// The pane's stream is gone: a subscribe waiting for its replay stops waiting.
+  func forgetTerminalStream(_ paneId: String) {
+    terminalStreams.remove(paneId)
+    replayGate.replayEnded(paneId)
+  }
   func hasTerminalSurface(_ paneId: String) -> Bool { terminalSinks.hasSink(paneId) }
 
   func discardTerminalPane(_ paneId: String) {
     terminalStreams.remove(paneId)
     terminalSubscriptionsInFlight.remove(paneId)
     terminalsWithDroppedOutput.remove(paneId)
+    replayGate.replayEnded(paneId)
     terminalSinks.remove(paneId)
     resizeTasks.removeValue(forKey: paneId)?.cancel()
     resizeGenerations.removeValue(forKey: paneId)

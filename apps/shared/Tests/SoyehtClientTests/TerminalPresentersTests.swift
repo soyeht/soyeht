@@ -246,7 +246,7 @@ import Testing
   return (client, requests)
 }
 
-@MainActor @Test func theMacSubscribesTheScreenFirstThenTheSelectedPaneThenTheOtherSurfaces()
+@MainActor @Test func theMacLoadsTheSelectedPaneThenSubscribesTheScreenAndThenTheOtherSurfaces()
   async throws
 {
   let (client, requests) = try macWithSurfaces()
@@ -257,7 +257,7 @@ import Testing
   #expect(
     requests.log
       == [
-        "pane.stream.subscribe a", "pane.transcript g", "pane.queue.list g",
+        "pane.transcript g", "pane.queue.list g", "pane.stream.subscribe a",
         "pane.stream.subscribe c", "pane.stream.subscribe d",
       ])
 }

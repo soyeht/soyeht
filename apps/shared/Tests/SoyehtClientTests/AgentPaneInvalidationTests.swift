@@ -95,3 +95,61 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   #expect(hidden.groupings == 0)
   #expect(model.entries.count == 51)
 }
+
+@MainActor @Test func aChunkForAHiddenPaneRunsNoBodyOfTheWindowChrome() {
+  let client = twoPanes()
+  client.upsertWorkspace(Workspace(workspaceId: "w", name: "w", path: "/tmp", layout: .null))
+  // What each view of the chrome reads: the workspace tab and the rail button (the attention
+  // summary and the workspaces), the usage ring (the rail's readings) and the pane card header
+  // (whether its pane asks).
+  let reads: [(String, @MainActor () -> Void)] = [
+    (
+      "workspace tab",
+      {
+        _ = client.agentAttention.waitingCount(in: "w")
+        _ = client.agentAttention.hasWorkingAgent(in: "w")
+        _ = client.workspaces
+      }
+    ),
+    (
+      "rail button",
+      {
+        _ = client.agentAttention.totalWaitingCount
+        _ = client.agentAttention.hasWorkingAgent
+      }
+    ),
+    ("usage ring", { _ = client.usage.readings }),
+    ("pane card header of b", { _ = client.agentPanes.isAsking("b") }),
+    ("pane card header of a", { _ = client.agentPanes.isAsking("a") }),
+  ]
+  for (name, read) in reads {
+    let reached = fires(watching: read, whenChanging: { streamAChunk(client, to: "a") })
+    #expect(!reached, "a chunk reached the \(name)")
+  }
+}
+
+@MainActor private func askPermission(_ client: EngineClient, in paneId: String) {
+  try? client.applyAgentEvent(
+    .panePermissionRequested,
+    .encoded(
+      PanePermissionRequestedEvent(
+        eventId: "2", at: "2026-11-18T00:00:01Z", paneId: paneId, requestId: "r", generation: 1,
+        promptId: "p", title: "Write", detail: "", presentation: nil, options: [],
+        expiresAt: "later")))
+}
+
+@MainActor @Test func aRequestMovesTheHeaderOfItsPaneAndNoOther() {
+  let other = twoPanes()
+  let otherFires = fires(
+    watching: { _ = other.agentPanes.isAsking("b") },
+    whenChanging: { askPermission(other, in: "a") })
+  #expect(!otherFires)
+
+  let same = twoPanes()
+  let sameFires = fires(
+    watching: { _ = same.agentPanes.isAsking("a") },
+    whenChanging: { askPermission(same, in: "a") })
+  #expect(sameFires)
+  #expect(same.agentPanes.isAsking("a"))
+  #expect(!same.agentPanes.isAsking("b"))
+}
