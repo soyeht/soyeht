@@ -18,7 +18,13 @@ fn influence(p: [f64; 2], r: &Region) -> f64 {
         (p[0] - r.center[0]) / r.radii[0],
         (p[1] - r.center[1]) / r.radii[1],
     );
-    1.0 - smoothstep(r.inner, 1.0, dx.hypot(dy))
+    let squared = dx * dx + dy * dy;
+    // Outside the ellipse the smoothstep is 1: no influence, and most points of a face are
+    // outside most places, so the square root is spared for them.
+    if squared >= 1.0 {
+        return 0.0;
+    }
+    1.0 - smoothstep(r.inner, 1.0, squared.sqrt())
 }
 
 impl Warp {
@@ -37,7 +43,11 @@ impl Warp {
         let head = influence(p, &self.head)
             * (1.0 - smoothstep(self.head_fade[0], self.head_fade[1], p[1]));
         let (hx, hy) = (p[0] - self.pivot[0], p[1] - self.pivot[1]);
-        let (sin, cos) = pose.rot.to_radians().sin_cos();
+        let (sin, cos) = if pose.rot == 0.0 {
+            (0.0, 1.0)
+        } else {
+            pose.rot.to_radians().sin_cos()
+        };
         let rotated = [cos * hx - sin * hy, sin * hx + cos * hy];
         let mut d = [
             head * (rotated[0] - hx + pose.head_x),

@@ -73,8 +73,13 @@ enum AvatarPackageLimits {
   /// Vertices of one part of the mouth mesh, and its triangles.
   static let vertices = 3000
   static let triangles = 6000
-  /// The power that sharpens the picture's weights.
-  static let texturePower = 8.0
+  /// The power that sharpens the picture's weights. A drawing's share of the picture between two
+  /// is `w^p / (w^p + (1 - w)^p)`, which moves `p` times as fast as the weight at the middle: over
+  /// 2 the picture would move faster than the mouth's own rate limits keep continuous, and swap.
+  static let texturePower = 2.0
+  /// How many canvases of work (`AvatarPackageValidator.blendWork`) the triangles of a mouth may
+  /// add up to.
+  static let drawArea = 1.0
 }
 
 extension AvatarPackage {
@@ -243,6 +248,34 @@ struct AvatarPackageValidator {
     for (i, part) in package.mouth.parts.enumerated() {
       try checkMeshPart(part, at: "/mouth/parts/\(i)")
     }
+    if blendWork() > AvatarPackageLimits.drawArea { throw fail(.tooLarge, "/mouth/parts") }
+  }
+
+  /// The work a mouth may ask of a renderer, in canvases: for each triangle of each part, the area
+  /// of the box that holds its three corners in all nine drawings, summed over the triangles of
+  /// the three parts, over the area of the canvas. A frame draws a part at a blend of the
+  /// drawings, and a convex blend of corners lies inside that box, so no frame fills more than
+  /// this (times the layers that take part). Run once the indices of every part are known to be in
+  /// range.
+  func blendWork() -> Double {
+    var area = 0.0
+    for part in package.mouth.parts {
+      for t in stride(from: 0, to: part.triangles.count - 2, by: 3) {
+        var low = [Double.infinity, Double.infinity]
+        var high = [-Double.infinity, -Double.infinity]
+        for shape in part.shapes {
+          for corner in part.triangles[t..<t + 3] {
+            for k in 0..<2 {
+              let v = shape.positions[2 * Int(corner) + k]
+              low[k] = avatarMin(low[k], v)
+              high[k] = avatarMax(high[k], v)
+            }
+          }
+        }
+        area += (high[0] - low[0]) * (high[1] - low[1])
+      }
+    }
+    return area / (Double(package.canvas.width) * Double(package.canvas.height))
   }
 
   private func checkMeshPart(_ part: AvatarMeshPart, at: String) throws {
@@ -293,7 +326,13 @@ struct AvatarPackageValidator {
       where outside(shape.positions[k], w) || outside(shape.positions[k + 1], h) {
         throw fail(.value, "\(here)/positions")
       }
-      guard let uvs = shape.uvs else { continue }
+      guard let uvs = shape.uvs else {
+        // A drawing with no picture of its own, in a part that is always drawn, would be replaced
+        // by another drawing's picture in one frame; a part that hides when empty (the inner
+        // mouth) may have some, and its opacity follows the weights of the others.
+        if !part.hideWhenEmpty { throw fail(.value, "\(here)/uvs") }
+        continue
+      }
       textured = true
       if uvs.count != floats { throw fail(.topology, "\(here)/uvs") }
       // The shape's cell in the atlas, by its place in the order of the nine drawings.

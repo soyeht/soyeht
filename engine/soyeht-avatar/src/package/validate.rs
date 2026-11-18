@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use super::acting_bounds;
 use super::limits::{
-    MAX_FILE_BYTES, MAX_FILES, MAX_NAME_BYTES, MAX_PATH_BYTES, MAX_PIXELS, MAX_SIDE,
+    MAX_DRAW_AREA, MAX_FILE_BYTES, MAX_FILES, MAX_NAME_BYTES, MAX_PATH_BYTES, MAX_PIXELS, MAX_SIDE,
     MAX_TEXTURE_POWER, MAX_TOTAL_BYTES, MAX_TRIANGLES, MAX_VERTICES,
 };
 use super::model::{EYE_IDS, FORMAT, MeshPart, Package, PartKind, Patch, Region, VERSION, Warp};
@@ -135,7 +135,7 @@ fn reserved_name(name: &str) -> bool {
 /// plain ASCII letters, digits, `.`, `_` and `-`, no empty, hidden or dot-only names, no name that
 /// ends in a dot (Windows drops it), no reserved Windows name. That also refuses a control
 /// character, a bidirectional override and a letter that only looks like another.
-fn plain_png_path(path: &str) -> bool {
+pub fn plain_png_path(path: &str) -> bool {
     let name_ok = |name: &str| {
         !name.is_empty()
             && name.len() <= MAX_NAME_BYTES
@@ -220,6 +220,39 @@ fn mouth(p: &Package) -> Check {
     for (i, part) in p.mouth.parts.iter().enumerate() {
         mesh_part(p, part, &format!("/mouth/parts/{i}"))?;
     }
+    draw_work(p)
+}
+
+/// The work a mouth may ask of a renderer, in canvases: for each triangle of each part, the area
+/// of the box that holds its three corners in all nine drawings, summed over the triangles of the
+/// three parts, over the area of the canvas. A frame draws a part at a blend of the drawings, and
+/// a convex blend of corners lies inside that box, so no frame fills more than this (times the
+/// layers that take part). Run once the indices of every part are known to be in range.
+pub(crate) fn blend_work(p: &Package) -> f64 {
+    let mut area = 0.0;
+    for part in &p.mouth.parts {
+        for t in part.triangles.as_chunks::<3>().0 {
+            let (mut low, mut high) = ([f64::INFINITY; 2], [f64::NEG_INFINITY; 2]);
+            for shape in &part.shapes {
+                for corner in t {
+                    for k in 0..2 {
+                        let v = shape.positions[2 * *corner as usize + k];
+                        low[k] = low[k].min(v);
+                        high[k] = high[k].max(v);
+                    }
+                }
+            }
+            area += (high[0] - low[0]) * (high[1] - low[1]);
+        }
+    }
+    area / (f64::from(p.canvas.width) * f64::from(p.canvas.height))
+}
+
+/// `blend_work` is at most `MAX_DRAW_AREA` canvases.
+fn draw_work(p: &Package) -> Check {
+    if blend_work(p) > MAX_DRAW_AREA {
+        return fail(ErrorKind::TooLarge, "/mouth/parts");
+    }
     Ok(())
 }
 
@@ -284,7 +317,17 @@ fn mesh_part(p: &Package, part: &MeshPart, at: &str) -> Check {
         {
             return fail(ErrorKind::Value, format!("{here}/positions"));
         }
-        let Some(uvs) = &shape.uvs else { continue };
+        let Some(uvs) = &shape.uvs else {
+            // A drawing with no picture of its own for a part that is always drawn would be
+            // replaced by another drawing's picture in one frame, whenever its weight passed the
+            // threshold under which it takes no part. A part that hides when empty (the inner
+            // mouth) may have drawings with no picture: its opacity follows the weights of the
+            // others (`MeshPart::opacity`).
+            if !part.hide_when_empty {
+                return fail(ErrorKind::Value, format!("{here}/uvs"));
+            }
+            continue;
+        };
         textured = true;
         if uvs.len() != floats {
             return fail(ErrorKind::Topology, format!("{here}/uvs"));

@@ -80,6 +80,45 @@ pub fn symlink(target: impl AsRef<Path>, link: impl AsRef<Path>) -> io::Result<(
     system::symlink(target.as_ref(), link.as_ref())
 }
 
+/// Reads the whole of a regular file, at most `limit` bytes, that lies under `root` at the plain
+/// relative path `relative` (names only: no `..`, no root, no drive). No component of the path is
+/// a link (a junction counts on Windows), the file is opened without following one and without
+/// waiting on a pipe, and the open handle is checked to be a regular file, so a name in a folder
+/// someone else filled cannot reach outside it nor block. The links are looked at one component
+/// before the open, so a folder swapped for a link in that instant is not caught: use it on a
+/// folder the person chose, not on one a stranger can write while it is read.
+///
+/// Fails with [`io::ErrorKind::InvalidInput`] for a path that is not plain or has a link in it,
+/// [`io::ErrorKind::InvalidData`] for a file that is not regular or is larger than `limit`.
+pub fn read_regular_under(root: &Path, relative: &Path, limit: u64) -> io::Result<Vec<u8>> {
+    use std::path::Component;
+    let refuse = |kind| Err(io::Error::from(kind));
+    let mut path = root.to_path_buf();
+    let mut names = relative.components().peekable();
+    if names.peek().is_none() {
+        return refuse(io::ErrorKind::InvalidInput);
+    }
+    for component in names {
+        let Component::Normal(name) = component else {
+            return refuse(io::ErrorKind::InvalidInput);
+        };
+        path.push(name);
+        if system::is_link(&std::fs::symlink_metadata(&path)?) {
+            return refuse(io::ErrorKind::InvalidInput);
+        }
+    }
+    let file = system::open_regular(&path)?;
+    if !file.metadata()?.is_file() {
+        return refuse(io::ErrorKind::InvalidData);
+    }
+    let mut bytes = Vec::new();
+    file.take(limit + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > limit {
+        return refuse(io::ErrorKind::InvalidData);
+    }
+    Ok(bytes)
+}
+
 /// The canonical form of `path`, as [`std::fs::canonicalize`] gives it, written the way a
 /// person and a client read it: Windows' extended `\\?\C:\...` form becomes `C:\...`.
 pub fn canonicalize(path: &Path) -> io::Result<std::path::PathBuf> {

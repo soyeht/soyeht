@@ -10,6 +10,7 @@
 mod mouth;
 mod package;
 mod package_limits;
+mod part_cases;
 mod runtime;
 
 use std::fmt::Write as _;
