@@ -1103,6 +1103,296 @@
         {"input": "replyFinished", "at": 3000, "actions": [{"do": "dropProbe", "at": 3000}], "phase": "waiting"},
         {"input": "frames", "at": 3008, "count": 1, "p": 0.9, "actions": [{"do": "startTurn", "at": 3008, "fromMs": 1696}], "phase": "hearing"}
       ]
+    },
+    {
+      "name": "the voice-gate hold goes on when the reply starts to play",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "frames", "at": 800, "count": 58, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 1120, "fromMs": 448}, {"do": "dropProbe", "at": 2624}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2630, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2656, "count": 11, "p": 0.9, "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 3008, "count": 1, "p": 0.1, "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 3040, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 3360, "fromMs": 2688}], "phase": "probing"}
+      ]
+    },
+    {
+      "name": "the voice-gate hold ends at a pause in any phase, so a later turn's talk over the wait is heard",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "frames", "at": 800, "count": 58, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 1120, "fromMs": 448}, {"do": "dropProbe", "at": 2624}], "phase": "waitingReply"},
+        {"input": "replyFinished", "at": 2630, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 2656, "count": 5, "p": 0.1, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 2816, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 2880, "fromMs": 2464}], "phase": "hearing"},
+        {"input": "frames", "at": 2912, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 3232, "id": 2}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 3240, "id": 2, "complete": true, "actions": [{"do": "finalizeTurn", "at": 3240}], "phase": "finalizing"},
+        {"input": "frames", "at": 3264, "count": 2, "p": 0.9, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 3300, "text": "again", "final": true, "actions": [{"do": "submit", "at": 3300, "text": "again", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "frames", "at": 3328, "count": 9, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 3584, "fromMs": 2912}], "phase": "probingWait"}
+      ]
+    },
+    {
+      "name": "a probe that ended with its final text while the person goes on talking is followed by a pause first",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "frames", "at": 2400, "count": 11, "p": 0.1, "actions": [{"do": "finishProbe", "at": 2720}], "phase": "probing"},
+        {"input": "frames", "at": 2752, "count": 6, "p": 0.9, "actions": [], "phase": "probing"},
+        {"input": "transcript", "at": 2930, "text": "Uh-huh.", "final": true, "actions": [{"do": "dropProbe", "at": 2930}], "phase": "playing"},
+        {"input": "frames", "at": 2944, "count": 11, "p": 0.9, "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 3296, "count": 1, "p": 0.1, "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 3328, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 3648, "fromMs": 2976}], "phase": "probing"}
+      ]
+    },
+    {
+      "name": "a probe is finished after exactly the silence time",
+      "config": {"silenceMs": 352},
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "frames", "at": 2400, "count": 11, "p": 0.1, "actions": [{"do": "finishProbe", "at": 2720}], "phase": "probing"}
+      ]
+    },
+    {
+      "name": "an echo is made of whole words: only the last one may be unfinished",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "transcript", "at": 2380, "text": "it i half", "final": false, "actions": [{"do": "stopPlayback", "at": 2380}, {"do": "cancelReply", "at": 2380}], "phase": "hearing"}
+      ]
+    },
+    {
+      "name": "a new turn starts from the audio before its voice, not from where the last recognizer ended",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 100, "text": "open the", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 3, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "transcript", "at": 200, "text": "open the file", "final": true, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 224, "count": 8, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "submit", "at": 450, "text": "open the file", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 460, "text": "Done.", "actions": [], "phase": "playing"},
+        {"input": "replyFinished", "at": 470, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 480, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 544, "fromMs": 128}], "phase": "hearing"}
+      ]
+    },
+    {
+      "name": "a probe starts from the audio before its voice, not from where the last recognizer ended",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 100, "text": "open the", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 3, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "transcript", "at": 200, "text": "open the file", "final": true, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 224, "count": 8, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "submit", "at": 450, "text": "open the file", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "frames", "at": 480, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 800, "fromMs": 128}], "phase": "probingWait"}
+      ]
+    },
+    {
+      "name": "the flag of an interrupted turn goes with an interrupt",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "transcript", "at": 2380, "text": "wait", "final": false, "actions": [{"do": "stopPlayback", "at": 2380}, {"do": "cancelReply", "at": 2380}], "phase": "hearing"},
+        {"input": "interrupt", "at": 2400, "actions": [{"do": "discardTurn", "at": 2400}], "phase": "waiting"},
+        {"input": "frames", "at": 2432, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 2496, "fromMs": 2080}], "phase": "hearing"},
+        {"input": "frames", "at": 2528, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 2848, "id": 2}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 2850, "id": 2, "complete": true, "actions": [{"do": "finalizeTurn", "at": 2850}], "phase": "finalizing"},
+        {"input": "transcript", "at": 2900, "text": "thanks", "final": true, "actions": [{"do": "submit", "at": 2900, "text": "thanks", "interrupted": false}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "only the turn that took the reply is marked interrupted",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "transcript", "at": 2380, "text": "wait", "final": false, "actions": [{"do": "stopPlayback", "at": 2380}, {"do": "cancelReply", "at": 2380}], "phase": "hearing"},
+        {"input": "frames", "at": 2400, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 2720, "id": 2}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 2730, "id": 2, "complete": true, "actions": [{"do": "finalizeTurn", "at": 2730}], "phase": "finalizing"},
+        {"input": "transcript", "at": 2800, "text": "wait", "final": true, "actions": [{"do": "submit", "at": 2800, "text": "wait", "interrupted": true}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2900, "text": "Yes?", "actions": [], "phase": "playing"},
+        {"input": "replyFinished", "at": 2950, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 2976, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 3040, "fromMs": 2624}], "phase": "hearing"},
+        {"input": "frames", "at": 3072, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 3392, "id": 3}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 3400, "id": 3, "complete": true, "actions": [{"do": "finalizeTurn", "at": 3400}], "phase": "finalizing"},
+        {"input": "transcript", "at": 3500, "text": "thanks", "final": true, "actions": [{"do": "submit", "at": 3500, "text": "thanks", "interrupted": false}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "the last partial text heard during the turn is used when the final never comes",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 100, "text": "open the", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "frames", "at": 480, "count": 94, "p": 0.1, "actions": [{"do": "discardTurn", "at": 3456}, {"do": "submit", "at": 3456, "text": "open the", "interrupted": false}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "the partial text of a probe that took the turn is used when the final never comes",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 11, "p": 0.9, "actions": [{"do": "probeInterruption", "at": 2368, "fromMs": 1696}], "phase": "probing"},
+        {"input": "transcript", "at": 2380, "text": "wait", "final": false, "actions": [{"do": "stopPlayback", "at": 2380}, {"do": "cancelReply", "at": 2380}], "phase": "hearing"},
+        {"input": "frames", "at": 2400, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 2720, "id": 2}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 2730, "id": 2, "complete": true, "actions": [{"do": "finalizeTurn", "at": 2730}], "phase": "finalizing"},
+        {"input": "frames", "at": 2752, "count": 95, "p": 0.1, "actions": [{"do": "discardTurn", "at": 5760}, {"do": "submit", "at": 5760, "text": "wait", "interrupted": true}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "a turn the recognizer heard nothing of is dropped, whatever the turn before heard",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is late.", "actions": [], "phase": "playing"},
+        {"input": "replyFinished", "at": 2010, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 2048, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 2112, "fromMs": 1696}], "phase": "hearing"},
+        {"input": "frames", "at": 2144, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 2464, "id": 2}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 2470, "id": 2, "complete": true, "actions": [{"do": "finalizeTurn", "at": 2470}], "phase": "finalizing"},
+        {"input": "frames", "at": 2496, "count": 94, "p": 0.1, "actions": [{"do": "discardTurn", "at": 5472}], "phase": "waiting"}
+      ]
+    },
+    {
+      "name": "a second recognizer that heard nothing leaves the words of the first as they were",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 100, "text": "open the", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 3, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "transcript", "at": 200, "text": "open the", "final": true, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 224, "count": 1, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 256, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 320, "fromMs": 200}], "phase": "hearing"},
+        {"input": "frames", "at": 352, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 672, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 680, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 680}], "phase": "finalizing"},
+        {"input": "frames", "at": 704, "count": 94, "p": 0.1, "actions": [{"do": "discardTurn", "at": 3680}, {"do": "submit", "at": 3680, "text": "open the", "interrupted": false}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "an interrupt drops the words the turn had kept",
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 100, "text": "open the", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 3, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "transcript", "at": 200, "text": "open the", "final": true, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 224, "count": 1, "p": 0.1, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 256, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 320, "fromMs": 200}], "phase": "hearing"},
+        {"input": "interrupt", "at": 330, "actions": [{"do": "discardTurn", "at": 330}], "phase": "waiting"},
+        {"input": "frames", "at": 352, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 416, "fromMs": 0}], "phase": "hearing"},
+        {"input": "transcript", "at": 430, "text": "hello", "final": false, "actions": [], "phase": "hearing"},
+        {"input": "frames", "at": 448, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 768, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 770, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 770}], "phase": "finalizing"},
+        {"input": "transcript", "at": 800, "text": "hello", "final": true, "actions": [{"do": "submit", "at": 800, "text": "hello", "interrupted": false}], "phase": "waitingReply"}
+      ]
+    },
+    {
+      "name": "half duplex: a frame exactly at the end of the tail of an interrupt is heard",
+      "config": {"halfDuplex": true, "halfDuplexTailMs": 288},
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 30, "p": 0.9, "actions": [], "phase": "playing"},
+        {"input": "interrupt", "at": 4000, "actions": [{"do": "stopPlayback", "at": 4000}, {"do": "cancelReply", "at": 4000}], "phase": "waiting"},
+        {"input": "frames", "at": 4032, "count": 8, "p": 0.9, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 4288, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 4352, "fromMs": 4288}], "phase": "hearing"}
+      ]
+    },
+    {
+      "name": "half duplex: a frame exactly at the end of the tail of the speaker is heard",
+      "config": {"halfDuplex": true, "halfDuplexTailMs": 296},
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "sentenceStarted", "at": 2000, "text": "It is half past three.", "actions": [], "phase": "playing"},
+        {"input": "frames", "at": 2048, "count": 30, "p": 0.9, "actions": [], "phase": "playing"},
+        {"input": "replyFinished", "at": 3000, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 3008, "count": 9, "p": 0.9, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 3296, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 3360, "fromMs": 3296}], "phase": "hearing"}
+      ]
+    },
+    {
+      "name": "half duplex: an interrupt while the person talks leaves no tail",
+      "config": {"halfDuplex": true},
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "interrupt", "at": 150, "actions": [{"do": "discardTurn", "at": 150}], "phase": "waiting"},
+        {"input": "frames", "at": 160, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 224, "fromMs": 0}], "phase": "hearing"}
+      ]
+    },
+    {
+      "name": "half duplex: an interrupt while the agent thinks leaves no tail",
+      "config": {"halfDuplex": true},
+      "steps": [
+        {"input": "start", "at": 0, "actions": [], "phase": "waiting"},
+        {"input": "frames", "at": 32, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 96, "fromMs": 0}], "phase": "hearing"},
+        {"input": "frames", "at": 128, "count": 11, "p": 0.1, "actions": [{"do": "checkEndOfTurn", "at": 448, "id": 1}], "phase": "deciding"},
+        {"input": "endOfTurn", "at": 450, "id": 1, "complete": true, "actions": [{"do": "finalizeTurn", "at": 450}], "phase": "finalizing"},
+        {"input": "transcript", "at": 600, "text": "what time", "final": false, "actions": [], "phase": "finalizing"},
+        {"input": "transcript", "at": 700, "text": "  what time is it  ", "final": true, "actions": [{"do": "submit", "at": 700, "text": "what time is it", "interrupted": false}], "phase": "waitingReply"},
+        {"input": "interrupt", "at": 1000, "actions": [{"do": "cancelReply", "at": 1000}], "phase": "waiting"},
+        {"input": "frames", "at": 1032, "count": 3, "p": 0.9, "actions": [{"do": "startTurn", "at": 1096, "fromMs": 680}], "phase": "hearing"}
+      ]
     }
   ],
   "pairs": [

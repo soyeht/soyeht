@@ -5266,6 +5266,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyeht-voice"
+version = "0.1.0"
+dependencies = [
+ "icu_normalizer",
+ "icu_properties",
+ "serde_json",
+ "soyeht-client",
+ "soyeht-protocol",
+]
+
+[[package]]
 name = "soyeht-webview"
 version = "0.1.0"
 dependencies = [

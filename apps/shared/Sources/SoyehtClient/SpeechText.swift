@@ -12,7 +12,8 @@ public enum SpeechText {
   /// - HTML tags are dropped, and so are emoji and symbols a voice would read out as their names
   ///   (pictographs, arrows, hourglasses, the keycap mark), and a line with no letter or digit
   ///   left with them;
-  /// - a task-list marker is dropped, and blanks are collapsed.
+  /// - a task-list marker is dropped, and blanks are collapsed;
+  /// - a line break of the reply, `\r\n` or a lone `\r`, is read as `\n` before anything else.
   ///
   /// For a reply that is still arriving (`streaming`):
   /// - what an unfinished construct would still change is held back: from an unclosed `[` (a link
@@ -21,7 +22,9 @@ public enum SpeechText {
   /// - the text ends with a newline when its last line is finished: the next block has begun, or
   ///   the reply ends with a blank line.
   public static func speakable(_ markdown: String, streaming: Bool = false) -> String {
-    let source = streaming ? heldBack(markdown) : markdown
+    let lineFeeds = markdown.replacingOccurrences(of: "\r\n", with: "\n")
+      .replacingOccurrences(of: "\r", with: "\n")
+    let source = streaming ? heldBack(lineFeeds) : lineFeeds
     let blocks = MarkdownReply.parse(source, streaming: streaming)
     var lines = lines(of: blocks)
     guard streaming, !lines.isEmpty else { return lines.joined(separator: "\n") }
@@ -133,8 +136,12 @@ public enum SpeechText {
         words.append(word)
         continue
       }
-      // The address is not read; the stop that ended the sentence it was in stays.
-      let stop = word.reversed().prefix { ClientPolicy.voiceSentenceStops.contains($0) }
+      // The address is not read, and neither are the closing brackets and quotes after it; the
+      // stop that ended the sentence it was in stays.
+      let stop = word.reversed().drop { ClientPolicy.voiceSentenceClosers.contains($0) }.prefix {
+        ClientPolicy.voiceSentenceStops.contains($0)
+          || ClientPolicy.voiceSentenceWideStops.contains($0)
+      }
       if !stop.isEmpty, !words.isEmpty { words[words.count - 1] += String(stop.reversed()) }
     }
     let line = words.joined(separator: " ")
