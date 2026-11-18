@@ -179,11 +179,11 @@ impl Batch {
                 messages.insert(sequence, message);
             }
         }
-        for (name, params) in changes.events {
+        for (name, fields) in changes.events {
             let key = (name == event::PANE_UPDATE)
                 .then(|| {
-                    let kind = params["kind"].as_str()?;
-                    let local = params["localId"].as_str()?;
+                    let kind = fields["kind"].as_str()?;
+                    let local = fields["localId"].as_str()?;
                     WHOLE_STATE
                         .contains(&kind)
                         .then(|| (kind.to_owned(), local.to_owned()))
@@ -194,7 +194,7 @@ impl Batch {
             {
                 self.events[at] = None;
             }
-            self.events.push(Some((name, params)));
+            self.events.push(Some((name, fields)));
         }
     }
 
