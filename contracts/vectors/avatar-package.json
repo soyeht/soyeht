@@ -350,6 +350,54 @@
       "patch": []
     },
     {
+      "expect": "ok",
+      "name": "a mouth that works 0.99 canvases",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/0/shapes/0/positions","value":[148.84927,100.0,134.54165,104.93452,100.0,106.97847,65.45835,104.93452,51.15073,100.0,65.45835,95.06548,100.0,93.02153,134.54165,95.06548,169.78468,100.0,149.34522,137.00891,100.0,152.33851,50.65478,137.00891,30.21533,100.0,50.65478,62.99109,100.0,47.66149,149.34522,62.99109]},
+        {"op":"replace","path":"/mouth/parts/1/shapes/0/positions","value":[148.84927,100.0,134.54165,104.93452,100.0,106.97847,65.45835,104.93452,51.15073,100.0,65.45835,95.06548,100.0,93.02153,134.54165,95.06548,143.61542,100.0,130.84076,101.23363,100.0,101.74462,69.15924,101.23363,56.38458,100.0,69.15924,98.76637,100.0,98.25538,130.84076,98.76637]},
+        {"op":"replace","path":"/mouth/parts/2/shapes/0/positions","value":[143.61542,100.0,130.84076,101.23363,100.0,101.74462,69.15924,101.23363,56.38458,100.0,69.15924,98.76637,100.0,98.25538,130.84076,98.76637,100.0,100.0]}
+      ]
+    },
+    {
+      "expect": "tooLarge",
+      "name": "a mouth that works 1.01 canvases",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/0/shapes/0/positions","value":[149.38652,100.0,134.92154,104.98879,100.0,107.05522,65.07846,104.98879,50.61348,100.0,65.07846,95.01121,100.0,92.94478,134.92154,95.01121,170.55217,100.0,149.88791,137.41594,100.0,152.91412,50.11209,137.41594,29.44783,100.0,50.11209,62.58406,100.0,47.08588,149.88791,62.58406]},
+        {"op":"replace","path":"/mouth/parts/1/shapes/0/positions","value":[149.38652,100.0,134.92154,104.98879,100.0,107.05522,65.07846,104.98879,50.61348,100.0,65.07846,95.01121,100.0,92.94478,134.92154,95.01121,144.0951,100.0,131.17995,101.2472,100.0,101.7638,68.82005,101.2472,55.9049,100.0,68.82005,98.7528,100.0,98.2362,131.17995,98.7528]},
+        {"op":"replace","path":"/mouth/parts/2/shapes/0/positions","value":[144.0951,100.0,131.17995,101.2472,100.0,101.7638,68.82005,101.2472,55.9049,100.0,68.82005,98.7528,100.0,98.2362,131.17995,98.7528,100.0,100.0]}
+      ]
+    },
+    {
+      "expect": "ok",
+      "name": "two drawings with no area that blend into triangles of well under a canvas",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/2/shapes/0/positions","value":[140.0,100.0,180.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0]},
+        {"op":"replace","path":"/mouth/parts/2/shapes/1/positions","value":[100.0,180.0,100.0,140.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0]}
+      ]
+    },
+    {
+      "expect": "tooLarge",
+      "name": "two drawings with no area that blend into triangles of over a canvas",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/2/shapes/0/positions","value":[160.0,100.0,220.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0]},
+        {"op":"replace","path":"/mouth/parts/2/shapes/1/positions","value":[100.0,220.0,100.0,160.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0,100.0]}
+      ]
+    },
+    {
+      "expect": "ok",
+      "name": "a drawing of the inner mouth with no picture and the area of an open mouth",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/2/shapes/0/positions","value":[125.1,100.0,117.74838020778236,109.89949493661166,100.0,114.0,82.25161979221765,109.89949493661166,74.9,100.0,82.25161979221765,90.10050506338834,100.0,86.0,117.74838020778232,90.10050506338834,100.0,100.0]}
+      ]
+    },
+    {
+      "expect": "value",
+      "name": "a drawing of a part that is always drawn with no picture",
+      "patch": [
+        {"op":"remove","path":"/mouth/parts/0/shapes/3/uvs"}
+      ]
+    },
+    {
       "expect": "shapes",
       "name": "four shapes only",
       "patch": [
@@ -428,6 +476,20 @@
       ]
     },
     {
+      "expect": "ok",
+      "name": "a texture power at the limit",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/0/texturePower","value":2.0}
+      ]
+    },
+    {
+      "expect": "value",
+      "name": "a texture power over the limit, which would swap the pictures in a frame",
+      "patch": [
+        {"op":"replace","path":"/mouth/parts/0/texturePower","value":2.5}
+      ]
+    },
+    {
       "expect": "value",
       "name": "a texture power under one",
       "patch": [
@@ -447,6 +509,13 @@
       "name": "an eye frame missing",
       "patch": [
         {"op":"remove","path":"/eyes/3"}
+      ]
+    },
+    {
+      "expect": "ok",
+      "name": "two eye frames that name one picture file",
+      "patch": [
+        {"op":"replace","path":"/eyes/1/file","value":"frames/half.png"}
       ]
     },
     {
@@ -1252,7 +1321,7 @@
       "expect": "ok",
       "name": "a part with the most triangles",
       "patch": [
-        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,1,2],"times":6000}
+        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,0,0],"times":6000}
       ]
     },
     {
@@ -1260,7 +1329,7 @@
       "expect": "tooLarge",
       "name": "a part with one triangle over the most",
       "patch": [
-        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,1,2],"times":6001}
+        {"op":"repeat","path":"/mouth/parts/1/triangles","pattern":[0,0,0],"times":6001}
       ]
     },
     {"documentBytes":4194304,"expect":"ok","name":"a document of 4194304 bytes","patch":[]},
@@ -3640,7 +3709,379 @@
       ]
     }
   ],
-  "description": "The mesh of the base package: `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). The load rules of an avatar package (soyeht-avatar). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+  "composite": [
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "1 layers, coverage 0.3, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[132.04706,76.98824,36.98824,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]}
+      ],
+      "name": "1 layers, coverage 0.3, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[144.0,74.0,34.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]}
+      ],
+      "name": "1 layers, coverage 0.3, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "1 layers, coverage 0.5, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[140.07843,74.98039,34.98039,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]}
+      ],
+      "name": "1 layers, coverage 0.5, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[160.0,70.0,30.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]}
+      ],
+      "name": "1 layers, coverage 0.5, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "1 layers, coverage 1, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[160.15687,69.96079,29.96079,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]}
+      ],
+      "name": "1 layers, coverage 1, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[200.0,60.0,20.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]}
+      ],
+      "name": "1 layers, coverage 1, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "2 layers, coverage 0.3, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[121.88235,82.6353,48.28235,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]}
+      ],
+      "name": "2 layers, coverage 0.3, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[123.75,85.25,56.5,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]}
+      ],
+      "name": "2 layers, coverage 0.3, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "2 layers, coverage 0.5, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[123.13726,84.39216,53.80392,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]}
+      ],
+      "name": "2 layers, coverage 0.5, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[126.25,88.75,67.5,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]}
+      ],
+      "name": "2 layers, coverage 0.5, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "2 layers, coverage 1, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[126.27451,88.78432,67.60784,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]}
+      ],
+      "name": "2 layers, coverage 1, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[132.5,97.5,95.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]}
+      ],
+      "name": "2 layers, coverage 1, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.2,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "3 layers, coverage 0.3, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[125.12,86.92706,46.62588,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]},
+        {"alpha":0.2,"texel":[120.47059,120.47059,20.07843,128.0]}
+      ],
+      "name": "3 layers, coverage 0.3, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.3,
+      "expected": {"colour":[130.2,93.8,53.2,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]},
+        {"alpha":0.2,"texel":[240.0,240.0,40.0,255.0]}
+      ],
+      "name": "3 layers, coverage 0.3, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.2,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "3 layers, coverage 0.5, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[128.53333,91.5451,51.04314,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]},
+        {"alpha":0.2,"texel":[120.47059,120.47059,20.07843,128.0]}
+      ],
+      "name": "3 layers, coverage 0.5, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[137.0,103.0,62.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]},
+        {"alpha":0.2,"texel":[240.0,240.0,40.0,255.0]}
+      ],
+      "name": "3 layers, coverage 0.5, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.375,"texel":[0.0,0.0,0.0,0.0]},
+        {"alpha":0.2,"texel":[0.0,0.0,0.0,0.0]}
+      ],
+      "name": "3 layers, coverage 1, texel alpha 0",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[137.06667,103.0902,62.08628,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[100.39216,30.11765,10.03922,128.0]},
+        {"alpha":0.375,"texel":[10.03922,80.31373,110.43137,128.0]},
+        {"alpha":0.2,"texel":[120.47059,120.47059,20.07843,128.0]}
+      ],
+      "name": "3 layers, coverage 1, texel alpha 128",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[154.0,126.0,84.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.375,"texel":[20.0,160.0,220.0,255.0]},
+        {"alpha":0.2,"texel":[240.0,240.0,40.0,255.0]}
+      ],
+      "name": "3 layers, coverage 1, texel alpha 255",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[52.50981,35.07843,32.60784,95.75]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.5,"texel":[10.03922,80.31373,110.43137,128.0]}
+      ],
+      "name": "over a picture that is clear",
+      "under": [0,0,0,0]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[160.0,70.0,30.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.5,"texel":[0,0,0,0]}
+      ],
+      "name": "an opaque and a clear texel at equal weights, over a picture",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[120.0,80.0,40.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[0,0,0,0]}
+      ],
+      "name": "a clear texel with all the weight, the drawing before it under the threshold",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 1.0,
+      "expected": {"colour":[120.0088,79.9978,39.9978,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.99989,"texel":[0,0,0,0]}
+      ],
+      "name": "the same with the drawing before it over the threshold",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[160.0,70.0,30.0,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]}
+      ],
+      "name": "a feathered pixel, one layer",
+      "under": [120,80,40,255]
+    },
+    {
+      "coverage": 0.5,
+      "expected": {"colour":[159.982,70.01,30.02,255.0]},
+      "layers": [
+        {"alpha":1.0,"texel":[200.0,60.0,20.0,255.0]},
+        {"alpha":0.0002,"texel":[20.0,160.0,220.0,255.0]}
+      ],
+      "name": "the same with a second layer at the weight 0.0002",
+      "under": [120,80,40,255]
+    }
+  ],
+  "description": "The mesh of the base package: `composite` cases give `under` (the picture below a part), `layers` (each the `texel` its drawing gives at the pixel and the `alpha` of its layer) and `coverage` (the opacity of the part at the pixel, its feather times its opacity), all colours premultiplied RGBA of 0 to 255, and expect the colour of the pixel: the layers are mixed by their weights, each over the mix before it (`mix = texel * alpha + mix * (1 - alpha)`, from a clear mix), whatever the opacity of the texels, and the mix is laid over `under` once, by `coverage` (`mix * coverage + under * (1 - coverage * mix alpha / 255)`), so the feather counts once however many drawings take part. `drawOrder` cases give the ids of the mouth's parts in the order the package lists them and expect the order they are drawn in, each over the one before: skin, lips, inner (a part the list lacks is skipped). `mesh` cases give nine morph weights (rest, closed_MBP, A, E, I, O, U, FV, LDT) and expect, for each part, the blended vertex positions (the weighted sum of the shapes' positions), its `opacity` (1 for a part that is always drawn; for a part that hides when empty, the sum of the weights of the drawings that have a picture of it, so it comes in with the mouth and not whole at a threshold) and the picture layers (the textured shapes in that order whose weight is over 0.0001, each with an alpha of its weight raised to the part's texture power over the sum so far; when none takes part, the first textured shape alone with alpha 1, unless the part hides when empty). A `composite` coverage is the part's opacity times the feather of its corners. The load rules of an avatar package (soyeht-avatar), among them the work of the mouth (`tooLarge` when, summed over the triangles of the three parts, the area of the box that holds a triangle's corners in all nine drawings is over one canvas) and the texture power (at most 2). `base` is a valid document and `assets` the files the caller has (size in bytes, and the PNG's width and height or null). Each case applies its `patch` to `base` and expects `ok` or the kind of the first rule it breaks. Patch operations, each with a JSON `path`: `replace` (sets the value, and adds a missing member of an object), `remove`, `append` (pushes `times` copies of `value` onto an array; `{n}` in a string is the copy's number from 0) and `repeat` (sets an array to `pattern` repeated `times`). A case may change the assets: `remove` paths, `size` and `bytes` by path, and `add` (entries with `path`, `bytes`, `size`, `times`, as `append`). `documentBytes` makes the document exactly that many bytes by following the JSON with blanks. The cases at and just past every limit of the loader pin it: a reader that loads the one past, or refuses the one at, has other limits.",
+  "drawOrder": [
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed skin, lips, inner",
+      "parts": ["skin","lips","inner"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed skin, inner, lips",
+      "parts": ["skin","inner","lips"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed lips, skin, inner",
+      "parts": ["lips","skin","inner"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed lips, inner, skin",
+      "parts": ["lips","inner","skin"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed inner, skin, lips",
+      "parts": ["inner","skin","lips"]
+    },
+    {
+      "expected": {"order":["skin","lips","inner"]},
+      "name": "listed inner, lips, skin",
+      "parts": ["inner","lips","skin"]
+    },
+    {
+      "expected": {"order":["skin","lips"]},
+      "name": "listed lips, skin",
+      "parts": ["lips","skin"]
+    },
+    {
+      "expected": {"order":["inner"]},
+      "name": "listed inner",
+      "parts": ["inner"]
+    }
+  ],
   "mesh": [
     {
       "expected": {
@@ -3650,6 +4091,7 @@
             "layers": [
               {"alpha":1.0,"shape":"rest"}
             ],
+            "opacity": 1.0,
             "positions": [128.0,100.0,119.79899,102.82843,100.0,104.0,80.20101,102.82843,72.0,100.0,80.20101,97.17157,100.0,96.0,119.79899,97.17157,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3657,9 +4099,10 @@
             "layers": [
               {"alpha":1.0,"shape":"rest"}
             ],
+            "opacity": 1.0,
             "positions": [128.0,100.0,119.79899,102.82843,100.0,104.0,80.20101,102.82843,72.0,100.0,80.20101,97.17157,100.0,96.0,119.79899,97.17157,125.0,100.0,117.67767,100.70711,100.0,101.0,82.32233,100.70711,75.0,100.0,82.32233,99.29289,100.0,99.0,117.67767,99.29289]
           },
-          {"id":"inner","layers":[],"positions":[125.0,100.0,117.67767,100.70711,100.0,101.0,82.32233,100.70711,75.0,100.0,82.32233,99.29289,100.0,99.0,117.67767,99.29289,100.0,100.0]}
+          {"id":"inner","layers":[],"opacity":0.0,"positions":[125.0,100.0,117.67767,100.70711,100.0,101.0,82.32233,100.70711,75.0,100.0,82.32233,99.29289,100.0,99.0,117.67767,99.29289,100.0,100.0]}
         ]
       },
       "name": "the rest drawing alone",
@@ -3673,6 +4116,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.5,100.0,120.15254,112.30366,100.0,117.4,79.84746,112.30366,71.5,100.0,79.84746,87.69634,100.0,82.6,120.15254,87.69634,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3680,6 +4124,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.5,100.0,120.15254,112.30366,100.0,117.4,79.84746,112.30366,71.5,100.0,79.84746,87.69634,100.0,82.6,120.15254,87.69634,125.1,100.0,117.74838,109.89949,100.0,114.0,82.25162,109.89949,74.9,100.0,82.25162,90.10051,100.0,86.0,117.74838,90.10051]
           },
           {
@@ -3687,6 +4132,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [125.1,100.0,117.74838,109.89949,100.0,114.0,82.25162,109.89949,74.9,100.0,82.25162,90.10051,100.0,86.0,117.74838,90.10051,100.0,100.0]
           }
         ]
@@ -3703,6 +4149,7 @@
               {"alpha":1.0,"shape":"closed_MBP"},
               {"alpha":0.5,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.9,100.0,120.43539,107.9196,100.0,111.2,79.56461,107.9196,71.1,100.0,79.56461,92.0804,100.0,88.8,120.43539,92.0804,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3711,6 +4158,7 @@
               {"alpha":1.0,"shape":"closed_MBP"},
               {"alpha":0.5,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.9,100.0,120.43539,107.9196,100.0,111.2,79.56461,107.9196,71.1,100.0,79.56461,92.0804,100.0,88.8,120.43539,92.0804,124.7,100.0,117.46554,104.94975,100.0,107.0,82.53446,104.94975,75.3,100.0,82.53446,95.05025,100.0,93.0,117.46554,95.05025]
           },
           {
@@ -3718,6 +4166,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 0.5,
             "positions": [124.7,100.0,117.46554,104.94975,100.0,107.0,82.53446,104.94975,75.3,100.0,82.53446,95.05025,100.0,93.0,117.46554,95.05025,100.0,100.0]
           }
         ]
@@ -3736,6 +4185,7 @@
               {"alpha":0.5,"shape":"A"},
               {"alpha":0.4,"shape":"E"}
             ],
+            "opacity": 1.0,
             "positions": [130.52,100.0,121.5809,107.21249,100.0,110.2,78.4191,107.21249,69.48,100.0,78.4191,92.78751,100.0,89.8,121.5809,92.78751,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3746,6 +4196,7 @@
               {"alpha":0.5,"shape":"A"},
               {"alpha":0.4,"shape":"E"}
             ],
+            "opacity": 1.0,
             "positions": [130.52,100.0,121.5809,107.21249,100.0,110.2,78.4191,107.21249,69.48,100.0,78.4191,92.78751,100.0,89.8,121.5809,92.78751,127.2,100.0,119.2333,104.86489,100.0,106.88,80.7667,104.86489,72.8,100.0,80.7667,95.13511,100.0,93.12,119.2333,95.13511]
           },
           {
@@ -3754,6 +4205,7 @@
               {"alpha":1.0,"shape":"A"},
               {"alpha":0.57143,"shape":"E"}
             ],
+            "opacity": 0.7,
             "positions": [127.2,100.0,119.2333,104.86489,100.0,106.88,80.7667,104.86489,72.8,100.0,80.7667,95.13511,100.0,93.12,119.2333,95.13511,100.0,100.0]
           }
         ]
@@ -3770,6 +4222,7 @@
               {"alpha":1.0,"shape":"A"},
               {"alpha":0.3,"shape":"E"}
             ],
+            "opacity": 1.0,
             "positions": [130.03,100.0,121.23442,110.56418,100.0,114.94,78.76558,110.56418,69.97,100.0,78.76558,89.43582,100.0,85.06,121.23442,89.43582,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3778,6 +4231,7 @@
               {"alpha":1.0,"shape":"A"},
               {"alpha":0.3,"shape":"E"}
             ],
+            "opacity": 1.0,
             "positions": [130.03,100.0,121.23442,110.56418,100.0,114.94,78.76558,110.56418,69.97,100.0,78.76558,89.43582,100.0,85.06,121.23442,89.43582,126.75,100.0,118.91511,108.24487,100.0,111.66,81.08489,108.24487,73.25,100.0,81.08489,91.75513,100.0,88.34,118.91511,91.75513]
           },
           {
@@ -3786,6 +4240,7 @@
               {"alpha":1.0,"shape":"A"},
               {"alpha":0.3,"shape":"E"}
             ],
+            "opacity": 1.0,
             "positions": [126.75,100.0,118.91511,108.24487,100.0,111.66,81.08489,108.24487,73.25,100.0,81.08489,91.75513,100.0,88.34,118.91511,91.75513,100.0,100.0]
           }
         ]
@@ -3801,6 +4256,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.50005,100.0,120.15258,112.3036,100.0,117.39992,79.84742,112.3036,71.49995,100.0,79.84742,87.6964,100.0,82.60008,120.15258,87.6964,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3808,6 +4264,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [128.50005,100.0,120.15258,112.3036,100.0,117.39992,79.84742,112.3036,71.49995,100.0,79.84742,87.6964,100.0,82.60008,120.15258,87.6964,125.10006,100.0,117.74842,109.89944,100.0,113.99992,82.25158,109.89944,74.89995,100.0,82.25158,90.10056,100.0,86.00008,117.74842,90.10056]
           },
           {
@@ -3815,6 +4272,7 @@
             "layers": [
               {"alpha":1.0,"shape":"A"}
             ],
+            "opacity": 1.0,
             "positions": [125.10006,100.0,117.74842,109.89944,100.0,113.99992,82.25158,109.89944,74.89995,100.0,82.25158,90.10056,100.0,86.00008,117.74842,90.10056,100.0,100.0]
           }
         ]
@@ -3838,6 +4296,7 @@
               {"alpha":0.125,"shape":"FV"},
               {"alpha":0.11111,"shape":"LDT"}
             ],
+            "opacity": 1.0,
             "positions": [128.42094,99.999,120.09635,106.61824,99.999,109.36002,79.90165,106.61824,71.57706,99.999,79.90165,93.37976,99.999,90.63798,120.09635,93.37976,139.9986,99.999,128.28299,121.21199,99.999,129.9987,71.71501,121.21199,59.9994,99.999,71.71501,78.78601,99.999,69.9993,128.28299,78.78601]
           },
           {
@@ -3853,6 +4312,7 @@
               {"alpha":0.125,"shape":"FV"},
               {"alpha":0.11111,"shape":"LDT"}
             ],
+            "opacity": 1.0,
             "positions": [128.42094,99.999,120.09635,106.61824,99.999,109.36002,79.90165,106.61824,71.57706,99.999,79.90165,93.37976,99.999,90.63798,120.09635,93.37976,124.35431,99.999,117.22081,103.7427,99.999,105.29339,82.77719,103.7427,75.64369,99.999,82.77719,96.2553,99.999,94.70461,117.22081,96.2553]
           },
           {
@@ -3866,6 +4326,7 @@
               {"alpha":0.16667,"shape":"FV"},
               {"alpha":0.14286,"shape":"LDT"}
             ],
+            "opacity": 0.77777,
             "positions": [124.35431,99.999,117.22081,103.7427,99.999,105.29339,82.77719,103.7427,75.64369,99.999,82.77719,96.2553,99.999,94.70461,117.22081,96.2553,99.999,99.999]
           }
         ]
@@ -3881,6 +4342,7 @@
             "layers": [
               {"alpha":1.0,"shape":"closed_MBP"}
             ],
+            "opacity": 1.0,
             "positions": [129.3,100.0,120.71823,103.53553,100.0,105.0,79.28177,103.53553,70.7,100.0,79.28177,96.46447,100.0,95.0,120.71823,96.46447,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
           },
           {
@@ -3888,13 +4350,73 @@
             "layers": [
               {"alpha":1.0,"shape":"closed_MBP"}
             ],
+            "opacity": 1.0,
             "positions": [129.3,100.0,120.71823,103.53553,100.0,105.0,79.28177,103.53553,70.7,100.0,79.28177,96.46447,100.0,95.0,120.71823,96.46447,124.3,100.0,117.18269,100.0,100.0,100.0,82.81731,100.0,75.7,100.0,82.81731,100.0,100.0,100.0,117.18269,100.0]
           },
-          {"id":"inner","layers":[],"positions":[124.3,100.0,117.18269,100.0,100.0,100.0,82.81731,100.0,75.7,100.0,82.81731,100.0,100.0,100.0,117.18269,100.0,100.0,100.0]}
+          {"id":"inner","layers":[],"opacity":0.0,"positions":[124.3,100.0,117.18269,100.0,100.0,100.0,82.81731,100.0,75.7,100.0,82.81731,100.0,100.0,100.0,117.18269,100.0,100.0,100.0]}
         ]
       },
       "name": "the closed drawing, whose inner mouth has no picture",
       "weights": [0.0,1.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"}
+            ],
+            "opacity": 1.0,
+            "positions": [128.00005,100.0,119.79902,102.82928,100.0,104.00121,80.20098,102.82928,71.99996,100.0,80.20098,97.17072,100.0,95.99879,119.79902,97.17072,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"}
+            ],
+            "opacity": 1.0,
+            "positions": [128.00005,100.0,119.79902,102.82928,100.0,104.00121,80.20098,102.82928,71.99996,100.0,80.20098,97.17072,100.0,95.99879,119.79902,97.17072,125.00001,100.0,117.67768,100.70793,100.0,101.00117,82.32232,100.70793,74.99999,100.0,82.32232,99.29207,100.0,98.99883,117.67768,99.29207]
+          },
+          {"id":"inner","layers":[],"opacity":0.00009,"positions":[125.00001,100.0,117.67768,100.70793,100.0,101.00117,82.32232,100.70793,74.99999,100.0,82.32232,99.29207,100.0,98.99883,117.67768,99.29207,100.0,100.0]}
+        ]
+      },
+      "name": "just under the layer threshold: the inner mouth is all but clear",
+      "weights": [0.99991,0.0,0.00009,0.0,0.0,0.0,0.0,0.0,0.0]
+    },
+    {
+      "expected": {
+        "parts": [
+          {
+            "id": "skin",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.00011,"shape":"A"}
+            ],
+            "opacity": 1.0,
+            "positions": [128.00006,100.0,119.79903,102.82947,100.0,104.00147,80.20097,102.82947,71.99995,100.0,80.20097,97.17053,100.0,95.99853,119.79903,97.17053,140.0,100.0,128.28427,121.2132,100.0,130.0,71.71573,121.2132,60.0,100.0,71.71573,78.7868,100.0,70.0,128.28427,78.7868]
+          },
+          {
+            "id": "lips",
+            "layers": [
+              {"alpha":1.0,"shape":"rest"},
+              {"alpha":0.00011,"shape":"A"}
+            ],
+            "opacity": 1.0,
+            "positions": [128.00006,100.0,119.79903,102.82947,100.0,104.00147,80.20097,102.82947,71.99995,100.0,80.20097,97.17053,100.0,95.99853,119.79903,97.17053,125.00001,100.0,117.67768,100.70812,100.0,101.00143,82.32232,100.70812,74.99999,100.0,82.32232,99.29188,100.0,98.99857,117.67768,99.29188]
+          },
+          {
+            "id": "inner",
+            "layers": [
+              {"alpha":1.0,"shape":"A"}
+            ],
+            "opacity": 0.00011,
+            "positions": [125.00001,100.0,117.67768,100.70812,100.0,101.00143,82.32232,100.70812,74.99999,100.0,82.32232,99.29188,100.0,98.99857,117.67768,99.29188,100.0,100.0]
+          }
+        ]
+      },
+      "name": "just over it: the inner mouth is drawn at the opacity of its weight",
+      "weights": [0.99989,0.0,0.00011,0.0,0.0,0.0,0.0,0.0,0.0]
     }
   ]
 }

@@ -3,12 +3,15 @@
 
 use serde_json::{Value, json};
 
-use super::mouth::{envelope_of, phoneme_values, phonemes_of, radii_of, state_id, state_of};
+use super::mouth::{
+    envelope_of, gaze_id, lid_id, phoneme_values, phonemes_of, radii_of, state_id, state_of,
+};
 use super::{FPS, numbers, round};
-use crate::acting::{Pose, REFERENCE_HEAD, face_scale};
+use crate::acting::{Eye, Gaze, Lid, Pose, REFERENCE_HEAD, face_scale};
 use crate::acting_tune::ActingTune;
 use crate::aligner::{Language, align};
 use crate::clip::{Clip, WordStart};
+use crate::eye_frame::eye_frame;
 use crate::package::Warp;
 use crate::runtime::{Audio, Runtime};
 use crate::tests::fixtures::{package_json, speech};
@@ -221,4 +224,53 @@ pub(super) fn warp_cases() -> Vec<Value> {
             case
         })
         .collect()
+}
+
+fn gaze_of(id: &str) -> Gaze {
+    [
+        Gaze::Center,
+        Gaze::Left,
+        Gaze::Right,
+        Gaze::Up,
+        Gaze::Down,
+        Gaze::UpLeft,
+    ]
+    .into_iter()
+    .find(|g| gaze_id(*g) == id)
+    .unwrap_or(Gaze::Center)
+}
+
+fn lid_of(id: &str) -> Lid {
+    [Lid::Open, Lid::Half, Lid::Closed]
+        .into_iter()
+        .find(|l| lid_id(*l) == id)
+        .unwrap_or(Lid::Open)
+}
+
+/// `gaze`, `lid` and `soft` in; the id of the eye frame (or null) out.
+pub(super) fn run_eye_frame(case: &Value) -> Value {
+    let eye = Eye {
+        gaze: gaze_of(case["gaze"].as_str().unwrap_or("center")),
+        lid: lid_of(case["lid"].as_str().unwrap_or("open")),
+        soft: case["soft"].as_bool().unwrap_or(false),
+    };
+    json!({ "frame": eye_frame(eye) })
+}
+
+/// Every look: each gaze with each lid, with and without the soft eyes.
+pub(super) fn eye_frame_cases() -> Vec<Value> {
+    let mut cases = Vec::new();
+    for gaze in ["center", "left", "right", "up", "down", "upleft"] {
+        for lid in ["open", "half", "closed"] {
+            for soft in [false, true] {
+                let mut case = json!({
+                    "name": format!("{gaze} gaze, {lid} lid, soft {soft}"),
+                    "gaze": gaze, "lid": lid, "soft": soft,
+                });
+                case["expected"] = run_eye_frame(&case);
+                cases.push(case);
+            }
+        }
+    }
+    cases
 }

@@ -106,7 +106,6 @@ private func numbers(in value: Any) -> Int {
 }
 
 @Test func theRasteriserDrawsNothingForATriangleThatIsNotOne() {
-  var destination = [UInt8](repeating: 7, count: 4 * 4 * 4)
   let texture: [UInt8] = Array(repeating: [200, 200, 200, 255], count: 4).flatMap { $0 }
   let nan = AvatarRasterizer.Vertex(x: .nan, y: 0, u: 0, v: 0, alpha: 1)
   let a = AvatarRasterizer.Vertex(x: 0, y: 0, u: 0, v: 0, alpha: 1)
@@ -116,64 +115,40 @@ private func numbers(in value: Any) -> Int {
     AvatarRasterizer.Vertex(x: 1e300, y: 0, u: 0, v: 0, alpha: 1),
     AvatarRasterizer.Vertex(x: 0, y: 1e300, u: 0, v: 0, alpha: 1)
   )
-  texture.withUnsafeBufferPointer { tex in
-    destination.withUnsafeMutableBufferPointer { dst in
-      guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
-      for (p, q, r) in [(nan, a, b), (a, a, a), (a, far, farther), (a, b, c)] {
-        AvatarRasterizer.fill(
-          p, q, r, opacity: 1, texture: tex, textureSize: (2, 2), destination: dst,
-          destinationSize: (4, 4))
-      }
-    }
-  }
+  let drawn = AvatarTestRaster.draw(
+    [(nan, a, b), (a, a, a), (a, far, farther), (a, b, c)], texture: texture,
+    textureSize: (2, 2), under: 7, size: (4, 4))
   // The large triangle covers the 4 by 4 picture; the others draw nothing and nothing traps.
-  #expect(destination.enumerated().allSatisfy { $0.element == ($0.offset % 4 == 3 ? 255 : 200) })
+  #expect(drawn.picture.enumerated().allSatisfy { $0.element == ($0.offset % 4 == 3 ? 255 : 200) })
 }
 
 @Test func twoTrianglesThatShareAnEdgeDrawEveryPixelOnce() {
   // Half-opaque triangles over a black picture: a pixel drawn twice would be brighter.
-  var destination = [UInt8](repeating: 0, count: 8 * 8 * 4)
-  let texture: [UInt8] = [200, 200, 200, 255]
   let corner = { (x: Double, y: Double) in
     AvatarRasterizer.Vertex(x: x, y: y, u: 0, v: 0, alpha: 0.5)
   }
-  texture.withUnsafeBufferPointer { tex in
-    destination.withUnsafeMutableBufferPointer { dst in
-      guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
-      for (p, q, r) in [
-        (corner(0, 0), corner(8, 0), corner(8, 8)), (corner(0, 0), corner(8, 8), corner(0, 8)),
-      ] {
-        AvatarRasterizer.fill(
-          p, q, r, opacity: 1, texture: tex, textureSize: (1, 1), destination: dst,
-          destinationSize: (8, 8))
-      }
-    }
-  }
-  for pixel in stride(from: 0, to: destination.count, by: 4) {
-    #expect(Array(destination[pixel..<pixel + 3]) == [100, 100, 100])
-    #expect(destination[pixel + 3] == 128)
+  let drawn = AvatarTestRaster.draw(
+    [
+      (corner(0, 0), corner(8, 0), corner(8, 8)), (corner(0, 0), corner(8, 8), corner(0, 8)),
+    ], texture: [200, 200, 200, 255], size: (8, 8))
+  #expect(drawn.covered == 64)
+  for pixel in stride(from: 0, to: drawn.picture.count, by: 4) {
+    #expect(Array(drawn.picture[pixel..<pixel + 3]) == [100, 100, 100])
+    #expect(drawn.picture[pixel + 3] == 128)
   }
 }
 
 @Test func aTexelWithNoAlphaLeavesWhatIsUnderIt() {
-  // The texture's own alpha is what the destination gives up, not only the triangle's coverage:
-  // a transparent texel must not erase the face under the mouth.
+  // The texture's own alpha is what the picture under it gives up, not only the coverage: a
+  // transparent texel must not erase the face under the mouth.
   let triangle = (
     AvatarRasterizer.Vertex(x: -4, y: -4, u: 0, v: 0, alpha: 1),
     AvatarRasterizer.Vertex(x: 12, y: -4, u: 0, v: 0, alpha: 1),
     AvatarRasterizer.Vertex(x: -4, y: 12, u: 0, v: 0, alpha: 1)
   )
   func draw(over under: UInt8, texel: [UInt8]) -> [UInt8] {
-    var destination = [UInt8](repeating: under, count: 4 * 4 * 4)
-    texel.withUnsafeBufferPointer { tex in
-      destination.withUnsafeMutableBufferPointer { dst in
-        guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
-        AvatarRasterizer.fill(
-          triangle.0, triangle.1, triangle.2, opacity: 1, texture: tex, textureSize: (1, 1),
-          destination: dst, destinationSize: (4, 4))
-      }
-    }
-    return Array(destination[0..<4])
+    let drawn = AvatarTestRaster.draw([triangle], texture: texel, under: under, size: (4, 4))
+    return Array(drawn.picture[0..<4])
   }
   #expect(draw(over: 200, texel: [0, 0, 0, 0]) == [200, 200, 200, 200])
   // Half-opaque premultiplied grey 50 over 200: 50 + 200 * (1 - 128 / 255) = 149.6, and the
@@ -206,11 +181,7 @@ private func numbers(in value: Any) -> Int {
 
 @Test func aDocumentThatIsNotPlainJsonObjectBytesIsMalformed() throws {
   let made = try AvatarFixture.make(canvas: 64)
-  let assets = made.images.map {
-    AvatarAssetInfo(
-      path: $0.key, bytes: 100,
-      size: AvatarSize(width: UInt32($0.value.width), height: UInt32($0.value.height)))
-  }
+  let assets = made.assets
   func kind(_ data: Data) -> AvatarPackageErrorKind? {
     do {
       _ = try AvatarPackage.load(json: data, assets: assets)
@@ -259,18 +230,9 @@ private func covered(
   let vertex = { (p: (Double, Double)) in
     AvatarRasterizer.Vertex(x: p.0, y: p.1, u: 0, v: 0, alpha: 1)
   }
-  var destination = [UInt8](repeating: 0, count: size * size * 4)
-  let texture: [UInt8] = [10, 20, 30, 255]
-  var count = 0
-  texture.withUnsafeBufferPointer { tex in
-    destination.withUnsafeMutableBufferPointer { dst in
-      guard let tex = tex.baseAddress, let dst = dst.baseAddress else { return }
-      count = AvatarRasterizer.fill(
-        vertex(a), vertex(b), vertex(c), opacity: 1, texture: tex, textureSize: (1, 1),
-        destination: dst, destinationSize: (size, size))
-    }
-  }
-  return (count, destination)
+  let drawn = AvatarTestRaster.draw(
+    [(vertex(a), vertex(b), vertex(c))], texture: [10, 20, 30, 255], size: (size, size))
+  return (drawn.covered, drawn.picture)
 }
 
 /// The pixels a triangle covers by the plain rule, tested at every pixel of the picture: the three

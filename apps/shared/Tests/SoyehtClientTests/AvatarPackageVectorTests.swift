@@ -1,4 +1,5 @@
 import Foundation
+import SoyehtAvatarRaster
 import SoyehtProtocol
 import Testing
 
@@ -193,6 +194,7 @@ private func outcome(_ base: JsonValue, _ assetsFile: [AvatarAssetInfo], _ item:
       .object([
         "id": .string(part.id.rawValue),
         "positions": AvatarVector.numbers(part.blend(weights)),
+        "opacity": .number(part.opacity(weights)),
         "layers": .array(
           part.layers(weights).map {
             .object(["shape": .string($0.shape.id), "alpha": .number($0.alpha)])
@@ -203,5 +205,67 @@ private func outcome(_ base: JsonValue, _ assetsFile: [AvatarAssetInfo], _ item:
       .object(["parts": .array(parts)]), item["expected"], tolerance: 1e-3)
     let name = try item.text("name")
     #expect(why == nil, "mesh / \(name): \(why ?? "")")
+  }
+}
+
+@Test func theDrawingOrderOfTheMouthsPartsIsTheOneTheVectorsName() throws {
+  #expect(AvatarVector.packageGroups.contains("drawOrder"))
+  let file = try vector()
+  let package = try AvatarPackage.load(
+    json: JSONEncoder().encode(file["base"]), assets: try assetList(file["assets"]))
+  for item in ContractVector.cases(file, "drawOrder") {
+    let listed = try item.items("parts").map { try $0.asNumberOrText() }
+    var model = package.mouth
+    model.parts = try listed.map { name in
+      guard let part = package.mouth.parts.first(where: { $0.id.rawValue == name }) else {
+        throw AvatarVector.Unreadable(what: "a part named \(name)")
+      }
+      return part
+    }
+    let order = AvatarVector.stringList(model.inDrawingOrder.map(\.id.rawValue))
+    let name = try item.text("name")
+    let why = AvatarVector.difference(
+      .object(["order": order]), item["expected"], tolerance: 1e-3)
+    #expect(why == nil, "drawOrder / \(name): \(why ?? "")")
+  }
+}
+
+private func colour(_ v: JsonValue) throws -> SIMD4<Float> {
+  guard let list = v.array, list.count == 4 else { throw AvatarVector.Unreadable(what: "a colour") }
+  let n = try list.map { Float(try $0.asNumber()) }
+  return SIMD4(n[0], n[1], n[2], n[3])
+}
+
+@Test func aPartLaidOverAPictureIsTheColourTheVectorsName() throws {
+  #expect(AvatarVector.packageGroups.contains("composite"))
+  var results: [String: SIMD4<Float>] = [:]
+  for item in ContractVector.cases(try vector(), "composite") {
+    // The layers are mixed by their weights, each over the mix before it, from a clear mix, and
+    // the mix is laid over what is under it once: the two steps the rasteriser's passes are made of.
+    var mix = SIMD4<Float>.zero
+    for layer in try item.items("layers") {
+      mix = AvatarRasterizer.mixStep(
+        mix, texel: try colour(layer["texel"]), alpha: Float(try layer.number("alpha")))
+    }
+    let out = AvatarRasterizer.compose(
+      mix: mix, under: try colour(item["under"]), coverage: Float(try item.number("coverage")))
+    let name = try item.text("name")
+    let got = AvatarVector.numbers((0..<4).map { Double(out[$0]) })
+    let why = AvatarVector.difference(
+      .object(["colour": got]), item["expected"], tolerance: 1e-3)
+    #expect(why == nil, "composite / \(name): \(why ?? "")")
+    results[name] = out
+  }
+  // A drawing that is all but absent changes the pixel by under a 255th.
+  let pairs = [
+    (
+      "a clear texel with all the weight, the drawing before it under the threshold",
+      "the same with the drawing before it over the threshold"
+    ),
+    ("a feathered pixel, one layer", "the same with a second layer at the weight 0.0002"),
+  ]
+  for (one, two) in pairs {
+    let (a, b) = (try #require(results[one]), try #require(results[two]))
+    #expect((0..<4).allSatisfy { abs(a[$0] - b[$0]) < 1 }, "\(one)")
   }
 }

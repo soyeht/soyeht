@@ -5170,6 +5170,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "soyeht-avatar"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "soyeht-avatar-raster"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "serde",
+ "serde_json",
+ "soyeht-avatar",
+ "soyeht-platform",
+]
+
+[[package]]
 name = "soyeht-client"
 version = "0.1.0"
 dependencies = [
@@ -5207,6 +5226,8 @@ dependencies = [
  "notify-rust",
  "raw-window-handle",
  "serde_json",
+ "soyeht-avatar",
+ "soyeht-avatar-raster",
  "soyeht-client",
  "soyeht-platform",
  "soyeht-protocol",

@@ -91,7 +91,10 @@ Each layer depends only on the layers listed above it.
 7. `apps/desktop`: the Rust client for Linux and Windows (GPUI, ADR 0084). It is
    its own cargo workspace and depends on `engine/soyeht-protocol` and, for the local endpoint
    (the Unix socket, and on Windows the loopback endpoint file), `engine/soyeht-platform`, and,
-   for the update check's `curl` (ADR 0122), `engine/soyeht-process`. Its
+   for the update check's `curl` (ADR 0122), `engine/soyeht-process`, and, for the avatar's rules
+   (ADR 0166), `engine/soyeht-avatar`; its `avatar` module is the stage view, which has the picture
+   drawn on a background thread by `soyeht-avatar-raster`, a crate of its own with no window (the
+   package folder and the software rasteriser, optimised in debug builds too). Its
    `soyeht-client` crate holds the connection and state (the local socket and, for a paired device,
    the WebSocket, the pairing and the check of the engine's proof: its `device` module, which the
    Android core uses; and the web host the engine's agents
