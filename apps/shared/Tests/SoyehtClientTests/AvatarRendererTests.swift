@@ -216,17 +216,20 @@ private func changeAtTheThreshold(inner: AvatarFixture.Inner) throws -> Int {
   // Each part's triangles, once for every layer mixed and once to lay the part: skin and lips one
   // drawing each, and an inner mouth only once the drawing has a picture of its own.
   let perPart = 35 * 23 * 2
+  // What a triangle costs is the pixels it covers, not its box, so the counts are the areas the
+  // mouth covers: at 256 pixels the skin is about 28 by 18 pixels when the mouth is open, and a
+  // thin slit at rest. The values are deterministic; a change of more than a tenth is a change of
+  // what is drawn, or a return to the cost of a box (which would be many times more).
+  func near(_ got: Int, _ want: Int) -> Bool { abs(got - want) * 10 <= want }
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.rest)))
   #expect(r.lastMouthWork.triangles == 2 * 2 * perPart)
-  let atRest = r.lastMouthWork.pixels
+  #expect(near(r.lastMouthWork.pixels, 136), "at rest: \(r.lastMouthWork.pixels)")
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a)))
   #expect(r.lastMouthWork.triangles == 3 * 2 * perPart)
+  #expect(near(r.lastMouthWork.pixels, 1264), "open: \(r.lastMouthWork.pixels)")
   _ = r.render(AvatarFixture.frame(weights: AvatarFixture.weights(.a, .e, mix: 0.4)))
   #expect(r.lastMouthWork.triangles > 3 * 2 * perPart)
-  // What a triangle costs is the pixels it covers, not its box: the work is of the order of the
-  // area of the mouth, here a few thousand pixels at a time (about 36 by 22 pixels of skin).
-  #expect(atRest > 0 && atRest < 3_000)
-  #expect(r.lastMouthWork.pixels < 20_000)
+  #expect(near(r.lastMouthWork.pixels, 1560), "blend: \(r.lastMouthWork.pixels)")
 }
 
 @Test func aTriangleCostsItsCoveredPixelsAndNotItsBox() {

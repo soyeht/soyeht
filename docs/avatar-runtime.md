@@ -299,12 +299,16 @@ Each change is logged. The full-size pictures stay in the engine for this. The v
 configuration and the pane are later slices; until then the mouth holds the expression of the
 state.
 
-**Frame cost** (Mac Studio, one core, thread CPU time, the host loaded by other work, a 1024-pixel
-canvas drawn at 512 by 512, a mouth mesh of about 4800 triangles in three parts): about 5.7 ms
-median (p95 9 ms) in a release build for the runtime step and the picture, and the same with the
-`CGImage` the view draws; all of it runs off the main actor. A debug build, with the per-pixel
-target optimised, is about 19 ms. The cost is that of the output, not of the canvas. The desktop's
-rasteriser (slice 5) measures its own.
+**The work rule constrains the package builder.** The load rule (`AvatarPackageValidator.blendWork`,
+at most one canvas) counts, for every triangle, the box of its corners over all nine drawings, so
+the bound grows with the number of triangles times how far the mouth travels between drawings: a
+dense mesh is refused. The 4800-triangle mesh of the Swift benchmark fixture, with a mouth 16 % of
+the canvas wide, measured 1.16 canvases, and the fixture had to be made smaller (0.55) to load; the
+lab's own model (a few hundred triangles) measures 0.23. A tighter bound that is still sound (the largest area two drawings can
+mix into, taken over pairs of drawings, in place of the box over all nine) is a possible later
+change to the shared rule.
+
+FRAMECOST
 
 ## Known limits
 
