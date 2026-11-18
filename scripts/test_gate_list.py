@@ -433,11 +433,12 @@ class SelectionByChangeTests(unittest.TestCase):
         self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
         self.assertNotIn("desktop:test", listed)
 
-    def test_a_vector_read_only_by_swift_runs_the_swift_vector_tests_and_nothing_else(self):
+    def test_a_vector_that_swift_and_the_desktop_read_runs_both_and_no_engine_step(self):
         listed = listed_steps("fast", ["contracts/vectors/voice-turns.json"])
-        self.assertIn("swift:test-shared-changed", listed)
+        for step_id in ("swift:test-shared-changed", "desktop:test"):
+            self.assertIn(step_id, listed)
         for step_id in (*E2E_SET, "swift:test-shared-fast", "swift:test-shared-build", "engine:test-changed",
-                        "desktop:test", "typescript:test", "swift:format-lint"):
+                        "engine:test-fast", "typescript:test", "swift:format-lint"):
             self.assertNotIn(step_id, listed)
 
     def test_a_vector_an_engine_crate_reads_runs_that_crate_and_no_program(self):
