@@ -97,6 +97,7 @@ impl Core {
     pub(crate) fn agent_spawn_config(&self, id: &str) -> Result<Spawn> {
         let saved = &errors::invariant(self.panes.get(id), "Agent pane disappeared")?.stored;
         let state = &self.agents.require(id)?.state;
+        super::adapter_install::refuse_stale_builtin(&state.launch)?;
         let mut argv = vec![state.launch.command.clone()];
         argv.extend(state.launch.args.clone());
         Ok(Spawn {
