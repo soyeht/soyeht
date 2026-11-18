@@ -181,6 +181,21 @@ private struct ScriptedEndOfTurn: EndOfTurnDetecting {
     try await eventually { self.audio.played.count == 1 }
   }
 
+  /// A turn is sent, its reply comes while the person starts to talk (so it is held), and then they
+  /// only hum along: the probe ends and the held reply is free to speak.
+  func holdAReplyWhileThePersonHumsAlong(_ markdown: String) async throws {
+    try await controller.start()
+    try await say("run the tests")
+    controller.replyUpdated(markdown, final: true, id: "m1")
+    await hear(11, level: 0.9)
+    #expect(controller.phase == .probingWait)
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(audio.played.isEmpty)
+    lastRecognizer?.onEvent?(.partial("mhm"))
+    await hear(11, level: 0.1)
+    lastRecognizer?.onEvent?(.final("mhm"))
+  }
+
   /// A whole turn up to the person's words being sent: speech, a pause, the recognizer's final.
   func say(_ words: String) async throws {
     await hear(3, level: 0.9)
@@ -570,17 +585,7 @@ private let reply = "Hi there, friend. How can I help you today?"
   async throws
 {
   let rig = Rig(voiceDelay: .milliseconds(200))
-  try await rig.controller.start()
-  try await rig.say("run the tests")
-  rig.controller.replyUpdated("Good morning, how are you?", final: true, id: "m1")
-  // The person starts to talk while the voice is still working.
-  await rig.hear(11, level: 0.9)
-  #expect(rig.controller.phase == .probingWait)
-  try await Task.sleep(for: .milliseconds(300))
-  #expect(rig.audio.played.isEmpty)
-  rig.lastRecognizer?.onEvent?(.partial("mhm"))
-  await rig.hear(11, level: 0.1)
-  rig.lastRecognizer?.onEvent?(.final("mhm"))
+  try await rig.holdAReplyWhileThePersonHumsAlong("Good morning, how are you?")
   try await rig.eventually { rig.audio.played.count == 1 }
   #expect(await rig.voice.spoken == ["Good morning, how are you?"])
 }
@@ -761,18 +766,8 @@ private let reply = "Hi there, friend. How can I help you today?"
 
 @MainActor @Test func aSentenceAfterAHeldOneIsMadeOnceToo() async throws {
   let rig = Rig(voiceDelay: .milliseconds(200))
-  try await rig.controller.start()
-  try await rig.say("run the tests")
-  rig.controller.replyUpdated(
-    "First we look at the code. Then we run the tests. Last we report the result.", final: true,
-    id: "m1")
-  await rig.hear(11, level: 0.9)
-  #expect(rig.controller.phase == .probingWait)
-  try await Task.sleep(for: .milliseconds(300))
-  #expect(rig.audio.played.isEmpty)
-  rig.lastRecognizer?.onEvent?(.partial("mhm"))
-  await rig.hear(11, level: 0.1)
-  rig.lastRecognizer?.onEvent?(.final("mhm"))
+  try await rig.holdAReplyWhileThePersonHumsAlong(
+    "First we look at the code. Then we run the tests. Last we report the result.")
   try await rig.eventually { rig.audio.played.count == 1 }
   rig.audio.finishPlayback()
   try await rig.eventually { rig.audio.played.count == 2 }
