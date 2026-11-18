@@ -451,15 +451,17 @@ mod tests {
     fn a_mode_kind_is_read_from_either_place_and_an_unannounced_one_stays_unranked() {
         // codex-acp 2.6.0 to a client that declares the AIR extension: the kind is under
         // `_meta.jetbrains.air`, and a permission profile of the person's has none.
-        let air = |kind: &str| json!({"jetbrains":{"air":{"version":1,"kind":kind}}});
+        let air = |value: &str, kind: &str| json!({"value":value,"name":value,"_meta":{"jetbrains":{"air":{"kind":kind}}}});
+        let sandbox = json!([
+            air("read-only", "standard"),
+            air("agent", "auto_review"),
+            air("agent-full-access", "full_access")
+        ]);
         let options = Options::from_response(&json!({"configOptions":[{
             "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":"agent",
             "options":[
-                {"group":"sandbox-modes","name":"Sandbox Modes","options":[
-                    {"value":"read-only","name":"Read-only","_meta":air("standard")},
-                    {"value":"agent","name":"Auto review","_meta":air("auto_review")},
-                    {"value":"agent-full-access","name":"Full access","_meta":air("full_access")}]},
-                {"group":"permission-profiles","name":"Permission Profiles","options":[
+                {"group":"sandbox-modes","name":"Sandbox","options":sandbox},
+                {"group":"permission-profiles","name":"Profiles","options":[
                     {"value":"permission-profile:work","name":"work"}]}]}]}))
         .unwrap();
         let kinds: Vec<_> = options

@@ -294,7 +294,7 @@ impl Core {
         state.auth_required |= repaired_auth;
         // A pane saved under an older pin of a locked adapter starts the catalogue's now (the
         // saved package would be started through `npx`, unlocked), and saves it.
-        let moved = crate::agents::registry::refreshed_launch(&self.directory, &state.launch);
+        let moved = crate::agents::launch_refresh::refreshed_launch(&self.directory, &state.launch);
         let refreshed = moved.is_some();
         if let Some(launch) = moved {
             log::event("engine.agent_launch_refreshed", &[("harness", &launch.id)]);
