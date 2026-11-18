@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview", "crates/ztracing", "shims/wayland-protocols-plasma"]
+members = ["crates/soyeht-avatar-raster", "crates/soyeht-client", "crates/soyeht-desktop", "crates/soyeht-webview", "crates/ztracing", "shims/wayland-protocols-plasma"]
 resolver = "3"
 
 [workspace.package]
@@ -17,6 +17,8 @@ gpui = { git = "https://github.com/zed-industries/zed", rev = "ced90fc636c4ede05
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "ced90fc636c4ede05402befc38a63bae7fd741bd", default-features = false, features = ["font-kit", "wayland", "x11"] }
 soyeht-protocol = { path = "../../engine/soyeht-protocol", features = ["open-enums"] }
 soyeht-platform = { path = "../../engine/soyeht-platform" }
+soyeht-avatar = { path = "../../engine/soyeht-avatar" }
+soyeht-avatar-raster = { path = "crates/soyeht-avatar-raster" }
 soyeht-process = { path = "../../engine/soyeht-process" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -82,6 +84,15 @@ debug = 0
 
 [profile.test]
 debug = 0
+
+# The avatar is drawn on the processor, frame by frame, and a debug build runs it fifty times slower
+# than a release one. The two crates that do the work are optimised in every profile (the rest of the
+# build keeps its debug settings and its compile time).
+[profile.dev.package.soyeht-avatar-raster]
+opt-level = 3
+
+[profile.dev.package.soyeht-avatar]
+opt-level = 3
 
 # A shipping build. The engine and the clients rely on unwinding: a poisoned lock is recovered
 # (`PoisonError`), a panicked thread is joined and reported, and a panicked task ends only itself,
