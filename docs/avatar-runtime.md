@@ -308,7 +308,13 @@ lab's own model (a few hundred triangles) measures 0.23. A tighter bound that is
 mix into, taken over pairs of drawings, in place of the box over all nine) is a possible later
 change to the shared rule.
 
-FRAMECOST
+**Frame cost** (Mac Studio, 20 cores, one thread's CPU time, measured with the host at a load average
+of 16 to 22 from other work, a 1024-pixel canvas drawn at 512 by 512, the benchmark fixture's
+mouth mesh of about 4800 triangles in three parts, after the two-pass composite): in a release
+build about 5.3 ms median (p95 under 7 ms) for the runtime step and the picture, and the same
+with the `CGImage` the view draws; in a debug build, with the per-pixel target optimised, about
+22 ms (p95 24 ms) with the `CGImage`. All of it runs off the main actor. The cost is that of the
+output, not of the canvas. The desktop's rasteriser (slice 5) measures its own.
 
 ## Known limits
 
