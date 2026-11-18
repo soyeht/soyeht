@@ -648,6 +648,20 @@ The rule test grows with the work, so a regression is a red test.
 4. `tests/core_lock.rs` keeps its cases and gains the held-Core case of step 2c and the slow-port cases
    of steps 4 and 5.
 
+## Addendum: the agent records of one poll are one commit
+
+The scripted session of this ADR had no streaming agent, so its table does not show the
+heaviest hold left under the lock. A streamed reply is one native record per chunk, and each one
+was a transaction: an `fsync` (2.5 to 2.9 ms in the table above), the whole agent state
+serialized, the stored message read, parsed and written again with its whole text, and an event
+with that text. `decode_agent_log` now applies the records of one read to the state in memory and
+commits them once per pane (ADR 0020), and the event of a message is sent once per commit, in
+its last state. On the engine unit test rig (debug build, a quiet host) 300 chunks of one
+message ran 3,901 SQL statements and took 1.03 s as 300 commits, and 14 statements and 55 ms as
+one; the number of statements no longer depends on the number of chunks. The hold is also
+shorter in the case that mattered most: after a restart of the supervisor every agent replays
+its whole session through the same path.
+
 ## Alternatives considered
 
 - **A Core actor** (one thread owns `Core`, everything else sends messages). It removes the lock and its

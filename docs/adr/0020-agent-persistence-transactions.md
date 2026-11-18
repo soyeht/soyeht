@@ -16,8 +16,29 @@ Queue insertion/removal, revision, receipt and event share one transaction.
 A full queue is not rewritten each time an output chunk arrives. Byte limits
 apply to the original UTF-8 prompt; JSON escaping cannot reduce that capacity.
 
-All storage writes take the engine's transaction. Receiving a complete native
-record commits its byte checkpoint, runtime state and public events together.
+All storage writes take the engine's transaction. The complete native records
+that one read of a pane's output decodes are applied to the runtime state in
+memory and committed together, once per read and pane: the byte checkpoint of
+the last of them, the runtime state they left, the transcript messages they
+changed and their public events. (Each record used to be a transaction of its
+own: an `fsync`, the whole runtime state serialized and an event for every
+chunk of a streamed reply.) A record that is not a transcript update of the
+agent (a response, a request of the agent, anything that carries more than
+transcript messages and events) ends the group and is committed alone, as
+before, on the state the group left. The transcript messages of the group are
+saved once each, in their last state; of the events, only the last of each
+message that carries the whole text, tool call, plan, usage or subagent row so
+far (`pane.update` of the kinds `agent_message_chunk`, `agent_thought_chunk`,
+`system_message`, `tool_call`, `tool_call_update`, `plan`, `subagent` and
+`usage`) is sent, at the place of its last record, with the same fields as
+before; the states in between are not sent, nor is any `pane.state` or
+`pane.updated` between them. A session replay (`session/load`) is grouped the
+same way, and stays silent: its messages are staged, with no event, until the
+load response publishes them. A crash before the commit loses nothing: the
+checkpoint is where the last commit left it, the raw output is already durable
+(it is flushed before the supervisor is acknowledged), and the next start
+decodes the same bytes again and reaches the same state. A record that fails
+commits the ones before it first, so the decoder starts again after them.
 Answering a request commits the winning decision, native reply and public
 event together. The engine sends native bytes only after that commit.
 

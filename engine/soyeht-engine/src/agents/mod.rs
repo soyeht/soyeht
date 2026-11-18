@@ -4,6 +4,7 @@ pub(crate) mod adapter_directory;
 pub(crate) mod adapter_install;
 pub mod attachments;
 pub mod authentication;
+pub mod batch;
 pub mod catalog;
 pub mod commands;
 pub mod configuration;
@@ -118,6 +119,9 @@ pub struct Changes {
     pub(crate) task_editor_feedback: Option<crate::tasks::feedback::TaskEditorFeedbackChange>,
     pub(crate) task_loop: Option<crate::tasks::looping::TaskLoopChange>,
     pub(crate) editor_agent_write: Option<crate::editor::agent_review::AgentWriteChange>,
+    /// The messages of the records applied before this one in the same batch, which are not in
+    /// the store yet.
+    pub(crate) earlier: batch::Earlier,
 }
 
 pub fn native_error(error: soyeht_acp::Error) -> errors::Error {

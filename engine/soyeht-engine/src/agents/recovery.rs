@@ -1,4 +1,10 @@
-use super::{Changes, state::Phase, transcript};
+use super::{
+    Changes,
+    batch::{self, Batch, Earlier},
+    native_error,
+    state::Phase,
+    transcript,
+};
 use crate::{
     core::Core,
     errors::{self, Result},
@@ -7,7 +13,10 @@ use crate::{
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde_json::json;
-use soyeht_acp::{Message, rpc::Record};
+use soyeht_acp::{
+    Message,
+    rpc::{Record, decode},
+};
 use soyeht_protocol::{
     AttentionItem, PaneState, TranscriptKind, TranscriptRole, limits, ndjson::Decoder,
 };
@@ -321,6 +330,155 @@ impl Core {
         )?
         .decoder = Decoder::new(to);
         Ok(true)
+    }
+    /// Applies a record that came from the pane's own output. A `session/update` that changes
+    /// only the transcript waits in `batch` for the commit of the poll; any other record ends
+    /// the batch and is committed on its own, on top of what the batch left.
+    fn apply_decoded(
+        &mut self,
+        pane: &str,
+        record: Record,
+        batch: &mut Option<Batch>,
+    ) -> Result<()> {
+        if !matches!(&record.message, Message::Notification { method, .. } if method == "session/update")
+        {
+            self.commit_batch(batch)?;
+            return self.native_record(pane, record, true);
+        }
+        let (mut state, mut saved, earlier) = match batch {
+            Some(batch) => (batch.state.clone(), batch.saved.clone(), batch.earlier()),
+            None => (
+                self.agent_state(pane)?,
+                self.pane(pane)?.stored.clone(),
+                Earlier::default(),
+            ),
+        };
+        let changes =
+            self.apply_native_record(pane, record, true, (&mut state, &mut saved), earlier)?;
+        match batch {
+            Some(open) if open.takes(&changes) => open.absorb(changes, saved, state),
+            None if batch::transcript_only(&changes) => {
+                *batch = Some(Batch::start(saved, state, changes));
+            }
+            _ => {
+                self.commit_batch(batch)?;
+                self.commit_agent(saved, state, changes, None, json!({}))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Commits what the poll applied so far, as one transaction.
+    fn commit_batch(&mut self, batch: &mut Option<Batch>) -> Result<()> {
+        if let Some((saved, state, changes)) = batch.take().map(Batch::finish) {
+            self.commit_agent(saved, state, changes, None, json!({}))?;
+        }
+        Ok(())
+    }
+
+    /// First consume any raw records synced before an engine crash. The public
+    /// checkpoint can lag the raw log, but it never advances beyond durable data. What one
+    /// call decodes is committed once (ADR 0020): a crash before the commit leaves the
+    /// checkpoint where it was, and the next start decodes the same raw bytes again.
+    pub(super) fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
+        let base = self.pane(pane)?.stored.sequence_base;
+        let offset = self.agents.require(pane)?.decoder.next_offset();
+        let end = self.pane(pane)?.screen.next_offset();
+        let mut from = base
+            .checked_add(offset)
+            .ok_or_else(|| errors::internal("Agent offset exhausted"))?;
+        let first = self.pane(pane)?.screen.first_offset();
+        if from < first {
+            // The requests the gap hides are read off the lock; the log is read again next poll.
+            if !self.agent_output_gap(pane, first - base)? {
+                return Ok(());
+            }
+            from = first;
+        }
+        if from == end {
+            return Ok(());
+        }
+        let records = self.pane(pane)?.screen.read(from, end, 64 * 1024)?;
+        let mut batch = None;
+        match self.decode_records(pane, base, records, &mut batch) {
+            Ok(()) => match self.commit_batch(&mut batch) {
+                Ok(()) => Ok(()),
+                Err(error) => self.abandon_decoding(pane, &mut None, error),
+            },
+            Err(error) => self.abandon_decoding(pane, &mut batch, error),
+        }
+    }
+
+    /// Commits the records applied before a failure, so the decoder starts again after them, and
+    /// returns the failure (or, when that commit failed too, its own, which leaves the decoder
+    /// where the last commit left it and the records to be decoded again).
+    fn abandon_decoding(
+        &mut self,
+        pane: &str,
+        batch: &mut Option<Batch>,
+        error: errors::Error,
+    ) -> Result<()> {
+        let committed = self.commit_batch(batch);
+        let running = errors::invariant(
+            self.agents.get_mut(pane),
+            "Agent runtime disappeared after a failure decoding output",
+        )?;
+        running.decoder = Decoder::new(running.state.acknowledged_offset);
+        Err(committed.err().unwrap_or(error))
+    }
+
+    fn decode_records(
+        &mut self,
+        pane: &str,
+        base: u64,
+        records: Vec<SegmentRecord>,
+        batch: &mut Option<Batch>,
+    ) -> Result<()> {
+        for record in records {
+            let (mut offset, mut bytes) = match record {
+                SegmentRecord::Gap { to, .. } => {
+                    self.commit_batch(batch)?;
+                    if !self.agent_output_gap(pane, to - base)? {
+                        return Ok(());
+                    }
+                    continue;
+                }
+                SegmentRecord::Data { offset, bytes } => (offset, bytes),
+            };
+            if self.agents.require(pane)?.state.discard_until_newline {
+                let newline = bytes.iter().position(|byte| *byte == b'\n');
+                let skipped = newline.map_or(bytes.len(), |at| at + 1);
+                self.commit_batch(batch)?;
+                if !self.skip_interrupted_agent_record(
+                    pane,
+                    offset - base + skipped as u64,
+                    newline.is_some(),
+                )? {
+                    return Ok(());
+                }
+                offset += skipped as u64;
+                bytes.drain(..skipped);
+                if bytes.is_empty() {
+                    continue;
+                }
+            }
+            let decoded = decode(
+                &mut self
+                    .agents
+                    .get_mut(pane)
+                    .ok_or_else(|| {
+                        errors::internal("Agent runtime disappeared while decoding output")
+                    })?
+                    .decoder,
+                offset - base,
+                &bytes,
+            )
+            .map_err(native_error)?;
+            for record in decoded {
+                self.apply_decoded(pane, record, batch)?;
+            }
+        }
+        Ok(())
     }
 }
 

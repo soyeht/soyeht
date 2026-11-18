@@ -196,6 +196,7 @@ pub(super) fn finish_replayed_user(
 /// `subagent` names the subagent session that reported it, if not the parent.
 pub fn tracked_tool(
     store: &impl StorePort,
+    earlier: &super::batch::Earlier,
     pane: &str,
     state: &State,
     subagent: Option<&str>,
@@ -204,7 +205,7 @@ pub fn tracked_tool(
     state
         .open_messages
         .get(&transcript::open_key("tool", subagent, Some(id)))
-        .map(|seq| transcript::message(store, pane, *seq))
+        .map(|seq| transcript::message(store, earlier, pane, *seq))
         .transpose()
         .map(Option::flatten)
 }
@@ -245,7 +246,7 @@ fn update_tool(
     {
         return Ok(());
     }
-    let tracked = tracked_tool(store, pane, state, subagent, id)?;
+    let tracked = tracked_tool(store, &changes.earlier, pane, state, subagent, id)?;
     // A wait already shown keeps updating its row.
     if tracked.is_none() && subagents::awaits_subagents(state, fields) {
         return Ok(());
