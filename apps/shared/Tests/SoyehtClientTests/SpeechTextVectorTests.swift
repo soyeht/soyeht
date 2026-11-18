@@ -115,3 +115,15 @@ private func chunker(_ item: JsonValue) throws -> SentenceChunker {
     #expect(heard == (try need(item["heard"].string, "\(name) heard")), "\(name)")
   }
 }
+
+/// JSON has no NaN, so the vector cannot say it: a share that is not a number is none of the sentence.
+@Test func aShareThatIsNotANumberIsNone() {
+  let heard = HeardSpeech.text(played: ["A."], current: "a b", fraction: .nan)
+  #expect(heard == "A.")
+}
+
+/// A limit under one scalar is one; a loop that never ended would stop at the time limit.
+@Test(.timeLimit(.minutes(1))) func aMaximumUnderOneIsOne() {
+  var chunker = SentenceChunker(minimumLength: 16, maximumLength: 0)
+  #expect(chunker.update("ab cd", final: true) == ["a", "b", "c", "d"])
+}
