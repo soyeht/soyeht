@@ -103,6 +103,10 @@ public enum VoiceLoopError: LocalizedError, Equatable {
   /// A sentence whose voice is ready but that was not spoken because the person began to talk: it
   /// is spoken first when the floor is free, with the audio it already has.
   @ObservationIgnored private var held: (sentence: String, speech: SynthesizedSpeech)?
+  /// The voice's work on the sentence after the one being spoken (or held), started ahead of time
+  /// and kept until that sentence is taken, so it is made once.
+  @ObservationIgnored private var prefetched:
+    (sentence: String, speech: Task<SynthesizedSpeech, any Error>)?
   @ObservationIgnored private var played: [String] = []
   /// A turn was sent and its reply has not begun: the loop is still thinking, not done.
   @ObservationIgnored private var awaitingReply = false
@@ -433,9 +437,8 @@ public enum VoiceLoopError: LocalizedError, Equatable {
 
   /// Speaks the queue in order, the voice already working on the next sentence while one plays.
   private func speakQueue() async {
-    var upcoming: (sentence: String, speech: Task<SynthesizedSpeech, any Error>)?
-    while !Task.isCancelled, let (sentence, speech) = take(upcoming) {
-      upcoming = sentences.first.map { ($0, synthesis(of: $0)) }
+    while !Task.isCancelled, let (sentence, speech) = take() {
+      if prefetched == nil { prefetched = sentences.first.map { ($0, synthesis(of: $0)) } }
       do {
         let heard = try await speech.value
         try Task.checkCancellation()
@@ -443,7 +446,6 @@ public enum VoiceLoopError: LocalizedError, Equatable {
         // spoken when the machine says the floor is free.
         guard Self.mayPlay.contains(machine.phase) else {
           held = (sentence, heard)
-          upcoming?.speech.cancel()
           return
         }
         try await play(heard, saying: sentence)
@@ -456,16 +458,15 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     }
   }
 
-  /// The next sentence to speak with its audio on the way: the one already started, or the first
-  /// that waits.
-  private func take(
-    _ started: (sentence: String, speech: Task<SynthesizedSpeech, any Error>)?
-  ) -> (String, Task<SynthesizedSpeech, any Error>)? {
+  /// The next sentence to speak with its audio on the way: the one that was held, the one whose
+  /// voice is already working, or the first that waits.
+  private func take() -> (String, Task<SynthesizedSpeech, any Error>)? {
     if let held {
       self.held = nil
       return (held.sentence, Task { held.speech })
     }
-    if let started, !sentences.isEmpty {
+    if let started = prefetched, !sentences.isEmpty {
+      prefetched = nil
       sentences.removeFirst()
       return started
     }
@@ -534,6 +535,7 @@ public enum VoiceLoopError: LocalizedError, Equatable {
     speechEpoch += 1
     speaking?.cancel()
     speaking = nil
+    prefetched = nil
     for task in synthesizing.values { task.cancel() }
     synthesizing = [:]
   }

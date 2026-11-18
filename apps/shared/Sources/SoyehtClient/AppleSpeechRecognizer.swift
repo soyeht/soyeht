@@ -6,6 +6,7 @@ import Foundation
 /// it. The microphone and speech recognition prompts appear on the first tap of the mic.
 @MainActor public final class AppleSpeechRecognizer: SpeechRecognizing {
   private let capture = MicrophoneCapture()
+  private let session = RecognitionSession()
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
 
@@ -35,12 +36,14 @@ import Foundation
     request.shouldReportPartialResults = true
     if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
     try capture.start(Self.feed(request))
+    let events = session.begin(onEvent)
     capture.onEnded = { [weak self] error in
+      // The reason is the last word: the system's own cancellation that follows is not heard.
+      events(.failed(error.localizedDescription))
       self?.cancel()
-      onEvent(.failed(error.localizedDescription))
     }
     self.request = request
-    task = recognizer.recognitionTask(with: request, resultHandler: Self.report(to: onEvent))
+    task = recognizer.recognitionTask(with: request, resultHandler: Self.report(to: events))
   }
 
   /// A recognizer for the tag, or for the device's language when there is no tag.
@@ -77,6 +80,7 @@ import Foundation
   }
 
   public func cancel() {
+    session.end()
     capture.stop()
     task?.cancel()
     task = nil
