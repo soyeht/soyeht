@@ -2,7 +2,7 @@
 //! through a link and never by waiting on a pipe.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_platform::fs::{read_regular_under, symlink};
+use soyeht_platform::fs::read_regular_under;
 use std::{fs, io, path::Path};
 
 fn folder(name: &str) -> std::path::PathBuf {
@@ -59,8 +59,8 @@ fn a_path_that_is_not_plain_is_refused() {
 #[test]
 fn a_link_in_the_name_or_in_a_folder_of_the_path_is_refused() {
     let root = folder("links");
-    symlink(root.join("file.txt"), root.join("link.txt")).unwrap();
-    symlink(root.join("inside"), root.join("linked-dir")).unwrap();
+    soyeht_platform::fs::symlink(root.join("file.txt"), root.join("link.txt")).unwrap();
+    soyeht_platform::fs::symlink(root.join("inside"), root.join("linked-dir")).unwrap();
     assert_eq!(
         kind(read_regular_under(&root, Path::new("link.txt"), 100)),
         Some(io::ErrorKind::InvalidInput)
