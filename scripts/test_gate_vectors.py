@@ -1,5 +1,8 @@
+import contextlib
+import io
 import re
 import unittest
+from unittest import mock
 
 import gate_vectors
 from gate_vectors import GATE, HELPERS, ROOT, UNCLASSIFIED, reader_group, readers, vectors_read
@@ -10,8 +13,8 @@ NAMES = ["usage", "usage-presentation", "update", "markdown"]
 class ReaderRuleTests(unittest.TestCase):
     """What counts as a read of a vector file, and where a reader's tests run."""
 
-    def read(self, text: str) -> set[str]:
-        return vectors_read(text, NAMES)
+    def read(self, text: str, path: str = "") -> set[str]:
+        return vectors_read(text, NAMES, path)
 
     def test_a_path_and_a_loader_call_are_reads(self):
         self.assertEqual(self.read('include_str!("../../contracts/vectors/usage.json")'), {"usage"})
@@ -25,9 +28,15 @@ class ReaderRuleTests(unittest.TestCase):
         self.assertEqual(self.read("contracts/vectors/usage-presentation.json"), {"usage-presentation"})
 
     def test_a_comment_or_a_key_of_the_same_name_is_not_a_read(self):
-        self.assertEqual(self.read("// the cases of contracts/vectors/usage.json\n# vector(\"update\")"), set())
+        self.assertEqual(self.read("// the cases of contracts/vectors/usage.json\n/// vector(\"update\")"), set())
         self.assertEqual(self.read('let key = "markdown"; vector_count()'), set())
         self.assertEqual(self.read('join("markdown.json")'), set())
+
+    def test_a_hash_opens_a_comment_only_where_the_language_has_one(self):
+        swift = '  #expect(try ContractVector.load("update").count > 0)'
+        self.assertEqual(self.read(swift, "apps/shared/Tests/A.swift"), {"update"})
+        self.assertEqual(self.read('# vector("update")', "contracts/a.py"), set())
+        self.assertEqual(self.read('#[test]\nfn a() { crate::testing::vector("update"); }', "a.rs"), {"update"})
 
     def test_a_reader_runs_where_its_directory_says(self):
         for path, group in (
@@ -68,8 +77,8 @@ class ScanTests(unittest.TestCase):
         # takes it. A new helper goes in HELPERS, with the names of its functions.
         names = gate_vectors.vector_names()
         for path, text in gate_vectors.source_files():
-            code = gate_vectors.code_lines(text)
-            if gate_vectors.VECTORS.rstrip("/") in code and not vectors_read(text, names) and reader_group(path) != GATE:
+            code = gate_vectors.code_lines(text, path)
+            if gate_vectors.VECTORS.rstrip("/") in code and not vectors_read(text, names, path) and reader_group(path) != GATE:
                 with self.subTest(file=path):
                     self.assertIn(path, HELPERS)
         for path, functions in HELPERS.items():
@@ -113,6 +122,13 @@ class StepTests(unittest.TestCase):
         self.assertEqual(gate_vectors.tests_run("􁁛  Test run with 324 tests in 0 suites passed after 1.9 seconds."), 324)
         self.assertEqual(gate_vectors.tests_run("Test run with 1 test in 0 suites passed"), 1)
         self.assertEqual(gate_vectors.tests_run("nothing"), 0)
+        files = len(gate_vectors.swift_vector_tests())
+        for output, status in ((f"Test run with {files} tests", 0), (f"Test run with {files - 1} tests", 1),
+                               ("", 1)):
+            run = mock.Mock(returncode=0, stdout=output, stderr="")
+            with self.subTest(output=output), mock.patch("subprocess.run", return_value=run), \
+                    contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(gate_vectors.swift_test(), status)
 
     def test_the_protocol_tests_are_the_targets_that_read_a_vector(self):
         self.assertLessEqual({"vectors", "contract", "client_policy", "version_range"}, set(gate_vectors.protocol_tests()))

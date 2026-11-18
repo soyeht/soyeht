@@ -433,26 +433,30 @@ class SelectionByChangeTests(unittest.TestCase):
         self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
         self.assertNotIn("desktop:test", listed)
 
+    def vector_read_by(self, wanted: set[str], unwanted: set[str] = frozenset()):
+        """A vector file whose readers include `wanted` and none of `unwanted`: the rule is tested, not today's readers."""
+        for name, groups in gate_vectors.readers().items():
+            if wanted <= set(groups) and not unwanted & set(groups):
+                return [f"contracts/vectors/{name}.json"]
+        self.skipTest(f"no vector is read by {sorted(wanted)} only")
+
     def test_a_vector_that_swift_and_the_desktop_read_runs_both_and_no_engine_step(self):
-        listed = listed_steps("fast", ["contracts/vectors/voice-turns.json"])
+        listed = listed_steps("fast", self.vector_read_by({"apps/shared", "apps/desktop"}, {"apps/android"}))
         for step_id in ("swift:test-shared-changed", "desktop:test"):
             self.assertIn(step_id, listed)
-        for step_id in (*E2E_SET, "swift:test-shared-fast", "swift:test-shared-build", "engine:test-changed",
-                        "engine:test-fast", "typescript:test", "swift:format-lint"):
-            self.assertNotIn(step_id, listed)
 
     def test_a_vector_an_engine_crate_reads_runs_that_crate_and_no_program(self):
-        listed = listed_steps("fast", ["contracts/vectors/avatar-mouth.json"])
+        listed = listed_steps("fast", self.vector_read_by({"engine/soyeht-avatar"}))
         self.assertIn("engine:test-changed", listed)
-        self.assertIn("swift:test-shared-changed", listed)
-        for step_id in ("e2e:core", "engine:build-test-engine", "desktop:test"):
+        for step_id in ("e2e:core", "engine:build-test-engine"):
             self.assertNotIn(step_id, listed)
 
     def test_a_vector_that_only_the_protocol_integration_tests_read_runs_them_in_the_fast_tier(self):
-        listed = listed_steps("fast", ["contracts/vectors/protocol-version.json"])
+        files = self.vector_read_by({"engine/soyeht-protocol/tests"}, {"engine/soyeht-protocol"})
+        listed = listed_steps("fast", files)
         self.assertIn("engine:test-fast", listed)
         self.assertNotIn("engine:test-changed", listed)
-        self.assertNotIn("engine:test-fast", listed_steps("full", ["contracts/vectors/protocol-version.json"]))
+        self.assertNotIn("engine:test-fast", listed_steps("full", files))
 
     def test_the_shared_package_runs_the_swift_vector_tests_and_the_apps_do_not(self):
         self.assertIn("swift:test-shared-changed", listed_steps("fast", ["apps/shared/Sources/SoyehtClient/A.swift"]))

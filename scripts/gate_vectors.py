@@ -62,7 +62,9 @@ LOADERS = sorted({name for names in HELPERS.values() for name in names})
 
 NOT_SOURCES = {".md", ".json", ".lock"}
 MAX_SOURCE_BYTES = 2_000_000
-COMMENT = re.compile(r"^\s*(//|/\*|\*|#)")
+COMMENT = re.compile(r"^\s*(//|/\*|\*)")
+# `#` opens a comment only in these; in Swift and Rust it starts `#expect(`, `#require(` and `#[attribute]`.
+HASH_COMMENTS = {".py", ".sh", ".yml", ".toml"}
 SWIFT_TESTS = "apps/shared/Tests/"
 
 
@@ -86,16 +88,20 @@ def reader_group(path: str) -> str:
     return UNCLASSIFIED
 
 
-def code_lines(text: str) -> str:
-    return "\n".join(line for line in text.splitlines() if not COMMENT.match(line))
+def code_lines(text: str, path: str = "") -> str:
+    hash_comments = PurePosixPath(path).suffix in HASH_COMMENTS
+    return "\n".join(
+        line for line in text.splitlines()
+        if not COMMENT.match(line) and not (hash_comments and line.lstrip().startswith("#"))
+    )
 
 
-def vectors_read(text: str, names: list[str]) -> set[str]:
+def vectors_read(text: str, names: list[str], path: str = "") -> set[str]:
     """The vector files a source reads: its path, `"name.json"` beside the word vector, or a loader call."""
     candidates = [name for name in names if name in text]
     if not candidates:
         return set()
-    code = code_lines(text)
+    code = code_lines(text, path)
     mentions_vectors = "vector" in code.lower()
     found = set()
     for name in candidates:
@@ -140,7 +146,7 @@ def scan(root: Path = ROOT) -> dict[str, dict[str, tuple[str, ...]]]:
     found: dict[str, dict[str, list[str]]] = {name: {} for name in names}
     for path, text in source_files(root):
         group = reader_group(path)
-        for name in vectors_read(text, names):
+        for name in vectors_read(text, names, path):
             found[name].setdefault(group, []).append(path)
     return {name: {group: tuple(files) for group, files in groups.items()} for name, groups in found.items()}
 
@@ -156,7 +162,7 @@ def swift_vector_tests(root: Path = ROOT) -> list[str]:
     return sorted(
         path for path, text in source_files(root)
         if path.startswith(SWIFT_TESTS) and path.endswith(".swift") and "@Test" in text
-        and (vectors_read(text, names) or any(f in code_lines(text) for f in (VECTORS, "ContractVector.")))
+        and (vectors_read(text, names, path) or any(f in code_lines(text, path) for f in (VECTORS, "ContractVector.")))
     )
 
 
