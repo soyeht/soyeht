@@ -73,6 +73,15 @@ class TableTests(unittest.TestCase):
                 problems.append(f"{name}: no source of {reader} reads it any more; remove it from its entry")
         self.assertEqual(problems, [])
 
+    def test_no_engine_program_embeds_a_vector(self):
+        # The plan tests a reader crate and starts no program for a vector file: that holds while the
+        # engine reads vectors only in test code (a `#[cfg(test)]` item, or a file of `src/tests/`).
+        for path, text in gate_vectors.source_files():
+            if path.startswith("engine/") and "/src/" in path and "/tests/" not in path and path.endswith(".rs"):
+                production = text.split("#[cfg(test)]")[0] if "#[cfg(test)]" in text else text
+                with self.subTest(file=path):
+                    self.assertNotRegex(gate_vectors.code_lines(production), r"include_str!\([^)]*contracts/vectors")
+
     def test_every_reader_is_a_known_directory_or_a_crate_of_the_engine(self):
         crates = {path.parent.relative_to(ROOT).as_posix() for path in ROOT.glob("engine/*/Cargo.toml")}
         for name, readers in VECTOR_READERS.items():
