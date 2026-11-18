@@ -280,26 +280,32 @@ ADR when you change a boundary.
 
 `scripts/hardening_gate.py` also fails when the number of functions over 120 or
 over 200 lines grows, when an existing long function grows, when an acceptance or a gate
-step (an id of `check_all.sh`) is removed or leaves the fast tier or the `always` area,
-or when an ignored test is added. The PR body then needs one `Verification change:` line
-per thing, naming it and giving a reason of at least three words:
+step (an id of `check_all.sh`) is removed, no longer runs in a tier it ran in, or moves to
+an area other than `always`, or when a Rust test becomes `#[ignore]`d (the other languages'
+skip markers are not read). The PR body then needs one `Verification change:` line per thing,
+naming it and giving a reason of at least three words:
 `Verification change: removes step <id> because <reason>`, `... removes acceptance <name>
-because <reason>` or `... ignores <test> because <reason>`. "none" or a line that names
-nothing waives nothing. The number of tests is not a rule: deleting a test needs no line,
-and the gate prints the name of each test it no longer finds, so a reviewer sees it.
+because <reason>` or `... ignores <test> because <reason>` (the function name, or `path::name`).
+"none" or a line that names nothing waives nothing. The number of tests is not a rule:
+deleting a test needs no line, and the gate prints the name of each test it no longer
+finds, so a reviewer sees it. A step whose command changed is printed too, and blocks nothing.
 
 `scripts/growth_gate.py` fails when a change adds more than 400 net lines of test code
 (the test code of the working tree minus that of the merge base, so deleting tests elsewhere
-pays for adding some). Test code is `lines_of_test_code` in that file, the one definition:
-the non-blank lines of Rust files under a `tests` or `benches` directory, of Rust modules
-declared `#[cfg(test)] mod x;` and of `#[cfg(test)]` items; of Swift under a `Tests`
-directory or one ending in `Tests`; of Python `test_*.py`; of Kotlin in a `test` or
+pays for adding some). Test code is what `lines_of_test_code` in that file counts: the
+non-blank lines of Rust files under a `tests` or `benches` directory, of Rust modules declared
+`#[cfg(test)] mod x;` and of `#[cfg(test)]` items, statements and fields; of Swift under a
+`Tests` directory or one ending in `Tests`; of Python `test_*.py`; of Kotlin in a `test` or
 `androidTest` source set; of TypeScript `*.test.ts` and `test` directories. Generated files
-and `contracts/vectors/` never count. More than 400 needs a line in the PR body that says
-why: `Test growth allowance: <N> lines because <reason>`, with N at least the net and a
-reason of at least three words. The pre-merge gate reads it from the PR, the post-merge gate
-from the squash commit message, as for `Verification change:`. `agent_precheck.py` shows the
-number before a push (give it the body with `--pr-text FILE`, so it reads the lines too).
+never count, and neither do the shared vectors of `contracts/vectors/` (JSON), `scripts/e2e*.py`
+or a test-support module that no `#[cfg(test)] mod x;` declares. (`check_quality.py` and
+`check_swallowed_errors.py` tell test code from production code by their own path lists;
+sharing one is a follow-up.) More than 400 needs a line in the PR body that says why:
+`Test growth allowance: <N> lines because <reason>`, with N from the net to the net plus
+10% (at least 50) and a reason of at least three words. The pre-merge gate reads it from the
+PR, the post-merge gate from the squash commit message, as for `Verification change:`.
+`agent_precheck.py` shows the number, the removed tests and the waived weakenings before a
+push (give it the body with `--pr-text FILE`, so it reads the lines too).
 
 ## The Core lock
 
@@ -461,8 +467,8 @@ links may be GPL (espeak-ng is), and a model whose license is not permissive is 
   on the newest commit. That runs `check_all.sh --tier full` in a clean worktree and writes
   `<sha>.json` (result, duration, per-step times) and `latest.json` in the health directory
   (`$SOYEHT_MAIN_HEALTH_DIR`, else `.cache/main-health` of the main checkout; one place, `gate_base.main_health_dir`). It reads
-  the `Verification change:` line from the squash commit message, as the pre-merge gate reads it
-  from the PR body, so the merge must keep that line in the commit body. When it
+  the `Verification change:` and `Test growth allowance:` lines from the squash commit message, as
+  the pre-merge gate reads them from the PR body, so the merge must keep those lines in the commit body. When it
   is red it reruns the failing step once (a pass is recorded as flaky and blames no commit, and
   the steps the failed run never reached still run), then finds the culprit commit by running only the failing step on the commits since the last
   green main (`last_green.json`: a `pass`, or a `needs-measurement` run, where every step passed

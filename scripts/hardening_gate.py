@@ -21,7 +21,7 @@ from verification_gate import check_verification, waivers
 
 ROOT = Path(__file__).resolve().parents[1]
 GENERATED_PARTS = {"generated.rs", "Generated.swift", "generated.ts", "schema.json"}
-SOURCE_SUFFIXES = {".rs", ".swift", ".py", ".ts"}
+SOURCE_SUFFIXES = {".rs", ".swift", ".py", ".kt", ".ts"}
 # The one SQLite use outside soyeht-store: reading other applications' databases read-only, never
 # Soyeht's own data (ADR 0077, ADR 0133): the Cursor app's state, browser cookie stores, OpenCode's
 # credential table (the login the allowance request carries) and, with `json_extract`, the JSON
@@ -67,8 +67,9 @@ class WorkingTree:
 class CommitTree:
     """A commit's files, all read through one `git cat-file --batch` process."""
 
-    def __init__(self, revision: str):
+    def __init__(self, revision: str, root: Path | None = None):
         self.revision = revision
+        self.root = root
         self._blob_ids: dict[str, str | None] | None = None
         self._contents: dict[str, bytes] | None = None
 
@@ -76,7 +77,7 @@ class CommitTree:
         """Path to blob id; an entry that is not a blob (a submodule) maps to None."""
         if self._blob_ids is None:
             self._blob_ids = {}
-            for item in git("ls-tree", "-rz", self.revision).split(b"\0"):
+            for item in git("ls-tree", "-rz", self.revision, cwd=self.root).split(b"\0"):
                 if item:
                     header, _, name = item.partition(b"\t")
                     _, kind, blob_id = header.decode().split()
@@ -90,7 +91,7 @@ class CommitTree:
         blob_ids = self._listing()
         wanted = sorted({blob_id for blob_id in blob_ids.values() if blob_id})
         request = "".join(f"{blob_id}\n" for blob_id in wanted).encode()
-        raw = git("cat-file", "--batch", stdin=request)
+        raw = git("cat-file", "--batch", stdin=request, cwd=self.root)
         by_id: dict[str, bytes] = {}
         cursor = 0
         for _ in wanted:
@@ -130,13 +131,21 @@ class Metrics:
     tests: tuple[str, ...] = ()
     # The `name` of every acceptance an `e2e*.py` script records.
     acceptances: tuple[str, ...] = ()
-    # (area, tier, id) of every `step AREA TIER ID ...` line of `check_all.sh`.
-    steps: tuple[tuple[str, str, str], ...] = ()
-    ignored_tests: int = 0
+    # (area, tier, id, command) of every `step AREA TIER ID COMMAND` line of `check_all.sh`.
+    steps: tuple[tuple[str, str, str, str], ...] = ()
+    # `path::name` of every Rust test function that is `#[ignore]`d, also under `cfg_attr`.
+    ignored_tests: tuple[str, ...] = ()
 
 
-def git(*arguments: str, stdin: bytes | None = None) -> bytes:
-    return subprocess.check_output(["git", *arguments], cwd=ROOT, input=stdin)
+def git(*arguments: str, stdin: bytes | None = None, cwd: Path | None = None) -> bytes:
+    return subprocess.check_output(["git", *arguments], cwd=cwd or ROOT, input=stdin)
+
+
+def is_generated(path: str, source: str) -> bool:
+    """A file a generator wrote: never measured, never edited by hand."""
+    return Path(path).name in GENERATED_PARTS or source.startswith(
+        ("// Generated from ", "# Generated from ")
+    )
 
 
 LIFETIME = re.compile(r"'[A-Za-z_]\w*(?![\w'])")
@@ -346,10 +355,10 @@ def engine_production_panics(sources: dict[str, str]) -> int:
     )
 
 
-def cfg_test_spans(clean: str) -> list[tuple[int, int]]:
-    """(start, end) offsets of every `#[cfg(test)]` item that has a body; `clean` is already masked."""
+def without_cfg_test(clean: str) -> str:
+    """Blank every `#[cfg(test)]` item that has a body; `clean` is already masked."""
     pairs = brace_pairs(clean)
-    spans: list[tuple[int, int]] = []
+    pieces: list[str] = []
     copied = 0
     for found in CFG_TEST_ATTRIBUTE.finditer(clean):
         opening = clean.find("{", found.end())
@@ -362,19 +371,10 @@ def cfg_test_spans(clean: str) -> list[tuple[int, int]]:
         closing = pairs.get(opening)
         if closing is None or closing < copied:
             continue
-        spans.append((max(found.start(), copied), closing + 1))
-        copied = closing + 1
-    return spans
-
-
-def without_cfg_test(clean: str) -> str:
-    """Blank every `#[cfg(test)]` item that has a body; `clean` is already masked."""
-    pieces: list[str] = []
-    copied = 0
-    for start, end in cfg_test_spans(clean):
+        start = max(found.start(), copied)
         pieces.append(clean[copied:start])
-        pieces.append(blanked(clean[start:end]))
-        copied = end
+        pieces.append(blanked(clean[start:closing + 1]))
+        copied = closing + 1
     pieces.append(clean[copied:])
     return "".join(pieces)
 
@@ -524,26 +524,36 @@ def names_of_tests(path: str, source: str) -> list[str]:
     return []
 
 
-def count_ignored_tests(path: str, source: str) -> int:
-    if Path(path).suffix != ".rs":
-        return 0
-    clean, _ = mask(source)
-    attributes = re.findall(r"#\s*\[([^]]*)\]", clean)
-    return sum(
-        bool(re.fullmatch(r"\s*ignore(?:\s*=.*)?\s*", attribute))
-        or bool(
-            re.match(r"\s*cfg_attr\s*\(", attribute)
-            and re.search(r"\bignore\b", attribute)
-        )
-        for attribute in attributes
+ATTRIBUTE = re.compile(r"#\s*\[([^]]*)\]")
+ATTRIBUTES_THEN_FUNCTION = re.compile(
+    r"((?:#\s*\[[^]]*\]\s*)+)(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)"
+)
+
+
+def is_ignore(attribute: str) -> bool:
+    return bool(re.fullmatch(r"\s*ignore(?:\s*=.*)?\s*", attribute)) or bool(
+        re.match(r"\s*cfg_attr\s*\(", attribute) and re.search(r"\bignore\b", attribute)
     )
 
 
-STEP_LINE = re.compile(r"\s*step\s+(\w+)\s+(both|full|fast)\s+(\S+)")
+def ignored_test_names(path: str, source: str) -> list[str]:
+    """The Rust functions that carry an `#[ignore]`, or a `cfg_attr` that ignores them. The
+    other languages' skip markers are not read."""
+    if Path(path).suffix != ".rs":
+        return []
+    return [
+        name
+        for chain, name in ATTRIBUTES_THEN_FUNCTION.findall(mask(source)[0])
+        if any(is_ignore(attribute) for attribute in ATTRIBUTE.findall(chain))
+    ]
 
 
-def gate_steps(source: str) -> tuple[tuple[str, str, str], ...]:
-    """(area, tier, id) of every step of `check_all.sh`; the ids, not the commands, are the steps."""
+STEP_LINE = re.compile(r"\s*step\s+(\S+)\s+(\S+)\s+(\S+)\s*(.*)")
+
+
+def gate_steps(source: str) -> tuple[tuple[str, str, str, str], ...]:
+    """(area, tier, id, command) of every `step` line of `check_all.sh`; the ids, not the
+    commands, are the steps. The one parser of those lines."""
     return tuple(
         match.groups() for match in map(STEP_LINE.match, source.splitlines()) if match
     )
@@ -578,8 +588,9 @@ def metrics(tree: Tree) -> Metrics:
     engine_sources: dict[str, str] = {}
     tests: list[str] = []
     acceptances: list[str] = []
-    steps: tuple[tuple[str, str, str], ...] = ()
-    ignored_tests = sql_statements = 0
+    steps: tuple[tuple[str, str, str, str], ...] = ()
+    ignored: list[str] = []
+    sql_statements = 0
     for path in tree.paths():
         try:
             source = tree.read(path)
@@ -598,11 +609,10 @@ def metrics(tree: Tree) -> Metrics:
                     sql_sources.add(path)
                     sql_statements += matches
             engine_sources[path] = source
-        generated = Path(path).name in GENERATED_PARTS or source.startswith("// Generated from ")
-        if Path(path).suffix in SOURCE_SUFFIXES and not generated:
+        if Path(path).suffix in SOURCE_SUFFIXES and not is_generated(path, source):
             functions.extend(source_functions(path, source))
             tests.extend(f"{path}::{name}" for name in names_of_tests(path, source))
-            ignored_tests += count_ignored_tests(path, source)
+            ignored.extend(f"{path}::{name}" for name in ignored_test_names(path, source))
         if path.startswith("scripts/e2e") and path.endswith(".py"):
             acceptances.extend(acceptance_names(source))
         if path == "scripts/check_all.sh":
@@ -616,7 +626,7 @@ def metrics(tree: Tree) -> Metrics:
         tuple(sorted(tests)),
         tuple(sorted(acceptances)),
         steps,
-        ignored_tests,
+        tuple(sorted(ignored)),
     )
 
 

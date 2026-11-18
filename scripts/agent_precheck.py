@@ -71,8 +71,11 @@ FETCH_TIMEOUT_SECONDS = 60
 OWN_STEPS = ("forbidden-terms:scan",)
 QUALITY_STEP = "quality:check"
 # What a passing step says that an author wants to see before the push: the test code the change
-# adds, against the limit of `growth_gate.py`.
-SHOWN_WHEN_OK = ("check-test-growth: test code lines",)
+# adds against the limit of `growth_gate.py` and the allowance that covers it, the tests the change
+# removes, the steps it changes and the weakening a `Verification change:` line waives.
+SHOWN_WHEN_OK = ("check-test-growth: test code lines", "check-test-growth: allowance",
+                 "check-verification-not-weakened: removed test")
+SHOWN_ENDINGS = ("(waived)", "changed its command")
 TIMINGS = ROOT / ".cache" / "agent-precheck-timings.json"
 FAILURE_TAIL_LINES = 40
 
@@ -273,7 +276,7 @@ def report(result: Result) -> None:
         print(f"    {result.output}")
     else:
         for line in result.output.splitlines():
-            if line.startswith(SHOWN_WHEN_OK):
+            if line.startswith(SHOWN_WHEN_OK) or line.endswith(SHOWN_ENDINGS):
                 print(f"    {line}")
 
 

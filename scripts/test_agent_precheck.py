@@ -266,8 +266,13 @@ class GitTests(unittest.TestCase):
         self.assertEqual(timed.call_args.args[1][-2:], ["--event-file", str(event)])
         shown = io.StringIO()
         with contextlib.redirect_stdout(shown):
-            report(Result("g", True, 0.1, "other\ncheck-test-growth: test code lines base=1 head=9 net=+8 limit=400\n"))
-        self.assertIn("net=+8 limit=400", shown.getvalue())
+            report(Result("g", True, 0.1, "other\ncheck-test-growth: test code lines base=1 head=9 net=+8 limit=400\n"
+                                   "check-verification-not-weakened: removed test a.rs::gone\n"
+                                   "check-verification-not-weakened: step a:one left the fast tier (waived)\n"
+                                   "check-test-growth: allowance of 401 lines: the frames need them\n"))
+        for shown_line in ("net=+8 limit=400", "removed test a.rs::gone", "left the fast tier (waived)",
+                           "allowance of 401 lines"):
+            self.assertIn(shown_line, shown.getvalue())
         self.assertNotIn("other", shown.getvalue())
 
 

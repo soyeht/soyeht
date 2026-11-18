@@ -35,7 +35,7 @@ areas `dictation`, `mac_app`, `ios_app`, `e2e`, `editor_perf` and `timing`, and 
 steps of the others); only the full tier runs them. A fast step that stands in for a full
 one is named `<full id>-changed`, `<full id>-fast` or `<full id>-build`, and
 `test_gate_list.py` checks the list: known areas and tiers, unique ids, a full step behind
-every stand-in. The ratchet counts the steps that run in both tiers per area, so moving one
+every stand-in. The ratchet watches the steps by id, so moving one
 out of the fast tier needs a `Verification change: removes step <id> because <reason>` line, as
 removing it does (ADR 0027, amendment).
 

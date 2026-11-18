@@ -74,7 +74,7 @@ Only one run at a time (a lock in the health directory). A problem of the machin
 main (no restricted vocabulary, a gate that cannot start) writes no record and exits 2.
 Every gate run gets `--event-file` with the checked commit's message as a pull request (subject
 as title, the rest as body), because a squash merge keeps the pull request's text there: the
-`Verification change:` waiver of `hardening_gate.py` and the forbidden-terms scan read it as
+`Verification change:` waiver (`verification_gate.py`), the `Test growth allowance:` line (`growth_gate.py`) and the forbidden-terms scan read it as
 they read the pull request before the merge. The culprit search checks each commit with its own.
 
 The coordinator session runs this after each merge or every few merges; the editor

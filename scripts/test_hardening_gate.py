@@ -41,6 +41,22 @@ def commit(root, name):
     return git(root, "rev-parse", "HEAD")
 
 
+def step(area, tier, step_id, command="cargo test"):
+    return (area, tier, step_id, command)
+
+
+def metrics_with(**fields):
+    return gate.Metrics(frozenset(), frozenset(), 0, 0, (), **fields)
+
+
+def verdict(base, head, waived=Waivers()):
+    """(failed, stdout, stderr) of the verification check."""
+    shown, errors = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(shown), contextlib.redirect_stderr(errors):
+        failed = gate.check_verification(base, head, waived)
+    return failed, shown.getvalue(), errors.getvalue()
+
+
 class MemoryTree:
     def __init__(self, files):
         self.files = files
@@ -259,43 +275,68 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
     def test_a_waiver_names_what_it_waives_and_gives_a_reason(self):
         waived = self.waived(
             "Verification change: removes step e2e:old because a newer step covers its flow\n"
-            "Verification change: removes acceptance `old_flow` because the flow was removed\n"
+            "  Verification change: removes acceptance `old_flow` because the flow was removed\n"
             "Verification change: ignores slow_test because it needs the VM\n"
             "Verification change: none\n"
             "Verification change: removes step e2e:other because no\n"
             "Verification change: dropped a duplicate test because it was a duplicate\n"
         )
-        self.assertEqual(waived, Waivers(1, frozenset({"e2e:old"}), frozenset({"old_flow"})))
+        self.assertEqual(waived, Waivers(frozenset({"slow_test"}), frozenset({"e2e:old"}), frozenset({"old_flow"})))
         self.assertEqual(self.waived("No verification change requested"), Waivers())
 
-    def test_a_removed_acceptance_step_or_new_ignore_fails_unless_named(self):
-        base = gate.Metrics(
-            frozenset(), frozenset(), 0, 0, (), acceptances=("flow",),
-            steps=(("always", "both", "a:one"), ("engine", "both", "b:two"), ("engine", "full", "c:three")),
+    def test_each_weakening_fails_alone_and_only_a_line_that_names_it_waives_it(self):
+        weakenings = (  # (base, head, what the gate says, the waiver that names it)
+            (dict(steps=(step("engine", "both", "a:one"),)), dict(steps=()),
+             "step a:one was removed", Waivers(steps=frozenset({"a:one"}))),
+            (dict(steps=(step("engine", "both", "a:one"),)), dict(steps=(step("engine", "full", "a:one"),)),
+             "step a:one left the fast tier", Waivers(steps=frozenset({"a:one"}))),
+            (dict(steps=(step("engine", "both", "a:one"),)), dict(steps=(step("engine", "fast", "a:one"),)),
+             "step a:one left the full tier", Waivers(steps=frozenset({"a:one"}))),
+            (dict(steps=(step("engine", "both", "a:one"),)), dict(steps=(step("android_core", "both", "a:one"),)),
+             "step a:one moved from area engine to android_core", Waivers(steps=frozenset({"a:one"}))),
+            (dict(steps=(step("always", "both", "a:one"),)), dict(steps=(step("engine", "both", "a:one"),)),
+             "step a:one moved from area always to engine", Waivers(steps=frozenset({"a:one"}))),
+            (dict(acceptances=("flow",)), dict(acceptances=()),
+             "acceptance flow was removed", Waivers(acceptances=frozenset({"flow"}))),
+            (dict(ignored_tests=("a.rs::gone",)), dict(ignored_tests=("a.rs::slow",)),
+             "test a.rs::slow is ignored", Waivers(ignored_tests=frozenset({"slow"}))),
+            (dict(ignored_tests=()), dict(ignored_tests=("a.rs::slow",)),
+             "test a.rs::slow is ignored", Waivers(ignored_tests=frozenset({"a.rs::slow"}))),
         )
-        head = dataclasses.replace(
-            base, acceptances=(), ignored_tests=1,
-            steps=(("engine", "both", "a:one"), ("engine", "full", "b:two")),
-        )
-        quiet = io.StringIO()
-        with contextlib.redirect_stderr(quiet), contextlib.redirect_stdout(io.StringIO()):
-            self.assertTrue(gate.check_verification(base, head, Waivers()))
-            partly = Waivers(1, frozenset({"b:two", "c:three"}), frozenset())
-            self.assertTrue(gate.check_verification(base, head, partly))
-            everything = Waivers(1, frozenset({"a:one", "b:two", "c:three"}), frozenset({"flow"}))
-            self.assertFalse(gate.check_verification(base, head, everything))
-        for message in ("acceptance flow", "step a:one left the `always` area", "step b:two left the fast tier",
-                        "step c:three was removed", "1 more ignored tests"):
-            self.assertIn(message, quiet.getvalue())
+        elsewhere = Waivers(frozenset({"gone", "other"}), frozenset({"other"}), frozenset({"other"}))
+        for before, after, message, naming in weakenings:
+            with self.subTest(message):
+                base, head = metrics_with(**before), metrics_with(**after)
+                failed, shown, errors = verdict(base, head)
+                self.assertTrue(failed)
+                self.assertIn(message, errors)
+                self.assertTrue(verdict(base, head, elsewhere)[0], "a line for another thing waived it")
+                failed, shown, errors = verdict(base, head, naming)
+                self.assertFalse(failed)
+                self.assertIn(f"{message} (waived)", shown)
 
-    def test_deleting_tests_is_free_and_their_names_are_printed(self):
-        base = gate.Metrics(frozenset(), frozenset(), 0, 0, (), tests=("a.rs::kept", "a.rs::gone"))
-        head = dataclasses.replace(base, tests=("a.rs::kept",))
-        shown = io.StringIO()
-        with contextlib.redirect_stdout(shown):
-            self.assertFalse(gate.check_verification(base, head, Waivers()))
-        self.assertIn("removed test a.rs::gone", shown.getvalue())
-        self.assertNotIn("a.rs::kept\n", shown.getvalue().replace("removed test a.rs::kept", ""))
+    def test_a_step_that_gets_stronger_or_changes_its_command_is_not_a_weakening(self):
+        base = metrics_with(steps=(step("engine", "full", "a:one"), step("engine", "both", "b:two", "cargo fmt")))
+        head = metrics_with(steps=(step("always", "both", "a:one"), step("engine", "both", "b:two", "cargo test")))
+        failed, shown, errors = verdict(base, head)
+        self.assertEqual((failed, errors), (False, ""))
+        self.assertIn("step b:two changed its command", shown)
+
+    def test_deleting_tests_is_free_and_only_the_deleted_ones_are_printed(self):
+        base = metrics_with(tests=("a.rs::kept", "a.rs::gone"))
+        failed, shown, errors = verdict(base, metrics_with(tests=("a.rs::kept",)))
+        self.assertEqual((failed, errors), (False, ""))
+        self.assertIn("removed test a.rs::gone", shown)
+        self.assertNotIn("removed test a.rs::kept", shown)
+
+    def test_ignored_tests_are_the_rust_functions_an_ignore_applies_to(self):
+        source = (
+            "// #[ignore]\n#[test]\n#[ignore = \"measured separately\"]\nfn isolated() {}\n"
+            "#[cfg_attr(not(feature = \"fast\"), ignore)]\n#[test]\npub async fn conditional() {}\n"
+            "#[test]\nfn live() {}\n"
+        )
+        self.assertEqual(gate.ignored_test_names("a.rs", source), ["isolated", "conditional"])
+        self.assertEqual(gate.ignored_test_names("a.py", source), [])
 
     def test_test_names_are_read_from_the_markers_of_each_language(self):
         names = gate.names_of_tests
@@ -314,7 +355,9 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             "# step engine both commented cargo test\n"
             "cargo test --locked\n"
         )
-        self.assertEqual(gate.gate_steps(source), (("always", "both", "a:one"), ("engine", "full", "engine:test")))
+        self.assertEqual(gate.gate_steps(source), (
+            ("always", "both", "a:one", "uv run python x.py"), ("engine", "full", "engine:test", "cargo test"),
+        ))
 
     def test_comments_cannot_pad_verification_counts(self):
         result = gate.metrics(MemoryTree({
@@ -328,9 +371,9 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             "scripts/check_all.sh": "# step always both fake:one cargo test\nstep always both real:one cargo test\n",
         }))
         self.assertEqual(result.tests, ("apps/shared/Tests/Client.swift::real", "engine/tool/src/lib.rs::real"))
-        self.assertEqual(result.ignored_tests, 0)
+        self.assertEqual(result.ignored_tests, ())
         self.assertEqual(result.acceptances, ("f'Real {x}'", "real"))
-        self.assertEqual(result.steps, (("always", "both", "real:one"),))
+        self.assertEqual(result.steps, (("always", "both", "real:one", "cargo test"),))
 
     def test_ratchets_reject_new_sql_panics_and_long_functions(self):
         empty = gate.Metrics(frozenset(), frozenset(), 0, 0, ())
@@ -360,7 +403,7 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             ),
         }))
         self.assertEqual(len(result.tests), 2)
-        self.assertEqual(result.ignored_tests, 2)
+        self.assertEqual(len(result.ignored_tests), 2)
 
     def test_conditional_ignore_increase_trips_verification_ratchet(self):
         base = gate.metrics(MemoryTree({
@@ -373,7 +416,7 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
                 "fn conditional() {}\n"
             ),
         }))
-        self.assertEqual((base.ignored_tests, head.ignored_tests), (0, 1))
+        self.assertEqual((base.ignored_tests, head.ignored_tests), ((), ("engine/tool/src/lib.rs::conditional",)))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertTrue(gate.check_verification(base, head, Waivers()))
 

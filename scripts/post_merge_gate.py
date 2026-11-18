@@ -237,7 +237,7 @@ def wait_process(process: subprocess.Popen) -> int:
 def commit_event(worktree: Path) -> dict:
     """The pull request event of the commit checked out in `worktree`. A squash merge makes the
     pull request's title the subject and its body the rest of the message, so the checks that
-    read the event (the `Verification change:` waiver of `hardening_gate.py`, the forbidden
+    read the event (the `Verification change:` waiver of `verification_gate.py`, the `Test growth allowance:` line, the forbidden
     terms) see the same text after the merge as before it."""
     subject, _, body = git(worktree, "log", "-1", "--format=%B", "HEAD").partition("\n")
     return {"pull_request": {"title": subject, "body": body.strip()}}

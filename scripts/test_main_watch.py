@@ -170,6 +170,16 @@ class RevertTests(WatchCase):
         self.assertEqual(self.watch("--apply"), 0)
         self.assertEqual(self.status()["result"], "idle")
 
+    def test_a_revert_that_restores_deleted_tests_carries_the_allowance_the_later_gate_reads(self):
+        self.assertEqual(self.watch("--apply"), 0)
+        self.land("tests", {"engine/x/tests/big.rs": "fn t() {}\n" * 450})
+        culprit = self.land("breaks the unit step", {"broken": "x", "engine/x/tests/big.rs": None})
+        self.land("four", {"c": "3"})
+        self.assertEqual(self.watch("--apply"), main_watch.RED_EXIT)
+        line = f"Test growth allowance: 450 lines because this reverts {culprit[:12]} and restores"
+        self.assertIn(line, (self.gh_dir / "body.txt").read_text())
+        self.assertIn(line, (self.gh_dir / "commit.txt").read_text())
+
     def test_a_step_that_fails_on_the_last_green_main_too_reverts_nothing(self):
         culprit, head = self.red_main()
         with mock.patch.dict(os.environ, {"FAKE_HOST_BROKEN": "1"}):  # the host fails, not the commit
