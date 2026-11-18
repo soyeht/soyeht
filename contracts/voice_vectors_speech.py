@@ -66,7 +66,11 @@ sp("a bare web address keeps the whole run of stops that ended its sentence", "O
 sp("a bare web address keeps an ellipsis", "Open https://example.com/x… Then go.", "Open… Then go.")
 sp("a bare web address keeps the stop of a script with no blanks", "詳細は https://example.com/x。 次は雨です。", "詳細は。 次は雨です。")
 sp("the scheme of a web address is read in any case", "Open HTTPS://EXAMPLE.COM/X now, or WWW.Example.com later", "Open now, or later")
-sp("a bare web address in closing brackets takes its stop with it: a known limit", "Open (https://example.com/x.) Then go.", "Open Then go.")
+sp("a bare web address in closing brackets leaves its stop", "Open (https://example.com/x.) Then go.", "Open. Then go.")
+sp("the closing bracket of an address that ends a parenthesis is dropped with it, and the stop stays",
+   "Read the guide (see https://example.com/x.) Then run it.", "Read the guide (see. Then run it.")
+sp("the closing quote of an address that ends a quotation is dropped with it, and the stop stays",
+   'He said "see https://example.com/x." Then he left.', 'He said "see. Then he left.')
 sp("a task list loses its markers in any case", "- [X] done\n- [x] more\n- [ ] todo", "done\nmore\ntodo")
 sp("a comment is a tag and is dropped", "Hello <!-- note --> world", "Hello world")
 sp("a bracket and a letter open a tag, up to the next bracket", "if a <b and c> d", "if a d")

@@ -24,8 +24,6 @@ mod text;
 pub use chunker::SentenceChunker;
 pub use config::VoiceTurnConfig;
 pub use heard::{WordTiming, heard_text};
-pub use machine::{
-    VoiceTurnAction, VoiceTurnInput, VoiceTurnMachine, VoiceTurnPhase, VoiceTurnState,
-};
+pub use machine::{VoiceTurnAction, VoiceTurnInput, VoiceTurnMachine, VoiceTurnPhase};
 pub use reply_feed::{ReplyFeed, ReplyUpdate};
 pub use speech_text::speakable;

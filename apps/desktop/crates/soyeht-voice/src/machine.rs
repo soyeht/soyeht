@@ -30,25 +30,6 @@ pub enum VoiceTurnPhase {
     Probing,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum VoiceTurnState {
-    Idle,
-    Listening,
-    Thinking,
-    Speaking,
-}
-
-impl VoiceTurnPhase {
-    pub fn state(self) -> VoiceTurnState {
-        match self {
-            Self::Off => VoiceTurnState::Idle,
-            Self::Waiting | Self::Hearing | Self::Deciding => VoiceTurnState::Listening,
-            Self::Finalizing | Self::WaitingReply | Self::ProbingWait => VoiceTurnState::Thinking,
-            Self::Playing | Self::Probing => VoiceTurnState::Speaking,
-        }
-    }
-}
-
 /// What reaches the machine. Time is not an input of its own.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum VoiceTurnInput<'a> {
@@ -197,6 +178,7 @@ impl VoiceTurnMachine {
     fn frame(&mut self, probability: f64, at: i64) -> Vec<Action> {
         if at < self.ignore_until {
             self.voiced = false;
+            self.needs_quiet = false;
             return Vec::new();
         }
         let was = self.voiced;
@@ -204,6 +186,10 @@ impl VoiceTurnMachine {
             || (was && probability >= self.config.end_threshold);
         if self.voiced && !was {
             self.run_start = at - self.config.frame_ms;
+        }
+        // The hold on a new probe lasts until a frame is not voiced, in any phase.
+        if !self.voiced {
+            self.needs_quiet = false;
         }
         let run = if self.voiced { at - self.run_start } else { 0 };
         let in_speech = self.voiced && run >= self.config.speech_start_ms;
@@ -261,9 +247,6 @@ impl VoiceTurnMachine {
                 actions
             }
             Phase::WaitingReply => {
-                if !self.voiced {
-                    self.needs_quiet = false;
-                }
                 if self.talks_over(run) {
                     self.start_probe(Phase::ProbingWait, at)
                 } else {
@@ -273,9 +256,6 @@ impl VoiceTurnMachine {
             Phase::Playing => {
                 if self.config.half_duplex {
                     return Vec::new();
-                }
-                if !self.voiced {
-                    self.needs_quiet = false;
                 }
                 if self.talks_over(run) {
                     self.start_probe(Phase::Probing, at)
@@ -438,7 +418,6 @@ impl VoiceTurnMachine {
         self.phase = Phase::Hearing;
         self.interrupted = playing;
         self.partial = text.to_owned();
-        self.final_text = None;
         let mut actions = if playing {
             vec![Action::StopPlayback, Action::CancelReply]
         } else {

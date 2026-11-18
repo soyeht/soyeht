@@ -175,12 +175,15 @@ public struct VoiceTurnMachine: Sendable {
   private mutating func frame(_ probability: Double, at: Int) -> [VoiceTurnAction] {
     guard at >= ignoreUntil else {
       voiced = false
+      needsQuiet = false
       return []
     }
     let was = voiced
     voiced =
       probability >= config.startThreshold || (was && probability >= config.endThreshold)
     if voiced, !was { runStart = at - config.frameMs }
+    // The hold on a new probe lasts until a frame is not voiced, in any phase.
+    if !voiced { needsQuiet = false }
     let run = voiced ? at - runStart : 0
     let inSpeech = voiced && run >= config.speechStartMs
     let resumed = inSpeech && !wasInSpeech
@@ -210,12 +213,10 @@ public struct VoiceTurnMachine: Sendable {
       guard at - finalizeStart >= config.finalizeTimeoutMs else { return [] }
       return [.discardTurn] + complete(partial).filter { $0 != .discardTurn }
     case .waitingReply:
-      if !voiced { needsQuiet = false }
       guard voiced, !needsQuiet, run >= config.bargeInMs else { return [] }
       return startProbe(.probingWait, at: at)
     case .playing:
       guard !config.halfDuplex else { return [] }
-      if !voiced { needsQuiet = false }
       guard voiced, !needsQuiet, run >= config.bargeInMs else { return [] }
       return startProbe(.probing, at: at)
     case .probing, .probingWait:
@@ -319,7 +320,6 @@ public struct VoiceTurnMachine: Sendable {
       phase = .hearing
       interrupted = playing
       partial = text
-      finalText = nil
       let taken: [VoiceTurnAction] = playing ? [.stopPlayback, .cancelReply] : [.cancelReply]
       return final ? taken + ended(with: text, at: at) : taken
     default: return []

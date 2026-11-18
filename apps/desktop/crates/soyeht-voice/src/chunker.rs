@@ -55,7 +55,8 @@ impl SentenceChunker {
     pub fn new(minimum: usize, maximum: usize) -> Self {
         Self {
             minimum,
-            maximum,
+            // A limit under one character would never cut anything off.
+            maximum: maximum.max(1),
             consumed: 0,
             previous: Vec::new(),
             boundaries: Vec::new(),
@@ -270,10 +271,7 @@ fn cut(scalars: &[char], maximum: usize) -> Vec<(String, usize)> {
             from += 1;
         }
     }
-    let last = text_of(&scalars[from..]);
-    if !last.is_empty() {
-        parts.push((last, scalars.len()));
-    }
+    parts.push((text_of(&scalars[from..]), scalars.len()));
     parts.retain(|(text, _)| !text.is_empty());
     parts
 }

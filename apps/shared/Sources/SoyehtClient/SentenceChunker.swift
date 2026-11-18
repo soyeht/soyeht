@@ -37,7 +37,8 @@ public struct SentenceChunker: Sendable {
     maximumLength: Int = ClientPolicy.voiceSentenceMaxChars
   ) {
     self.minimumLength = minimumLength
-    self.maximumLength = maximumLength
+    // A limit under one scalar would never cut anything off.
+    self.maximumLength = max(1, maximumLength)
   }
 
   /// The sentences that became whole with this text: `spoken` is all the speakable text so far,

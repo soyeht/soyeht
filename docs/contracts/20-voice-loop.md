@@ -110,7 +110,7 @@ and whether the person interrupted a reply), `cancelReply`, `stopPlayback`.
 - A probe that decided nothing returns to `playing` or `waitingReply`; the next one needs a pause in the voice
   first (not a talk that never stopped), over the reply as over the wait. That holds when the probe was dropped
   by its limit and when it was dropped by its final text (a listener's noise or an echo) while the person still
-  talks. The hold lasts until a frame is not voiced, and it goes on when the reply starts to play: a voice that
+  talks. The hold lasts until a frame is not voiced, in any phase, and it goes on when the reply starts to play: a voice that
   never stopped does not start a probe at the moment the reply plays.
 - A reply that starts (`sentenceStarted`) from `waiting` or `waitingReply` is playing: a reply is spoken whether or
   not a voice turn preceded it. The client holds a reply that is ready while the person talks. `replyFinished`
@@ -151,8 +151,8 @@ one line per paragraph, heading or list item, joined by newlines.
   address. A bare web address (a word that starts with an `addressPrefixes` entry in any case, after any
   `addressOpeners` character) is dropped, and the run of stops that ended its sentence stays, joined to the
   word before it: the whole run at the end of the word, of `sentenceStops` and of `sentenceWideStops` ("?!",
-  "…", "。"). An address followed by closing brackets takes the stop that comes before them with it (a known
-  limit: "(see https://example.com.)" loses its stop). HTML tags (`<` then a letter, `/` or `!`, up to the
+  "…", "。"), after any closers (`sentenceClosers`: brackets and quotes) at the very end of the word, which go
+  with the address ("(see https://example.com/x.) Then" reads "(see. Then"). HTML tags (`<` then a letter, `/` or `!`, up to the
   next `>`: a comment is one, and so is "<b and c>") are dropped; a `<` with a blank after it, or a tag never
   closed, is text.
 - Emoji and symbols a voice would read out as their names, the code points of `pictographs` (pictographs, arrows,
@@ -177,7 +177,7 @@ one line per paragraph, heading or list item, joined by newlines.
 
 **Sentence chunker.** It takes the speech text so far and says which sentences became whole. Lengths count
 Unicode scalar values and a blank is a character with the Unicode `White_Space` property. Stops, closers,
-abbreviations and the two limits are `x-clientPolicy.voice` (`sentence...`).
+abbreviations and the two limits are `x-clientPolicy.voice` (`sentence...`); a maximum under 1 is 1.
 
 - A sentence ends at a stop of `sentenceStops` (and any closer of `sentenceClosers` after it) when a blank
   follows, or at the end of a finished line; at a stop of `sentenceWideStops` at once. A full stop does not end

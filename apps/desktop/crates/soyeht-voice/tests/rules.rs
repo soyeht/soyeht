@@ -2,7 +2,9 @@
 //! number is a rule of the document that no vector case names.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_voice::{heard_text, speakable};
+use soyeht_voice::{SentenceChunker, heard_text, speakable};
+use std::sync::mpsc;
+use std::time::Duration;
 
 #[test]
 fn a_line_with_a_digit_left_is_read() {
@@ -17,4 +19,17 @@ fn a_share_that_is_not_a_number_is_none_of_the_sentence() {
         heard_text(&["A.".to_owned()], Some("a b"), f64::NAN, None, 0.0),
         "A."
     );
+}
+
+#[test]
+fn a_maximum_under_one_is_one_and_cannot_hang_the_run() {
+    // The chunker runs on a thread of its own, so a loop that never ends fails the test at the
+    // limit and does not hold the run.
+    let (sender, receiver) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut chunker = SentenceChunker::new(16, 0);
+        let _ = sender.send(chunker.update("ab cd", true));
+    });
+    let emitted = receiver.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_eq!(emitted, ["a", "b", "c", "d"]);
 }

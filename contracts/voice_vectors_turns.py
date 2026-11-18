@@ -529,6 +529,19 @@ case("the voice-gate hold goes on when the reply starts to play", submitted() + 
     frames(3008, 1, 0.1, "playing"),
     frames(3040, 11, 0.9, "probing", [a("probeInterruption", 3360, fromMs=2688)]),
 ])
+case("the voice-gate hold ends at a pause in any phase, so a later turn's talk over the wait is heard", submitted() + [
+    frames(800, 58, 0.9, "waitingReply",
+           [a("probeInterruption", 1120, fromMs=448), a("dropProbe", 2624)]),
+    step("replyFinished", 2630, "waiting"),
+    frames(2656, 5, 0.1, "waiting"),
+    frames(2816, 3, 0.9, "hearing", [a("startTurn", 2880, fromMs=2464)]),
+    frames(2912, 11, 0.1, "deciding", [a("checkEndOfTurn", 3232, id=2)]),
+    step("endOfTurn", 3240, "finalizing", [a("finalizeTurn", 3240)], id=2, complete=True),
+    frames(3264, 2, 0.9, "finalizing"),
+    step("transcript", 3300, "waitingReply", [a("submit", 3300, text="again", interrupted=False)],
+         text="again", final=True),
+    frames(3328, 9, 0.9, "probingWait", [a("probeInterruption", 3584, fromMs=2912)]),
+])
 case("a probe that ended with its final text while the person goes on talking is followed by a pause first",
      probing() + [
     frames(2400, 11, 0.1, "probing", [a("finishProbe", 2720)]),

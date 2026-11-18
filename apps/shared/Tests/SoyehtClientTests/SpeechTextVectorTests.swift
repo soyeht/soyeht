@@ -121,3 +121,9 @@ private func chunker(_ item: JsonValue) throws -> SentenceChunker {
   let heard = HeardSpeech.text(played: ["A."], current: "a b", fraction: .nan)
   #expect(heard == "A.")
 }
+
+/// A limit under one scalar is one; a loop that never ended would stop at the time limit.
+@Test(.timeLimit(.minutes(1))) func aMaximumUnderOneIsOne() {
+  var chunker = SentenceChunker(minimumLength: 16, maximumLength: 0)
+  #expect(chunker.update("ab cd", final: true) == ["a", "b", "c", "d"])
+}

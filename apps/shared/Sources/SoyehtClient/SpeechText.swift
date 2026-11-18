@@ -136,8 +136,9 @@ public enum SpeechText {
         words.append(word)
         continue
       }
-      // The address is not read; the stop that ended the sentence it was in stays.
-      let stop = word.reversed().prefix {
+      // The address is not read, and neither are the closing brackets and quotes after it; the
+      // stop that ended the sentence it was in stays.
+      let stop = word.reversed().drop { ClientPolicy.voiceSentenceClosers.contains($0) }.prefix {
         ClientPolicy.voiceSentenceStops.contains($0)
           || ClientPolicy.voiceSentenceWideStops.contains($0)
       }

@@ -6,7 +6,8 @@ use crate::held_back::held_back;
 use crate::text::{is_letter, is_number, is_pictograph};
 use soyeht_client::markdown::{Block, Run, parse};
 use soyeht_protocol::client_policy::{
-    VOICE_ADDRESS_OPENERS, VOICE_ADDRESS_PREFIXES, VOICE_SENTENCE_STOPS, VOICE_SENTENCE_WIDE_STOPS,
+    VOICE_ADDRESS_OPENERS, VOICE_ADDRESS_PREFIXES, VOICE_SENTENCE_CLOSERS, VOICE_SENTENCE_STOPS,
+    VOICE_SENTENCE_WIDE_STOPS,
 };
 
 /// The reply as plain lines to read aloud, one per paragraph, heading or list item, joined by
@@ -97,8 +98,11 @@ fn clean(source: &str) -> Option<String> {
             words.push(word.to_owned());
             continue;
         }
-        // The address is not read; the stop that ended the sentence it was in stays.
-        let stop = &word[word.trim_end_matches(is_sentence_stop).len()..];
+        // The address is not read, and neither are the closing brackets and quotes after it; the
+        // stop that ended the sentence it was in stays.
+        let before_closers =
+            word.trim_end_matches(|character| VOICE_SENTENCE_CLOSERS.contains(character));
+        let stop = &before_closers[before_closers.trim_end_matches(is_sentence_stop).len()..];
         if let Some(last) = words.last_mut() {
             last.push_str(stop);
         }
