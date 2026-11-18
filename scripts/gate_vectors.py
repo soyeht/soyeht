@@ -193,15 +193,12 @@ def swift_test(root: Path = ROOT) -> int:
     """Run the Swift vector tests. A filter that matches nothing passes, so a short run fails."""
     files = swift_vector_tests(root)
     command = swift_command(root)
-    lines = []
-    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, text=True) as run:
-        for line in run.stdout:
-            sys.stdout.write(line)
-            lines.append(line)
+    run = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    sys.stdout.write(run.stdout)
+    sys.stderr.write(run.stderr)
     if run.returncode:
         return run.returncode
-    ran = tests_run("".join(lines))
+    ran = tests_run(run.stdout)
     if ran < len(files):
         print(f"gate_vectors: {ran} Swift tests ran for {len(files)} test files that read a vector", file=sys.stderr)
         return 1
