@@ -35,6 +35,10 @@ import Foundation
     request.shouldReportPartialResults = true
     if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
     try capture.start(Self.feed(request))
+    capture.onEnded = { [weak self] error in
+      self?.cancel()
+      onEvent(.failed(error.localizedDescription))
+    }
     self.request = request
     task = recognizer.recognitionTask(with: request, resultHandler: Self.report(to: onEvent))
   }

@@ -289,6 +289,11 @@ fn frame_cases() -> Vec<Value> {
     vec![
         case("an eye frame missing", vec![remove("/eyes/3")], "frames"),
         case(
+            "two eye frames that name one picture file",
+            vec![replace("/eyes/1/file", "frames/half.png".into())],
+            "ok",
+        ),
+        case(
             "an eye frame outside the canvas",
             vec![replace("/eyes/0/rect/0", 190.into())],
             "frames",

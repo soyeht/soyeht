@@ -6,12 +6,47 @@ import Foundation
 ///
 /// The sink runs on the realtime audio thread. It is `@Sendable` so it never inherits the main
 /// actor from the engine that built it, and it must not touch main-actor state.
+///
+/// One engine owns the device. While a voice loop runs, that engine is the loop's echo-cancelled
+/// session, and a capture joins it instead of opening the device: one that starts then joins at
+/// once, and one that is running on its own engine when the loop starts is moved onto the session.
+/// When the loop stops, a capture that it holds is handed back to an engine of its own, or ended
+/// with `onEnded` when that fails.
 @MainActor public final class MicrophoneCapture {
   public typealias Sink = @Sendable (AVAudioPCMBuffer) -> Void
 
+  /// The frames of one tap buffer, for every capture of the app.
+  static let tapBufferFrames: AVAudioFrameCount = 1_024
+
+  private struct Weak {
+    weak var capture: MicrophoneCapture?
+  }
+
+  /// The captures that hold the device on an engine of their own. They are kept weakly: a capture
+  /// that is dropped without `stop()` lets go of the device with its engine.
+  private static var live: [Weak] = []
+
+  /// The captures running on an engine of their own now.
+  static var ownEngineCaptures: [MicrophoneCapture] {
+    live = live.filter { $0.capture != nil }
+    return live.compactMap(\.capture).filter { $0.engine != nil }
+  }
+
   private var engine: AVAudioEngine?
+  private var sink: Sink?
+  /// Set while this capture listens through the voice loop's session instead of its own engine.
+  private var joined: (session: VoiceAudioSession, token: Int)?
+  /// The capture ended without `stop()`: the loop that held it stopped and no engine of its own
+  /// could be opened for it.
+  public var onEnded: (@MainActor (any Error) -> Void)?
 
   public init() {}
+
+  /// A capture that is dropped without `stop()` lets go of the device and of the loop's session.
+  isolated deinit {
+    if let joined { joined.session.detach(joined.token) }
+    closeOwnEngine()
+  }
 
   /// Asks for microphone access; the system answers on a background queue.
   public static func requestAccess() async -> Bool {
@@ -33,9 +68,46 @@ import Foundation
       : .denied("Allow the microphone for Soyeht in System Settings to dictate.")
   }
 
-  /// Starts delivering buffers to `sink`. Replaces a capture that is already running.
+  /// Starts delivering buffers to `sink`. Replaces a capture that is already running. While a
+  /// voice loop runs, the capture joins its echo-cancelled session rather than opening the device.
   public func start(_ sink: @escaping Sink) throws {
     stop()
+    let keeper = FormatKeeper()
+    let sink: Sink = { buffer in
+      if let steady = keeper.steady(buffer) { sink(steady) }
+    }
+    self.sink = sink
+    if let session = VoiceAudioSession.active {
+      joined = (session, session.attach(sink, owner: self))
+      return
+    }
+    do {
+      try openOwnEngine(sink)
+    } catch {
+      self.sink = nil
+      throw error
+    }
+  }
+
+  public func stop() {
+    sink = nil
+    if let joined {
+      joined.session.detach(joined.token)
+      self.joined = nil
+      return
+    }
+    closeOwnEngine()
+    #if os(iOS)
+      // The loop's session is its own: a dictation ending must not deactivate it.
+      guard VoiceAudioSession.active == nil else { return }
+      _ = ClientDiagnostics.attempt("dictation_audio_session_release_failed", key: "dictation") {
+        try AVAudioSession.sharedInstance().setActive(
+          false, options: .notifyOthersOnDeactivation)
+      }
+    #endif
+  }
+
+  private func openOwnEngine(_ sink: @escaping Sink) throws {
     #if os(iOS)
       let session = AVAudioSession.sharedInstance()
       try session.setCategory(.record, mode: .measurement, options: .duckOthers)
@@ -44,27 +116,80 @@ import Foundation
     let engine = AVAudioEngine()
     let input = engine.inputNode
     input.installTap(
-      onBus: 0, bufferSize: 1_024, format: input.outputFormat(forBus: 0), block: Self.tap(sink))
+      onBus: 0, bufferSize: Self.tapBufferFrames, format: input.outputFormat(forBus: 0),
+      block: Self.tap(sink))
     engine.prepare()
-    try engine.start()
+    do {
+      try engine.start()
+    } catch {
+      input.removeTap(onBus: 0)
+      throw error
+    }
     self.engine = engine
+    Self.live = Self.live.filter { $0.capture != nil }
+    if !Self.live.contains(where: { $0.capture === self }) { Self.live.append(Weak(capture: self)) }
   }
 
-  public func stop() {
+  private func closeOwnEngine() {
     guard let engine else { return }
     engine.stop()
     engine.inputNode.removeTap(onBus: 0)
     self.engine = nil
-    #if os(iOS)
-      _ = ClientDiagnostics.attempt("dictation_audio_session_release_failed", key: "dictation") {
-        try AVAudioSession.sharedInstance().setActive(
-          false, options: .notifyOthersOnDeactivation)
-      }
-    #endif
+  }
+
+  /// The voice loop starts: the capture lets go of the device and keeps its sink, which the loop's
+  /// session takes (`join`) or gives back (`handBack`).
+  func release() -> Sink? {
+    closeOwnEngine()
+    return sink
+  }
+
+  func join(_ session: VoiceAudioSession, sink: @escaping Sink) {
+    joined = (session, session.attach(sink, owner: self))
+  }
+
+  /// The voice loop stops: an engine of the capture's own again, or an end with the reason.
+  func handBack() {
+    joined = nil
+    guard let sink else { return }
+    do {
+      try openOwnEngine(sink)
+    } catch {
+      self.sink = nil
+      onEnded?(error)
+    }
   }
 
   /// Built outside the main actor: the tap block runs on the audio thread.
   nonisolated static func tap(_ sink: @escaping Sink) -> AVAudioNodeTapBlock {
     { buffer, _ in sink(buffer) }
+  }
+}
+
+/// Keeps the buffers of a capture in the format of its first one. A capture that moves from an engine
+/// of its own to the loop's session (or back) changes the format of its audio, and a recognizer that
+/// is in the middle of a request must not see that.
+final class FormatKeeper: @unchecked Sendable {
+  private let lock = NSLock()
+  private var first: AVAudioFormat?
+  private var converter: AudioResampler?
+
+  /// The buffer in the first format, or nil when it cannot be converted (reported once).
+  func steady(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+    lock.withLock {
+      guard let first else {
+        first = buffer.format
+        return buffer
+      }
+      if buffer.format == first { return buffer }
+      let resampler = converter ?? AudioResampler(format: first)
+      converter = resampler
+      do {
+        return try resampler.convert(buffer)
+      } catch {
+        ClientDiagnostics.reportOnce("capture_format_change_failed", key: "dictation", error: error)
+        return nil
+      }
+    }
   }
 }

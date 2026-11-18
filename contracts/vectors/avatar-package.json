@@ -512,6 +512,13 @@
       ]
     },
     {
+      "expect": "ok",
+      "name": "two eye frames that name one picture file",
+      "patch": [
+        {"op":"replace","path":"/eyes/1/file","value":"frames/half.png"}
+      ]
+    },
+    {
       "expect": "frames",
       "name": "an eye frame outside the canvas",
       "patch": [

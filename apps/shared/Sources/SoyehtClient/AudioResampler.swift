@@ -14,13 +14,16 @@ public final class AudioResampler: @unchecked Sendable {
   private var converter: AVAudioConverter?
 
   /// `sampleRate` is the rate of the model's front end.
-  public init(sampleRate: Double) throws {
+  public convenience init(sampleRate: Double) throws {
     guard
       let target = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: sampleRate, channels: 1, interleaved: false)
     else { throw Failure.unsupportedFormat }
-    self.target = target
+    self.init(format: target)
   }
+
+  /// Converts to `format`, whatever the buffers arrive in.
+  init(format: AVAudioFormat) { target = format }
 
   public func samples(from buffer: AVAudioPCMBuffer) throws -> [Float] {
     let converted = try convert(buffer)
@@ -30,7 +33,7 @@ public final class AudioResampler: @unchecked Sendable {
     return Array(UnsafeBufferPointer(start: channel, count: Int(converted.frameLength)))
   }
 
-  private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+  func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
     if buffer.format == target { return buffer }
     if converter?.inputFormat != buffer.format {
       converter = AVAudioConverter(from: buffer.format, to: target)
