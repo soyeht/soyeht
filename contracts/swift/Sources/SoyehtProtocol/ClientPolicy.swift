@@ -172,6 +172,8 @@ public enum ClientPolicy {
     public static let voiceHalfDuplexTailSeconds: Double = 0.3
     public static let voiceWatchdogMs = 3000
     public static let voiceWatchdogSeconds: Double = 3.0
+    public static let voiceFirstBufferMs = 10000
+    public static let voiceFirstBufferSeconds: Double = 10.0
     public static let voiceOutputTickMs = 16
     public static let voiceOutputTickSeconds: Double = 0.016
     public static let voiceContinuers = "mhm|mmm|mm hmm|uh huh|hmm|aham|uhum"

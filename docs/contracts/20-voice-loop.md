@@ -269,13 +269,17 @@ loudspeaker. A dictation does not compete with the loop for the device:
   for every frame), so the dictated speech is not taken for a turn, and the avatar may speak meanwhile;
 - a dictation that runs on its own engine when the loop starts is moved onto the session, and is handed back to
   its own engine, or ended with an event, when the loop stops;
-- a capture that is dropped without having been stopped does not keep the device from the loop.
+- a capture that is dropped without having been stopped does not keep the device from the loop, nor keep the
+  loop deaf;
+- a recognizer of the loop never starts from audio before the moment a dictation left (the end of a dictated
+  word is not the start of a turn), and a capture that is moved keeps the format of its first buffer, so a
+  recognizer never sees the audio change format in the middle of a request.
 
 Only one loop runs in a process. The loop cancels its own recognizers before the audio stops. The audio
 stopping by itself (a device removed, an interruption, a reset of the system's audio services) ends the loop with
 the reason and with `stop`: playback and listening end and the agent's work is **not** cancelled. So does a
-microphone that delivers no frame for `watchdogMs` (the first buffer arms the watchdog, and time that the
-machine sleeps through does not count).
+microphone that delivers no frame for `watchdogMs`, or none at all within `firstBufferMs` of the start (the
+machine's own sleeping, or a stop in a debugger, does not count).
 
 **Work off the main actor**: the microphone's samples are framed and read by the voice model on a queue of
 their own, which also keeps the last eight seconds in a ring; the main actor gets the results. The loop stops
