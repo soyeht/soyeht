@@ -376,7 +376,7 @@ fn mesh_cases() -> Vec<Value> {
     ] {
         cases.push(case(
             name,
-            vec![repeat("/mouth/parts/1/triangles", json!([0, 1, 2]), n)],
+            vec![repeat("/mouth/parts/1/triangles", json!([0, 0, 0]), n)],
             json!({}),
             expect,
         ));

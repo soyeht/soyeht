@@ -128,7 +128,7 @@ pub(super) fn state_id(s: State) -> &'static str {
     }
 }
 
-fn gaze_id(g: Gaze) -> &'static str {
+pub(super) fn gaze_id(g: Gaze) -> &'static str {
     match g {
         Gaze::Center => "center",
         Gaze::Left => "left",
@@ -139,7 +139,7 @@ fn gaze_id(g: Gaze) -> &'static str {
     }
 }
 
-fn lid_id(l: Lid) -> &'static str {
+pub(super) fn lid_id(l: Lid) -> &'static str {
     match l {
         Lid::Open => "open",
         Lid::Half => "half",
@@ -335,7 +335,7 @@ fn mouth_vectors() -> Value {
     half["expected"] = run_acting(&half);
     acting.push(half);
     json!({
-        "description": "The mouth runtime of soyeht-avatar (ADR 0166). The format is unstable (0.x) until the renderers have consumed it. Every step is by dt = 1.0 / 60.0 as an IEEE double, and the time of frame i is the double i / 60.0 (the acting layer's clock is the sum of the dt, in seconds, as a double: a timer that lands on a frame boundary depends on that arithmetic). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence. aligner: a text, its language and the envelope of the audio in, the timed phonemes and word starts out (a letter or digit the rules cannot read gets a neutral syllable, `d` and `ə`). acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53), a canvas height (default 1024; lengths scale by it over 1024) and scenes (`jaw` in reference pixels) in, the pose of the head and the eye frame every 30 frames out. runtime: a clip with its words, a seed, a canvas height and a script in; the mouth, the jaw and the first brow every 6 frames out (the mouth steps first, the jaw is `o * 4.6 * (0.8 + 0.2 * (1 - c))`, a clip with nothing to say over a loud voice follows the level, and a listening or thinking avatar holds its expression). warp: a package's warp, a pose and points in, the point each is read from out. Parameters and weights agree within `tolerance`; the rest agree exactly.",
+        "description": "The mouth runtime of soyeht-avatar (ADR 0166). The format is unstable (0.x) until the renderers have consumed it. Every step is by dt = 1.0 / 60.0 as an IEEE double, and the time of frame i is the double i / 60.0 (the acting layer's clock is the sum of the dt, in seconds, as a double: a timer that lands on a frame boundary depends on that arithmetic). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence. aligner: a text, its language and the envelope of the audio in, the timed phonemes and word starts out (a letter or digit the rules cannot read gets a neutral syllable, `d` and `ə`). acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53), a canvas height (default 1024; lengths scale by it over 1024) and scenes (`jaw` in reference pixels) in, the pose of the head and the eye frame every 30 frames out. runtime: a clip with its words, a seed, a canvas height and a script in; the mouth, the jaw and the first brow every 6 frames out (the mouth steps first, the jaw is `o * 4.6 * (0.8 + 0.2 * (1 - c))`, a clip with nothing to say over a loud voice follows the level, and a listening or thinking avatar holds its expression). warp: a package's warp, a pose and points in, the point each is read from out. eyeFrames: an eye (`gaze`, `lid`, `soft`) in, the id of the eye frame a renderer lays over the base picture out, or null for the base picture's own eyes: the blink when the lid is closed, `half` when it is half closed, else the frame of the gaze when the eyes look away from the centre, else `soft` while listening, else null. Parameters and weights agree within `tolerance`; the rest agree exactly.",
         "tolerance": TOLERANCE,
         "fps": FPS,
         "weights": weights,
@@ -344,6 +344,7 @@ fn mouth_vectors() -> Value {
         "acting": acting,
         "runtime": super::runtime::runtime_cases(),
         "warp": super::runtime::warp_cases(),
+        "eyeFrames": super::runtime::eye_frame_cases(),
     })
 }
 
@@ -364,6 +365,7 @@ fn vectors_mouth_file_matches_the_runtime() {
     check_group(&file, "acting", run_acting);
     check_group(&file, "runtime", super::runtime::run_runtime);
     check_group(&file, "warp", super::runtime::run_warp);
+    check_group(&file, "eyeFrames", super::runtime::run_eye_frame);
     // A guard on the file itself: an aligner case with a voiced envelope and a text must have
     // sounds, or it would pass for nothing; only the empty text has none.
     for case in file["aligner"].as_array().expect("aligner") {

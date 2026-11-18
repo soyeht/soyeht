@@ -326,6 +326,19 @@ pub(super) fn owner_only(options: &mut OpenOptions) -> &mut OpenOptions {
     options
 }
 
+/// Whether `metadata` is a link or any other reparse point (a junction, a mount point), judged
+/// from `symlink_metadata`.
+pub(super) fn is_link(metadata: &fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt as _;
+    const REPARSE_POINT: u32 = 0x400;
+    metadata.file_attributes() & REPARSE_POINT != 0
+}
+
+/// Opens `path` for reading without following a link.
+pub(super) fn open_regular(path: &Path) -> io::Result<File> {
+    open_no_follow(OpenOptions::new().read(true), path)
+}
+
 pub(super) fn open_no_follow(options: &OpenOptions, path: &Path) -> io::Result<File> {
     let file = options
         .clone()

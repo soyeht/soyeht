@@ -69,37 +69,33 @@ package enum AvatarRasterizer {
   @inline(__always)
   private static func owns(dx: Double, dy: Double) -> Bool { dy < 0 || (dy == 0 && dx > 0) }
 
-  /// Draw one textured triangle over `destination`, `opacity` times the interpolated vertex
-  /// opacity (source-over, premultiplied), and say how many pixels it covered. A triangle with no
-  /// area, or with a vertex that is not a number, draws nothing.
+  /// The pixels a triangle covers, and for each its barycentric weights and its interpolated vertex
+  /// opacity (the feather): `body(x, y, b0, b1, b2)`, with the weights of `a`, `b` and `c`, is called once for each pixel centre inside
+  /// the triangle (the top-left rule decides a centre on an edge), and the count of them is
+  /// returned. A triangle with no area, or with a vertex that is not a number, covers nothing.
   ///
   /// The cost is that of the pixels covered: each row is cut to the span the three edges leave,
   /// and only the pixels of the span (and one on each side, for the rounding of the cut) are
   /// tested.
-  ///
-  /// With `under` (the picture as it was before the part that this triangle belongs to), the
-  /// vertices' opacity is the coverage of the whole part, applied once to what was under it, and
-  /// `opacity` mixes the layers: see `AvatarMeshPart.layers`.
-  @discardableResult
-  package static func fill(
-    _ a: Vertex, _ b: Vertex, _ c: Vertex, opacity: Double, under: UnsafePointer<UInt8>? = nil,
-    texture: UnsafePointer<UInt8>, textureSize: (width: Int, height: Int),
-    destination: UnsafeMutablePointer<UInt8>, destinationSize: (width: Int, height: Int)
+  @inline(__always)
+  private static func cover(
+    _ a: Vertex, _ b: Vertex, _ c: Vertex, size: (width: Int, height: Int),
+    _ body: (Int, Int, Double, Double, Double) -> Void
   ) -> Int {
     var (v0, v1, v2) = (a, b, c)
     var area = (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x)
     guard area.isFinite, abs(area) > 1e-9 else { return 0 }
-    if area < 0 {
+    let swapped = area < 0
+    if swapped {
       swap(&v1, &v2)
       area = -area
     }
     // The pixels whose centres the triangle's box covers, bounded in doubles first: a position a
     // host got wrong must not be an integer overflow.
     let lowX = max((min(v0.x, v1.x, v2.x) - 0.5).rounded(.up), 0)
-    let highX = min((max(v0.x, v1.x, v2.x) - 0.5).rounded(.down), Double(destinationSize.width - 1))
+    let highX = min((max(v0.x, v1.x, v2.x) - 0.5).rounded(.down), Double(size.width - 1))
     let lowY = max((min(v0.y, v1.y, v2.y) - 0.5).rounded(.up), 0)
-    let highY = min(
-      (max(v0.y, v1.y, v2.y) - 0.5).rounded(.down), Double(destinationSize.height - 1))
+    let highY = min((max(v0.y, v1.y, v2.y) - 0.5).rounded(.down), Double(size.height - 1))
     guard lowX <= highX, lowY <= highY else { return 0 }
     let (minX, maxX, minY, maxY) = (Int(lowX), Int(highX), Int(lowY), Int(highY))
     // The edge opposite each vertex, and whether this triangle owns a pixel centre on it.
@@ -122,35 +118,78 @@ package enum AvatarRasterizer {
           w2 > 0 || (w2 == 0 && own2)
         else { continue }
         covered += 1
-        let b0 = w0 / area
-        let b1 = w1 / area
-        let b2 = w2 / area
-        let coverage = opacity * (b0 * v0.alpha + b1 * v1.alpha + b2 * v2.alpha)
-        guard coverage > 0 || under != nil else { continue }
-        let color = sample(
-          texture, width: textureSize.width, height: textureSize.height,
-          u: Float(b0 * v0.u + b1 * v1.u + b2 * v2.u), v: Float(b0 * v0.v + b1 * v1.v + b2 * v2.v))
-        let index = y * destinationSize.width + x
-        if let under {
-          // The vertices' opacity (the feather of an edge) is the coverage of the whole mouth
-          // part, applied once to the picture that was under it; the layer's opacity then mixes
-          // the layers by their weights. Applied to each layer, the coverage of an edge would
-          // add up with every layer drawn, and a layer that comes in at a tiny weight would
-          // change the edge.
-          let a = Float(min(max(b0 * v0.alpha + b1 * v1.alpha + b2 * v2.alpha, 0), 1))
-          let effective = color * a + load(under, index) * (1 - a * color[3] / 255)
-          let mix = Float(min(opacity, 1))
-          store(effective * mix + load(destination, index) * (1 - mix), destination, index)
-          continue
-        }
-        // Source-over of a premultiplied texel: the texel's own alpha, scaled by the coverage,
-        // is what the destination keeps less of.
-        let k = Float(min(coverage, 1))
-        store(
-          color * k + load(destination, index) * (1 - k * color[3] / 255), destination, index)
+        // The weights come back in the order the caller gave the vertices.
+        body(x, y, w0 / area, (swapped ? w2 : w1) / area, (swapped ? w1 : w2) / area)
       }
     }
     return covered
+  }
+
+  /// One layer mixed over the mix before it: `texel * alpha + mix * (1 - alpha)`, every colour
+  /// premultiplied RGBA of 0...255. The texel's own opacity is part of the colour that is mixed:
+  /// a clear texel of a heavy drawing makes the mix clearer in proportion to its weight, and a
+  /// drawing that comes in at a tiny weight changes the mix by a tiny amount.
+  package static func mixStep(_ mix: SIMD4<Float>, texel: SIMD4<Float>, alpha: Float)
+    -> SIMD4<Float>
+  {
+    let a = Float.minimum(Float.maximum(alpha, 0), 1)
+    return texel * a + mix * (1 - a)
+  }
+
+  /// A mixed part laid over `under` by `coverage`, 0 to 1: `mix * c + under * (1 - c * mix alpha /
+  /// 255)`. The feather counts once, in `coverage`, however many drawings were mixed.
+  package static func compose(mix: SIMD4<Float>, under: SIMD4<Float>, coverage: Float)
+    -> SIMD4<Float>
+  {
+    let c = Float.minimum(Float.maximum(coverage, 0), 1)
+    return mix * c + under * (1 - c * mix[3] / 255)
+  }
+
+  /// Mix one layer of a part into `mix` (premultiplied RGBA of 0...255, a float for each channel):
+  /// the texel the drawing's picture gives at the pixel, with the layer's `alpha`, over the mix
+  /// before it: `mix = texel * alpha + mix * (1 - alpha)`. The texel's own opacity is part of the
+  /// colour that is mixed. Says how many pixels the triangle covered. The clearing of `mix` before
+  /// the first layer, and the laying of the mix over the picture (`lay`), are the caller's.
+  @discardableResult
+  package static func mixLayer(
+    _ a: Vertex, _ b: Vertex, _ c: Vertex, alpha: Double, texture: UnsafePointer<UInt8>,
+    textureSize: (width: Int, height: Int), mix: UnsafeMutablePointer<Float>,
+    size: (width: Int, height: Int)
+  ) -> Int {
+    let layer = Float(alpha)
+    return cover(a, b, c, size: size) { x, y, b0, b1, b2 in
+      let texel = sample(
+        texture, width: textureSize.width, height: textureSize.height,
+        u: Float(b0 * a.u + b1 * b.u + b2 * c.u), v: Float(b0 * a.v + b1 * b.v + b2 * c.v))
+      let at = (y * size.width + x) * 4
+      let before = SIMD4<Float>(mix[at], mix[at + 1], mix[at + 2], mix[at + 3])
+      let mixed = mixStep(before, texel: texel, alpha: layer)
+      mix[at] = mixed[0]
+      mix[at + 1] = mixed[1]
+      mix[at + 2] = mixed[2]
+      mix[at + 3] = mixed[3]
+    }
+  }
+
+  /// Lay the mix of a part over `under` (the picture as it was before the part) into
+  /// `destination`, once: with the coverage `c` of the pixel, the part's `opacity` times the
+  /// feather of its corners interpolated there, `out = mix * c + under * (1 - c * mix alpha / 255)`.
+  /// The feather counts once however many drawings are mixed. Says how many pixels the triangle
+  /// covered.
+  @discardableResult
+  package static func lay(
+    _ a: Vertex, _ b: Vertex, _ c: Vertex, opacity: Double, mix: UnsafePointer<Float>,
+    under: UnsafePointer<UInt8>, destination: UnsafeMutablePointer<UInt8>,
+    size: (width: Int, height: Int)
+  ) -> Int {
+    cover(a, b, c, size: size) { x, y, b0, b1, b2 in
+      let feather = b0 * a.alpha + b1 * b.alpha + b2 * c.alpha
+      let coverage = Float(opacity * feather)
+      let index = y * size.width + x
+      let at = index * 4
+      let colour = SIMD4<Float>(mix[at], mix[at + 1], mix[at + 2], mix[at + 3])
+      store(compose(mix: colour, under: load(under, index), coverage: coverage), destination, index)
+    }
   }
 
   /// The pixels of the row `py` (a pixel centre's y) that can be inside the triangle: the

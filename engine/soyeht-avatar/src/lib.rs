@@ -24,6 +24,7 @@ mod acting_tune;
 mod aligner;
 mod clip;
 mod envelope;
+mod eye_frame;
 mod mesh;
 mod mouth;
 mod package;
@@ -48,11 +49,13 @@ pub use acting_tune::{
 pub use aligner::{Alignment, Language, align};
 pub use clip::{Clip, WordStart, energy_target};
 pub use envelope::{Envelope, HOP};
-pub use mesh::Layer;
+pub use eye_frame::eye_frame;
+pub use mesh::{Layer, composite};
 pub use mouth::Mouth;
 pub use package::{
-    AssetInfo, Atlas, Chest, EYE_IDS, ErrorKind, FORMAT, FileDecl, MeshPart, MouthModel, Package,
-    PackageError, PartKind, Patch, Region, ShapeMesh, Size, VERSION, Warp, png_size,
+    AssetInfo, Atlas, Chest, EYE_IDS, ErrorKind, FORMAT, FileDecl, MAX_DOCUMENT_BYTES,
+    MAX_FILE_BYTES, MAX_FILES, MAX_TOTAL_BYTES, MeshPart, MouthModel, Package, PackageError,
+    PartKind, Patch, Region, ShapeMesh, Size, VERSION, Warp, plain_png_path, png_size,
 };
 pub use params::{MorphWeights, Params, Shape, weights_from_params};
 pub use phoneme::{Kind, Phoneme};
