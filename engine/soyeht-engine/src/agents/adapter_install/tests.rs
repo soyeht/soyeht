@@ -66,20 +66,34 @@ fn only_the_launch_of_a_locked_adapter_is_given_the_variables_of_its_entry() {
     assert!(fixed_environment(&argv(&["npx", "--yes", "@scope/other@1.0.0"])).is_empty());
 }
 
-/// A launch saved under an older pin is not run through `npx` unlocked, which is what a plain
-/// `npx --yes <package>@<version>` of the locked packages would do.
+/// A launch saved under an older pin is not run through `npx` unlocked by a built-in pane, which
+/// is what a plain `npx --yes <package>@<version>` of the locked packages would do. A custom
+/// entry that names another version is its author's and starts as written.
 #[test]
-fn a_locked_package_at_another_version_is_refused_not_started_unlocked() {
+fn a_built_in_launch_at_another_version_is_refused_and_a_custom_one_still_starts() {
     let profile = soyeht_platform::testing::scratch_dir("adapter-stale-pin");
     for locked in &LOCKED {
         let stale = format!("{}@0.0.1", locked.package);
         assert!(locked_launch(&argv(&["npx", "--yes", &stale])).is_none());
-        let error =
-            installed_spawn(&profile, spawn(&["npx", "--yes", &stale, "--flag"])).unwrap_err();
+        let launch = |id: &str| soyeht_protocol::HarnessLaunch {
+            id: id.into(),
+            name: "Adapter".into(),
+            command: "npx".into(),
+            args: argv(&["--yes", &stale]),
+            version: "0.0.1".into(),
+            environment: None,
+        };
+        let error = refuse_stale_builtin(&launch("registry.adapter")).unwrap_err();
         assert_eq!(
             errors::kind(&error),
             soyeht_protocol::ErrorKind::HarnessUnavailable
         );
+        assert!(error.unstartable_reason().is_some_and(|reason| {
+            reason.contains(&pinned(locked)) && reason.contains("switch this pane's harness")
+        }));
+        refuse_stale_builtin(&launch("custom-adapter")).unwrap();
+        let custom = spawn(&["npx", "--yes", &stale, "--flag"]);
+        assert_eq!(installed_spawn(&profile, custom.clone()).unwrap(), custom);
         // The locked version, another package, a package that only starts with the name, and a
         // launch that is not npx's are not this refusal's.
         for other in [

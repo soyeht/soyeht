@@ -518,6 +518,12 @@ fn configured_entry(directory: &Path, id: &str) -> Result<RegistryEntry> {
         .ok_or_else(|| errors::harness_unavailable("Harness is not configured in this profile"))
 }
 
+/// The launch the catalogue names for a harness, as written: not resolved to a program on this
+/// machine, so it holds when the harness cannot be started now.
+pub(crate) fn catalogue_launch(directory: &Path, id: &str) -> Result<HarnessLaunch> {
+    Ok(configured_entry(directory, id)?.launch)
+}
+
 /// The launch a harness would start with, without reading its executable.
 pub(crate) fn resolve(directory: &Path, id: &str) -> Result<HarnessLaunch> {
     resolve_entry(configured_entry(directory, id)?)

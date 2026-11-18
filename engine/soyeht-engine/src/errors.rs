@@ -43,6 +43,7 @@ pub enum Error {
     FileNotText(String),
     FileTooLarge(String),
     AdapterNotAcknowledged(String),
+    StaleAdapter(String),
     WorkspaceFolderMissing(String),
     PushUnavailable(String),
     PairingCodeInvalid(String),
@@ -133,6 +134,7 @@ constructor!(platform_unsupported, PlatformUnsupported);
 constructor!(file_not_text, FileNotText);
 constructor!(file_too_large, FileTooLarge);
 constructor!(adapter_not_acknowledged, AdapterNotAcknowledged);
+constructor!(stale_adapter, StaleAdapter);
 constructor!(workspace_folder_missing, WorkspaceFolderMissing);
 constructor!(push_unavailable, PushUnavailable);
 constructor!(pairing_code_invalid, PairingCodeInvalid);
@@ -245,11 +247,12 @@ pub fn log_if_failed(event: &str, result: Result<()>) {
 /// The single translation from engine failures to the public protocol. A failure of a domain
 /// crate already names its kind where the failure is defined; this names the engine's own.
 impl Error {
-    /// What a pane that cannot start says when it is a package nobody acknowledged (ADR 0143):
-    /// it names the package, so the person knows to acknowledge it. `None` for any other error.
-    pub(crate) fn unacknowledged_reason(&self) -> Option<&str> {
+    /// What a pane that cannot start says when trying again cannot help (ADR 0143): a package
+    /// nobody acknowledged, or an adapter version the engine no longer installs. The reason names
+    /// the way forward. `None` for any other error.
+    pub(crate) fn unstartable_reason(&self) -> Option<&str> {
         match self {
-            Error::AdapterNotAcknowledged(message) => Some(message),
+            Error::AdapterNotAcknowledged(message) | Error::StaleAdapter(message) => Some(message),
             _ => None,
         }
     }
@@ -301,6 +304,7 @@ pub fn kind(error: &Error) -> ErrorKind {
         Error::FileNotText(_) => ErrorKind::FileNotText,
         Error::FileTooLarge(_) => ErrorKind::FileTooLarge,
         Error::AdapterNotAcknowledged(_) => ErrorKind::AdapterNotAcknowledged,
+        Error::StaleAdapter(_) => ErrorKind::HarnessUnavailable,
         Error::WorkspaceFolderMissing(_) => ErrorKind::WorkspaceFolderMissing,
         Error::PushUnavailable(_) => ErrorKind::PushUnavailable,
         Error::PairingCodeInvalid(_) => ErrorKind::PairingCodeInvalid,
@@ -417,6 +421,7 @@ fn message(error: &Error) -> String {
         | Error::FileNotText(message)
         | Error::FileTooLarge(message)
         | Error::AdapterNotAcknowledged(message)
+        | Error::StaleAdapter(message)
         | Error::WorkspaceFolderMissing(message)
         | Error::PushUnavailable(message)
         | Error::PairingCodeInvalid(message)

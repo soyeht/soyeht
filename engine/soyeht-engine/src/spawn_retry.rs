@@ -101,9 +101,10 @@ impl Core {
             }
             Err(error) => error,
         };
-        // A package nobody acknowledged will not be started by trying again: the pane stops at
-        // once and says which package, so the person knows to acknowledge it (ADR 0143).
-        if let Some(reason) = error.unacknowledged_reason().map(str::to_owned) {
+        // A package nobody acknowledged, or an adapter version the engine no longer installs,
+        // will not be started by trying again: the pane stops at once and says what to do (ADR
+        // 0143).
+        if let Some(reason) = error.unstartable_reason().map(str::to_owned) {
             self.supervisor_retry.spawn_retries.0.remove(id);
             Line::new("engine.pane_not_acknowledged").emit();
             let stopped = self.stop_pane(id, &reason);
@@ -358,6 +359,23 @@ mod tests {
         let stopped = &core.panes[&id].stored.pane;
         assert_eq!(stopped.state, PaneState::Dead);
         assert!(stopped.phrase.contains("@google/gemini-cli@0.59.0"));
+        crate::test_paths::remove_after(core, directory);
+    }
+
+    /// A pane whose adapter version the engine no longer installs is not tried again either: it
+    /// stops at once, and the reason beside its dead state says how to go on.
+    #[test]
+    fn a_pane_refused_for_a_stale_adapter_stops_at_once_and_says_what_to_do() {
+        let (mut core, directory, id, _calls) = core_with_unstarted_pane(Vec::new());
+        let refusal = errors::stale_adapter(
+            "adapter@1.0.0 is not the version this Soyeht installs (2.0.0). Restart Soyeht or \
+             switch this pane's harness",
+        );
+        core.settle_spawn(&id, Err(refusal));
+        assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 0);
+        let stopped = &core.panes[&id].stored.pane;
+        assert_eq!(stopped.state, PaneState::Dead);
+        assert!(stopped.phrase.contains("switch this pane's harness"));
         crate::test_paths::remove_after(core, directory);
     }
 

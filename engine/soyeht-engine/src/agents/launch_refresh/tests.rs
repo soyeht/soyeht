@@ -30,9 +30,12 @@ fn a_pane_saved_under_an_older_pin_follows_the_catalogue_to_the_installed_adapte
             cols: 80,
             rows: 24,
         };
-        // The saved launch is not started unlocked.
+        // The saved launch of a built-in pane is not started unlocked.
         adapter_install::seed_for_test(&profile, index);
-        assert!(adapter_install::installed_spawn(&profile, spawn(&saved)).is_err());
+        assert!(adapter_install::refuse_stale_builtin(&saved).is_err());
+        // The catalogue's entry is read as written, whether or not `npx` is on this machine's path.
+        let read = refreshed_launch(&profile, &saved).unwrap();
+        assert_eq!(read.args, current.args);
         let followed = followed(&saved, current).unwrap();
         assert_eq!(
             (&followed.args, &followed.version),

@@ -163,8 +163,7 @@ fn npx_package(argv: &[String]) -> Option<(&str, &[String])> {
 }
 
 /// The locked adapter `argv` would start through `npx` at a version the lock is not, and that
-/// version: a launch saved under an older pin. The lock is the only way to start these packages
-/// (ADR 0143), so it is refused, not run unlocked.
+/// version: a launch saved under an older pin.
 fn stale_locked_launch(argv: &[String]) -> Option<(&'static Locked, &str)> {
     let (package, _) = npx_package(argv)?;
     LOCKED.iter().find_map(|locked| {
@@ -177,6 +176,27 @@ fn stale_locked_launch(argv: &[String]) -> Option<(&'static Locked, &str)> {
 /// other launch.
 pub(crate) fn fixed_environment(argv: &[String]) -> &'static [(&'static str, &'static str)] {
     locked_launch(argv).map_or(&[], |(locked, _)| locked.environment)
+}
+
+/// Refuses the start of a built-in harness whose launch names a locked adapter at a version the
+/// lock is not: the lock is the only way the engine starts a built-in adapter (ADR 0143), so a
+/// launch saved under an older pin is refused, not run unlocked through `npx`. A custom entry is
+/// its author's: it runs as written, whatever version it names.
+pub(crate) fn refuse_stale_builtin(launch: &soyeht_protocol::HarnessLaunch) -> Result<()> {
+    if !launch.id.starts_with(super::registry::BUILTIN_PREFIX) {
+        return Ok(());
+    }
+    let argv: Vec<String> = std::iter::once(launch.command.clone())
+        .chain(launch.args.iter().cloned())
+        .collect();
+    match stale_locked_launch(&argv) {
+        Some((locked, version)) => Err(errors::stale_adapter(format!(
+            "{}@{version} is not the version this Soyeht installs ({}). Restart Soyeht or switch \
+             this pane's harness, and the pane starts {}@{}",
+            locked.package, locked.version, locked.package, locked.version
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Whether the start of `argv` may install an adapter first, which the code that sends it must
@@ -331,13 +351,6 @@ pub(crate) fn installed_spawn(profile: &Path, config: Spawn) -> Result<Spawn> {
 }
 
 fn installed_spawn_with(profile: &Path, mut config: Spawn, npm: &str) -> Result<Spawn> {
-    if let Some((locked, version)) = stale_locked_launch(&config.argv) {
-        return Err(errors::harness_unavailable(format!(
-            "{}@{version} is not the version this Soyeht installs ({}), and is not started \
-             through npx",
-            locked.package, locked.version
-        )));
-    }
     let Some((locked, rest)) = locked_launch(&config.argv) else {
         return Ok(config);
     };

@@ -209,11 +209,15 @@ person's own default. The pin moved to 2.6.0 (command line 0.166.0). Three thing
 
 - **A pane saved under an older pin starts the catalogue's adapter.** A built-in pane stores its launch in
   its checkpoint. When it is restored, a launch of a locked adapter that differs from the catalogue's
-  (the arguments and the version) is replaced by the catalogue's and saved (`registry::refreshed_launch`,
-  `Core::restore_agent`). An adapter that is not locked keeps the launch the person acknowledged.
-  As a second guard, `npx --yes <locked package>@<another version>` is refused where a process is
-  sent (`adapter_install::installed_spawn`, `harness_unavailable`): the lock is the only way these packages
-  start, so a launch saved under an older pin never runs unlocked through `npx`.
+  (the arguments and the version) is replaced by the catalogue's and saved
+  (`agents::launch_refresh::refreshed_launch`, called by `Core::restore_agent`). The catalogue's entry is
+  read as written, so a missing `npx` at start does not skip it. An adapter that is not locked keeps the
+  launch the person acknowledged.
+  As a second guard, the start of a built-in pane whose launch is `npx --yes <locked package>@<another
+  version>` is refused (`adapter_install::refuse_stale_builtin`, called where the spawn is built): the lock
+  is the only way the engine starts a built-in adapter, so a launch saved under an older pin never runs
+  unlocked through `npx`. The refusal does not repeat: the pane stops at once and says to restart Soyeht or
+  switch its harness. A custom entry that names another version is its author's and starts as written.
 - **The Codex adapter is given one fixed variable.** From 2.x on, a client that declares the AIR extension (the
   engine does, for subagents) makes the adapter ask the model for a suggested next message after every
   completed turn, at high effort, with the whole conversation, and publish it as
