@@ -10,7 +10,7 @@ the reply. No terminal interface of any harness was started, and no test rig typ
 | | Adapter or program | Version | Model |
 |---|---|---|---|
 | Claude Code | `@agentclientprotocol/claude-agent-acp` (what the engine launches) | 0.100.0 | the adapter's default |
-| Codex | `@agentclientprotocol/codex-acp` over the installed `codex` | 1.11.0 over 0.169.0 | the default model was refused by the account in use, so a smaller one was chosen with `session/set_model` |
+| Codex | `@agentclientprotocol/codex-acp` | 1.11.0, over the command line 0.153.4 its own package bundles (the probe set no program path, so the installed `codex` 0.169.0 was not the one that ran; the 0.153.4 was too old for the current default model, which the account's refusal showed) | a smaller model chosen with `session/set_model` |
 | OpenCode | `opencode acp` | 2.2.5 | its default (a free model) |
 | Cursor Agent | `cursor-agent acp` | 2026.09.02 | not reached, see below |
 
@@ -44,7 +44,7 @@ the reply. No terminal interface of any harness was started, and no test rig typ
 | | Advertised |
 |---|---|
 | Claude Code | `additionalDirectories`, `close`, `delete`, `fork`, `list`, `resume`, **`systemPrompt`** (`mode: {override: {}}`) |
-| Codex | `resume`, `list`, `close`, `delete`, `fork`, `additionalDirectories`, `subagents`; **no `systemPrompt`** |
+| Codex | 1.11.0: `resume`, `list`, `close`, `delete`, `fork`, `additionalDirectories`, `subagents`; **no `systemPrompt`**. 2.6.0 adds `title` and **`systemPrompt`** (`{}`) |
 | OpenCode | `additionalDirectories`, `close`, `delete`, `fork`, `list`, `resume`; **no `systemPrompt`** |
 | Cursor Agent | `list` only; **no `systemPrompt`** |
 
@@ -58,7 +58,7 @@ version, and reads the advertisement again each time the adapter starts.
 | Channel | Claude Code | Codex | OpenCode | Cursor Agent |
 |---|---|---|---|---|
 | control (no persona) | no | no | no | not measured |
-| ACP `systemPrompt` | **yes** | **no: accepted and ignored, no error** | **no: accepted and ignored, no error** | not measured |
+| ACP `systemPrompt` | **yes** | **no on 1.11.0: accepted and ignored, no error; yes on 2.6.0, see below** | **no: accepted and ignored, no error** | not measured |
 | `CLAUDE.md` in the folder | yes | no | no | not measured |
 | `AGENTS.md` in the folder | yes | yes | yes | not measured |
 | first prompt | yes | yes | yes | not measured |
@@ -98,6 +98,31 @@ Reading the table (every cell but the block row is one run):
   included; `CLAUDE.md` by Claude Code only. Cursor Agent was not reached, so nothing is claimed for it.
 - **Codex takes a per-launch configuration** through the adapter's environment (`CODEX_CONFIG`), which
   is a way to hand it instructions with no turn and no file.
+
+## Codex adapter 2.6.0 (measured 2026-11-16)
+
+The pin moved to 2.6.0, which advertises `systemPrompt`, so the engine now sends the persona as the
+session's system prompt to it. One run per case, headless, the probe below with the engine's own
+`initialize` parameters (the AIR extension and subagents declared), the adapter's own command line
+0.166.0 and the default model, the persona `Your name is Marlow, ...`:
+
+| Case | Result |
+|---|---|
+| `systemPrompt` on `session/new`, then the question | honoured (`Marlow: ...`) |
+| the same, then `session/load` in a second process with the prompt sent again, then the question | honoured |
+| a quiet persona (`If you are asked who you are, say that you are Marlow`) on `session/new`; a first turn that does not touch it (`Reply with the single word pong.`); `session/load` with the prompt sent again; the question | honoured (`I'm Marlow, ...`) |
+| the same with the prompt **not** sent again at the load | honoured |
+| no `systemPrompt` on `session/new`, two replies as Codex, then `session/load` **with** the persona as `systemPrompt`, then the question | **not honoured**: it answered as Codex |
+
+So the system prompt of a new session is honoured and kept across a load of that session, whether or not
+the engine sends it again. A system prompt first given at a load, to a session whose conversation has
+replies of its own, was not applied in the one run measured. The engine does not rely on that case: a
+persona the person changes on an open pane is owed to the next prompt as the block ahead of it, on every
+adapter (below). A session that has no turn cannot be loaded at all (`thread not loaded`), as before. Each
+cell is one run, and the replies of the first two cases could also follow the conversation. The probe was the one
+quoted at the end with three changes, not committed either: it sends the engine's `initialize` parameters instead of
+an empty `clientCapabilities`, the adapter ran from a launcher that set the program path of the adapter's own
+command line, and the cases above were added.
 
 ## What was not measured
 

@@ -431,7 +431,7 @@ pub fn close(
 ) -> Result<()> {
     if state.phase == super::state::Phase::Loading {
         state.open_messages.clear();
-        state.subagents.clear();
+        super::subagents::forget_all(state);
         return Ok(());
     }
     complete(store, pane, state, changes)?;

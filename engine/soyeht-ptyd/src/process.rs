@@ -94,13 +94,21 @@ fn inherited() -> impl Iterator<Item = &'static str> {
 /// process may be given it (ADR 0137); a terminal has no use for it.
 pub const CLAUDE_CODE_EXECUTABLE: &str = "CLAUDE_CODE_EXECUTABLE";
 
-/// Whether the engine may set `name` for a process of `kind`. A terminal is given its binding
-/// (ADR 0165); nothing else carries one.
-fn engine_may_set(name: &str, kind: &ProcessKind) -> bool {
+/// The one variable, with the one value, the engine gives the Codex adapter: it turns off the
+/// request for a suggested next message that the adapter would send to the model, at high effort,
+/// after every turn. The supervisor admits this exact pair for an adapter process and no other
+/// value of the name, so the engine cannot pass an arbitrary environment through it.
+pub const CODEX_PROMPT_SUGGESTIONS_OFF: (&str, &str) = ("CODEX_ACP_PROMPT_SUGGESTIONS", "false");
+
+/// Whether the engine may set `name` to `value` for a process of `kind`. A terminal is given its
+/// binding (ADR 0165); an adapter the program to drive (ADR 0137) and the fixed pair above;
+/// nothing else carries one.
+fn engine_may_set(name: &str, value: &str, kind: &ProcessKind) -> bool {
     matches!(
         name,
         "PATH" | "LANG" | "LC_ALL" | "TERM" | "COLORTERM" | "SHELL" | "PS1"
     ) || (name == CLAUDE_CODE_EXECUTABLE && *kind == ProcessKind::PipesAcp)
+        || ((name, value) == CODEX_PROMPT_SUGGESTIONS_OFF && *kind == ProcessKind::PipesAcp)
         || (name == PANE_BINDING_ENV && *kind == ProcessKind::Pty)
 }
 
@@ -117,7 +125,7 @@ pub fn command(config: &Spawn) -> Result<Command> {
     }
     command.env("TERM", "xterm-256color");
     for (name, value) in &config.env {
-        if !engine_may_set(name, &config.kind) {
+        if !engine_may_set(name, value, &config.kind) {
             return Err(Error::EnvironmentVariableNotAllowed);
         }
         command.env(name, value);
@@ -151,6 +159,26 @@ mod tests {
                 claude(kind),
                 Err(Error::EnvironmentVariableNotAllowed)
             ));
+        }
+    }
+
+    #[test]
+    fn only_an_adapter_is_given_the_fixed_pair_and_only_with_its_value() {
+        let (name, value) = CODEX_PROMPT_SUGGESTIONS_OFF;
+        let given = |kind, value: &str| {
+            let mut config = spawn_of(kind, name);
+            config.env.insert(name.into(), value.into());
+            command(&config).map(|_| ())
+        };
+        assert!(given(ProcessKind::PipesAcp, value).is_ok());
+        for refused in [
+            given(ProcessKind::PipesAcp, "true"),
+            given(ProcessKind::PipesAcp, ""),
+            given(ProcessKind::PipesAcp, "false "),
+            given(ProcessKind::Pty, value),
+            given(ProcessKind::PipesLsp, value),
+        ] {
+            assert!(matches!(refused, Err(Error::EnvironmentVariableNotAllowed)));
         }
     }
 

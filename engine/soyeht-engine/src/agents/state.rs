@@ -183,6 +183,12 @@ pub struct State {
     /// Subagent sessions the harness reported, by session ID.
     #[serde(default)]
     pub(crate) subagents: BTreeMap<String, super::subagents::Tracked>,
+    /// The tool calls (keyed as `transcript::open_key` keys an open item, by session and ID) that
+    /// wait on the pane's subagents, were folded into their rows and have not ended, oldest first.
+    /// A later report of one may carry nothing that says it is a wait (codex-acp 2 sends only what
+    /// changed), so the key is what recognizes it.
+    #[serde(default)]
+    pub(crate) folded_waits: VecDeque<String>,
     pub replay_role: Option<String>,
     /// `session/update` notifications that arrived before the answer to `session/new`, which is
     /// what names the session they belong to. They are applied once it arrives (contract 04 §7).
@@ -284,6 +290,7 @@ impl State {
             next_message_seq: 0,
             open_messages: BTreeMap::new(),
             subagents: BTreeMap::new(),
+            folded_waits: VecDeque::new(),
             replay_role: None,
             held_updates: Vec::new(),
             held_overflowed: false,
