@@ -66,11 +66,24 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
         tx.execute_batch(include_str!("../../migrations/038-avatars.sql"))?;
     }
     if version < 39 {
-        tx.execute_batch(include_str!(
-            "../../migrations/039-agent-transcript-total.sql"
-        ))?;
+        // A database built by a test from a few tables has no transcript to total.
+        if has_table(tx, "agent_transcript")? && has_table(tx, "agent_replay_transcript")? {
+            tx.execute_batch(include_str!(
+                "../../migrations/039-agent-transcript-total.sql"
+            ))?;
+        } else {
+            tx.execute_batch("PRAGMA user_version = 39;")?;
+        }
     }
     Ok(())
+}
+
+fn has_table(tx: &Transaction<'_>, table: &str) -> Result<bool> {
+    Ok(tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
+        [table],
+        |row| row.get(0),
+    )?)
 }
 
 /// Whether `table` exists and has no `column` yet: a migration that adds one runs again on a

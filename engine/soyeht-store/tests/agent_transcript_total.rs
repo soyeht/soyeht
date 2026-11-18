@@ -183,3 +183,31 @@ fn saving_a_message_takes_the_same_work_whatever_the_length_of_the_conversation(
         "the old sum took {sum} steps against {long}"
     );
 }
+
+#[test]
+fn a_database_of_version_38_gets_the_totals_of_the_messages_it_already_holds() {
+    let profile = Profile::new();
+    let mut store = profile.store();
+    seed(&mut store);
+    commit(&mut store, "history", |change| {
+        for seq in 0..3 {
+            agents::save_message(change, "a", &message("a", seq, 1_000))?;
+            agents::stage_message(change, "b", &message("b", seq, 500))?;
+        }
+        Ok(())
+    });
+    drop(store);
+    profile
+        .connection()
+        .execute_batch("DROP TABLE agent_transcript_total; PRAGMA user_version = 38;")
+        .unwrap();
+    let store = profile.store();
+    assert_eq!(wrong_totals(store.connection()), 0);
+    let kept: i64 = store
+        .connection()
+        .query_row("SELECT COUNT(*) FROM agent_transcript_total", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(kept, 2);
+}
