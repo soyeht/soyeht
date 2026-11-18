@@ -276,9 +276,27 @@ ADR when you change a boundary.
   reason to the reviewer.
 
 `scripts/hardening_gate.py` also fails when the number of functions over 120 or
-over 200 lines grows, when an existing long function grows, or when tests,
-acceptances or gate steps drop. A drop needs a `Verification change:` line in the
-PR body.
+over 200 lines grows, when an existing long function grows, when an acceptance or a gate
+step (an id of `check_all.sh`) is removed or leaves the fast tier or the `always` area,
+or when an ignored test is added. The PR body then needs one `Verification change:` line
+per thing, naming it and giving a reason of at least three words:
+`Verification change: removes step <id> because <reason>`, `... removes acceptance <name>
+because <reason>` or `... ignores <test> because <reason>`. "none" or a line that names
+nothing waives nothing. The number of tests is not a rule: deleting a test needs no line,
+and the gate prints the name of each test it no longer finds, so a reviewer sees it.
+
+`scripts/growth_gate.py` fails when a change adds more than 400 net lines of test code
+(the test code of the working tree minus that of the merge base, so deleting tests elsewhere
+pays for adding some). Test code is `lines_of_test_code` in that file, the one definition:
+the non-blank lines of Rust files under a `tests` or `benches` directory, of Rust modules
+declared `#[cfg(test)] mod x;` and of `#[cfg(test)]` items; of Swift under a `Tests`
+directory or one ending in `Tests`; of Python `test_*.py`; of Kotlin in a `test` or
+`androidTest` source set; of TypeScript `*.test.ts` and `test` directories. Generated files
+and `contracts/vectors/` never count. More than 400 needs a line in the PR body that says
+why: `Test growth allowance: <N> lines because <reason>`, with N at least the net and a
+reason of at least three words. The pre-merge gate reads it from the PR, the post-merge gate
+from the squash commit message, as for `Verification change:`. `agent_precheck.py` shows the
+number before a push (give it the body with `--pr-text FILE`, so it reads the lines too).
 
 ## The Core lock
 
@@ -413,8 +431,8 @@ links may be GPL (espeak-ng is), and a model whose license is not permissive is 
   font) goes in `CROSS_READS` of `gate_plan.py`; a test fails when a read is missing. A CI
   workflow calls the script and never lists steps of its own (`test_gate_list.py`).
   `check_all.sh --list --tier fast` shows the steps without running them. Moving a step from
-  `both` to `full`, or out of the `always` area, lowers the per-area count the verification
-  ratchet watches and needs a `Verification change:` line in the PR body.
+  `both` to `full`, or out of the `always` area, is a weakening the verification ratchet
+  watches by step id and needs `Verification change: removes step <id> because <reason>` in the PR body.
 - Two guards keep a green step honest: a step that names one Rust test passes only when exactly
   that test ran (`require_one_rust_test.py`), and the e2e steps fail when the run made macOS ask
   for a privacy permission on behalf of the engine's executables (`tcc_guard.py`).

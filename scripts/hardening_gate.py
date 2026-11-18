@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Protocol
 
 from gate_base import BASE_BRANCH, resolve_base
+from verification_gate import check_verification, waivers
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,12 +125,14 @@ class Metrics:
     sql_statements: int
     panic_calls: int
     functions: tuple[Function, ...]
-    tests: int
-    acceptances: int
-    gate_steps: int
-    ignored_tests: int
-    # (area, count) of the steps that run before a merge (`step AREA both ...`).
-    fast_steps: tuple[tuple[str, int], ...] = ()
+    # `path::name` of every test function, once per function (the name of a removed test is
+    # printed; the number of tests is not a rule).
+    tests: tuple[str, ...] = ()
+    # The `name` of every acceptance an `e2e*.py` script records.
+    acceptances: tuple[str, ...] = ()
+    # (area, tier, id) of every `step AREA TIER ID ...` line of `check_all.sh`.
+    steps: tuple[tuple[str, str, str], ...] = ()
+    ignored_tests: int = 0
 
 
 def git(*arguments: str, stdin: bytes | None = None) -> bytes:
@@ -343,10 +346,10 @@ def engine_production_panics(sources: dict[str, str]) -> int:
     )
 
 
-def without_cfg_test(clean: str) -> str:
-    """Blank every `#[cfg(test)]` item that has a body; `clean` is already masked."""
+def cfg_test_spans(clean: str) -> list[tuple[int, int]]:
+    """(start, end) offsets of every `#[cfg(test)]` item that has a body; `clean` is already masked."""
     pairs = brace_pairs(clean)
-    pieces: list[str] = []
+    spans: list[tuple[int, int]] = []
     copied = 0
     for found in CFG_TEST_ATTRIBUTE.finditer(clean):
         opening = clean.find("{", found.end())
@@ -359,10 +362,19 @@ def without_cfg_test(clean: str) -> str:
         closing = pairs.get(opening)
         if closing is None or closing < copied:
             continue
-        start = max(found.start(), copied)
-        pieces.append(clean[copied:start])
-        pieces.append(blanked(clean[start:closing + 1]))
+        spans.append((max(found.start(), copied), closing + 1))
         copied = closing + 1
+    return spans
+
+
+def without_cfg_test(clean: str) -> str:
+    """Blank every `#[cfg(test)]` item that has a body; `clean` is already masked."""
+    pieces: list[str] = []
+    copied = 0
+    for start, end in cfg_test_spans(clean):
+        pieces.append(clean[copied:start])
+        pieces.append(blanked(clean[start:end]))
+        copied = end
     pieces.append(clean[copied:])
     return "".join(pieces)
 
@@ -483,26 +495,33 @@ def source_functions(path: str, source: str) -> list[Function]:
     return []
 
 
-def count_tests(path: str, source: str) -> int:
+RUST_TEST = re.compile(
+    r"#\s*\[\s*(?:(?:tokio|test_case)::)?test(?:\s*\([^]]*\))?\s*\](?:\s*#\s*\[[^]]*\])*"
+    r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)"
+)
+SWIFT_TEST = re.compile(r"(?m)^\s*@Test\b[^{}]*?\bfunc\s+(\w+)")
+KOTLIN_TEST = re.compile(r"@Test\b[^{}]*?\bfun\s+(\w+)")
+TYPESCRIPT_TEST = re.compile(r"""\b(?:test|it)\s*\(\s*(["'`])(.*?)\1""")
+
+
+def names_of_tests(path: str, source: str) -> list[str]:
+    """The name of every test function of a file, from the same marker a test runner reads."""
     suffix = Path(path).suffix
     if suffix == ".rs":
-        clean, _ = mask(source)
-        return len(re.findall(r"#\s*\[\s*(?:(?:tokio|test_case)::)?test(?:\s*\([^]]*\))?\s*\]", clean))
+        return RUST_TEST.findall(mask(source)[0])
     if suffix == ".swift":
-        clean, _ = mask(source)
-        return len(re.findall(r"(?m)^\s*@Test(?:\s|\()", clean))
+        return SWIFT_TEST.findall(mask(source)[0])
+    if suffix in {".kt", ".kts"}:
+        return KOTLIN_TEST.findall(mask(source)[0])
     if suffix == ".py":
         tree = parse_python(source)
-        if tree is None:
-            return 0
-        return sum(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
-            for node in ast.walk(tree)
-        )
+        return [] if tree is None else [
+            node.name for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+        ]
     if suffix == ".ts" and (path.endswith(".test.ts") or "/test/" in path):
-        clean, _ = mask(source)
-        return len(re.findall(r"\b(?:test|it)\s*\(", clean))
-    return 0
+        return [found[1] for found in TYPESCRIPT_TEST.findall(re.sub(r"(?m)^\s*//.*$", "", source))]
+    return []
 
 
 def count_ignored_tests(path: str, source: str) -> int:
@@ -520,47 +539,36 @@ def count_ignored_tests(path: str, source: str) -> int:
     )
 
 
-def count_gate_steps(source: str) -> int:
-    commands = (
-        r"(?:python3|uv\s+run\s+python)\s+(?:-m\s+unittest|scripts/|contracts/)",
-        r"cargo\s+(?:fmt|clippy|build|test)\b",
-        r"bash\s+scripts/",
-        r"swift\s+(?:format|test)\b",
-        r"npm\s+(?:ci|run|test)\b",
+STEP_LINE = re.compile(r"\s*step\s+(\w+)\s+(both|full|fast)\s+(\S+)")
+
+
+def gate_steps(source: str) -> tuple[tuple[str, str, str], ...]:
+    """(area, tier, id) of every step of `check_all.sh`; the ids, not the commands, are the steps."""
+    return tuple(
+        match.groups() for match in map(STEP_LINE.match, source.splitlines()) if match
     )
-    commands_only = "\n".join(
-        line for line in source.splitlines() if not line.lstrip().startswith("#")
-    )
-    return sum(len(re.findall(command, commands_only)) for command in commands)
 
 
-def count_fast_steps(source: str) -> tuple[tuple[str, int], ...]:
-    """Steps that run in both tiers, per area: moving one to `full` weakens the fast gate."""
-    counts: dict[str, int] = {}
-    for line in source.splitlines():
-        match = re.match(r"\s*step\s+(\w+)\s+both\b", line)
-        if match:
-            counts[match[1]] = counts.get(match[1], 0) + 1
-    return tuple(sorted(counts.items()))
-
-
-def count_acceptances(source: str) -> int:
+def acceptance_names(source: str) -> list[str]:
+    """The `name` of each `results.append({"name": ..., "passed": ...})`: the string, or the
+    expression's text when the name is built at run time."""
     tree = parse_python(source)
     if tree is None:
-        return 0
-    count = 0
+        return []
+    names = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr != "append" or not node.args or not isinstance(node.args[0], ast.Dict):
             continue
-        keys = {
-            key.value for key in node.args[0].keys
+        entries = {
+            key.value: value for key, value in zip(node.args[0].keys, node.args[0].values)
             if isinstance(key, ast.Constant) and isinstance(key.value, str)
         }
-        if "name" in keys and "passed" in keys:
-            count += 1
-    return count
+        if "name" in entries and "passed" in entries:
+            name = entries["name"]
+            names.append(name.value if isinstance(name, ast.Constant) else ast.unparse(name))
+    return names
 
 
 def metrics(tree: Tree) -> Metrics:
@@ -568,8 +576,10 @@ def metrics(tree: Tree) -> Metrics:
     sql_sources: set[str] = set()
     functions: list[Function] = []
     engine_sources: dict[str, str] = {}
-    tests = ignored_tests = acceptances = gate_steps = sql_statements = 0
-    fast_steps: tuple[tuple[str, int], ...] = ()
+    tests: list[str] = []
+    acceptances: list[str] = []
+    steps: tuple[tuple[str, str, str], ...] = ()
+    ignored_tests = sql_statements = 0
     for path in tree.paths():
         try:
             source = tree.read(path)
@@ -591,33 +601,23 @@ def metrics(tree: Tree) -> Metrics:
         generated = Path(path).name in GENERATED_PARTS or source.startswith("// Generated from ")
         if Path(path).suffix in SOURCE_SUFFIXES and not generated:
             functions.extend(source_functions(path, source))
-            tests += count_tests(path, source)
+            tests.extend(f"{path}::{name}" for name in names_of_tests(path, source))
             ignored_tests += count_ignored_tests(path, source)
         if path.startswith("scripts/e2e") and path.endswith(".py"):
-            acceptances += count_acceptances(source)
+            acceptances.extend(acceptance_names(source))
         if path == "scripts/check_all.sh":
-            gate_steps = count_gate_steps(source)
-            fast_steps = count_fast_steps(source)
+            steps = gate_steps(source)
     return Metrics(
         frozenset(manifests),
         frozenset(sql_sources),
         sql_statements,
         engine_production_panics(engine_sources),
         tuple(functions),
-        tests,
-        acceptances,
-        gate_steps,
+        tuple(sorted(tests)),
+        tuple(sorted(acceptances)),
+        steps,
         ignored_tests,
-        fast_steps,
     )
-
-
-def waiver(event_file: Path | None) -> bool:
-    if event_file is None:
-        return False
-    event = json.loads(event_file.read_text())
-    body = (event.get("pull_request", {}).get("body") or "").splitlines()
-    return any(re.fullmatch(r"Verification change:\s*\S.*", line) for line in body)
 
 
 def refuse_increase(label: str, base: int, head: int) -> bool:
@@ -647,37 +647,6 @@ def check_sql(base: Metrics, head: Metrics) -> bool:
 
 def check_panic(base: Metrics, head: Metrics) -> bool:
     return refuse_increase("check-no-panic-in-production", base.panic_calls, head.panic_calls)
-
-
-def check_verification(base: Metrics, head: Metrics, allowed: bool) -> bool:
-    failed = False
-    for label, before, after in (
-        ("tests", base.tests, head.tests),
-        ("acceptances", base.acceptances, head.acceptances),
-        ("gate steps", base.gate_steps, head.gate_steps),
-        *(
-            (f"fast-tier steps of area {area}", count, dict(head.fast_steps).get(area, 0))
-            for area, count in base.fast_steps
-        ),
-    ):
-        print(f"check-verification-not-weakened: {label} base={before} head={after}")
-        if after < before and not allowed:
-            print(
-                f"check-verification-not-weakened: {label} dropped without a Verification change line",
-                file=sys.stderr,
-            )
-            failed = True
-    print(
-        "check-verification-not-weakened: ignored tests "
-        f"base={base.ignored_tests} head={head.ignored_tests}"
-    )
-    if head.ignored_tests > base.ignored_tests and not allowed:
-        print(
-            "check-verification-not-weakened: ignored tests increased without a Verification change line",
-            file=sys.stderr,
-        )
-        failed = True
-    return failed
 
 
 def check_lengths(base: Metrics, head: Metrics) -> bool:
@@ -744,7 +713,7 @@ def main() -> int:
         "check-no-sql-outside-store": lambda: check_sql(base, head),
         "check-no-panic-in-production": lambda: check_panic(base, head),
         "check-verification-not-weakened": lambda: check_verification(
-            base, head, waiver(arguments.event_file)
+            base, head, waivers(arguments.event_file)
         ),
         "check-function-length": lambda: check_lengths(base, head),
     }

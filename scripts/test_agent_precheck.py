@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -124,7 +126,7 @@ class RunTests(unittest.TestCase):
               mock.patch.object(agent_precheck, "changed_files", return_value=["a.swift"]),
               mock.patch.object(agent_precheck, "listed_steps", return_value=listed or STEPS),
               mock.patch.object(agent_precheck, "gate_step",
-                                side_effect=lambda step_id: Result(step_id, next(outcomes), 0.1, "boom\n")),
+                                side_effect=lambda step_id, event=None: Result(step_id, next(outcomes), 0.1, "boom\n")),
               mock.patch.object(agent_precheck, "message_checks", return_value=[Result("msgs", True, 0.1)]),
               mock.patch.object(agent_precheck, "swift_format", return_value=[Result("swift", True, 0.1)]),
               contextlib.redirect_stdout(output)):
@@ -248,6 +250,25 @@ class GitTests(unittest.TestCase):
         self.assertEqual([result.ok for result in results], [True, False])
         self.assertEqual(results[1].name, "forbidden-terms:vocabulary")
         self.assertIn("requireVocabulary", results[1].output)
+
+
+    def test_the_pull_request_text_reaches_the_gate_steps_and_the_growth_line_is_shown(self):
+        with agent_precheck.pull_request_event([]) as event:
+            self.assertIsNone(event)
+        with tempfile.TemporaryDirectory() as directory:
+            text = Path(directory) / "body.md"
+            text.write_text("Test growth allowance: 650 lines because the new frames need them\n")
+            with agent_precheck.pull_request_event([text]) as event:
+                body = json.loads(event.read_text())["pull_request"]["body"]
+                with mock.patch.object(agent_precheck, "timed", return_value=Result("x", True, 0)) as timed:
+                    agent_precheck.gate_step("hardening:test-growth", event)
+        self.assertIn("Test growth allowance: 650 lines", body)
+        self.assertEqual(timed.call_args.args[1][-2:], ["--event-file", str(event)])
+        shown = io.StringIO()
+        with contextlib.redirect_stdout(shown):
+            report(Result("g", True, 0.1, "other\ncheck-test-growth: test code lines base=1 head=9 net=+8 limit=400\n"))
+        self.assertIn("net=+8 limit=400", shown.getvalue())
+        self.assertNotIn("other", shown.getvalue())
 
 
 if __name__ == "__main__":

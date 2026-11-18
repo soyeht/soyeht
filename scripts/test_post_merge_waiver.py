@@ -7,12 +7,12 @@ from unittest import mock
 import hardening_gate
 import test_post_merge_fixtures as fixtures
 
-WAIVER = "Verification change: ignored one slow test"
+WAIVER = "Verification change: ignores slow_test because it runs on the VM only"
 
 
 class VerificationWaiverTests(fixtures.SyntheticRepositoryCase):
     """The waiver of a squash-merged pull request is in its commit message, and the gate that
-    runs after the merge reads it from there (hardening_gate.waiver, the one definition)."""
+    runs after the merge reads it from there (hardening_gate.waivers, the one definition)."""
 
     def setUp(self):
         super().setUp()
@@ -23,7 +23,7 @@ class VerificationWaiverTests(fixtures.SyntheticRepositoryCase):
         self.addCleanup(environment.stop)
 
     def waived(self, sha) -> bool:
-        return hardening_gate.waiver(self.events / f"{sha}.json")
+        return hardening_gate.waivers(self.events / f"{sha}.json").ignored_tests == 1
 
     def test_the_gate_reads_the_waiver_from_the_commit_message(self):
         with_line = self.add(f"Add a slow test (#1)\n\nIgnore it by default.\n\n{WAIVER}\n", {"b": "2"})
