@@ -1,16 +1,14 @@
 import re
 import unittest
 
-import gate_plan
 import gate_vectors
-from gate_vectors import ROOT, VECTOR_READERS, readers_of, scan, vectors_read
-from test_gate_plan import PACKAGES
+from gate_vectors import GATE, HELPERS, ROOT, UNCLASSIFIED, reader_group, readers, vectors_read
 
 NAMES = ["usage", "usage-presentation", "update", "markdown"]
 
 
 class ReaderRuleTests(unittest.TestCase):
-    """What counts as a read of a vector file."""
+    """What counts as a read of a vector file, and where a reader's tests run."""
 
     def read(self, text: str) -> set[str]:
         return vectors_read(text, NAMES)
@@ -20,93 +18,80 @@ class ReaderRuleTests(unittest.TestCase):
         self.assertEqual(self.read('try ContractVector.load("update")'), {"update"})
         self.assertEqual(self.read('crate::testing::vector("usage-presentation")'), {"usage-presentation"})
         self.assertEqual(self.read('testing::cases("markdown", "runs")'), {"markdown"})
+        self.assertEqual(self.read('vectors_dir().join("markdown.json")'), {"markdown"})
 
     def test_a_name_that_only_starts_like_another_is_not_it(self):
         self.assertEqual(self.read('vector("usage-presentation")'), {"usage-presentation"})
-        self.assertEqual(self.read('contracts/vectors/usage-presentation.json'), {"usage-presentation"})
+        self.assertEqual(self.read("contracts/vectors/usage-presentation.json"), {"usage-presentation"})
 
     def test_a_comment_or_a_key_of_the_same_name_is_not_a_read(self):
-        self.assertEqual(self.read("// the cases of contracts/vectors/usage.json\n/// vector(\"update\")"), set())
+        self.assertEqual(self.read("// the cases of contracts/vectors/usage.json\n# vector(\"update\")"), set())
         self.assertEqual(self.read('let key = "markdown"; vector_count()'), set())
-
-    def test_a_file_name_counts_only_beside_the_word_vector(self):
         self.assertEqual(self.read('join("markdown.json")'), set())
-        self.assertEqual(self.read('vectors_dir().join("markdown.json")'), {"markdown"})
 
-    def test_a_reader_is_a_directory_of_the_table_or_an_engine_crate(self):
-        for path, reader in (
+    def test_a_reader_runs_where_its_directory_says(self):
+        for path, group in (
             ("apps/shared/Tests/SoyehtClientTests/A.swift", "apps/shared"),
             ("apps/desktop/crates/soyeht-client/src/a.rs", "apps/desktop"),
             ("contracts/typescript/test/a.test.ts", "contracts/typescript"),
+            ("contracts/swift/Sources/ProtocolVectors/main.swift", "contracts/swift"),
             ("engine/soyeht-avatar/src/tests/vectors/mod.rs", "engine/soyeht-avatar"),
-            ("apps/mac/Sources/A.swift", None),
+            ("engine/soyeht-protocol/tests/vectors.rs", "engine/soyeht-protocol/tests"),
+            ("engine/soyeht-engine/tests/runtime/a.rs", "engine/soyeht-engine/tests"),
+            ("contracts/update.py", GATE),
+            ("scripts/check_swift.sh", GATE),
+            ("apps/mac/Sources/A.swift", UNCLASSIFIED),
         ):
             with self.subTest(path=path):
-                self.assertEqual(gate_vectors.reader_directory(path), reader)
+                self.assertEqual(reader_group(path), group)
 
     def test_only_a_json_file_directly_under_the_vectors_is_a_vector(self):
-        self.assertEqual(readers_of("contracts/vectors/voice-turns.json"), ("apps/shared",))
-        for path in ("contracts/vectors/new.json", "contracts/vectors/sub/voice-turns.json",
-                     "contracts/vectors/voice-turns.md", "contracts/voice-turns.json"):
+        self.assertEqual(gate_vectors.vector_name("contracts/vectors/voice-turns.json"), "voice-turns")
+        for path in ("contracts/vectors/sub/a.json", "contracts/vectors/a.md", "contracts/a.json"):
             with self.subTest(path=path):
-                self.assertIsNone(readers_of(path))
+                self.assertIsNone(gate_vectors.vector_name(path))
 
 
-class TableTests(unittest.TestCase):
-    """The table says what the sources do: the plan skips the readers it does not list."""
+class ScanTests(unittest.TestCase):
+    """The scan finds every reader, or the test says which source it cannot read."""
 
-    def test_every_vector_file_has_an_entry_and_every_entry_a_file(self):
-        self.assertEqual(sorted(VECTOR_READERS), gate_vectors.vector_names())
-
-    def test_each_entry_lists_exactly_the_directories_whose_sources_read_the_vector(self):
-        problems = []
-        for name, found in scan().items():
-            declared = set(VECTOR_READERS.get(name, ()))
-            if "unclassified" in found:
-                problems.append(
-                    f"{name}: read by {sorted(found['unclassified'])}, which no reader directory holds; "
-                    "add the directory to READER_AREAS"
-                )
-            for reader in sorted(set(found) - declared - {"unclassified"}):
-                problems.append(f"{name}: {sorted(found[reader])[0]} reads it; add {reader} to its entry")
-            for reader in sorted(declared - set(found)):
-                problems.append(f"{name}: no source of {reader} reads it any more; remove it from its entry")
-        self.assertEqual(problems, [])
-
-    def test_no_engine_program_embeds_a_vector(self):
-        # The plan tests a reader crate and starts no program for a vector file: that holds while the
-        # engine reads vectors only in test code (a `#[cfg(test)]` item, or a file of `src/tests/`).
-        for path, text in gate_vectors.source_files():
-            if path.startswith("engine/") and "/src/" in path and "/tests/" not in path and path.endswith(".rs"):
-                production = text.split("#[cfg(test)]")[0] if "#[cfg(test)]" in text else text
-                with self.subTest(file=path):
-                    self.assertNotRegex(gate_vectors.code_lines(production), r"include_str!\([^)]*contracts/vectors")
-
-    def test_every_reader_is_a_known_directory_or_a_crate_of_the_engine(self):
-        crates = {path.parent.relative_to(ROOT).as_posix() for path in ROOT.glob("engine/*/Cargo.toml")}
-        for name, readers in VECTOR_READERS.items():
-            for reader in readers:
-                with self.subTest(vector=name, reader=reader):
-                    self.assertTrue(reader in gate_vectors.READER_AREAS or reader in crates)
-        for reader, area in gate_vectors.READER_AREAS.items():
-            with self.subTest(reader=reader):
-                self.assertTrue((ROOT / reader).is_dir())
-                self.assertIn(area, gate_plan.ALL_AREAS)
-
-    def test_no_entry_widens_the_plan_to_the_whole_workspace_or_the_end_to_end_suites(self):
-        for name in VECTOR_READERS:
-            result = gate_plan.make_plan([f"contracts/vectors/{name}.json"], PACKAGES, set())
+    def test_every_vector_file_has_a_reader_and_every_reader_a_group(self):
+        found = readers()
+        self.assertEqual(sorted(found), gate_vectors.vector_names())
+        for name, groups in found.items():
             with self.subTest(vector=name):
-                self.assertEqual(len(result.vectors), 1)
-                self.assertNotIn("e2e", result.areas)
-                if "engine" in result.areas:
-                    self.assertIsNotNone(result.engine_crates)
+                self.assertTrue(set(groups) - {GATE}, "no source runs by the gate reads it")
+                self.assertNotIn(UNCLASSIFIED, groups, "a reader in no directory of READER_AREAS or the engine")
+
+    def test_a_source_that_holds_the_vectors_directory_without_naming_a_vector_is_a_known_helper(self):
+        # `vector(name)` reads a vector by a name the scan cannot see: it is found by the function that
+        # takes it. A new helper goes in HELPERS, with the names of its functions.
+        names = gate_vectors.vector_names()
+        for path, text in gate_vectors.source_files():
+            code = gate_vectors.code_lines(text)
+            if gate_vectors.VECTORS.rstrip("/") in code and not vectors_read(text, names) and reader_group(path) != GATE:
+                with self.subTest(file=path):
+                    self.assertIn(path, HELPERS)
+        for path, functions in HELPERS.items():
+            for function in functions:
+                with self.subTest(helper=path, function=function):
+                    self.assertRegex((ROOT / path).read_text(), rf"(?:fn|func|def)\s+{function}\b")
+
+    def test_no_program_embeds_a_vector(self):
+        # A vector file selects the tests of a reader and builds no program: that holds while the engine and
+        # the desktop read vectors only in test code (a `#[cfg(test)]` item, or a `tests/` directory or `tests.rs` file).
+        for path, text in gate_vectors.source_files():
+            if path.startswith(("engine/", "apps/desktop/")) and "/src/" in path and not re.search(r"/tests/|tests?\.rs$", path):
+                production = text.split("#[cfg(test)]")[0]
+                with self.subTest(file=path):
+                    self.assertNotRegex(gate_vectors.code_lines(production),
+                                        r"include_(?:str|bytes)!\([^)]*contracts/vectors")
 
 
-class SwiftFilterTests(unittest.TestCase):
-    """`swift:test-shared-changed` runs the Swift tests that read a vector, and a new one joins it."""
+class StepTests(unittest.TestCase):
+    """`swift:test-shared-changed` and `engine:test-fast` run what the scan finds, and a new test joins them."""
 
-    def test_the_filter_matches_the_id_of_each_test_of_a_vector_file_and_no_other(self):
+    def test_the_filter_is_anchored_and_holds_the_files_that_have_tests(self):
         files = gate_vectors.swift_vector_tests()
         self.assertGreater(len(files), 20)
         pattern = re.compile(gate_vectors.swift_filter())
@@ -114,22 +99,30 @@ class SwiftFilterTests(unittest.TestCase):
             name = path.rsplit("/", 1)[1]
             with self.subTest(file=name):
                 self.assertIsNotNone(pattern.search(f"SoyehtClientTests.aTest()/{name}:12:3"))
-        self.assertIsNone(pattern.search("SoyehtClientTests.aTest()/ComposerLayoutTests.swift:12:3"))
+        self.assertIsNone(pattern.search("SoyehtClientTests.aTest()/PhoneWritingLayoutPolicyTests.swift:12:3"))
+        self.assertNotIn("ContractVector", pattern.pattern)
 
     def test_every_swift_test_that_loads_a_vector_is_in_the_filter(self):
         in_filter = set(gate_vectors.swift_vector_tests())
         for path, text in gate_vectors.source_files():
-            code = gate_vectors.code_lines(text)
-            if path.startswith(gate_vectors.SWIFT_VECTOR_TESTS) and "@Test" in code:
-                if any(hint in code for hint in gate_vectors.LOADER_HINTS):
-                    with self.subTest(file=path):
-                        self.assertIn(path, in_filter)
+            if path.startswith(gate_vectors.SWIFT_TESTS) and "@Test" in text and gate_vectors.VECTORS in text:
+                with self.subTest(file=path):
+                    self.assertIn(path, in_filter)
 
-    def test_the_step_runs_the_filter_this_script_prints(self):
+    def test_a_run_that_matches_too_few_tests_is_not_a_pass(self):
+        self.assertEqual(gate_vectors.tests_run("􁁛  Test run with 324 tests in 0 suites passed after 1.9 seconds."), 324)
+        self.assertEqual(gate_vectors.tests_run("Test run with 1 test in 0 suites passed"), 1)
+        self.assertEqual(gate_vectors.tests_run("nothing"), 0)
+
+    def test_the_protocol_tests_are_the_targets_that_read_a_vector(self):
+        self.assertLessEqual({"vectors", "contract", "client_policy", "version_range"}, set(gate_vectors.protocol_tests()))
+
+    def test_the_steps_run_these_scripts(self):
         text = (ROOT / "scripts/check_all.sh").read_text()
-        self.assertRegex(text, r"(?m)^step swift_vectors fast swift:test-shared-changed ")
-        self.assertIn('--filter "$filter"', text)
-        self.assertIn("scripts/gate_vectors.py swift-filter", text)
+        self.assertRegex(text, r"(?m)^step swift_vectors fast swift:test-shared-changed swift_vector_tests$")
+        self.assertRegex(text, r"(?m)^step protocol_vectors fast engine:test-fast in_dir engine protocol_vector_tests$")
+        self.assertIn("scripts/check_swift.sh --vectors && uv run python scripts/gate_vectors.py swift-test", text)
+        self.assertIn("gate_vectors.py\" protocol-tests", text)
 
 
 if __name__ == "__main__":

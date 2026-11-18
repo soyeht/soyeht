@@ -11,7 +11,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import e2e_swift_client
 import gate_plan
+import gate_vectors
 import post_merge_gate
 import post_merge_hosts
 
@@ -94,6 +96,8 @@ def gate_list_problems(name: str, text: str) -> list[str]:
 STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
 # A fast step that stands in for a full one is named `<full id>-changed`, `-fast` or `-build`.
 STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
+# An area that runs the part of another area's full step which reads the shared vector files.
+SUB_AREAS = {"swift_vectors": "swift", "protocol_vectors": "engine"}
 # The steps that only the full tier (after the merge) runs, whichever area they belong to.
 # (`desktop:test` and the e2e steps run before the merge too.)
 AFTER_MERGE = (
@@ -216,9 +220,9 @@ class StepListTests(unittest.TestCase):
             with self.subTest(step=step_id):
                 match = STAND_IN.match(step_id)
                 self.assertIsNotNone(match, f"{step_id}: name it <full id>-changed or <full id>-fast")
-                # The full step may belong to another area: `swift:test-shared-changed` runs the part
-                # of `swift:test-shared` that reads the shared vectors, in an area of its own.
-                self.assertEqual(steps.get(match["full"], (None, None))[1], "full")
+                full_area, full_tiers = steps.get(match["full"], (None, None))
+                self.assertEqual(full_tiers, "full")
+                self.assertIn(area, {full_area, *(sub for sub, whole in SUB_AREAS.items() if whole == full_area)})
 
     def test_the_heavy_steps_run_only_after_the_merge(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -241,6 +245,10 @@ class StepListTests(unittest.TestCase):
         self.assertNotIn("desktop:test-fast", commands)
         self.assertIn("swift build --package-path apps/shared", commands)
         self.assertNotRegex(commands, r"step \w+ (?:both|fast) \S+ .*swift test")
+        # Only two scripts run `swift test` in the fast tier, and both give it a filter.
+        self.assertNotRegex(re.search(r"swift_vector_tests\(\) {.*?\n}", commands, re.S)[0], r"swift test")
+        for command in (e2e_swift_client.swift_command(), gate_vectors.swift_command()):
+            self.assertIn("--filter", command)
 
     def test_the_end_to_end_set_runs_in_both_tiers(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -438,6 +446,12 @@ class SelectionByChangeTests(unittest.TestCase):
         self.assertIn("swift:test-shared-changed", listed)
         for step_id in ("e2e:core", "engine:build-test-engine", "desktop:test"):
             self.assertNotIn(step_id, listed)
+
+    def test_a_vector_that_only_the_protocol_integration_tests_read_runs_them_in_the_fast_tier(self):
+        listed = listed_steps("fast", ["contracts/vectors/protocol-version.json"])
+        self.assertIn("engine:test-fast", listed)
+        self.assertNotIn("engine:test-changed", listed)
+        self.assertNotIn("engine:test-fast", listed_steps("full", ["contracts/vectors/protocol-version.json"]))
 
     def test_the_shared_package_runs_the_swift_vector_tests_and_the_apps_do_not(self):
         self.assertIn("swift:test-shared-changed", listed_steps("fast", ["apps/shared/Sources/SoyehtClient/A.swift"]))

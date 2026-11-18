@@ -15,14 +15,16 @@ tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, fir
   `.github/`, `.githooks/`), the lockfiles or the workspace manifests selects every
   code area, and so does a cargo workspace that cannot be read;
 - a file that another directory reads (`CROSS_READS`) also selects the readers;
-- a file of `contracts/vectors/` selects only the readers that `gate_vectors.VECTOR_READERS`
-  lists for it (one that is not listed selects every code area, as the rule above says);
+- a file of `contracts/vectors/` selects only the readers that `gate_vectors.readers` finds for it
+  by scanning the sources (a vector with no reader found, or a reader in no known group, selects
+  every code area, as the rule above says);
 - a path under one engine crate selects `engine` and that crate plus its reverse
   dependencies in the engine workspace (`cargo metadata`); a crate that the desktop
   workspace depends on also selects `desktop`;
 - the Android core is also selected by a change to the desktop client or to an engine crate the
   desktop workspace depends on, which it reuses (ADR 0134);
-- `apps/shared` also selects `swift_vectors`, the fast step that runs the Swift tests which read a vector file;
+- `apps/shared` and `contracts/swift` also select `swift_vectors`, the fast step that runs the Swift
+  tests which read a vector file and the `protocol-vectors` program;
 - the other code directories select their own area;
 - documentation selects only `always`;
 - an unknown path selects every code area.
@@ -60,7 +62,7 @@ import gate_vectors
 from gate_base import BaseError, main_health_dir, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE_AREAS = ("engine", "desktop", "android_core", "swift", "swift_vectors", "typescript")
+CODE_AREAS = ("engine", "desktop", "android_core", "swift", "swift_vectors", "protocol_vectors", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
 # Mac, iOS and Android app builds, the editor measurement and the timing tests. The Swift packages and
 # the engine workspace also have steps that are full-only.
@@ -231,34 +233,51 @@ def review_reasons(path: str) -> list[str]:
     return [f"{label}: {path}" for label, hit in checks if hit]
 
 
+def vector_reader_text(groups: tuple[str, ...]) -> list[str]:
+    """The readers of a vector file, with the ones that only run after the merge marked."""
+    return [
+        f"{group} (after the merge)" if group.endswith("/tests") and group not in gate_vectors.READER_AREAS else group
+        for group in groups if group != gate_vectors.GATE
+    ]
+
+
 def make_plan(
     files: list[str],
     engine_packages: list[Package] | None,
     desktop_engine_deps: set[str],
     base: str | None = None,
+    vector_readers: dict[str, tuple[str, ...]] | None = None,
 ) -> Plan:
-    """`engine_packages` is None when a cargo workspace cannot be read: fail closed."""
+    """`engine_packages` is None when a cargo workspace cannot be read: fail closed.
+
+    `vector_readers` is `gate_vectors.readers()`, which is scanned only when the change holds a vector file.
+    """
     areas = {"always"}
     crates: set[str] = set()
     # Engine crates that read a vector file: tested alone, with no reverse dependencies.
     readers: set[str] = set()
     vectors: list[str] = []
     everything = engine_packages is None
+    if vector_readers is None and any(gate_vectors.vector_name(path) for path in files):
+        try:
+            vector_readers = gate_vectors.readers()
+        except (subprocess.CalledProcessError, OSError):
+            vector_readers = {}
     for path in files:
         if gate_script_source(path):
             areas.add(GATE_SCRIPTS_AREA)
-        declared = gate_vectors.readers_of(path)
-        if declared is not None:
-            vectors.append(f"{PurePosixPath(path).name}: {', '.join(declared)}")
-            for reader in declared:
-                crate = next((p for p in engine_packages or [] if p.directory == reader), None)
-                if reader in gate_vectors.READER_AREAS:
-                    areas.add(gate_vectors.READER_AREAS[reader])
-                elif crate is None:
-                    everything = True  # a reader that is no crate of the workspace: widen
-                else:
+        groups = (vector_readers or {}).get(gate_vectors.vector_name(path) or "", ())
+        if groups and gate_vectors.UNCLASSIFIED not in groups:
+            vectors.append(f"{PurePosixPath(path).name}: {', '.join(vector_reader_text(groups))}")
+            for group in groups:
+                crate = next((p for p in engine_packages or [] if p.directory == group), None)
+                if group in gate_vectors.READER_AREAS:
+                    areas.add(gate_vectors.READER_AREAS[group])
+                elif crate is not None:
                     areas.add("engine")
                     readers.add(crate.name)
+                elif group != gate_vectors.GATE and not group.endswith("/tests"):
+                    everything = True  # a reader that is no crate of the workspace: widen
             continue
         for prefix, extra_areas, extra_crates in CROSS_READS:
             if path.startswith(prefix):
@@ -289,7 +308,7 @@ def make_plan(
             areas.update(("android_core", "android_app"))
         elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
             areas.add("swift")
-            if path.startswith("apps/shared/"):
+            if path.startswith(("apps/shared/", "contracts/swift/")):
                 areas.add("swift_vectors")
         elif path.startswith("contracts/typescript/"):
             areas.add("typescript")

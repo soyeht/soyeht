@@ -5,8 +5,8 @@
 #   check_all.sh [--tier fast|full] [--only STEP_ID[,STEP_ID...]] [--list] [scanner arguments]
 #
 # Every step is one `step AREA TIERS ID command...` line (ADR 0089):
-#   AREA   always | gate_scripts | engine | desktop | swift | swift_vectors | dictation | mac_app
-#          | ios_app | android_core | android_app | typescript | e2e | editor_perf | timing
+#   AREA   always | gate_scripts | engine | protocol_vectors | desktop | swift | swift_vectors | dictation
+#          | mac_app | ios_app | android_core | android_app | typescript | e2e | editor_perf | timing
 #   TIERS  both  runs in the fast and the full tier
 #          full  runs only in the full tier
 #          fast  runs only in the fast tier (a cheaper stand-in for a full step)
@@ -15,9 +15,10 @@
 # `always` steps plus format, lint, a build and the tests of the `both` and `fast` steps of
 # the areas that scripts/gate_plan.py selects from the changed paths. Those tests are the unit
 # tests of the engine and Swift, the whole `cargo test` of the desktop, and the e2e suites
-# when the change reaches the engine's programs. The Swift tests that read a shared vector file
-# also run (`swift_vectors`, for a vector file or a change to the shared package). The engine
-# integration tests, the other Swift tests, the Mac and iOS app builds, the editor measurement and the timing tests are `full`
+# when the change reaches the engine's programs. The tests that read a shared vector file also run:
+# the Swift ones and the `protocol-vectors` program (`swift_vectors`, for a vector file or a change to
+# the shared package), and the integration tests of `soyeht-protocol` (`protocol_vectors`). The other
+# engine integration tests, the other Swift tests, the Mac and iOS app builds, the editor measurement and the timing tests are `full`
 # steps. The unit tests of the gate scripts are the `gate_scripts` area: a change under
 # scripts/, contracts/*.py or .githooks/ selects it (and the full tier runs it). The full
 # tier runs on main after the merge
@@ -49,7 +50,7 @@ while (($#)); do
     esac
 done
 case "$tier" in fast | full) ;; *) echo "check_all: --tier must be fast or full" >&2; exit 64 ;; esac
-known_areas=" always gate_scripts engine desktop swift swift_vectors dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing "
+known_areas=" always gate_scripts engine protocol_vectors desktop swift swift_vectors dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing "
 set -- ${gate_args[@]+"${gate_args[@]}"}
 # A contributor without the vocabulary sets SOYEHT_SKIP_FORBIDDEN_TERMS=1: the scan prints
 # that it was skipped (scripts/forbidden_terms.py), the run is recorded as not merge-grade, and
@@ -93,7 +94,7 @@ step_log="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-steps.XXXXXX")"
 # What a step says it did not check (`skip_note`).
 skip_file="$(mktemp "${TMPDIR:-/tmp}/soyeht-gate-skips.XXXXXX")"
 current_step=""
-GATE_AREAS="always gate_scripts engine desktop swift swift_vectors dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
+GATE_AREAS="always gate_scripts engine protocol_vectors desktop swift swift_vectors dictation mac_app ios_app android_core android_app typescript e2e editor_perf timing"
 # The engine crates `engine:test-changed` tests. The plan sets them from the changed paths; a
 # `--only` run has no plan, so a caller that ran the plan elsewhere (scripts/gate_remote.py, whose
 # remote half is a `--only` run) hands the result over.
@@ -383,6 +384,13 @@ step engine both engine:build build_product_programs
 step engine full engine:test in_dir engine cargo test --locked --workspace --features soyeht-engine/contract-checks
 # Unit tests (src/ of libraries and binaries) of the changed crates and their reverse dependencies.
 step engine fast engine:test-changed in_dir engine engine_test_changed --lib --bins
+# The integration tests of `soyeht-protocol` that read a vector file, which `--lib --bins` leaves out: the
+# crate is pure, so they build and run in seconds. The other crates' `tests/` run after the merge.
+protocol_vector_tests() {
+    # shellcheck disable=SC2046
+    cargo test --locked -p soyeht-protocol $(uv run python "$repo_root/scripts/gate_vectors.py" protocol-tests)
+}
+step protocol_vectors fast engine:test-fast in_dir engine protocol_vector_tests
 # The shipping configuration has the checks off: the one test that says an unchecked build
 # validates nothing runs without the feature, as the timing steps below do.
 step engine both engine:test-unchecked in_dir engine run_exact_rust_test \
@@ -485,22 +493,12 @@ step swift full swift:engine-binaries build_engine_programs
 step swift full swift:test-shared swift test --package-path apps/shared
 # The fast stand-in compiles the shared package without running its tests.
 step swift fast swift:test-shared-build swift build --package-path apps/shared
-# The part of `swift:test-shared` that reads `contracts/vectors/`: the rules every client passes, which a change to a
-# vector file or to the shared package can break with every Rust test green. The filter is the
-# test files that the vector scan finds (scripts/gate_vectors.py), so a new vector test is in it.
-# A filter that matches no test passes, so a run that found none fails.
+# The part of `swift:test-shared` that reads `contracts/vectors/`: the rules every client passes, which a
+# change to a vector file or to the shared package can break with every Rust test green, and the
+# `protocol-vectors` program of contracts/swift. The filter is the test files that the vector scan finds
+# (scripts/gate_vectors.py), so a new vector test is in it, and a run that matches too few tests fails.
 swift_vector_tests() {
-    local filter log status
-    filter="$(uv run python scripts/gate_vectors.py swift-filter)" || return 1
-    log="$(mktemp "${TMPDIR:-/tmp}/soyeht-swift-vectors.XXXXXX")"
-    swift test --package-path apps/shared --filter "$filter" 2>&1 | tee "$log"
-    status="${PIPESTATUS[0]}"
-    if ((status == 0)) && grep -q 'Test run with 0 tests' "$log"; then
-        echo "check_all: the Swift vector filter matched no test" >&2
-        status=1
-    fi
-    rm -f "$log"
-    return "$status"
+    bash scripts/check_swift.sh --vectors && uv run python scripts/gate_vectors.py swift-test
 }
 step swift_vectors fast swift:test-shared-changed swift_vector_tests
 step dictation full swift:test-dictation swift test --package-path apps/dictation

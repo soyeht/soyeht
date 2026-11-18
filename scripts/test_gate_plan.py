@@ -30,10 +30,12 @@ PACKAGES = [
     Package("soyeht-cli", "engine/soyeht-cli", ("soyeht-protocol", "soyeht-platform", "soyeht-avatar")),
 ]
 DESKTOP_DEPS = {"soyeht-protocol", "soyeht-platform"}
-EVERYTHING = ("always", "engine", "desktop", "android_core", "swift", "swift_vectors", "typescript", "e2e")
+EVERYTHING = ("always", "engine", "desktop", "android_core", "swift", "swift_vectors", "protocol_vectors",
+              "typescript", "e2e")
 # A change under scripts/ also selects the unit tests of the gate scripts.
 EVERYTHING_AND_SCRIPTS = (
-    "always", "gate_scripts", "engine", "desktop", "android_core", "swift", "swift_vectors", "typescript", "e2e",
+    "always", "gate_scripts", "engine", "desktop", "android_core", "swift", "swift_vectors", "protocol_vectors",
+    "typescript", "e2e",
 )
 
 
@@ -106,15 +108,15 @@ class AreaTests(unittest.TestCase):
 
     def test_swift_and_dictation(self):
         # The app builds and the dictation tests have no fast step; the full tier runs them.
-        for path in ("apps/mac/Sources/Foo.swift", "apps/ios/Sources/Foo.swift",
-                     "contracts/swift/Package.swift", "apps/dictation/Sources/A.swift"):
+        for path in ("apps/mac/Sources/Foo.swift", "apps/ios/Sources/Foo.swift", "apps/dictation/Sources/A.swift"):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).areas, ("always", "swift"))
 
-    def test_the_shared_package_also_runs_the_swift_tests_that_read_the_vectors(self):
-        self.assertEqual(plan("apps/shared/Sources/A.swift").areas, ("always", "swift", "swift_vectors"))
-        self.assertEqual(plan("apps/shared/Tests/SoyehtClientTests/A.swift").areas,
-                         ("always", "swift", "swift_vectors"))
+    def test_the_shared_package_and_the_protocol_package_also_run_the_swift_vector_tests(self):
+        for path in ("apps/shared/Sources/A.swift", "apps/shared/Tests/SoyehtClientTests/A.swift",
+                     "contracts/swift/Package.swift"):
+            with self.subTest(path=path):
+                self.assertEqual(plan(path).areas, ("always", "swift", "swift_vectors"))
 
     def test_the_android_core_is_in_the_fast_tier_and_the_app_build_only_in_the_full_one(self):
         # A Gradle build, two NDK builds and a first download are too much for the fast tier
@@ -293,54 +295,80 @@ class EndToEndSelectionTests(unittest.TestCase):
                 self.assertNotIn("e2e", plan(path).areas)
 
 
+READERS = {
+    "swift-only": ("apps/shared", "gate"),
+    "avatar": ("apps/shared", "engine/soyeht-avatar"),
+    "wire": ("contracts/swift", "contracts/typescript", "engine/soyeht-engine/tests", "engine/soyeht-protocol/tests"),
+    "desktop": ("apps/desktop", "apps/shared"),
+    "android": ("apps/android", "apps/desktop"),
+    "engine": ("engine/soyeht-engine", "engine/soyeht-protocol"),
+    "gone": ("engine/soyeht-gone",),
+    "lost": ("apps/shared", "unclassified"),
+    "unread": (),
+}
+
+
+def vector_plan(*names: str, files: tuple[str, ...] = ()):
+    paths = [f"contracts/vectors/{name}.json" for name in names]
+    return make_plan([*paths, *files], PACKAGES, DESKTOP_DEPS, vector_readers=READERS)
+
+
 class VectorSelectionTests(unittest.TestCase):
-    """A shared vector file selects the readers `gate_vectors.VECTOR_READERS` lists, and nothing else."""
+    """A shared vector file selects the readers that the scan of `gate_vectors` finds, and nothing else."""
 
     def test_a_vector_read_only_by_swift_runs_the_swift_vector_tests_and_nothing_else(self):
-        result = plan("contracts/vectors/voice-turns.json")
+        result = vector_plan("swift-only")
         self.assertEqual(result.areas, ("always", "swift_vectors"))
-        self.assertEqual(result.vectors, ("voice-turns.json: apps/shared",))
+        self.assertEqual(result.vectors, ("swift-only.json: apps/shared",))
 
-    def test_an_engine_reader_is_tested_alone_and_starts_no_program(self):
-        result = plan("contracts/vectors/avatar-mouth.json")
+    def test_an_engine_reader_is_tested_alone_and_needs_no_program(self):
+        result = vector_plan("avatar")
         self.assertEqual(result.areas, ("always", "engine", "swift_vectors"))
         # soyeht-cli depends on soyeht-avatar and is not tested: the vector is a test input.
         self.assertEqual(result.engine_crates, ("soyeht-avatar",))
-        result = plan("contracts/vectors/messages.json")
-        self.assertEqual(result.areas, ("always", "engine", "swift", "typescript"))
+        result = vector_plan("engine")
         self.assertEqual(result.engine_crates, ("soyeht-engine", "soyeht-protocol"))
+        self.assertNotIn("e2e", result.areas)
 
-    def test_a_vector_read_by_the_desktop_selects_the_desktop_and_not_the_android_core(self):
-        self.assertEqual(plan("contracts/vectors/tasks.json").areas, ("always", "desktop", "swift_vectors"))
-        self.assertEqual(plan("contracts/vectors/harness-switch.json").areas,
-                         ("always", "desktop", "android_core", "swift_vectors"))
-        self.assertEqual(plan("contracts/vectors/web-links.json").areas,
-                         ("always", "desktop", "swift_vectors"))
+    def test_the_tests_directory_of_a_crate_runs_in_the_fast_tier_only_for_the_protocol(self):
+        result = vector_plan("wire")
+        self.assertEqual(result.areas, ("always", "swift_vectors", "protocol_vectors", "typescript"))
+        self.assertIsNone(result.engine_crates)
+        self.assertEqual(result.vectors, ("wire.json: contracts/swift, contracts/typescript, "
+                                          "engine/soyeht-engine/tests (after the merge), engine/soyeht-protocol/tests",))
 
-    def test_a_vector_that_nobody_declared_selects_everything(self):
-        self.assertEqual(plan("contracts/vectors/new-rules.json").areas, EVERYTHING)
-        self.assertIsNone(plan("contracts/vectors/new-rules.json").engine_crates)
+    def test_a_vector_the_desktop_reads_selects_the_desktop_and_the_android_core_only_when_it_reads_it(self):
+        self.assertEqual(vector_plan("desktop").areas, ("always", "desktop", "swift_vectors"))
+        self.assertEqual(vector_plan("android").areas, ("always", "desktop", "android_core"))
 
-    def test_a_reader_that_is_no_crate_of_the_workspace_selects_everything(self):
-        with mock.patch.dict(gate_vectors.VECTOR_READERS, {"tasks": ("engine/soyeht-gone",)}):
-            self.assertEqual(plan("contracts/vectors/tasks.json").areas, EVERYTHING)
+    def test_a_vector_without_a_reader_found_selects_everything(self):
+        for name in ("unread", "gone", "lost", "never-scanned"):
+            with self.subTest(vector=name):
+                self.assertEqual(vector_plan(name).areas, EVERYTHING)
+                self.assertIsNone(vector_plan(name).engine_crates)
 
     def test_the_vectors_add_to_the_other_changes(self):
-        result = plan("contracts/vectors/avatar-mouth.json", "engine/soyeht-engine/src/core.rs")
+        result = vector_plan("avatar", files=("engine/soyeht-engine/src/core.rs",))
         self.assertIn("e2e", result.areas)
-        self.assertIn("soyeht-avatar", result.engine_crates)
-        self.assertIn("soyeht-engine", result.engine_crates)
-        # Only a crate whose own code changed selects the programs.
-        self.assertNotIn("e2e", plan("contracts/vectors/engine-proof.json").areas)
+        self.assertEqual({"soyeht-avatar", "soyeht-engine"} - set(result.engine_crates), set())
 
     def test_a_file_under_the_vectors_that_is_no_vector_is_not_one(self):
         for path in ("contracts/vectors/README.md", "contracts/vectors/sub/tasks.json"):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).vectors, ())
 
+    def test_the_sources_are_scanned_only_for_a_change_that_holds_a_vector_and_a_failed_scan_widens(self):
+        with mock.patch.object(gate_vectors, "readers", return_value=READERS) as scan:
+            plan("apps/desktop/crates/a/src/b.rs")
+            scan.assert_not_called()
+            plan("contracts/vectors/swift-only.json")
+            scan.assert_called_once()
+        with mock.patch.object(gate_vectors, "readers", side_effect=OSError):
+            self.assertEqual(plan("contracts/vectors/swift-only.json").areas, EVERYTHING)
+
     def test_the_text_says_which_readers_a_vector_selected(self):
-        text = gate_plan.render_text(plan("contracts/vectors/avatar-mouth.json"), "fast")
-        self.assertIn("vector:  avatar-mouth.json: apps/shared, engine/soyeht-avatar", text)
+        text = gate_plan.render_text(vector_plan("avatar"), "fast")
+        self.assertIn("vector:  avatar.json: apps/shared, engine/soyeht-avatar", text)
         self.assertIn("engine tests: soyeht-avatar", text)
 
 
@@ -492,6 +520,8 @@ class CrossReadTests(unittest.TestCase):
         self.assertTrue(seen, "the scan found no cross-directory read; fix the scan")
         problems = []
         for source, target in sorted(seen):
+            if gate_vectors.vector_name(target):
+                continue  # a vector file selects the readers that its scan finds (test_gate_vectors)
             result = make_plan([target], packages, desktop_deps)
             if source.startswith("apps/desktop/"):
                 covered = "desktop" in result.areas

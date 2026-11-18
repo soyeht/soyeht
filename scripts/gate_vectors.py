@@ -3,21 +3,22 @@
 
 `contracts/vectors/` holds the cases that more than one implementation passes. A change to
 a vector file can break only the tests that read it, so `gate_plan` selects the areas of the
-readers listed in `VECTOR_READERS` instead of every code area. The rules that keep the table
-true:
+readers that `readers` finds by scanning the sources. Nothing is listed by hand:
 
-- a vector file that is not in `VECTOR_READERS` selects everything (the plan widens, it never
-  skips);
-- `test_gate_vectors` scans the sources and fails when a file reads a vector that its table
-  entry does not list, when an entry lists a reader that no longer reads it, and when a vector
-  file or a reader has no entry. The Python and shell checks (`contracts/*.py`, `scripts/`) are
-  not readers here: the `always` steps run them whatever changed;
-- the Swift tests that read a vector run as the fast `swift:test-vectors` step, whose filter
-  is derived from the same scan (`swift-filter`), so a new vector test is in it.
-
-A reader is a directory of `READER_AREAS` or an engine crate (`engine/<crate>`). A crate is
-tested alone, without its reverse dependencies: a data file cannot break a crate that does not
-read it, and the programs the suites start are not rebuilt for a change to a test input.
+- a reader is a source that names a vector file by its path, by `"name.json"` beside the word
+  vector, or by a call of a loader (`LOADERS`, the functions of `HELPERS`). A reader belongs to a
+  group: an area directory (`READER_AREAS`), an engine crate (`engine/<crate>`), the `tests/`
+  directory of a crate, or the gate's own scripts, which the `always` steps run;
+- a vector file that no scan finds a reader for selects everything (the plan widens, it never
+  skips), and so does a reader in no group;
+- `test_gate_vectors` fails when a source holds `contracts/vectors` and names no vector, unless it
+  is a helper of `HELPERS`: that is how a loader the scan cannot see is found;
+- an engine crate that reads a vector is tested alone, without its reverse dependencies: a data
+  file cannot break a crate that does not read it, and the engine programs are not rebuilt for
+  a change to a test input. The `tests/` of a crate run in the fast tier only for
+  `soyeht-protocol` (`engine:test-fast`); the others run after the merge;
+- the Swift tests that read a vector, and the `protocol-vectors` program of `contracts/swift`,
+  run as `swift:test-shared-changed`, whose filter is derived from the same scan (`swift-test`).
 """
 
 from __future__ import annotations
@@ -31,74 +32,38 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 VECTORS = "contracts/vectors/"
 
-# Reader directory -> the gate area its tests run in. `apps/shared` is the Swift vector step, not
-# the whole `swift` area: that one builds the engine programs for the client's integration test.
+# Reader group -> the gate area whose steps run its tests. `apps/shared` and `contracts/swift` are the
+# Swift vector step, not the whole `swift` area: that one builds the engine programs for the client's
+# integration test. The tests of `soyeht-protocol` are a pure crate, which `engine:test-fast` runs.
+PROTOCOL_TESTS = "engine/soyeht-protocol/tests"
 READER_AREAS = {
     "apps/shared": "swift_vectors",
+    "contracts/swift": "swift_vectors",
     "apps/desktop": "desktop",
     "apps/android": "android_core",
-    "contracts/swift": "swift",
     "contracts/typescript": "typescript",
+    PROTOCOL_TESTS: "protocol_vectors",
 }
+# The gate's own scripts and the Python of the contracts: the `always` steps run them.
+GATE = "gate"
+UNCLASSIFIED = "unclassified"
 
-# vector file (without `.json`) -> the directories and engine crates whose tests read it.
-VECTOR_READERS: dict[str, tuple[str, ...]] = {
-    "agent-account": ("apps/desktop", "apps/shared"),
-    "agent-attention": ("apps/desktop", "apps/shared"),
-    "agent-cards": ("apps/desktop", "apps/shared"),
-    "agent-transcript": ("apps/desktop", "apps/shared"),
-    "attachments": ("apps/desktop", "apps/shared"),
-    "avatar-mouth": ("apps/shared", "engine/soyeht-avatar"),
-    "avatar-package": ("apps/shared", "engine/soyeht-avatar"),
-    "editor": ("apps/desktop", "apps/shared"),
-    "engine-proof": ("apps/desktop", "apps/shared", "engine/soyeht-engine", "engine/soyeht-protocol"),
-    "file-paths": ("apps/desktop", "apps/shared"),
-    "frames": ("contracts/swift", "contracts/typescript", "engine/soyeht-protocol"),
-    "harness-picker": ("apps/desktop", "apps/shared"),
-    "harness-switch": ("apps/android", "apps/desktop", "apps/shared"),
-    "invalid-messages": ("contracts/swift", "contracts/typescript", "engine/soyeht-protocol"),
-    "loop-panel": ("apps/desktop", "apps/shared"),
-    "markdown": ("apps/android", "apps/desktop", "apps/shared"),
-    "messages": ("contracts/swift", "contracts/typescript", "engine/soyeht-engine", "engine/soyeht-protocol"),
-    "new-pane-form": ("apps/desktop", "apps/shared"),
-    "pairing-approval": ("apps/desktop", "engine/soyeht-protocol"),
-    "pairing-comparison": ("apps/desktop", "apps/shared", "engine/soyeht-protocol"),
-    "pairing-link": ("apps/shared", "engine/soyeht-protocol"),
-    "pane-close": ("apps/desktop", "apps/shared"),
-    "pane-layout": ("apps/desktop", "apps/shared"),
-    "pane-state-presentation": ("apps/desktop", "apps/shared", "engine/soyeht-protocol"),
-    "permission-preview": ("apps/desktop", "apps/shared"),
-    "presentation": ("apps/desktop", "apps/shared"),
-    "project-page-origin": ("apps/desktop", "apps/shared", "engine/soyeht-protocol"),
-    "protocol-version": ("apps/shared", "engine/soyeht-protocol"),
-    "push-permission": ("apps/shared", "engine/soyeht-engine"),
-    "readiness": ("apps/desktop", "apps/shared"),
-    "reconnect": ("apps/desktop", "apps/shared"),
-    "screenplay": ("apps/desktop", "apps/shared"),
-    "slash-completion": ("apps/desktop", "apps/shared"),
-    "speech-text": ("apps/shared",),
-    "tasks": ("apps/desktop", "apps/shared"),
-    "terminal-resize": ("apps/desktop", "apps/shared"),
-    "update": ("apps/shared", "engine/soyeht-protocol"),
-    "update-status": ("apps/desktop", "apps/shared"),
-    "usage": ("apps/desktop", "apps/shared", "engine/soyeht-protocol"),
-    "usage-presentation": ("apps/desktop", "apps/shared"),
-    "voice-turns": ("apps/shared",),
-    "web-links": ("apps/desktop", "apps/shared"),
-    "web-read": ("apps/desktop", "apps/shared"),
-    "workspaces": ("apps/desktop", "apps/shared"),
-    "writing": ("apps/desktop", "apps/shared"),
+# The sources that load a vector by a name they are given, and the functions that take it. The
+# scan finds a read through one of these names; `test_gate_vectors` finds a source that holds
+# `contracts/vectors` and is neither a named read nor in this list.
+HELPERS = {
+    "apps/desktop/crates/soyeht-client/src/testing.rs": ("vector", "cases"),
+    "apps/shared/Tests/SoyehtClientTests/ContractVector.swift": ("load",),
+    "apps/shared/Tests/SoyehtClientTests/SharedVectorsTests.swift": ("vector",),
+    "engine/soyeht-protocol/tests/client_policy.rs": ("vector_named",),
+    "engine/soyeht-avatar/src/tests/vectors/mod.rs": ("read",),
 }
+LOADERS = sorted({name for names in HELPERS.values() for name in names})
 
-SOURCE_SUFFIXES = {".rs", ".swift", ".ts", ".kt", ".kts"}
-SKIPPED_DIRECTORIES = {"docs"}
-COMMENT = re.compile(r"^\s*(//|/\*|\*)")
-# The helpers that take a vector file's name: `ContractVector.load("x")`, `vector("x")`,
-# `testing::cases("x", key)`, `read("x.json")`.
-LOADERS = r"(?:load|cases|vector|vector_named|read)"
-SWIFT_VECTOR_TESTS = "apps/shared/Tests/"
-# A Swift test that names no vector but goes through the loader or the directory still reads one.
-LOADER_HINTS = ("ContractVector.", VECTORS)
+NOT_SOURCES = {".md", ".json", ".lock"}
+MAX_SOURCE_BYTES = 2_000_000
+COMMENT = re.compile(r"^\s*(//|/\*|\*|#)")
+SWIFT_TESTS = "apps/shared/Tests/"
 
 
 def vector_name(path: str) -> str | None:
@@ -108,17 +73,17 @@ def vector_name(path: str) -> str | None:
     return path[len(VECTORS):-len(".json")]
 
 
-def readers_of(path: str) -> tuple[str, ...] | None:
-    """The readers declared for a vector file, None when it is unknown (the plan widens)."""
-    name = vector_name(path)
-    return VECTOR_READERS.get(name) if name is not None else None
-
-
-def reader_directory(path: str) -> str | None:
-    """The reader a source file belongs to, None for a file that is no reader here."""
-    if path.startswith("engine/") and path.count("/") >= 2:
-        return "/".join(path.split("/")[:2])
-    return next((root for root in READER_AREAS if path.startswith(root + "/")), None)
+def reader_group(path: str) -> str:
+    """The reader a source belongs to: where its tests run."""
+    parts = path.split("/")
+    if parts[0] == "engine" and len(parts) > 2:
+        return "/".join(parts[:2]) + ("/tests" if parts[2] == "tests" else "")
+    for group in READER_AREAS:
+        if path.startswith(group + "/"):
+            return group
+    if parts[0] in ("scripts", ".github", ".githooks") or (parts[0] == "contracts" and len(parts) == 2):
+        return GATE
+    return UNCLASSIFIED
 
 
 def code_lines(text: str) -> str:
@@ -127,17 +92,17 @@ def code_lines(text: str) -> str:
 
 def vectors_read(text: str, names: list[str]) -> set[str]:
     """The vector files a source reads: its path, `"name.json"` beside the word vector, or a loader call."""
+    candidates = [name for name in names if name in text]
+    if not candidates:
+        return set()
     code = code_lines(text)
     mentions_vectors = "vector" in code.lower()
     found = set()
-    for name in names:
-        if name not in code:
-            continue
+    for name in candidates:
         escaped = re.escape(name)
         path = rf"{VECTORS}{escaped}\.json|(?<![\w-]){escaped}\.json"
-        if re.search(path, code) and mentions_vectors:
-            found.add(name)
-        elif re.search(rf"\b{LOADERS}\(\s*[\"']{escaped}(?:\.json)?[\"']", code):
+        call = rf"\b(?:{'|'.join(LOADERS)})\(\s*[\"']{escaped}(?:\.json)?[\"']"
+        if (mentions_vectors and re.search(path, code)) or re.search(call, code):
             found.add(name)
     return found
 
@@ -148,38 +113,50 @@ def vector_names(root: Path = ROOT) -> list[str]:
 
 @functools.cache
 def source_files(root: Path = ROOT) -> tuple[tuple[str, str], ...]:
-    """(repository path, text) of every tracked or new source that can read a vector."""
+    """(repository path, text) of every tracked or new text file that can read a vector."""
     listed = subprocess.check_output(
         ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root, text=True
     )
-    return tuple(
-        (relative, (root / relative).read_text(errors="replace"))
-        for relative in sorted(set(listed.split("\0")) - {""})
-        if PurePosixPath(relative).suffix in SOURCE_SUFFIXES
-        and (root / relative).is_file()
-        and not SKIPPED_DIRECTORIES.intersection(PurePosixPath(relative).parts)
-        and not relative.startswith(VECTORS)
-    )
+    sources = []
+    for relative in sorted(set(listed.split("\0")) - {""}):
+        path = root / relative
+        if (
+            PurePosixPath(relative).suffix in NOT_SOURCES
+            or relative.startswith(("docs/", VECTORS))
+            or not path.is_file()
+            or path.stat().st_size > MAX_SOURCE_BYTES
+        ):
+            continue
+        data = path.read_bytes()
+        if b"\0" not in data[:4096]:
+            sources.append((relative, data.decode(errors="replace")))
+    return tuple(sources)
 
 
-def scan(root: Path = ROOT) -> dict[str, dict[str, set[str]]]:
-    """vector name -> reader directory -> the source files that read it."""
+@functools.cache
+def scan(root: Path = ROOT) -> dict[str, dict[str, tuple[str, ...]]]:
+    """vector name -> reader group -> the source files of that group that read it."""
     names = vector_names(root)
-    found: dict[str, dict[str, set[str]]] = {name: {} for name in names}
+    found: dict[str, dict[str, list[str]]] = {name: {} for name in names}
     for path, text in source_files(root):
-        reader = reader_directory(path) or "unclassified"
+        group = reader_group(path)
         for name in vectors_read(text, names):
-            found[name].setdefault(reader, set()).add(path)
-    return found
+            found[name].setdefault(group, []).append(path)
+    return {name: {group: tuple(files) for group, files in groups.items()} for name, groups in found.items()}
+
+
+def readers(root: Path = ROOT) -> dict[str, tuple[str, ...]]:
+    """vector name -> the reader groups that read it (an empty tuple: nothing reads it)."""
+    return {name: tuple(sorted(groups)) for name, groups in scan(root).items()}
 
 
 def swift_vector_tests(root: Path = ROOT) -> list[str]:
-    """The Swift test files of the shared package that read a vector, by repository path."""
+    """The Swift test files of the shared package that read a vector."""
     names = vector_names(root)
     return sorted(
         path for path, text in source_files(root)
-        if path.startswith(SWIFT_VECTOR_TESTS) and path.endswith(".swift")
-        and (vectors_read(text, names) or any(hint in code_lines(text) for hint in LOADER_HINTS))
+        if path.startswith(SWIFT_TESTS) and path.endswith(".swift") and "@Test" in text
+        and (vectors_read(text, names) or any(f in code_lines(text) for f in (VECTORS, "ContractVector.")))
     )
 
 
@@ -189,19 +166,57 @@ def swift_filter(root: Path = ROOT) -> str:
     The Swift Testing ids of the package's tests end in `/File.swift:line:column`, so the file
     names select the tests that a file holds, whatever their own names are.
     """
+    names = "|".join(re.escape(PurePosixPath(path).stem) for path in swift_vector_tests(root))
+    return rf"/(?:{names})\.swift:"
+
+
+def protocol_tests(root: Path = ROOT) -> list[str]:
+    """The integration test targets of `soyeht-protocol` that read a vector."""
+    prefix = PROTOCOL_TESTS + "/"
+    return sorted({
+        PurePosixPath(path[len(prefix):]).parts[0].removesuffix(".rs")
+        for groups in scan(root).values() for path in groups.get(PROTOCOL_TESTS, ())
+    })
+
+
+def tests_run(output: str) -> int:
+    """The number of tests a Swift Testing run reports (0 when it says nothing)."""
+    counts = re.findall(r"Test run with (\d+) tests?", output)
+    return int(counts[-1]) if counts else 0
+
+
+def swift_command(root: Path = ROOT) -> list[str]:
+    return ["swift", "test", "--package-path", str(root / "apps/shared"), "--filter", swift_filter(root)]
+
+
+def swift_test(root: Path = ROOT) -> int:
+    """Run the Swift vector tests. A filter that matches nothing passes, so a short run fails."""
     files = swift_vector_tests(root)
-    if not files:
-        raise SystemExit("gate_vectors: no Swift test reads a vector; fix the scan")
-    names = "|".join(re.escape(Path(path).stem) for path in files)
-    return rf"(?:{names})\.swift"
+    command = swift_command(root)
+    lines = []
+    with subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True) as run:
+        for line in run.stdout:
+            sys.stdout.write(line)
+            lines.append(line)
+    if run.returncode:
+        return run.returncode
+    ran = tests_run("".join(lines))
+    if ran < len(files):
+        print(f"gate_vectors: {ran} Swift tests ran for {len(files)} test files that read a vector", file=sys.stderr)
+        return 1
+    return 0
 
 
 def main(argv: list[str]) -> int:
-    if argv != ["swift-filter"]:
-        print("usage: gate_vectors.py swift-filter", file=sys.stderr)
+    commands = {
+        "swift-test": swift_test,
+        "protocol-tests": lambda: print(" ".join(f"--test {name}" for name in protocol_tests())) or 0,
+    }
+    if len(argv) != 1 or argv[0] not in commands:
+        print(f"usage: gate_vectors.py {{{'|'.join(commands)}}}", file=sys.stderr)
         return 2
-    print(swift_filter())
-    return 0
+    return commands[argv[0]]()
 
 
 if __name__ == "__main__":
