@@ -69,8 +69,10 @@ public final class AgentPaneStore {
   /// Questions still waiting for a person, across every pane.
   var openRequestIds: Set<String> {
     Set(
-      models.values.flatMap { [$0.attention.permission?.requestId, $0.attention.elicitation?.requestId] }
-        .compactMap { $0 })
+      models.values.flatMap {
+        [$0.attention.permission?.requestId, $0.attention.elicitation?.requestId]
+      }
+      .compactMap { $0 })
   }
 
   private func model(creating paneId: String, from view: AgentPaneView = AgentPaneView())

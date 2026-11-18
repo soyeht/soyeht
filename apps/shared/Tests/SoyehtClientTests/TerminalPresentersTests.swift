@@ -227,7 +227,8 @@ import Testing
 /// `d`. A surface exists for `a`, `c` and `d`; `g` is selected.
 @MainActor private func macWithSurfaces() throws -> (EngineClient, Requests) {
   let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
-  let layout = [("a", "w1", PaneMode.terminal), ("b", "w1", .terminal), ("g", "w1", .agent)]
+  let layout =
+    [("a", "w1", PaneMode.terminal), ("b", "w1", .terminal), ("g", "w1", .agent)]
     + [("c", "w2", .terminal), ("d", "w2", .terminal)]
   for (index, (id, workspace, mode)) in layout.enumerated() {
     try client.applyPaneCreated(

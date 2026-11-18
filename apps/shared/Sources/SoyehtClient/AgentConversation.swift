@@ -124,7 +124,9 @@ extension AgentConversationView where HarnessControl == EmptyView {
   private var promptBinding: Binding<String> { Binding(get: { prompt }, set: { prompt = $0 }) }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
   /// The transcript grouped once per change of the pane, not once per evaluation of this view.
-  private var groupedEntries: [AgentTranscriptEntry] { client.agentPanes.model(paneId)?.entries ?? [] }
+  private var groupedEntries: [AgentTranscriptEntry] {
+    client.agentPanes.model(paneId)?.entries ?? []
+  }
   private var signIn: AgentSignInState {
     AgentSignInState(
       agent: pane?.agent, authMethods: view.authMethods, failure: view.signInFailure)
