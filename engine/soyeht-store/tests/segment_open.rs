@@ -21,7 +21,7 @@ fn record(n: u64) -> Record {
 fn start_owes_the_flush_of_the_files_it_read_and_makes_only_a_truncation_wait() {
     let directory = std::env::temp_dir().join(format!("soyeht-segment-open-{}", Uuid::new_v4()));
     let mut log = Log::open(&directory).unwrap();
-    // 32 records of 64 KiB fill four segments of 512 KiB.
+    // 32 records of 64 KiB fill four segments.
     for n in 0..32 {
         log.append(record(n)).unwrap();
     }

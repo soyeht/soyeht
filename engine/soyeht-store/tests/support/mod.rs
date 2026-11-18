@@ -3,8 +3,12 @@
 
 use rusqlite::Connection;
 use serde_json::json;
-use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource};
-use soyeht_store::database::{Change, Result, Store};
+use soyeht_protocol::{Pane, PaneMode, PaneState, StateSource, Workspace};
+use soyeht_store::{
+    agents,
+    database::{Change, Result, Store},
+    domain::PaneRecord,
+};
 use std::{fs, path::PathBuf};
 use uuid::Uuid;
 
@@ -74,6 +78,35 @@ pub fn commit<T>(store: &mut Store, key: &str, apply: impl FnOnce(&Change<'_>) -
             Ok((json!({}), vec![]))
         })
         .unwrap();
+}
+
+/// Workspace `w` holding one recording agent pane per id, each with an empty runtime checkpoint
+/// of generation 1.
+pub fn seed_agent_panes(store: &mut Store, ids: &[&str]) {
+    commit(store, "seed", |change| {
+        change.insert_workspace(&Workspace {
+            workspace_id: "w".into(),
+            name: "Workspace".into(),
+            path: "/tmp".into(),
+            layout: json!({}),
+        })?;
+        for id in ids {
+            change.insert_pane(&PaneRecord {
+                pane: Pane {
+                    name: "Agent".into(),
+                    record: true,
+                    ..pane(id, "w", PaneMode::Agent, "/tmp")
+                },
+                closed: false,
+                instance_key: format!("process-{id}"),
+                instance_id: None,
+                supervisor_id: None,
+                sequence_base: 0,
+            })?;
+            agents::save_runtime(change, id, 1, &json!({"nextOffset":0,"queue":[]}))?;
+        }
+        Ok(())
+    });
 }
 
 /// An idle pane with no optional field set: a test overrides what it exercises with

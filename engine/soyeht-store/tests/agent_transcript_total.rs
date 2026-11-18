@@ -7,31 +7,19 @@ use rusqlite::{
     trace::{TraceEvent, TraceEventCodes},
 };
 use serde_json::json;
-use soyeht_protocol::{PaneMode, TranscriptMessage, Workspace, limits};
-use soyeht_store::{agents, database::Store, domain::PaneRecord};
+use soyeht_protocol::{TranscriptMessage, limits};
+use soyeht_store::{agents, database::Store};
 use std::cell::Cell;
 use support::{Profile, commit};
 
 fn seed(store: &mut Store) {
-    commit(store, "seed", |change| {
-        change.insert_workspace(&Workspace {
-            workspace_id: "w".into(),
-            name: "Workspace".into(),
-            path: "/tmp".into(),
-            layout: json!({}),
-        })?;
-        for id in ["a", "b"] {
-            change.insert_pane(&PaneRecord {
-                pane: support::pane(id, "w", PaneMode::Agent, "/tmp"),
-                closed: false,
-                instance_key: format!("process-{id}"),
-                instance_id: None,
-                supervisor_id: None,
-                sequence_base: 0,
-            })?;
-            agents::save_runtime(change, id, 1, &json!({"nextOffset":0,"queue":[]}))?;
-        }
-        Ok(())
+    support::seed_agent_panes(store, &["a", "b"]);
+}
+
+/// Saves `count` messages of `size` bytes to `pane` in one commit.
+fn fill(store: &mut Store, pane: &str, count: u64, size: usize) {
+    commit(store, &format!("fill-{pane}-{count}"), |change| {
+        (0..count).try_for_each(|seq| agents::save_message(change, pane, &message(pane, seq, size)))
     });
 }
 
@@ -68,14 +56,7 @@ fn the_total_of_a_pane_equals_the_sum_of_its_rows_after_any_writes_and_retention
         (state >> 33) % bound
     };
     // Fill pane "a" past the retention limit, so the oldest messages are trimmed as it grows.
-    for batch in 0..4 {
-        commit(&mut store, &format!("fill-{batch}"), |change| {
-            for seq in batch * 50..(batch + 1) * 50 {
-                agents::save_message(change, "a", &message("a", seq, 200_000))?;
-            }
-            Ok(())
-        });
-    }
+    fill(&mut store, "a", 200, 200_000);
     let (rows, total): (i64, i64) = store
         .connection()
         .query_row(
@@ -149,15 +130,8 @@ fn saving_a_message_takes_the_same_work_whatever_the_length_of_the_conversation(
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    commit(&mut store, "history", |change| {
-        for seq in 0..20 {
-            agents::save_message(change, "a", &message("a", seq, 1_000))?;
-        }
-        for seq in 0..2_000 {
-            agents::save_message(change, "b", &message("b", seq, 1_000))?;
-        }
-        Ok(())
-    });
+    fill(&mut store, "a", 20, 1_000);
+    fill(&mut store, "b", 2_000, 1_000);
     let mut save = |pane: &str| {
         steps(&mut store, |store| {
             commit(store, &format!("save-{pane}"), |change| {
@@ -189,12 +163,9 @@ fn a_database_of_version_38_gets_the_totals_of_the_messages_it_already_holds() {
     let profile = Profile::new();
     let mut store = profile.store();
     seed(&mut store);
-    commit(&mut store, "history", |change| {
-        for seq in 0..3 {
-            agents::save_message(change, "a", &message("a", seq, 1_000))?;
-            agents::stage_message(change, "b", &message("b", seq, 500))?;
-        }
-        Ok(())
+    fill(&mut store, "a", 3, 1_000);
+    commit(&mut store, "staged", |change| {
+        (0..3).try_for_each(|seq| agents::stage_message(change, "b", &message("b", seq, 500)))
     });
     drop(store);
     profile
