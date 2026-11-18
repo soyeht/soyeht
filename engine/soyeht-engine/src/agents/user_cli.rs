@@ -726,34 +726,11 @@ mod tests {
         )
     }
 
-    /// Sends `given` to a supervisor that does not know `variable`: whether each attempt carried it,
-    /// and the answer.
-    pub(super) fn sent_to_a_supervisor_that_refuses(
-        given: Given,
-        variable: &str,
-    ) -> (Vec<bool>, Response) {
-        let sent = Mutex::new(Vec::new());
-        let response = given
-            .send_with(|config| {
-                let with = config.env.contains_key(variable);
-                sent.lock().unwrap().push(with);
-                if with {
-                    Err(refusal(
-                        wire_kind::OPERATION_FAILED,
-                        soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
-                    ))
-                } else {
-                    Ok(instance_of(config))
-                }
-            })
-            .unwrap();
-        (sent.into_inner().unwrap(), response)
-    }
-
     #[test]
     fn a_supervisor_that_does_not_know_the_variable_starts_the_process_without_it() {
         let (given, plain) = given_with_cli();
-        let (sent, response) = sent_to_a_supervisor_that_refuses(given, CLAUDE.variable);
+        let (sent, response) =
+            fixed_environment_tests::sent_to_a_supervisor_that_refuses(given, CLAUDE.variable);
         assert_eq!(sent, [true, false]);
         assert!(matches!(response, Response::Instance(instance) if instance.spawn == plain));
     }

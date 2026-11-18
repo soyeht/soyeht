@@ -1,7 +1,32 @@
 //! The variables the engine fixes for the second adapter.
 
-use super::tests::{adapter, sent_to_a_supervisor_that_refuses};
+use super::tests::{adapter, instance_of, refusal};
 use super::*;
+use std::sync::Mutex;
+
+/// Sends `given` to a supervisor that does not know `variable`: whether each attempt carried it,
+/// and the answer.
+pub(super) fn sent_to_a_supervisor_that_refuses(
+    given: Given,
+    variable: &str,
+) -> (Vec<bool>, Response) {
+    let sent = Mutex::new(Vec::new());
+    let response = given
+        .send_with(|config| {
+            let with = config.env.contains_key(variable);
+            sent.lock().unwrap().push(with);
+            if with {
+                Err(refusal(
+                    wire_kind::OPERATION_FAILED,
+                    soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
+                ))
+            } else {
+                Ok(instance_of(config))
+            }
+        })
+        .unwrap();
+    (sent.into_inner().unwrap(), response)
+}
 
 #[test]
 fn the_second_adapter_is_given_its_fixed_variable_and_a_supervisor_that_refuses_it_gets_none() {
