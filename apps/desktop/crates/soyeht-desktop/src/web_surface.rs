@@ -4,13 +4,18 @@
 //! own (Windows) the surface only says where the pane is, and the window of the page takes the
 //! person's input itself (ADR 0124).
 
-use crate::{composer_field::edit_of, theme::Palette, web_page::WebPage};
+use crate::{
+    composer_field::edit_of,
+    picture::{paint_picture, painted, swap_picture},
+    theme::Palette,
+    web_page::WebPage,
+};
 use gpui::{
     App, AppContext, Bounds, ClipboardItem, ContentMask, Context, ElementInputHandler, Entity,
     EntityInputHandler, FocusHandle, Focusable, InteractiveElement, IntoElement, KeyDownEvent,
     KeyUpEvent, Keystroke, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
     NavigationDirection, ParentElement, Pixels, Point, Render, RenderImage, ScrollDelta,
-    ScrollWheelEvent, Styled, UTF16Selection, Window, canvas, div, point, px, rgb, size,
+    ScrollWheelEvent, Styled, UTF16Selection, Window, div, point, px, rgb, size,
 };
 use soyeht_client::text_input::keys::Edit;
 use soyeht_webview::{
@@ -268,10 +273,8 @@ impl WebSurface {
         self.sync_focus(window);
         if let Some(frame) = self.page.take_frame()
             && let Some(image) = render_image(frame)
-            && let Some((old, _)) = self.picture.replace(image)
-            && window.drop_image(old).is_err()
         {
-            // The picture was already gone from the atlas.
+            swap_picture(window, &mut self.picture, image, |(image, _)| image);
         }
         window.handle_input(
             &self.focus,
@@ -285,18 +288,7 @@ impl WebSurface {
                 px(extent.height.0 as f32 / *scale as f32),
             );
             window.with_content_mask(Some(ContentMask { bounds }), |window| {
-                if window
-                    .paint_image(
-                        Bounds::new(bounds.origin, shown),
-                        gpui::Corners::default(),
-                        Arc::clone(image),
-                        0,
-                        false,
-                    )
-                    .is_err()
-                {
-                    // The picture could not be uploaded; the next one is tried at the next frame.
-                }
+                paint_picture(window, Bounds::new(bounds.origin, shown), image);
             });
         }
     }
@@ -433,16 +425,7 @@ impl Render for WebSurface {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::mouse_up_out))
             .on_mouse_move(cx.listener(Self::mouse_move))
             .on_scroll_wheel(cx.listener(Self::scroll))
-            .child(
-                canvas(
-                    |bounds, _, _| bounds,
-                    move |bounds, _, window, cx| {
-                        entity.update(cx, |surface, cx| surface.paint(bounds, window, cx));
-                    },
-                )
-                .absolute()
-                .inset_0(),
-            )
+            .child(painted(entity, Self::paint).absolute().inset_0())
     }
 }
 

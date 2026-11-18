@@ -42,6 +42,8 @@ final class AvatarRenderer {
   private var output: AvatarBitmap
   /// The picture under the part being drawn (a copy of the rows it touches).
   private var underneath: [UInt8]
+  /// The layers of the part being drawn, mixed (a float for each channel).
+  private var mixed: [Float]
   private let cell: Int
   /// Output pixels per canvas pixel.
   private let scale: Double
@@ -59,7 +61,6 @@ final class AvatarRenderer {
       guard let found = images[path] else { throw AvatarPackageError(kind: .file, at: path) }
       return found
     }
-    try Self.checkCoverage(package)
     self.package = package
     let canvas = (width: Int(package.canvas.width), height: Int(package.canvas.height))
     let scale = min(1, Double(max(maxSide, 1)) / Double(max(canvas.width, canvas.height)))
@@ -75,6 +76,7 @@ final class AvatarRenderer {
     source = base
     output = AvatarBitmap(width: outputWidth, height: outputHeight)
     underneath = [UInt8](repeating: 0, count: outputWidth * outputHeight * 4)
+    mixed = [Float](repeating: 0, count: outputWidth * outputHeight * 4)
     let fullAtlas = try image(package.mouth.atlas.file)
     atlas = fullAtlas.resized(width: scaled(fullAtlas.width), height: scaled(fullAtlas.height))
     // An eye frame is laid over the base picture at the size of the canvas, and then the picture is
@@ -99,9 +101,7 @@ final class AvatarRenderer {
     self.patches = patches
     self.cell = max(cell, 1)
     let (atlasWidth, atlasHeight) = (Double(atlas.width), Double(atlas.height))
-    parts = AvatarPartKind.allCases.compactMap { kind in
-      package.mouth.parts.first { $0.id == kind }
-    }.map { original in
+    parts = package.mouth.inDrawingOrder.map { original in
       var part = original
       for index in part.shapes.indices {
         part.shapes[index].positions = part.shapes[index].positions.map { $0 * scale }
@@ -116,41 +116,10 @@ final class AvatarRenderer {
     }
   }
 
-  /// The area the triangles of one drawing cover, summed over the three parts, is at most one
-  /// canvas. The vertex and triangle counts of the load rules bound the size of a mesh, not what
-  /// it covers: 6000 triangles of the canvas's size each would cost seconds a frame. A frame draws
-  /// up to nine drawings of each part at once, so this bound is what a frame's cost is bounded by,
-  /// and it is decided here, once, when the renderer is made, and never frame by frame (a frame
-  /// that left the mouth out would put the base picture's own mouth in its place, a swap of
-  /// drawings). It is the rule the shared load rule of the Rust validator and
-  /// `avatar-package.json` is adding (one canvas of triangle area per drawing, over the parts,
-  /// `tooLarge` at `/mouth/parts`); this check is replaced by it when it lands.
-  static func checkCoverage(_ package: AvatarPackage) throws {
-    let canvas = Double(package.canvas.width) * Double(package.canvas.height)
-    var covered: [String: Double] = [:]
-    for part in package.mouth.parts {
-      for shape in part.shapes {
-        let p = shape.positions
-        var area = 0.0
-        for t in stride(from: 0, to: part.triangles.count, by: 3) {
-          let a = Int(part.triangles[t])
-          let b = Int(part.triangles[t + 1])
-          let c = Int(part.triangles[t + 2])
-          let cross =
-            (p[2 * b] - p[2 * a]) * (p[2 * c + 1] - p[2 * a + 1])
-            - (p[2 * b + 1] - p[2 * a + 1]) * (p[2 * c] - p[2 * a])
-          area += abs(cross) / 2
-        }
-        covered[shape.id, default: 0] += area
-      }
-    }
-    if covered.values.contains(where: { $0 > canvas }) {
-      throw AvatarPackageError(kind: .tooLarge, at: "/mouth/parts")
-    }
-  }
-
-  /// The eye drawing a frame needs: the blink, the half-closed lid, where the eyes look, or the
-  /// soft eyes of listening. `nil` is the base picture's own open eyes.
+  /// The eye frame a look needs, by the shared rule (`eyeFrames` of `avatar-mouth.json`): the
+  /// blink when the lid is closed, `half` when it is half closed, else the frame of the gaze when
+  /// the eyes look away from the centre, else `soft` while listening, else `nil`, the base
+  /// picture's own eyes.
   static func patchId(for eye: AvatarEye) -> String? {
     switch eye.lid {
     case .closed: "blink"
@@ -207,12 +176,15 @@ final class AvatarRenderer {
       x0: patch.x, y0: patch.y, x1: patch.x + picture.width, y1: patch.y + picture.height)
   }
 
-  /// What the mouth of the last frame cost: the triangles drawn (once for each layer) and the
-  /// pixels they covered. The load rules bound it (`AvatarPackageValidator`: a drawing's
-  /// triangles cover at most one canvas), so a frame never decides to leave the mouth out.
+  /// What the mouth of the last frame cost: the triangles drawn (once for each layer, and once
+  /// to lay the part) and the pixels they covered. The load rules bound it (`AvatarPackageValidator`:
+  /// the work of the mouth is at most one canvas), so a frame never leaves the mouth out.
   private(set) var lastMouthWork = (triangles: 0, pixels: 0)
 
-  /// Blend the nine drawings' contours by the weights and draw the textured layers of each part.
+  /// Blend the nine drawings' contours by the weights, and for each part, in the order the parts
+  /// are drawn (skin, lips, inner; a part the package lacks is skipped): mix its layers by their
+  /// weights and lay the mix over the picture as it was, once, with the part's opacity and the
+  /// feather of its corners.
   private func drawMouth(weights: [Double]) -> AvatarPixelRect {
     var box = AvatarPixelRect(x0: 0, y0: 0, x1: 0, y1: 0)
     let size = (width: source.width, height: source.height)
@@ -221,26 +193,34 @@ final class AvatarRenderer {
     atlas.pixels.withUnsafeBufferPointer { texture in
       source.pixels.withUnsafeMutableBufferPointer { destination in
         underneath.withUnsafeMutableBufferPointer { under in
-          guard let texture = texture.baseAddress, let destination = destination.baseAddress,
-            let under = under.baseAddress
-          else { return }
-          for (part, uvs) in parts {
-            let positions = part.blend(weights)
-            let area = Self.bounds(of: positions, within: size)
-            box = box.union(area)
-            // What is under the part, as it was before any of its layers: the layers mix over it.
-            for y in area.y0..<max(area.y1, area.y0) {
-              (under + y * size.width * 4).update(
-                from: destination + y * size.width * 4, count: size.width * 4)
-            }
-            for layer in part.layers(weights) {
-              guard let uv = uvs[layer.shape.rawValue] else { continue }
-              let drawn = Self.draw(
-                part, positions: positions, uvs: uv, opacity: layer.alpha, under: under,
-                texture: texture, textureSize: atlasSize, destination: destination,
-                destinationSize: size)
+          mixed.withUnsafeMutableBufferPointer { mix in
+            guard let texture = texture.baseAddress, let destination = destination.baseAddress,
+              let under = under.baseAddress, let mix = mix.baseAddress
+            else { return }
+            for (part, uvs) in parts {
+              let layers = part.layers(weights)
+              let opacity = part.opacity(weights)
+              guard !layers.isEmpty, opacity > 0 else { continue }
+              let positions = part.blend(weights)
+              let area = Self.bounds(of: positions, within: size)
+              box = box.union(area)
+              // What is under the part, and a clear mix, in the rows the part can touch.
+              for y in area.y0..<max(area.y1, area.y0) {
+                (under + y * size.width * 4).update(
+                  from: destination + y * size.width * 4, count: size.width * 4)
+                (mix + y * size.width * 4).update(repeating: 0, count: size.width * 4)
+              }
+              for layer in layers {
+                guard let uv = uvs[layer.shape.rawValue] else { continue }
+                work.pixels += Self.mixLayer(
+                  part, positions: positions, uvs: uv, alpha: layer.alpha, texture: texture,
+                  textureSize: atlasSize, mix: mix, size: size)
+                work.triangles += part.triangles.count / 3
+              }
+              work.pixels += Self.lay(
+                part, positions: positions, opacity: opacity, mix: mix, under: under,
+                destination: destination, size: size)
               work.triangles += part.triangles.count / 3
-              work.pixels += drawn
             }
           }
         }
@@ -250,23 +230,44 @@ final class AvatarRenderer {
     return box
   }
 
-  private static func draw(
-    _ part: AvatarMeshPart, positions: [Double], uvs: [Double], opacity: Double,
-    under: UnsafePointer<UInt8>, texture: UnsafePointer<UInt8>,
-    textureSize: (width: Int, height: Int),
-    destination: UnsafeMutablePointer<UInt8>, destinationSize: (width: Int, height: Int)
-  ) -> Int {
-    let vertex = { (i: Int) in
+  private static func vertices(_ part: AvatarMeshPart, _ positions: [Double], _ uvs: [Double])
+    -> (Int) -> AvatarRasterizer.Vertex
+  {
+    { i in
       AvatarRasterizer.Vertex(
-        x: positions[2 * i], y: positions[2 * i + 1], u: uvs[2 * i], v: uvs[2 * i + 1],
-        alpha: part.alphas?[i] ?? 1)
+        x: positions[2 * i], y: positions[2 * i + 1], u: uvs.isEmpty ? 0 : uvs[2 * i],
+        v: uvs.isEmpty ? 0 : uvs[2 * i + 1], alpha: part.alphas?[i] ?? 1)
     }
+  }
+
+  private static func mixLayer(
+    _ part: AvatarMeshPart, positions: [Double], uvs: [Double], alpha: Double,
+    texture: UnsafePointer<UInt8>, textureSize: (width: Int, height: Int),
+    mix: UnsafeMutablePointer<Float>, size: (width: Int, height: Int)
+  ) -> Int {
+    let vertex = vertices(part, positions, uvs)
     var covered = 0
     for t in stride(from: 0, to: part.triangles.count, by: 3) {
-      covered += AvatarRasterizer.fill(
+      covered += AvatarRasterizer.mixLayer(
         vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
-        vertex(Int(part.triangles[t + 2])), opacity: opacity, under: under, texture: texture,
-        textureSize: textureSize, destination: destination, destinationSize: destinationSize)
+        vertex(Int(part.triangles[t + 2])), alpha: alpha, texture: texture,
+        textureSize: textureSize, mix: mix, size: size)
+    }
+    return covered
+  }
+
+  private static func lay(
+    _ part: AvatarMeshPart, positions: [Double], opacity: Double, mix: UnsafePointer<Float>,
+    under: UnsafePointer<UInt8>, destination: UnsafeMutablePointer<UInt8>,
+    size: (width: Int, height: Int)
+  ) -> Int {
+    let vertex = vertices(part, positions, [])
+    var covered = 0
+    for t in stride(from: 0, to: part.triangles.count, by: 3) {
+      covered += AvatarRasterizer.lay(
+        vertex(Int(part.triangles[t])), vertex(Int(part.triangles[t + 1])),
+        vertex(Int(part.triangles[t + 2])), opacity: opacity, mix: mix, under: under,
+        destination: destination, size: size)
     }
     return covered
   }

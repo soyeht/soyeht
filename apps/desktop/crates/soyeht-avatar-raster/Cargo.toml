@@ -1,0 +1,18 @@
+[package]
+name = "soyeht-avatar-raster"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+soyeht-avatar.workspace = true
+soyeht-platform.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+# The decoder of the PNGs of a package (the same crate GPUI uses).
+image.workspace = true
+
+[lints]
+workspace = true

@@ -156,6 +156,20 @@ pub(super) fn owner_only(options: &mut OpenOptions) -> &mut OpenOptions {
     options.mode(0o600)
 }
 
+/// Whether `metadata` is a link (judged from `symlink_metadata`).
+pub(super) fn is_link(metadata: &fs::Metadata) -> bool {
+    metadata.file_type().is_symlink()
+}
+
+/// Opens `path` for reading without following a link, and without waiting for a writer when it is
+/// a pipe (the caller then sees that it is not a regular file).
+pub(super) fn open_regular(path: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+}
+
 pub(super) fn open_no_follow(options: &OpenOptions, path: &Path) -> io::Result<File> {
     options.clone().custom_flags(libc::O_NOFOLLOW).open(path)
 }

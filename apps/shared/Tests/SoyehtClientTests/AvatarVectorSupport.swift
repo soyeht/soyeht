@@ -11,8 +11,10 @@ enum AvatarVector {
   /// The groups of `avatar-mouth.json` and of `avatar-package.json` the Swift tests run. A group
   /// the file gains that is in neither list fails `everyGroupOfTheVectorFilesIsRunHere`, so a
   /// rule another implementation pins is never left out here without being said.
-  static let mouthGroups: Set = ["weights", "dynamics", "aligner", "acting", "runtime", "warp"]
-  static let packageGroups: Set = ["cases", "mesh"]
+  static let mouthGroups: Set = [
+    "weights", "dynamics", "aligner", "acting", "runtime", "warp", "eyeFrames",
+  ]
+  static let packageGroups: Set = ["cases", "mesh", "drawOrder", "composite"]
   /// Lists of the files that are inputs of the cases, not cases (the package vector's `assets`).
   static let inputs: Set = ["assets"]
   /// Groups of either file that the Swift tests do not run yet, each with the reason. Empty today.
@@ -53,6 +55,8 @@ enum AvatarVector {
   }
 
   static func numbers(_ xs: [Double]) -> JsonValue { .array(xs.map { .number($0) }) }
+
+  static func stringList(_ xs: [String]) -> JsonValue { .array(xs.map { .string($0) }) }
 
   /// A field the file lacks, or has with another type: the vector is read strictly, so a renamed
   /// field fails here and is not read as a default.

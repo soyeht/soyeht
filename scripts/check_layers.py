@@ -87,12 +87,16 @@ LAYERS: dict[str, set[str]] = {
     # The same for the LGPL-2.1 protocol crate that GPUI's Linux backend names: a protocol of our own
     # with the names GPUI imports, which no compositor advertises (ADR 0149).
     "wayland-protocols-plasma": set(),
+    # The software rasteriser of the avatar (ADR 0166): the rules of `soyeht-avatar` drawn on the
+    # processor, with no window; the desktop's stage draws with it on a background thread.
+    "soyeht-avatar-raster": {"soyeht-avatar", "soyeht-platform"},
     "soyeht-desktop": {
         "soyeht-client",
         "soyeht-webview",
         "soyeht-protocol",
         "soyeht-platform",
         "soyeht-avatar",
+        "soyeht-avatar-raster",
     },
     # Layer 8: the Android app's core (ADR 0134), its own workspace. It reuses the desktop client's
     # connection and replica and holds no rule of its own.

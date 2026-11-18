@@ -864,7 +864,7 @@
       "text": "mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão mamãe bebe pão "
     }
   ],
-  "description": "The mouth runtime of soyeht-avatar (ADR 0166). The format is unstable (0.x) until the renderers have consumed it. Every step is by dt = 1.0 / 60.0 as an IEEE double, and the time of frame i is the double i / 60.0 (the acting layer's clock is the sum of the dt, in seconds, as a double: a timer that lands on a frame boundary depends on that arithmetic). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence. aligner: a text, its language and the envelope of the audio in, the timed phonemes and word starts out (a letter or digit the rules cannot read gets a neutral syllable, `d` and `ə`). acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53), a canvas height (default 1024; lengths scale by it over 1024) and scenes (`jaw` in reference pixels) in, the pose of the head and the eye frame every 30 frames out. runtime: a clip with its words, a seed, a canvas height and a script in; the mouth, the jaw and the first brow every 6 frames out (the mouth steps first, the jaw is `o * 4.6 * (0.8 + 0.2 * (1 - c))`, a clip with nothing to say over a loud voice follows the level, and a listening or thinking avatar holds its expression). warp: a package's warp, a pose and points in, the point each is read from out. Parameters and weights agree within `tolerance`; the rest agree exactly.",
+  "description": "The mouth runtime of soyeht-avatar (ADR 0166). The format is unstable (0.x) until the renderers have consumed it. Every step is by dt = 1.0 / 60.0 as an IEEE double, and the time of frame i is the double i / 60.0 (the acting layer's clock is the sum of the dt, in seconds, as a double: a timer that lands on a frame boundary depends on that arithmetic). weights: the nine morph weights (Shape order: rest, closed_MBP, A, E, I, O, U, FV, LDT) of five parameters. dynamics: a clip's phonemes and voice envelope in, the target track out, then the five parameters and the nine weights at each 1/60 s; the target at frame i is the track's target at i/60 + 0.045 (the lead), None is silence. aligner: a text, its language and the envelope of the audio in, the timed phonemes and word starts out (a letter or digit the rules cannot read gets a neutral syllable, `d` and `ə`). acting: a seed (SplitMix64, `unit` is the top 53 bits over 2^53), a canvas height (default 1024; lengths scale by it over 1024) and scenes (`jaw` in reference pixels) in, the pose of the head and the eye frame every 30 frames out. runtime: a clip with its words, a seed, a canvas height and a script in; the mouth, the jaw and the first brow every 6 frames out (the mouth steps first, the jaw is `o * 4.6 * (0.8 + 0.2 * (1 - c))`, a clip with nothing to say over a loud voice follows the level, and a listening or thinking avatar holds its expression). warp: a package's warp, a pose and points in, the point each is read from out. eyeFrames: an eye (`gaze`, `lid`, `soft`) in, the id of the eye frame a renderer lays over the base picture out, or null for the base picture's own eyes: the blink when the lid is closed, `half` when it is half closed, else the frame of the gaze when the eyes look away from the centre, else `soft` while listening, else null. Parameters and weights agree within `tolerance`; the rest agree exactly.",
   "dynamics": [
     {
       "envelope": {"db":[-80.0,-80.0,-80.0,-80.0,-80.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-80.0,-80.0,-80.0,-80.0,-80.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-32.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-80.0,-80.0,-80.0,-80.0,-32.0,-32.0,-32.0,-32.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-18.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0,-80.0],"hop":0.02},
@@ -1599,6 +1599,260 @@
         {"p":"s","t0":2.036,"t1":2.111},
         {"p":".","t0":2.111,"t1":2.511}
       ]
+    }
+  ],
+  "eyeFrames": [
+    {
+      "expected": {"frame":null},
+      "gaze": "center",
+      "lid": "open",
+      "name": "center gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"soft"},
+      "gaze": "center",
+      "lid": "open",
+      "name": "center gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "center",
+      "lid": "half",
+      "name": "center gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "center",
+      "lid": "half",
+      "name": "center gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "center",
+      "lid": "closed",
+      "name": "center gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "center",
+      "lid": "closed",
+      "name": "center gaze, closed lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"left"},
+      "gaze": "left",
+      "lid": "open",
+      "name": "left gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"left"},
+      "gaze": "left",
+      "lid": "open",
+      "name": "left gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "left",
+      "lid": "half",
+      "name": "left gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "left",
+      "lid": "half",
+      "name": "left gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "left",
+      "lid": "closed",
+      "name": "left gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "left",
+      "lid": "closed",
+      "name": "left gaze, closed lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"right"},
+      "gaze": "right",
+      "lid": "open",
+      "name": "right gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"right"},
+      "gaze": "right",
+      "lid": "open",
+      "name": "right gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "right",
+      "lid": "half",
+      "name": "right gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "right",
+      "lid": "half",
+      "name": "right gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "right",
+      "lid": "closed",
+      "name": "right gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "right",
+      "lid": "closed",
+      "name": "right gaze, closed lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"up"},
+      "gaze": "up",
+      "lid": "open",
+      "name": "up gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"up"},
+      "gaze": "up",
+      "lid": "open",
+      "name": "up gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "up",
+      "lid": "half",
+      "name": "up gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "up",
+      "lid": "half",
+      "name": "up gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "up",
+      "lid": "closed",
+      "name": "up gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "up",
+      "lid": "closed",
+      "name": "up gaze, closed lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"down"},
+      "gaze": "down",
+      "lid": "open",
+      "name": "down gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"down"},
+      "gaze": "down",
+      "lid": "open",
+      "name": "down gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "down",
+      "lid": "half",
+      "name": "down gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "down",
+      "lid": "half",
+      "name": "down gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "down",
+      "lid": "closed",
+      "name": "down gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "down",
+      "lid": "closed",
+      "name": "down gaze, closed lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"upleft"},
+      "gaze": "upleft",
+      "lid": "open",
+      "name": "upleft gaze, open lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"upleft"},
+      "gaze": "upleft",
+      "lid": "open",
+      "name": "upleft gaze, open lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "upleft",
+      "lid": "half",
+      "name": "upleft gaze, half lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"half"},
+      "gaze": "upleft",
+      "lid": "half",
+      "name": "upleft gaze, half lid, soft true",
+      "soft": true
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "upleft",
+      "lid": "closed",
+      "name": "upleft gaze, closed lid, soft false",
+      "soft": false
+    },
+    {
+      "expected": {"frame":"blink"},
+      "gaze": "upleft",
+      "lid": "closed",
+      "name": "upleft gaze, closed lid, soft true",
+      "soft": true
     }
   ],
   "fps": 60.0,

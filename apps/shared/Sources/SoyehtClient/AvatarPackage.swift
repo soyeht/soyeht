@@ -177,6 +177,15 @@ struct AvatarMouthModel: Equatable, Sendable, Decodable {
   var parts: [AvatarMeshPart]
 }
 
+extension AvatarMouthModel {
+  /// The parts in the order they are drawn, each over the one before: the skin around the lips,
+  /// the ring of the lips, and last the inner mouth. A package lists its parts in any order
+  /// (`drawOrder` of `avatar-package.json`); a part it lacks is skipped.
+  var inDrawingOrder: [AvatarMeshPart] {
+    AvatarPartKind.allCases.compactMap { kind in parts.first { $0.id == kind } }
+  }
+}
+
 struct AvatarAtlas: Equatable, Sendable, Decodable {
   var file: String
   var columns: UInt32
