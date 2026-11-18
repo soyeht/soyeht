@@ -342,6 +342,12 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             self.assertIn(f"acceptance zzz_flow (id {identifier}) was removed", errors)
             self.assertFalse(verdict(base, head, Waivers(acceptances=frozenset({identifier})))[0])
             self.assertTrue(verdict(base, head, Waivers(acceptances=frozenset({"zzz_other"})))[0])
+            self.assertRegex(identifier, "^[0-9a-f]{8}$")
+            self.assertTrue(verdict(base, head, Waivers(acceptances=frozenset({identifier[:4]})))[0])
+            lost_step = metrics_with(steps=(step("engine", "both", "zzz_step"),))
+            step_id = verification_gate.short_id("zzz_step")
+            self.assertTrue(verdict(lost_step, head, Waivers(acceptances=frozenset({step_id})))[0])
+            self.assertFalse(verdict(lost_step, head, Waivers(steps=frozenset({step_id})))[0])
 
     def test_a_step_that_gets_stronger_or_changes_its_command_is_not_a_weakening(self):
         base = metrics_with(steps=(step("engine", "full", "a:one"), step("engine", "both", "b:two", "cargo fmt")))
