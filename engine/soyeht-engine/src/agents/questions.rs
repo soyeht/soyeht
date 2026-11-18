@@ -269,7 +269,14 @@ fn public_question(
                 _ => true,
             })
             .collect();
-        let metadata = &params["_meta"]["permission"];
+        // Where the title and the reason are: `_meta.permission` for adapters before codex-acp 2,
+        // and under the AIR extension's own key, which a client that declares it gets, after.
+        let meta = &params["_meta"];
+        let metadata = if meta["permission"].is_object() {
+            &meta["permission"]
+        } else {
+            &meta["jetbrains"]["air"]["permission"]
+        };
         let tool = requested_tool_call(tracked_tool, &params["toolCall"]);
         let mcp = McpToolCall::recognise(&tool);
         let title = match &mcp {

@@ -313,8 +313,9 @@ fn cli_of(argv: &[String]) -> Option<&'static UserCli> {
     })
 }
 
-/// An adapter process ready to be sent: its spawn, as given the person's CLI when it has one, and
-/// the same spawn without it for a supervisor that refuses the variable.
+/// An adapter process ready to be sent: its spawn, as given the person's CLI when it has one and the
+/// variables the engine fixes for the adapter, and the same spawn without them for a supervisor
+/// that refuses a variable (one that outlived an update does not know the newer ones).
 pub(crate) struct Given {
     config: Spawn,
     plain: Option<Spawn>,
@@ -338,17 +339,32 @@ pub(crate) fn prepare(config: Spawn, profile: &Path) -> Result<Given, Error> {
         .then(|| cli_of(&config.argv))
         .flatten()
         .filter(|cli| !config.env.contains_key(cli.variable));
+    let fixed = if config.kind == ProcessKind::PipesAcp {
+        super::adapter_install::fixed_environment(&config.argv)
+    } else {
+        &[]
+    };
     let mut config = super::adapter_install::installed_spawn(profile, config)?;
-    let mut plain = None;
+    let without = config.clone();
+    let mut given = false;
+    for (name, value) in fixed {
+        // A launch that sets one itself keeps its own choice.
+        if !config.env.contains_key(*name) {
+            config.env.insert((*name).into(), (*value).into());
+            given = true;
+        }
+    }
     if let Some(cli) = cli
         && let Choice::Own(path) = settle(cli)
         && let Some(path) = path.to_str()
     {
-        let without = config.clone();
         config.env.insert(cli.variable.into(), path.into());
-        plain = Some(without);
+        given = true;
     }
-    Ok(Given { config, plain })
+    Ok(Given {
+        config,
+        plain: given.then_some(without),
+    })
 }
 
 /// Whether `error` is a supervisor that does not know the variable, as one that outlived an
@@ -415,6 +431,8 @@ pub(crate) fn warm() {
     }
 }
 
+#[cfg(test)]
+mod fixed_environment_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,7 +631,7 @@ mod tests {
         );
     }
 
-    fn adapter(package: &str, kind: ProcessKind) -> Spawn {
+    pub(super) fn adapter(package: &str, kind: ProcessKind) -> Spawn {
         Spawn {
             instance_key: "key".into(),
             generation: 1,
@@ -643,7 +661,7 @@ mod tests {
             .unwrap()
             .package;
         for other in [
-            "@agentclientprotocol/codex-acp@1.11.0".to_owned(),
+            "@agentclientprotocol/codex-acp@2.6.0".to_owned(),
             format!("{name}-extra@1.0.0"),
             name.clone(),
         ] {
@@ -675,7 +693,7 @@ mod tests {
         std::fs::remove_dir_all(profile).unwrap();
     }
 
-    fn instance_of(config: Spawn) -> Response {
+    pub(super) fn instance_of(config: Spawn) -> Response {
         Response::Instance(soyeht_ptyd::wire::Instance {
             instance_id: "process".into(),
             supervisor_id: "answering".into(),
@@ -686,7 +704,7 @@ mod tests {
         })
     }
 
-    fn refusal(kind: &str, message: &str) -> Error {
+    pub(super) fn refusal(kind: &str, message: &str) -> Error {
         Error::Supervisor(soyeht_ptyd::Error::Remote {
             kind: kind.into(),
             message: message.into(),
@@ -711,22 +729,9 @@ mod tests {
     #[test]
     fn a_supervisor_that_does_not_know_the_variable_starts_the_process_without_it() {
         let (given, plain) = given_with_cli();
-        let sent = Mutex::new(Vec::new());
-        let response = given
-            .send_with(|config| {
-                let with = config.env.contains_key(CLAUDE.variable);
-                sent.lock().unwrap().push(with);
-                if with {
-                    Err(refusal(
-                        wire_kind::OPERATION_FAILED,
-                        soyeht_ptyd::ENVIRONMENT_NOT_ALLOWED,
-                    ))
-                } else {
-                    Ok(instance_of(config))
-                }
-            })
-            .unwrap();
-        assert_eq!(*sent.lock().unwrap(), [true, false]);
+        let (sent, response) =
+            fixed_environment_tests::sent_to_a_supervisor_that_refuses(given, CLAUDE.variable);
+        assert_eq!(sent, [true, false]);
         assert!(matches!(response, Response::Instance(instance) if instance.spawn == plain));
     }
 
