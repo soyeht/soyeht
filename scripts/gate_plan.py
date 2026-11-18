@@ -6,20 +6,23 @@ script decides which areas a change needs, which engine crates `cargo test` cove
 whether the change needs a reviewer. The fast tier is cheap on purpose: format, lint, a build
 and the unit tests (`--lib --bins`) of the selected engine, Swift and TypeScript areas, the whole
 `cargo test` of the desktop (its `tests/` directories are scripted-engine tests of a few
-seconds), and the end-to-end suites when the change reaches the engine's programs. The Swift
-tests, the engine integration tests, the Mac, iOS and Android app builds, the editor measurement and the
-timing tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match
-wins:
+seconds), the end-to-end suites when the change reaches the engine's programs, and the Swift
+tests that read a shared vector file (`swift_vectors`). The other Swift tests, the engine
+integration tests, the Mac, iOS and Android app builds, the editor measurement and the timing
+tests run only in the full tier, after the merge (`FULL_ONLY_AREAS`). Rules, first match wins:
 
 - a change to the contracts, `engine/soyeht-protocol`, the gate tooling (`scripts/`,
   `.github/`, `.githooks/`), the lockfiles or the workspace manifests selects every
   code area, and so does a cargo workspace that cannot be read;
 - a file that another directory reads (`CROSS_READS`) also selects the readers;
+- a file of `contracts/vectors/` selects only the readers that `gate_vectors.VECTOR_READERS`
+  lists for it (one that is not listed selects every code area, as the rule above says);
 - a path under one engine crate selects `engine` and that crate plus its reverse
   dependencies in the engine workspace (`cargo metadata`); a crate that the desktop
   workspace depends on also selects `desktop`;
 - the Android core is also selected by a change to the desktop client or to an engine crate the
   desktop workspace depends on, which it reuses (ADR 0134);
+- `apps/shared` also selects `swift_vectors`, the fast step that runs the Swift tests which read a vector file;
 - the other code directories select their own area;
 - documentation selects only `always`;
 - an unknown path selects every code area.
@@ -53,10 +56,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+import gate_vectors
 from gate_base import BaseError, main_health_dir, resolve_base
 
 ROOT = Path(__file__).resolve().parents[1]
-CODE_AREAS = ("engine", "desktop", "android_core", "swift", "typescript")
+CODE_AREAS = ("engine", "desktop", "android_core", "swift", "swift_vectors", "typescript")
 # Areas that only the full tier (the run after the merge) covers: the dictation tests, the
 # Mac, iOS and Android app builds, the editor measurement and the timing tests. The Swift packages and
 # the engine workspace also have steps that are full-only.
@@ -118,6 +122,8 @@ class Plan:
     review_reasons: tuple[str, ...]
     # Why the run must be the full tier; empty when the fast tier is enough.
     upgrade: tuple[str, ...] = ()
+    # The shared vector files of the change, each with the readers that select its tests.
+    vectors: tuple[str, ...] = ()
 
 
 def gate_data(path: str) -> bool:
@@ -234,10 +240,26 @@ def make_plan(
     """`engine_packages` is None when a cargo workspace cannot be read: fail closed."""
     areas = {"always"}
     crates: set[str] = set()
+    # Engine crates that read a vector file: tested alone, with no reverse dependencies.
+    readers: set[str] = set()
+    vectors: list[str] = []
     everything = engine_packages is None
     for path in files:
         if gate_script_source(path):
             areas.add(GATE_SCRIPTS_AREA)
+        declared = gate_vectors.readers_of(path)
+        if declared is not None:
+            vectors.append(f"{PurePosixPath(path).name}: {', '.join(declared)}")
+            for reader in declared:
+                crate = next((p for p in engine_packages or [] if p.directory == reader), None)
+                if reader in gate_vectors.READER_AREAS:
+                    areas.add(gate_vectors.READER_AREAS[reader])
+                elif crate is None:
+                    everything = True  # a reader that is no crate of the workspace: widen
+                else:
+                    areas.add("engine")
+                    readers.add(crate.name)
+            continue
         for prefix, extra_areas, extra_crates in CROSS_READS:
             if path.startswith(prefix):
                 areas.update(extra_areas)
@@ -267,6 +289,8 @@ def make_plan(
             areas.update(("android_core", "android_app"))
         elif path.startswith(("apps/dictation/", "apps/shared/", "contracts/swift/", "apps/mac/", "apps/ios/")):
             areas.add("swift")
+            if path.startswith("apps/shared/"):
+                areas.add("swift_vectors")
         elif path.startswith("contracts/typescript/"):
             areas.add("typescript")
         else:
@@ -274,9 +298,10 @@ def make_plan(
     if everything:
         areas.update(CODE_AREAS)
     selection = None
+    closure = reverse_closure(crates, engine_packages or [])
     if "engine" in areas and not everything:
-        selection = tuple(sorted(reverse_closure(crates, engine_packages or [])))
-    if "engine" in areas and (selection is None or set(selection) & set(E2E_PROGRAMS)):
+        selection = tuple(sorted(closure | readers))
+    if "engine" in areas and (selection is None or closure & set(E2E_PROGRAMS)):
         # The suites and the Swift client's integration test start those programs.
         areas.update((E2E_AREA, "swift"))
     reasons = sorted({reason for path in files for reason in review_reasons(path)})
@@ -289,6 +314,7 @@ def make_plan(
         "required" if reasons else "optional",
         tuple(reasons),
         upgrade,
+        tuple(vectors),
     )
 
 
@@ -345,11 +371,12 @@ def render_text(plan: Plan, tier: str) -> str:
         lines.append(f"  base:    {plan.base}")
         lines.append(f"  changed: {len(plan.files)} files")
     lines.append(f"  areas:   {' '.join(plan.areas)}")
+    lines.extend(f"  vector:  {reader}" for reader in plan.vectors)
     if tier == "fast":
         tests = "whole workspace" if plan.engine_crates is None else " ".join(plan.engine_crates)
         if "engine" in plan.areas:
             lines.append(f"  engine tests: {tests}")
-        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}, engine integration and Swift tests")
+        lines.append(f"  after the merge only: {' '.join(FULL_ONLY_AREAS)}, engine integration tests and the other Swift tests")
     if plan.upgrade:
         lines.append(f"  full tier required: {', '.join(plan.upgrade)}")
     lines.append(f"  review:  {plan.review}")

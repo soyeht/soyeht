@@ -216,7 +216,9 @@ class StepListTests(unittest.TestCase):
             with self.subTest(step=step_id):
                 match = STAND_IN.match(step_id)
                 self.assertIsNotNone(match, f"{step_id}: name it <full id>-changed or <full id>-fast")
-                self.assertEqual(steps.get(match["full"]), (area, "full"))
+                # The full step may belong to another area: `swift:test-shared-changed` runs the part
+                # of `swift:test-shared` that reads the shared vectors, in an area of its own.
+                self.assertEqual(steps.get(match["full"], (None, None))[1], "full")
 
     def test_the_heavy_steps_run_only_after_the_merge(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -422,6 +424,25 @@ class SelectionByChangeTests(unittest.TestCase):
         listed = listed_steps("fast", EDITOR_CRATE)
         self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
         self.assertNotIn("desktop:test", listed)
+
+    def test_a_vector_read_only_by_swift_runs_the_swift_vector_tests_and_nothing_else(self):
+        listed = listed_steps("fast", ["contracts/vectors/voice-turns.json"])
+        self.assertIn("swift:test-shared-changed", listed)
+        for step_id in (*E2E_SET, "swift:test-shared-fast", "swift:test-shared-build", "engine:test-changed",
+                        "desktop:test", "typescript:test", "swift:format-lint"):
+            self.assertNotIn(step_id, listed)
+
+    def test_a_vector_an_engine_crate_reads_runs_that_crate_and_no_program(self):
+        listed = listed_steps("fast", ["contracts/vectors/avatar-mouth.json"])
+        self.assertIn("engine:test-changed", listed)
+        self.assertIn("swift:test-shared-changed", listed)
+        for step_id in ("e2e:core", "engine:build-test-engine", "desktop:test"):
+            self.assertNotIn(step_id, listed)
+
+    def test_the_shared_package_runs_the_swift_vector_tests_and_the_apps_do_not(self):
+        self.assertIn("swift:test-shared-changed", listed_steps("fast", ["apps/shared/Sources/SoyehtClient/A.swift"]))
+        self.assertNotIn("swift:test-shared-changed", listed_steps("fast", ["apps/mac/Sources/A.swift"]))
+        self.assertNotIn("swift:test-shared-changed", listed_steps("full", ["apps/shared/Sources/SoyehtClient/A.swift"]))
 
     def test_an_android_change_lists_the_core_steps_and_not_the_app_build(self):
         # The core is built on the host in the fast tier; Gradle, the NDK and the APK only after the merge.
