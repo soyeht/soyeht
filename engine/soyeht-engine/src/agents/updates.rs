@@ -247,7 +247,7 @@ fn update_tool(
     }
     let tracked = tracked_tool(store, pane, state, subagent, id)?;
     // A wait already shown keeps updating its row.
-    if tracked.is_none() && subagents::awaits_subagents(state, fields) {
+    if tracked.is_none() && subagents::folds_wait(state, subagent, id, fields) {
         return Ok(());
     }
     let mut item = match tracked {

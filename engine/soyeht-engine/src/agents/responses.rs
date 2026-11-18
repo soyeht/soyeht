@@ -562,7 +562,7 @@ fn session_lost(
     changes.clear_replay = true;
     state.open_messages.clear();
     // The discarded replay may have reported subagents; none of them exist.
-    state.subagents.clear();
+    super::subagents::forget_all(state);
     state.replay_role = None;
     let text = "Native session lost; opening a new session without a continuation package";
     changes.events.push((

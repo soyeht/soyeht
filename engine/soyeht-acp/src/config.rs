@@ -58,10 +58,17 @@ fn optional_text(value: &Value, field: &str) -> Option<String> {
     value.get(field).and_then(Value::as_str).map(str::to_owned)
 }
 
+/// The kind a harness announces for a mode: `_meta.kind`, or from codex-acp 2 on, for a client that
+/// declares the JetBrains AIR extension (the engine does), `_meta.jetbrains.air.kind`.
+fn announced_kind(meta: &Value) -> Option<&str> {
+    meta["kind"]
+        .as_str()
+        .or_else(|| meta["jetbrains"]["air"]["kind"].as_str())
+}
+
 fn choice(value: &Value, group: Option<&str>) -> Result<ConfigChoice, Error> {
     let name = text(value, "name")?;
-    let kind = value["_meta"]["kind"]
-        .as_str()
+    let kind = announced_kind(&value["_meta"])
         .filter(|kind| !kind.is_empty() && kind.chars().count() <= 64)
         .map(str::to_owned);
     Ok(ConfigChoice {
@@ -438,6 +445,45 @@ mod tests {
             assert!(Options::from_response(&json!({"configOptions":[{"id":id,"name":"X","type":"boolean","currentValue":false}]})).is_err());
             assert!(Options::from_response(&json!({"configOptions":[{"id":"model","name":"Model","type":"select","currentValue":id,"options":[{"value":id,"name":"X"}]}]})).is_err());
         }
+    }
+
+    #[test]
+    fn a_mode_kind_is_read_from_either_place_and_an_unannounced_one_stays_unranked() {
+        // codex-acp 2.6.0 to a client that declares the AIR extension: the kind is under
+        // `_meta.jetbrains.air`, and a permission profile of the person's has none.
+        let air = |value: &str, kind: &str| json!({"value":value,"name":value,"_meta":{"jetbrains":{"air":{"kind":kind}}}});
+        let sandbox = json!([
+            air("read-only", "standard"),
+            air("agent", "auto_review"),
+            air("agent-full-access", "full_access")
+        ]);
+        let options = Options::from_response(&json!({"configOptions":[{
+            "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":"agent",
+            "options":[
+                {"group":"sandbox-modes","name":"Sandbox","options":sandbox},
+                {"group":"permission-profiles","name":"Profiles","options":[
+                    {"value":"permission-profile:work","name":"work"}]}]}]}))
+        .unwrap();
+        let kinds: Vec<_> = options
+            .mode()
+            .unwrap()
+            .options
+            .iter()
+            .map(|choice| (choice.value.as_str(), choice.kind.as_deref()))
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                ("read-only", Some("standard")),
+                ("agent", Some("auto_review")),
+                ("agent-full-access", Some(FULL_ACCESS_KIND)),
+                ("permission-profile:work", None),
+            ]
+        );
+        // `_meta.kind` wins when both are there.
+        let both = json!({"value":"x","name":"X","_meta":{"kind":"plan",
+            "jetbrains":{"air":{"kind":"standard"}}}});
+        assert_eq!(choice(&both, None).unwrap().kind.as_deref(), Some("plan"));
     }
 
     #[test]
