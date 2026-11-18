@@ -180,6 +180,15 @@ class RevertTests(WatchCase):
         self.assertIn(line, (self.gh_dir / "body.txt").read_text())
         self.assertIn(line, (self.gh_dir / "commit.txt").read_text())
 
+    def test_a_revert_whose_measurement_fails_is_recorded_as_failed(self):
+        self.red_main()
+        for error in (subprocess.CalledProcessError(128, "git"), OSError("no such file")):
+            with mock.patch.object(main_watch, "waiver_lines", side_effect=error):
+                self.assertEqual(self.watch("--apply"), main_watch.REVERT_FAILED_EXIT)
+            self.assertEqual(self.status()["revert"]["state"], "failed")
+            self.assertEqual(self.origin_branches(), ["main"])
+            (self.health / main_watch.STATUS_FILE).unlink()
+
     def test_a_step_that_fails_on_the_last_green_main_too_reverts_nothing(self):
         culprit, head = self.red_main()
         with mock.patch.dict(os.environ, {"FAKE_HOST_BROKEN": "1"}):  # the host fails, not the commit

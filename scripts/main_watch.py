@@ -226,7 +226,7 @@ def revert_culprit(root: Path, record: dict, culprit: dict, apply: bool, gh: lis
         url = land_revert(root, branch, title, revert_body(record, culprit, lines), gh)
     except MergeFailed as error:
         return Revert(culprit["sha"], branch, title, "open", pr=error.url, reason=str(error))
-    except RuntimeError as error:
+    except (RuntimeError, subprocess.CalledProcessError, OSError) as error:
         return Revert(culprit["sha"], branch, title, "failed", reason=str(error))
     finally:
         gate_worktree.git(root, "worktree", "remove", "--force", str(tree), check=False)

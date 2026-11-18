@@ -8,9 +8,12 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 from unittest.mock import patch
 
+import forbidden_terms
 import hardening_gate as gate
+import verification_gate
 from gate_base import BaseError, resolve_base
 from verification_gate import Waivers
 
@@ -315,6 +318,31 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
                 self.assertFalse(failed)
                 self.assertIn(f"{message} (waived)", shown)
 
+    def test_a_revert_waives_every_weakening_it_causes_and_nothing_else(self):
+        base = metrics_with(steps=(step("engine", "both", "a:one"), step("engine", "both", "b:two")),
+                            acceptances=("flow", "other"), ignored_tests=("a.rs::old",))
+        head = metrics_with(steps=(step("engine", "full", "a:one"), step("engine", "both", "b:two")),
+                            acceptances=("other",), ignored_tests=("a.rs::old", "a.rs::slow"))
+        lines = verification_gate.revert_lines(base, head, "the revert restores it")
+        self.assertEqual(lines, [
+            "Verification change: removes acceptance flow because the revert restores it",
+            "Verification change: removes step a:one because the revert restores it",
+            "Verification change: ignores a.rs::slow because the revert restores it",
+        ])
+        self.assertEqual(verification_gate.revert_lines(base, base, "the revert restores it"), [])
+
+    def test_a_name_the_message_scan_refuses_is_written_and_accepted_as_its_id(self):
+        base = metrics_with(acceptances=("zzz_flow",))
+        head = metrics_with()
+        with mock.patch.object(forbidden_terms, "MESSAGE_PATTERNS", ("zzz",)):
+            (line,) = verification_gate.revert_lines(base, head, "the revert restores it")
+            identifier = verification_gate.short_id("zzz_flow")
+            self.assertEqual(line, f"Verification change: removes acceptance {identifier} because the revert restores it")
+            failed, _, errors = verdict(base, head)
+            self.assertIn(f"acceptance zzz_flow (id {identifier}) was removed", errors)
+            self.assertFalse(verdict(base, head, Waivers(acceptances=frozenset({identifier})))[0])
+            self.assertTrue(verdict(base, head, Waivers(acceptances=frozenset({"zzz_other"})))[0])
+
     def test_a_step_that_gets_stronger_or_changes_its_command_is_not_a_weakening(self):
         base = metrics_with(steps=(step("engine", "full", "a:one"), step("engine", "both", "b:two", "cargo fmt")))
         head = metrics_with(steps=(step("always", "both", "a:one"), step("engine", "both", "b:two", "cargo test")))
@@ -419,6 +447,31 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
         self.assertEqual((base.ignored_tests, head.ignored_tests), ((), ("engine/tool/src/lib.rs::conditional",)))
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertTrue(gate.check_verification(base, head, Waivers()))
+
+
+class MainWaiverTests(unittest.TestCase):
+    def run_main(self, body):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "repo"
+            (root / "scripts").mkdir(parents=True)
+            (root / "scripts/check_all.sh").write_text("step always both a:one echo one\n")
+            git(root, "init", "--quiet")
+            git(root, "add", "-A")
+            git(root, "commit", "--quiet", "--message", "base")
+            base = git(root, "rev-parse", "HEAD")
+            (root / "scripts/check_all.sh").write_text("")
+            event = Path(directory) / "event.json"
+            event.write_text(json.dumps({"pull_request": {"body": body}}))
+            arguments = ["hardening_gate.py", "check-verification-not-weakened", "--base", base,
+                         "--event-file", str(event)]
+            with (patch.object(gate, "ROOT", root), patch.object(sys, "argv", arguments),
+                  contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO())):
+                return gate.main()
+
+    def test_the_gate_honours_a_waiver_from_the_event_file_and_only_that_one(self):
+        self.assertEqual(self.run_main("nothing to waive"), 1)
+        self.assertEqual(self.run_main("Verification change: removes step a:other because it moved elsewhere"), 1)
+        self.assertEqual(self.run_main("Verification change: removes step a:one because it moved elsewhere"), 0)
 
 
 LARGE_FILE_FUNCTIONS = 1_000

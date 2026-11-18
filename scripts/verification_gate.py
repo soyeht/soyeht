@@ -8,6 +8,7 @@ head and calls `check_verification`.
 
 from __future__ import annotations
 
+import hashlib
 import re
 import sys
 from collections import Counter
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from forbidden_terms import message_refused
 from gate_pr_text import body_lines, statements
 
 if TYPE_CHECKING:
@@ -26,6 +28,27 @@ PREFIX = "check-verification-not-weakened:"
 # A step runs in the fast tier when its tier is `both` or `fast`, in the full tier for `both` or `full`.
 FAST_TIERS = ("both", "fast")
 FULL_TIERS = ("both", "full")
+
+
+def short_id(name: str) -> str:
+    """Eight hex digits of the SHA-1 of a name: what a line may say instead of a name that the
+    message scan refuses (it does not say which part, and a name is not edited to pass it)."""
+    return hashlib.sha1(name.encode()).hexdigest()[:8]
+
+
+def shown(name: str) -> str:
+    """The name to print, with its id when the message scan would refuse it in a line."""
+    return f"{name} (id {short_id(name)})" if message_refused(name) else name
+
+
+def written(name: str) -> str:
+    """The name to write in a `Verification change:` line: the id when the scan refuses the name."""
+    return short_id(name) if message_refused(name) else name
+
+
+def named(names: frozenset[str], *candidates: str) -> bool:
+    """Whether a line names one of the candidates, by the name or by its id."""
+    return any(candidate in names or short_id(candidate) in names for candidate in candidates)
 
 
 @dataclass(frozen=True)
@@ -91,17 +114,18 @@ def check_verification(base: "Metrics", head: "Metrics", waived: Waivers) -> boo
         print(f"{PREFIX} removed test {name}")
     print(f"{PREFIX} acceptances base={len(base.acceptances)} head={len(head.acceptances)}")
     for name in sorted((Counter(base.acceptances) - Counter(head.acceptances)).elements()):
-        failed |= refused(f"acceptance {name} was removed", name in waived.acceptances)
+        failed |= refused(f"acceptance {shown(name)} was removed", named(waived.acceptances, name))
     print(f"{PREFIX} gate steps base={len(base.steps)} head={len(head.steps)}")
     for step_id, what in weakened_steps(base, head):
-        failed |= refused(f"step {step_id} {what}", step_id in waived.steps)
+        failed |= refused(f"step {shown(step_id)} {what}", named(waived.steps, step_id))
     commands = {step_id: command for _, _, step_id, command in base.steps}
     for _, _, step_id, command in head.steps:
         if step_id in commands and commands[step_id] != command:
             print(f"{PREFIX} step {step_id} changed its command")
     print(f"{PREFIX} ignored tests base={len(base.ignored_tests)} head={len(head.ignored_tests)}")
     for name in sorted(set(head.ignored_tests) - set(base.ignored_tests)):
-        failed |= refused(f"test {name} is ignored", bool({name, name.rpartition("::")[2]} & waived.ignored_tests))
+        failed |= refused(f"test {shown(name)} is ignored",
+                          named(waived.ignored_tests, name, name.rpartition("::")[2]))
     if failed:
         print(f"{PREFIX} add one `{VERIFICATION_LABEL}: removes step <id> because <reason>` line per "
               "step, `removes acceptance <name> because <reason>` per acceptance and "
@@ -112,11 +136,12 @@ def check_verification(base: "Metrics", head: "Metrics", waived: Waivers) -> boo
 
 def revert_lines(base: "Metrics", head: "Metrics", reason: str) -> list[str]:
     """The lines that waive what `check_verification` would refuse in `head`, for a pull request
-    that restores an earlier state and cannot ask its author (`main_watch.py`)."""
-    lines = [f"{VERIFICATION_LABEL}: removes acceptance {name} because {reason}"
+    that restores an earlier state and cannot ask its author (`main_watch.py`). A name that the
+    message scan refuses is written as its id."""
+    lines = [f"{VERIFICATION_LABEL}: removes acceptance {written(name)} because {reason}"
              for name in sorted(set(base.acceptances) - set(head.acceptances))]
-    lines += [f"{VERIFICATION_LABEL}: removes step {step_id} because {reason}"
+    lines += [f"{VERIFICATION_LABEL}: removes step {written(step_id)} because {reason}"
               for step_id, _ in weakened_steps(base, head)]
-    lines += [f"{VERIFICATION_LABEL}: ignores {name} because {reason}"
+    lines += [f"{VERIFICATION_LABEL}: ignores {written(name)} because {reason}"
               for name in sorted(set(head.ignored_tests) - set(base.ignored_tests))]
     return lines

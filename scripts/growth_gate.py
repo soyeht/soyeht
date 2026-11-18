@@ -91,7 +91,7 @@ def rust_inline_test_lines(source: str) -> int:
 
 
 def lines_of_test_code(sources: dict[str, str]) -> dict[str, int]:
-    """Lines of test code per file, for the files that hold any: the one definition of test code.
+    """Lines of test code per file, for the files that hold any.
 
     A line is test code when it is a non-blank line of a source file in a test location, of a Rust
     module that only a `#[cfg(test)] mod x;` declares, or inside a `#[cfg(test)]` item. Generated
