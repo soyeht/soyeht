@@ -25,6 +25,12 @@ before acknowledging bytes to the supervisor. Retention removes entire old
 segments to maintain the 32 MiB limit per pane. A gap is an explicit record
 with the lost interval. An incomplete tail is detected during recovery.
 
+Opening a log does not flush the files it only read. A record read at start may have been
+written and not flushed, so those files are owed a flush (`Log::take_unsynced`), which every
+acknowledgement of the pane's output and every flushed `append` pays first; a file whose torn
+tail was cut off is flushed at once. The start therefore no longer waits for a flush per
+retained segment, and a pane that stays silent never pays one.
+
 The log belongs to the pane. A new shell receives a new generation and streamId;
 replay of that stream includes the pane's previously recorded screen. Log offsets
 keep increasing; the new process's sequence zero uses the previous log end as

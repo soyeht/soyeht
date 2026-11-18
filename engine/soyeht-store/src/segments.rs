@@ -175,6 +175,7 @@ impl Log {
                 return Err(Error::InvalidSegmentHeader);
             }
             let mut position = MAGIC.len() as u64;
+            let mut truncated = false;
             while position < length {
                 let record = match read_record(&mut file) {
                     Ok(record) => record,
@@ -183,7 +184,8 @@ impl Log {
                             && index + 1 == numbers.len() =>
                     {
                         file.set_len(position)?;
-                        file.sync_all()?;
+                        flush_to_disk(&file)?;
+                        truncated = true;
                         log.recovered_truncated_tail = true;
                         break;
                     }
@@ -205,7 +207,13 @@ impl Log {
                 number: *number,
                 size: position,
             });
-            file.sync_all()?;
+            // A record read here may have been written and never flushed, if the engine ended
+            // before its flush. The flush is owed with the next one, which comes before any
+            // acknowledgement of the pane's output (`take_unsynced`, or `append`), instead of
+            // making the start wait for every file. A truncated file was flushed above.
+            if !truncated {
+                log.unsynced.insert(*number);
+            }
         }
         Ok(log)
     }
@@ -351,7 +359,21 @@ impl Log {
                 self.index.pop_front();
             }
         }
+        if flush {
+            self.flush_owed()?;
+        }
         Ok(())
+    }
+
+    /// Flushes the files whose flush is still owed, so a flushed `append` leaves nothing the
+    /// log has read or written unflushed.
+    fn flush_owed(&mut self) -> Result<()> {
+        let Some(unsynced) = self.take_unsynced() else {
+            return Ok(());
+        };
+        unsynced
+            .flush()
+            .inspect_err(|_| self.restore_unsynced(&unsynced))
     }
 
     pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {

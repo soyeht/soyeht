@@ -65,6 +65,11 @@ pub(super) fn apply_recent_migrations(tx: &Transaction<'_>, version: u32) -> Res
     if version < 38 {
         tx.execute_batch(include_str!("../../migrations/038-avatars.sql"))?;
     }
+    if version < 39 {
+        tx.execute_batch(include_str!(
+            "../../migrations/039-agent-transcript-total.sql"
+        ))?;
+    }
     Ok(())
 }
 
