@@ -223,14 +223,69 @@ import Testing
       == ["pane.stream.subscribe c", "pane.stream.subscribe a", "pane.stream.subscribe b"])
 }
 
-@MainActor @Test func theMacSubscribesEveryTerminalWhenAConnectionSettles() async throws {
-  let (client, requests) = try client(selected: "c")
-  client.connected = false
+/// Workspace `w1` holds the terminals `a` and `b` and the agent `g`; `w2` holds the terminals `c` and
+/// `d`. A surface exists for `a`, `c` and `d`; `g` is selected.
+@MainActor private func macWithSurfaces() throws -> (EngineClient, Requests) {
+  let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
+  let layout = [("a", "w1", PaneMode.terminal), ("b", "w1", .terminal), ("g", "w1", .agent)]
+    + [("c", "w2", .terminal), ("d", "w2", .terminal)]
+  for (index, (id, workspace, mode)) in layout.enumerated() {
+    try client.applyPaneCreated(
+      PaneCreatedEvent(
+        eventId: String(index + 1), at: "2026-11-18T12:00:00Z",
+        pane: PaneLayoutFixture.pane(id, workspace: workspace, mode: mode)))
+  }
+  client.select("g")
+  for id in ["a", "c", "d"] { client.claimTerminalOutput(paneId: id, owner: client) { _, _ in } }
+  let requests = Requests()
+  client.requestStub = { method, params in
+    requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
+    return .object(["items": .array([])])
+  }
+  return (client, requests)
+}
+
+@MainActor @Test func theMacSubscribesTheScreenFirstThenTheSelectedPaneThenTheOtherSurfaces()
+  async throws
+{
+  let (client, requests) = try macWithSurfaces()
 
   try await client.settleConnection(followsEveryTerminal: true)
 
-  #expect(client.connected)
-  #expect(requests.log.sorted() == (["a", "b", "c"].map { "pane.stream.subscribe \($0)" }))
+  // `b` has no surface: it asks for its screen when one appears.
+  #expect(
+    requests.log
+      == [
+        "pane.stream.subscribe a", "pane.transcript g", "pane.queue.list g",
+        "pane.stream.subscribe c", "pane.stream.subscribe d",
+      ])
+}
+
+@MainActor @Test func aSurfaceThatAppearsAfterItsOutputWentNowhereAsksForTheScreenAgain()
+  async throws
+{
+  let (client, requests) = try client(selected: "b")
+  try installStream(client, "a")
+  // The stream's replay arrived before any surface claimed the pane.
+  client.deliverTerminalOutput(to: "a", bytes: Data("history".utf8), reset: false)
+  client.claimTerminalOutput(paneId: "a", owner: client) { _, _ in }
+
+  client.refreshTerminal("a")
+  await settle()
+
+  #expect(requests.log == ["pane.stream.subscribe a"])
+}
+
+@MainActor @Test func aSurfaceThatTookTheReplayDoesNotAskForItAgain() async throws {
+  let (client, requests) = try client(selected: "b")
+  try installStream(client, "a")
+  client.claimTerminalOutput(paneId: "a", owner: client) { _, _ in }
+  client.deliverTerminalOutput(to: "a", bytes: Data("history".utf8), reset: false)
+
+  client.refreshTerminal("a")
+  await settle()
+
+  #expect(requests.log.isEmpty)
 }
 
 @MainActor @Test func aBoardTerminalGoingAwayFreesItsSinkAndStream() async throws {

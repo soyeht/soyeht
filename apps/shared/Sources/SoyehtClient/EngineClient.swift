@@ -8,7 +8,9 @@ public final class EngineClient {
   public private(set) var workspaces: [Workspace] = []
   public internal(set) var devices: [Device] = []
   public internal(set) var pairRequests: [PairPrompt] = []
-  public internal(set) var agentPanes: [String: AgentPaneView] = [:]
+  /// Each agent pane is observed on its own (`AgentPaneStore`): a chunk for one pane redraws that
+  /// pane's views and no other.
+  public let agentPanes = AgentPaneStore()
   public internal(set) var agentWebDrafts: [String: AgentWebAttachmentDraft] = [:]
   public internal(set) var harnesses: [HarnessInfo] = []
   public internal(set) var harnessLoadCount = 0
@@ -76,6 +78,9 @@ public final class EngineClient {
   @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
   var terminalGapTexts: [String: String] = [:]
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
+  /// Terminals whose output reached no surface, so the surface that claims the pane next starts
+  /// without it and must ask for the screen again.
+  @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   @ObservationIgnored private var inputTask: Task<Void, Never>?
   @ObservationIgnored private var inputQueue: [(String, Data)] = []
@@ -173,11 +178,12 @@ public final class EngineClient {
     resizeTasks.removeAll()
     resizeGenerations.removeAll()
     terminalSubscriptionsInFlight.removeAll()
+    terminalsWithDroppedOutput.removeAll()
     if pairedDevice {
       panes = []
       workspaces = []
       paneLayouts.removeAll()
-      agentPanes = [:]
+      agentPanes.removeAll()
       agentWebDrafts = [:]
       tasks = []
       taskDetails = [:]
@@ -209,7 +215,7 @@ public final class EngineClient {
     let reader = Task { [weak self] in
       do {
         while !Task.isCancelled {
-          let frame = try await wire.next()
+          let frame = try await IncomingFrame.parse(try await wire.next())
           guard let self, self.wire === wire else { break }
           try self.receive(frame)
         }
@@ -320,19 +326,20 @@ public final class EngineClient {
     }
     return true
   }
-  private func receive(_ frame: Frame) throws {
-    if frame.kind == 3 {
+  private func receive(_ incoming: IncomingFrame) throws {
+    switch incoming {
+    case .message(let message): try receive(message: message)
+    case .other(let frame) where frame.kind == FrameKind.attachment:
       try responseAttachments.accept(frame)
-      return
-    }
-    if frame.kind == 2 {
+    case .other(let frame) where frame.kind == FrameKind.terminal:
       if let delivery = try terminalStreams.accept(frame) {
         deliverTerminalOutput(to: delivery.paneId, bytes: delivery.bytes, reset: false)
       }
-      return
+    case .other: break
     }
-    guard frame.kind == 1 else { return }
-    let message = try JSONDecoder().decode(JsonValue.self, from: frame.payload)
+  }
+
+  private func receive(message: JsonValue) throws {
     guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
     if let id = message["id"].string, let request = pending.take(id) {
       request.timeout.cancel()
@@ -474,10 +481,10 @@ public final class EngineClient {
       }
     #endif
     if pane.mode == .agent {
-      var view = agentPanes[pane.paneId] ?? AgentPaneView()
-      view.queuePaused = pane.agent?.queuePaused ?? false
-      view.authMethods = pane.agent?.authMethods ?? []
-      agentPanes[pane.paneId] = view
+      agentPanes.update(pane.paneId) {
+        $0.queuePaused = pane.agent?.queuePaused ?? false
+        $0.authMethods = pane.agent?.authMethods ?? []
+      }
     }
     upsertWebPane(pane)
   }
@@ -504,6 +511,7 @@ public final class EngineClient {
     let terminalPaneIds = Set(panes.lazy.filter { $0.mode == .terminal }.map(\.paneId))
     terminalStreams.retainOnly(terminalPaneIds)
     terminalSinks.retainOnly(terminalPaneIds)
+    terminalsWithDroppedOutput.formIntersection(terminalPaneIds)
     for paneId in resizeTasks.keys.filter({ !terminalPaneIds.contains($0) }) {
       resizeTasks.removeValue(forKey: paneId)?.cancel()
       resizeGenerations.removeValue(forKey: paneId)
@@ -574,6 +582,7 @@ public final class EngineClient {
   func subscribe(_ pane: String) async throws {
     guard !terminalSubscriptionsInFlight.contains(pane) else { return }
     terminalSubscriptionsInFlight.insert(pane)
+    terminalsWithDroppedOutput.remove(pane)
     defer { terminalSubscriptionsInFlight.remove(pane) }
     _ = try await request(
       .paneStreamSubscribe, .object(["paneId": .string(pane), "from": .string("tail")]))
@@ -585,9 +594,12 @@ public final class EngineClient {
   public func refreshTerminal(_ paneId: String) {
     guard connected, panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal })
     else { return }
-    // macOS subscribes every terminal after the snapshot. A surface mounted after that must
-    // consume the existing stream instead of replacing it and replaying the tail a second time.
-    guard !terminalStreams.contains(paneId) else { return }
+    // macOS subscribes the terminals it has a surface for after the snapshot. A surface mounted
+    // after that consumes the existing stream instead of replacing it and replaying the tail a
+    // second time, unless the stream's output went nowhere because no surface existed yet.
+    guard !terminalStreams.contains(paneId) || terminalsWithDroppedOutput.contains(paneId) else {
+      return
+    }
     perform { try await self.subscribe(paneId) }
   }
   public func gapText(for paneId: String) -> String? { terminalGapTexts[paneId] }
@@ -605,13 +617,17 @@ public final class EngineClient {
     terminalSinks.release(paneId: paneId, owner: owner)
   }
   func deliverTerminalOutput(to paneId: String, bytes: Data, reset: Bool) {
-    terminalSinks.deliver(to: paneId, bytes: bytes, reset: reset, selectedPaneId: selectedPaneId)
+    let taken = terminalSinks.deliver(
+      to: paneId, bytes: bytes, reset: reset, selectedPaneId: selectedPaneId)
+    if !taken && !bytes.isEmpty { terminalsWithDroppedOutput.insert(paneId) }
   }
   var terminalOutputSinkCount: Int { terminalSinks.count }
+  func hasTerminalSurface(_ paneId: String) -> Bool { terminalSinks.hasSink(paneId) }
 
   func discardTerminalPane(_ paneId: String) {
     terminalStreams.remove(paneId)
     terminalSubscriptionsInFlight.remove(paneId)
+    terminalsWithDroppedOutput.remove(paneId)
     terminalSinks.remove(paneId)
     resizeTasks.removeValue(forKey: paneId)?.cancel()
     resizeGenerations.removeValue(forKey: paneId)

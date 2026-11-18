@@ -118,28 +118,51 @@ extension EngineClient: TerminalStreamControl {
 
   /// The step of a session after its snapshot, handshake and subscriptions: the connection is
   /// declared up and every surface that shows a pane gets its content. Both platforms take it,
-  /// the Mac for every terminal and a paired device for those on screen.
+  /// the Mac for the terminals it has a surface for and a paired device for those on screen.
+  ///
+  /// The terminals of the workspace on screen come first, then the selected pane is loaded, and
+  /// only then the surfaces of other workspaces, one at a time: each replay is up to 2 MiB parsed
+  /// on the main actor, so none waits behind fifty of them. A terminal with no surface yet is not
+  /// subscribed: its output would go nowhere. It asks for its screen when its surface appears.
   func settleConnection(followsEveryTerminal: Bool = EngineClient.followsEveryTerminal) async throws
   {
     connectionRevision &+= 1
     connected = true
     connectionText = ActiveProfile.values.connectedText
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
+    var otherSurfaces: [String] = []
     if followsEveryTerminal {
-      // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.
-      for pane in panes where pane.mode == .terminal { try await subscribe(pane.paneId) }
+      // The tmux-style Mac surface keeps every terminal it has current, including hidden ones.
+      let (shown, others) = macTerminalsToFollow()
+      for paneId in shown { try await subscribe(paneId) }
+      otherSurfaces = others
     } else {
       // A paired device follows its selected terminal and the terminals its views show.
       try await subscribeShownTerminals()
     }
-    guard let pane = selectedPane else { return }
-    switch pane.mode {
-    case .agent:
-      await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
-    case .editor: await loadEditorPane(pane.paneId)
-    case .writing: try await loadWritingPane(pane.paneId)
-    case .terminal, .web: break
+    if let pane = selectedPane {
+      switch pane.mode {
+      case .agent:
+        await hydratePresentedAgentPanes([PresentedPane(paneId: pane.paneId, isVisible: true)])
+      case .editor: await loadEditorPane(pane.paneId)
+      case .writing: try await loadWritingPane(pane.paneId)
+      case .terminal, .web: break
+      }
     }
+    for paneId in otherSurfaces where connected { try await subscribe(paneId) }
+  }
+
+  /// The terminals the Mac has a surface for: those of the selected workspace, the selected pane
+  /// first, and the others.
+  private func macTerminalsToFollow() -> (shown: [String], others: [String]) {
+    let workspaceId = selectedPane?.workspaceId
+    let surfaces = panes.filter { $0.mode == .terminal && hasTerminalSurface($0.paneId) }
+    var shown = surfaces.filter { $0.workspaceId == workspaceId }.map(\.paneId)
+    let others = surfaces.filter { $0.workspaceId != workspaceId }.map(\.paneId)
+    if let selected = selectedPaneId, let index = shown.firstIndex(of: selected) {
+      shown.insert(shown.remove(at: index), at: 0)
+    }
+    return (shown, others)
   }
 
   /// After the snapshot of a connection: the selected terminal and every terminal a view
