@@ -21,6 +21,7 @@ fn a_sequence_that_is_not_a_decimal_is_refused() {
 #[test]
 fn the_tail_leaves_out_the_oldest_messages() {
     let mut view = AgentView::default();
+    view.set_shown(true);
     for index in 0..(TAIL + 5) {
         view.merge(message(&format!("m{index}"), &index.to_string(), "t"))
             .unwrap();
@@ -275,4 +276,40 @@ fn a_page_that_is_behind_the_known_message_changes_nothing() {
     view.merge_page(vec![behind]).unwrap();
     assert_eq!(view.revision_of("m"), known);
     assert_eq!(view.messages()[0].text, "hello");
+}
+
+#[test]
+fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
+    let mut state = crate::State::default();
+    state.apply(crate::Event::Connected(crate::Snapshot {
+        workspaces: vec![
+            crate::testing::workspace("a"),
+            crate::testing::workspace("b"),
+        ],
+        panes: vec![
+            crate::testing::pane("p", "a", "agent"),
+            crate::testing::pane("q", "b", "agent"),
+        ],
+        ..crate::Snapshot::default()
+    }));
+    let count = held::Limits::default().held;
+    for pane in ["p", "q"] {
+        for index in 0..count {
+            let view = state.agents.get_mut(pane).unwrap();
+            view.merge(message(&format!("m{index}"), &index.to_string(), "t"))
+                .unwrap();
+        }
+    }
+    let held = |state: &crate::State, pane: &str| state.agent(pane).unwrap().messages().len();
+    state.select_workspace("a");
+    assert_eq!(held(&state, "p"), count);
+    assert_eq!(
+        held(&state, "q"),
+        soyeht_protocol::client_policy::CAPS_OFFSCREEN_MESSAGES
+    );
+    state.select_workspace("b");
+    assert_eq!(
+        held(&state, "p"),
+        soyeht_protocol::client_policy::CAPS_OFFSCREEN_MESSAGES
+    );
 }

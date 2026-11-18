@@ -1,5 +1,5 @@
 {
-  "description": "The agent transcript replica and the pane header's ticker, shared by the Mac (AgentPaneView, AgentACPTickerSource) and the desktop client (soyeht_client::agent::AgentView). Messages are transcript messages as the wire sends them. `merge` folds the steps in order (`update`: a message the engine pushed, which carries the whole message and replaces the known one; `page`: a fetched page, which may be older than what is held and never undoes a message that is further along) and lists what is held, in order. `ticker` lists the entries newest first for the transcript and the session title; the desktop joins them with its separator. How many earlier tool calls follow the current one is `capsTickerHistory` of x-clientPolicy.",
+  "description": "The agent transcript replica and the pane header's ticker, shared by the Mac (AgentPaneView, AgentACPTickerSource) and the desktop client (soyeht_client::agent::AgentView). Messages are transcript messages as the wire sends them. `merge` folds the steps in order (`update`: a message the engine pushed, which carries the whole message and replaces the known one; `page`: a fetched page, which may be older than what is held and never undoes a message that is further along) and lists what is held, in order. `ticker` lists the entries newest first for the transcript and the session title; the desktop joins them with its separator. How many earlier tool calls follow the current one is `capsTickerHistory` of x-clientPolicy. `window` is the rule for how much of a long conversation a replica holds (ADR 0167): `windowLimits` stand in for `capsHeldMessages` (a pane that is shown) and `capsOffscreenMessages` (one that is not), and each case lists the messages held in order (a name is a finished reply, with the sequence of its place; an object adds a `streaming` reply, a `tool` call with that status, a `usage` report or an unfinished `terminal` output), whether the pane is `shown`, the message the person is `viewing` (null at the newest), the cursor `older` before and, after the replica lets go of what it does not need, the `kept` messages and the cursor.",
   "merge": [
     {
       "name": "a known message is replaced where it stands and the rest keep their sequence order",
@@ -943,6 +943,126 @@
       ],
       "title": "The title",
       "items": ["The title"]
+    }
+  ],
+  "windowLimits": {"held": 4, "offscreen": 2},
+  "window": [
+    {
+      "name": "a pane at the newest message keeps the last messages of its window and points the cursor at the oldest kept",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6"],
+      "kept": ["m3", "m4", "m5", "m6"],
+      "keptOlder": "3"
+    },
+    {
+      "name": "a pane that is not shown keeps the smaller window",
+      "shown": false,
+      "viewing": null,
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6"],
+      "kept": ["m5", "m6"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a pane that holds no more than its window lets go of nothing and leaves the cursor as it was",
+      "shown": true,
+      "viewing": null,
+      "older": "1",
+      "messages": ["m1", "m2", "m3", "m4"],
+      "kept": ["m1", "m2", "m3", "m4"],
+      "keptOlder": "1"
+    },
+    {
+      "name": "the cursor moves to the oldest kept message when messages are let go of",
+      "shown": true,
+      "viewing": null,
+      "older": "1",
+      "messages": ["m1", "m2", "m3", "m4", "m5"],
+      "kept": ["m2", "m3", "m4", "m5"],
+      "keptOlder": "2"
+    },
+    {
+      "name": "a person who scrolled back keeps the messages around the one in view, and the window follows them",
+      "shown": true,
+      "viewing": "m7",
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"],
+      "kept": ["m5", "m6", "m7", "m8", "m9", "m10"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a person near the oldest message loses nothing",
+      "shown": true,
+      "viewing": "m2",
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"],
+      "kept": ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"],
+      "keptOlder": null
+    },
+    {
+      "name": "a message in view that is no longer held counts as the newest",
+      "shown": true,
+      "viewing": "gone",
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6"],
+      "kept": ["m3", "m4", "m5", "m6"],
+      "keptOlder": "3"
+    },
+    {
+      "name": "a pane that is not shown ignores where the person was",
+      "shown": false,
+      "viewing": "m7",
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"],
+      "kept": ["m9", "m10"],
+      "keptOlder": "9"
+    },
+    {
+      "name": "a reply still streaming is never let go of, and the cursor stays below the messages dropped",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": [{"id": "m1", "streaming": true}, "m2", "m3", "m4", "m5", "m6", "m7", "m8"],
+      "kept": ["m1", "m5", "m6", "m7", "m8"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a tool call that has not finished is never let go of",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": ["m1", {"id": "m2", "tool": "in_progress"}, {"id": "m3", "tool": "pending"}, "m4", "m5", "m6", "m7", "m8"],
+      "kept": ["m2", "m3", "m5", "m6", "m7", "m8"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a tool call that finished is let go of like any message",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": [{"id": "m1", "tool": "completed"}, {"id": "m2", "tool": "failed"}, "m3", "m4", "m5", "m6"],
+      "kept": ["m3", "m4", "m5", "m6"],
+      "keptOlder": "3"
+    },
+    {
+      "name": "the newest usage report is kept for the context ring and an older one is not",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": [{"id": "m1", "usage": true}, "m2", {"id": "m3", "usage": true}, "m4", "m5", "m6", "m7", "m8"],
+      "kept": ["m3", "m5", "m6", "m7", "m8"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a command's output that never got a final update is let go of with its place",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": [{"id": "m1", "terminal": true}, "m2", "m3", "m4", "m5", "m6", "m7"],
+      "kept": ["m4", "m5", "m6", "m7"],
+      "keptOlder": "4"
     }
   ]
 }

@@ -43,6 +43,18 @@ pub(super) struct MessageRow<'a> {
 const PINNED: f32 = 2.0;
 
 impl Workbench {
+    /// Tells the replica where the person is: while they read back it keeps what is drawn, and
+    /// lets go of older messages only while the transcript is at its newest.
+    fn report_reading_back(&mut self, pane_id: &str, limit: usize, reading_back: bool) {
+        let oldest = self
+            .state
+            .agent(pane_id)
+            .and_then(|view| view.tail(limit).0.first())
+            .filter(|_| reading_back)
+            .map(|oldest| oldest.local_id.clone());
+        self.state.view_agent_from(pane_id, oldest.as_deref());
+    }
+
     pub(super) fn agent_body(
         &mut self,
         pane: &soyeht_protocol::Pane,
@@ -69,6 +81,7 @@ impl Workbench {
             from_bottom: if follows { 0.0 } else { from_bottom },
         };
         let limit = self.transcript_limit(&pane.pane_id);
+        self.report_reading_back(&pane.pane_id, limit, !pinned);
         // The transcript is read where it lives and only the elements are built: the last
         // `limit` messages, never a copy of all of them. The Markdown cache is taken out of
         // the workbench while the rows are built, so the transcript is only read.

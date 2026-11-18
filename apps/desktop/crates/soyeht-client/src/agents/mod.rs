@@ -22,6 +22,13 @@ impl State {
         self.agents.get(pane_id)
     }
 
+    /// The message of an agent's conversation the person is looking at, none at the newest.
+    pub fn view_agent_from(&mut self, pane_id: &str, message: Option<&str>) {
+        if let Some(view) = self.agents.get_mut(pane_id) {
+            view.set_viewing(message);
+        }
+    }
+
     /// What an agent asks of the person about a web pane, until it is answered.
     pub fn web_permission(&self, pane_id: &str) -> Option<&PermissionRequest> {
         self.web_permissions.get(pane_id)

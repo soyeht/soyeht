@@ -37,6 +37,59 @@ import Testing
   #expect(capped["items"].array?.count == 1 + ClientPolicy.capsTickerHistory)
 }
 
+@Test func theReplicaLetsGoOfWhatTheVectorSaysItDoesNotNeed() throws {
+  let vector = try ContractVector.load("agent-transcript")
+  for item in ContractVector.cases(vector, "window") {
+    var view = AgentPaneView()
+    view.messages = (item["messages"].array ?? []).enumerated().map { windowMessage($1, $0 + 1) }
+    view.nextTranscriptCursor = item["older"].string
+    let limits = AgentTranscriptWindow.Limits(
+      held: Int(vector["windowLimits"]["held"].double ?? 0),
+      offscreen: Int(vector["windowLimits"]["offscreen"].double ?? 0))
+    view.trim(shown: item["shown"].bool == true, viewing: item["viewing"].string, limits: limits)
+    let name = item["name"].string ?? ""
+    #expect(
+      view.messages.map(\.localId) == (item["kept"].array ?? []).compactMap(\.string), "\(name)")
+    #expect(view.nextTranscriptCursor == item["keptOlder"].string, "\(name)")
+  }
+}
+
+@Test func aPaneThatIsNotShownHoldsOnlyItsWindowHoweverMuchArrives() {
+  var view = AgentPaneView()
+  let tool = ToolCall(
+    toolCallId: "t", title: "ls", status: .completed, content: .string("tree"),
+    locations: [ToolLocation(path: "a")], rawInput: .string("in"), rawOutput: .string("out"))
+  for index in 1...3_000 {
+    view.merge(windowMessage(.string("m\(index)"), index, tool: index == 3_000 ? tool : nil))
+  }
+  #expect(view.messages.count == ClientPolicy.capsOffscreenMessages)
+  #expect(view.nextTranscriptCursor == view.messages.first?.seq, "load earlier fetches the rest")
+  #expect(view.revisions.count == view.messages.count)
+  let kept = view.messages.last?.tool
+  #expect(kept?.locations.count == 1 && kept?.content == nil && kept?.rawInput == nil)
+  view.scroll.isShown = true
+  for index in 3_001...6_000 { view.merge(windowMessage(.string("m\(index)"), index)) }
+  #expect(view.messages.count == ClientPolicy.capsHeldMessages)
+}
+
+/// A message of the vector's compact form: a name, or an object that makes it a streaming reply,
+/// a tool call, a usage report or an unfinished command output.
+private func windowMessage(_ entry: JsonValue, _ seq: Int, tool: ToolCall? = nil)
+  -> TranscriptMessage
+{
+  let id = entry.string ?? entry["id"].string ?? ""
+  let status = entry["tool"].string.flatMap(ToolStatus.init(rawValue:))
+  let kind: TranscriptKind =
+    status != nil || tool != nil
+    ? .tool
+    : entry["usage"].bool == true ? .usage : entry["terminal"].bool == true ? .terminal : .message
+  let finished = ![.pending, .in_progress].contains(status) && entry["streaming"].bool != true
+  return TranscriptMessage(
+    localId: id, generation: 1, seq: "\(seq)", role: .assistant, kind: kind, text: "",
+    complete: finished && kind != .terminal,
+    tool: tool ?? status.map { ToolCall(toolCallId: id, title: id, status: $0, locations: []) })
+}
+
 private struct HeldMessage: Equatable {
   let localId: String
   let text: String

@@ -65,6 +65,10 @@ pub struct AgentView {
     /// tells a frame which rows changed without the frame reading their content.
     revisions: HashMap<String, u64>,
     edits: u64,
+    /// Whether the conversation is on screen, which sets how much of it is held.
+    shown: bool,
+    /// The message the person is looking at while they read back; none at the newest.
+    viewing: Option<String>,
     /// How long the running turn has been going.
     pub turn: TurnClock,
     /// The request the agent is waiting on, if any.
@@ -91,7 +95,9 @@ impl AgentView {
     /// Folds an update in: a new message is inserted at its place and a known one is replaced,
     /// as the update carries the whole message.
     pub fn merge(&mut self, message: TranscriptMessage) -> Result<()> {
-        self.fold(message, |_, _| true)
+        self.fold(message, |_, _| true)?;
+        self.trim(held::Limits::default());
+        Ok(())
     }
 
     /// Folds a fetched page in. Nothing already known is dropped, and a known message that is
@@ -99,7 +105,9 @@ impl AgentView {
     /// was on its way.
     pub fn merge_page(&mut self, page: Vec<TranscriptMessage>) -> Result<()> {
         page.into_iter()
-            .try_for_each(|message| self.fold(message, supersedes))
+            .try_for_each(|message| self.fold(message, supersedes))?;
+        self.trim(held::Limits::default());
+        Ok(())
     }
 
     /// Puts `message` at its place, replacing the known one with its `localId` when `replaces` says
@@ -109,6 +117,7 @@ impl AgentView {
         message: TranscriptMessage,
         replaces: fn(&TranscriptMessage, &TranscriptMessage) -> bool,
     ) -> Result<()> {
+        let message = held::light(message);
         let order = sequence(&message)?;
         if let Some(index) = self
             .messages
@@ -559,6 +568,7 @@ pub fn status_word(state: &PaneState, needs_authentication: bool, has_session: b
 }
 
 pub mod disclosure;
+mod held;
 pub mod window;
 
 #[cfg(test)]

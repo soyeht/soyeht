@@ -176,7 +176,9 @@ extension AgentConversationView where HarnessControl == EmptyView {
         do { try await Task.sleep(for: .milliseconds(ClientPolicy.draftBeatMs)) } catch { return }
       }
     }
+    .onChange(of: isVisible, initial: true) { _, shown in client.agentPaneShown(paneId, shown) }
     .onDisappear {
+      client.agentPaneShown(paneId, false)
       if !prompt.isEmpty { client.setDraft(paneId, active: false) }
     }
   }

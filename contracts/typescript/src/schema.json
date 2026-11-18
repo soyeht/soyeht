@@ -15974,6 +15974,8 @@
       "webLinks": 128,
       "modelPages": 32,
       "tickerHistory": 3,
+      "heldMessages": 300,
+      "offscreenMessages": 50,
       "diagnosticsReportBytes": 4194304,
       "serviceReportBytes": 65536
     },

@@ -214,6 +214,16 @@ extension EngineClient {
     try await loadAgentPane(paneId, replacing: true)
   }
 
+  /// The conversation of `paneId` is on screen or no longer is. A pane that is not shown keeps the
+  /// small window, and what it holds beyond it goes at once.
+  func agentPaneShown(_ paneId: String, _ shown: Bool) {
+    guard var view = agentPanes[paneId], view.scroll.isShown != shown else { return }
+    view.scroll.isShown = shown
+    let held = view.messages.count
+    view.trimToWindow()
+    if view.messages.count != held { agentPanes[paneId] = view }
+  }
+
   public func hydratePresentedAgentPanes(_ presented: [PresentedPane]) async {
     guard connected else { return }
     let revision = connectionRevision

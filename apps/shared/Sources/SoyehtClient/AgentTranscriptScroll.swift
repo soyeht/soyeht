@@ -17,6 +17,9 @@ public final class AgentTranscriptScroll: @unchecked Sendable {
   static let restorePassMs = 100
 
   public private(set) var place: Place = .bottom
+  /// Whether the conversation is on screen, which sets how much of it the replica holds
+  /// (`AgentTranscriptWindow`); written by `EngineClient.agentPaneShown`.
+  var isShown = false
   /// True from the moment a view is mounted until its restoration ends, and again once the view
   /// is gone: the next one starts restoring before its first report, which would otherwise be
   /// recorded as the person's and lose the place. What the viewport reports meanwhile is the

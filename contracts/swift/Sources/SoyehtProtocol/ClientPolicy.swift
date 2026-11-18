@@ -41,6 +41,8 @@ public enum ClientPolicy {
     public static let capsWebLinks = 128
     public static let capsModelPages = 32
     public static let capsTickerHistory = 3
+    public static let capsHeldMessages = 300
+    public static let capsOffscreenMessages = 50
     public static let capsDiagnosticsReportBytes = 4194304
     public static let capsServiceReportBytes = 65536
     public static let pageSizeQueue: UInt32 = 64

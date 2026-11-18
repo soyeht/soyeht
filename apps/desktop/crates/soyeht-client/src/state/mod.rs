@@ -271,28 +271,6 @@ impl State {
             .is_some_and(|pane| selected == Some(pane.workspace_id.as_str()))
     }
 
-    /// Selects a workspace and focuses its first terminal. It reads and writes only this replica:
-    /// every workspace's panes already hold their screens, so the new workspace draws at once
-    /// and the engine is told afterwards.
-    pub fn select_workspace(&mut self, workspace_id: &str) {
-        if self
-            .workspaces
-            .iter()
-            .any(|workspace| workspace.workspace_id == workspace_id)
-        {
-            self.selected_workspace = Some(workspace_id.to_owned());
-            self.focused_pane = self.default_focus(workspace_id);
-        }
-    }
-
-    pub fn focus_pane(&mut self, pane_id: &str) {
-        if let Some(pane) = self.panes.iter().find(|pane| pane.pane_id == pane_id) {
-            self.selected_workspace = Some(pane.workspace_id.clone());
-            self.focused_pane = Some(pane_id.to_owned());
-            self.editors.activated(pane);
-        }
-    }
-
     /// Fits a terminal's screen to the room its view has. Returns the new size when it changed,
     /// so the caller can tell the engine.
     pub fn fit_terminal(&mut self, pane_id: &str, rows: u16, cols: u16) -> Option<(u16, u16)> {
@@ -518,6 +496,7 @@ impl State {
         {
             self.focused_pane = self.default_focus(&workspace_id);
         }
+        self.settle_agent_windows();
     }
 
     /// An event the client cannot read has already moved the event cursor, so ignoring it
