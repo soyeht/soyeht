@@ -349,6 +349,20 @@ mod tests { #[test] fn unit() { panic!("red control"); } }
             self.assertTrue(verdict(lost_step, head, Waivers(acceptances=frozenset({step_id})))[0])
             self.assertFalse(verdict(lost_step, head, Waivers(steps=frozenset({step_id})))[0])
 
+    def test_a_fast_stand_in_in_a_part_of_an_area_is_watched_like_any_step(self):
+        source = ("step protocol_vectors fast engine:test-fast in_dir engine protocol_vector_tests\n"
+                  "step engine full engine:test cargo test\n")
+        steps = gate.gate_steps(source)
+        self.assertEqual(steps[0][:3], ("protocol_vectors", "fast", "engine:test-fast"))
+        base = metrics_with(steps=steps)
+        self.assertEqual(verdict(base, base)[0], False)
+        for head, message in ((steps[1:], "step engine:test-fast was removed"),
+                              ((step("protocol_vectors", "full", "engine:test-fast"), steps[1]),
+                               "step engine:test-fast left the fast tier")):
+            failed, _, errors = verdict(base, metrics_with(steps=tuple(head)))
+            self.assertTrue(failed)
+            self.assertIn(message, errors)
+
     def test_a_step_that_gets_stronger_or_changes_its_command_is_not_a_weakening(self):
         base = metrics_with(steps=(step("engine", "full", "a:one"), step("engine", "both", "b:two", "cargo fmt")))
         head = metrics_with(steps=(step("always", "both", "a:one"), step("engine", "both", "b:two", "cargo test")))

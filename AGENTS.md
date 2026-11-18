@@ -175,7 +175,13 @@ ADR when you change a boundary.
   `scripts/check_params_reads.py` holds the count of those reads down.
 - Rules every client must share that are not wire values (the Markdown subset of agent
   replies, ADR 0087) are vector files in `contracts/vectors/`, and each client's tests pass
-  the same file. Change the vectors first.
+  the same file. Change the vectors first. A change to a vector file runs the areas of the
+  sources that read it, found by scanning the sources (`scripts/gate_vectors.py`): nothing is
+  listed by hand, a vector file nothing is found to read runs every area, and a loader that the
+  scan cannot see goes in `HELPERS` (`test_gate_vectors.py` fails until it does). The fast
+  tier runs the Swift tests that read it, the `protocol-vectors` program, the integration
+  tests of `soyeht-protocol`, the desktop, Android core and TypeScript tests, and the library tests
+  of an engine crate that reads it; the other engine integration tests run after the merge.
 - The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
   request, greeting and reconnect timings, the web read's settle poll and deadline share, the
   terminal input chunk, the `caps` (waiting messages read, links found in one text, pages of a model
@@ -421,7 +427,10 @@ links may be GPL (espeak-ng is), and a model whose license is not permissive is 
   from the changed paths (the plan is the top of the log), format, lint, a build and the
   tests: `cargo test --lib --bins` of the engine crates changed and the crates that depend on
   them, the whole `cargo test` of the desktop (its `tests/` directories included),
-  `swift format lint` and `swift build` of `apps/shared`, and TypeScript. The e2e suites
+  `swift format lint` and `swift build` of `apps/shared`, the Swift tests that read
+  `contracts/vectors/` and the `protocol-vectors` program (`swift:test-shared-changed`, area
+  `swift_vectors`: a vector file or `apps/shared` or `contracts/swift` selects it), the
+  integration tests of `soyeht-protocol` that read a vector (`engine:test-fast`), and TypeScript. The e2e suites
   (`e2e:*`, with the `engine:build-product` and `engine:build-test-engine` builds and the TCC
   guard around them) run when the engine selection is the whole workspace or its reverse
   closure holds `soyeht-engine`, `soyeht-cli`, `soyeht-ptyd` or `soyeht-mcp`, which every
