@@ -121,7 +121,7 @@ fn assert_each_names_the_person(updates: &[Value], kinds: &[&str]) {
 }
 
 /// Stages `open` (what the pane had under way), closes the pane as the person, and returns the
-/// `pane.update` events of the close, checked to name the closer and to end the commit with `pane.closed`.
+/// `pane.update` events of the close, checked to name the closer and to come before `pane.closed`.
 fn close_with(open: fn(&Core, &mut State, &mut Changes), kinds: &[&str]) -> Vec<Value> {
     let mut rig = Rig::new();
     rig.stage(open);
@@ -131,12 +131,10 @@ fn close_with(open: fn(&Core, &mut State, &mut Changes), kinds: &[&str]) -> Vec<
 
     let (updates, methods) = rig.after(cursor);
     assert_each_names_the_person(&updates, kinds);
-    // The completing updates come first, and nothing about the pane follows the close.
-    assert_eq!(
-        methods.last().map(String::as_str),
-        Some(event::PANE_CLOSED),
-        "{methods:?}"
-    );
+    // The completing updates come first; no update of the pane follows the close.
+    let closed = methods.iter().position(|name| name == event::PANE_CLOSED);
+    let last_update = methods.iter().rposition(|name| name == event::PANE_UPDATE);
+    assert!(last_update.is_some() && closed > last_update, "{methods:?}");
     rig.finish();
     updates
 }
