@@ -5,14 +5,12 @@ mod support;
 use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 use soyeht_protocol::{
-    HarnessSetupReason, HarnessSetupState, Pane, PaneMode, ProbeCapability, ProbeResult,
-    PromptAttachment, PromptAttachmentKind, PromptItem, PromptOrigin, PromptStatus,
-    TranscriptMessage, Workspace, limits,
+    HarnessSetupReason, HarnessSetupState, ProbeCapability, ProbeResult, PromptAttachment,
+    PromptAttachmentKind, PromptItem, PromptOrigin, PromptStatus, TranscriptMessage, limits,
 };
 use soyeht_store::{
     agents::{self, AgentModelRefusal, NativeRequest, Outgoing},
     database::{Error, SCHEMA_VERSION, Store},
-    domain::PaneRecord,
 };
 use std::fs;
 use support::{Profile, apply_migrations, commit};
@@ -50,28 +48,7 @@ fn readiness_survives_reopen_and_later_failure_replaces_success_without_erasing_
     assert_eq!(recorded.last_ready_ms, Some(100));
 }
 fn seed(store: &mut Store) {
-    commit(store, "seed", |change| {
-        change.insert_workspace(&Workspace {
-            workspace_id: "w".into(),
-            name: "Workspace".into(),
-            path: "/tmp".into(),
-            layout: json!({}),
-        })?;
-        change.insert_pane(&PaneRecord {
-            pane: Pane {
-                name: "Agent".into(),
-                record: true,
-                ..support::pane("p", "w", PaneMode::Agent, "/tmp")
-            },
-            closed: false,
-            instance_key: "process".into(),
-            instance_id: None,
-            supervisor_id: None,
-            sequence_base: 0,
-        })?;
-        agents::save_runtime(change, "p", 1, &json!({"nextOffset":0,"queue":[]}))?;
-        Ok(())
-    });
+    support::seed_agent_panes(store, &["p"]);
 }
 
 #[test]

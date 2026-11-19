@@ -387,6 +387,18 @@ func aConnectionToAnEngineWithNoPaneSettlesAndAsksForNothing(everyTerminal: Bool
   #expect(requests.log == ["pane.stream.subscribe a"])
 }
 
+@MainActor @Test func aClientThatReadsTheSelectedTerminalThroughTheSelectionSinkSubscribesIt()
+  async throws
+{
+  let (client, requests) = try client(selected: "b")
+  client.terminalOutput = { _, _ in }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  // A paired device has no surface per pane, only the screen that follows its selection.
+  #expect(requests.log == ["pane.stream.subscribe b"])
+}
+
 /// A client with the terminals `a`, `b` and `c`, a surface each, which answers subscribes through
 /// `answer` and says what it was asked.
 @MainActor private func macWithThreeSurfaces(
