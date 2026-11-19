@@ -2907,6 +2907,8 @@ pub struct AgentMessageUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -2935,6 +2937,8 @@ pub struct AgentThoughtUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -2963,6 +2967,8 @@ pub struct ToolCallUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -2989,6 +2995,8 @@ pub struct ToolProgressUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -3015,6 +3023,8 @@ pub struct PlanUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -3041,6 +3051,8 @@ pub struct SubagentUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -3067,6 +3079,8 @@ pub struct UsageUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -3091,6 +3105,8 @@ pub struct TerminalOutputUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
@@ -3123,6 +3139,8 @@ pub struct ConfigOptionUpdate {
     pub event_id: Decimal,
     #[serde(rename = "at")]
     pub at: String,
+    #[serde(rename = "actor", skip_serializing_if = "Option::is_none")]
+    pub actor: Option<Actor>,
     #[serde(rename = "paneId")]
     pub pane_id: Id,
     #[serde(rename = "kind")]
