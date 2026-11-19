@@ -539,6 +539,21 @@ mod tests {
         }
     }
 
+    /// The tail the screen replays for output that ended at `many`: it starts within the contract's
+    /// window (section 6 of contract 08), and is contiguous, with no gap, and byte for byte what was
+    /// written. Returns where it starts.
+    fn assert_whole_tail(screen: &Screen, many: u64) -> u64 {
+        let start = screen.tail_start();
+        assert!(
+            many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64
+                && many - start <= limits::TAIL_BYTES as u64,
+            "the tail starts at {start} of {many}"
+        );
+        let expected: Vec<u8> = (start..many).map(pattern).collect();
+        assert_eq!(replayed(screen, start, many), expected);
+        start
+    }
+
     /// A terminal that does not record to the disk keeps a tail in memory only. The pty hands its
     /// output over in short reads, and the tail must still be what the contract promises: the last
     /// `TAIL_BYTES`, to the record boundary after them (the window of contract 08 section 6), as one
@@ -556,14 +571,7 @@ mod tests {
 
         let many = (limits::TAIL_BYTES * 3) as u64;
         feed_short_writes(&mut screen, few, many);
-        let start = screen.tail_start();
-        assert!(
-            many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64
-                && many - start <= limits::TAIL_BYTES as u64,
-            "the tail starts at {start} of {many}"
-        );
-        let expected: Vec<u8> = (start..many).map(pattern).collect();
-        assert_eq!(replayed(&screen, start, many), expected);
+        assert_whole_tail(&screen, many);
         // Memory stays bounded by the tail, in bytes and in records.
         assert!(screen.held_bytes() <= limits::TAIL_BYTES);
         assert!(screen.live.len() <= LIVE_RECORDS);
@@ -578,10 +586,7 @@ mod tests {
         let mut screen = Screen::open(&path, true).unwrap();
         let many = (limits::TAIL_BYTES * 3) as u64;
         feed_short_writes(&mut screen, 0, many);
-        let start = screen.tail_start();
-        assert!(many - start >= (limits::TAIL_BYTES - SHORT_WRITE) as u64);
-        let expected: Vec<u8> = (start..many).map(pattern).collect();
-        assert_eq!(replayed(&screen, start, many), expected);
+        assert_whole_tail(&screen, many);
         // Memory keeps the records as they came too: they are the unit an agent's output decodes in.
         assert!(
             screen
@@ -611,14 +616,7 @@ mod tests {
         screen.recording = false;
         let many = (limits::TAIL_BYTES * 3) as u64;
         feed_short_writes(&mut screen, 1024, many);
-        let start = screen.tail_start();
-        assert!(
-            many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64
-                && start > 1024,
-            "the tail starts at {start} of {many}"
-        );
-        let expected: Vec<u8> = (start..many).map(pattern).collect();
-        assert_eq!(replayed(&screen, start, many), expected);
+        assert!(assert_whole_tail(&screen, many) > 1024);
         fs::remove_dir_all(path).unwrap();
     }
 
@@ -645,10 +643,7 @@ mod tests {
         let many = 3 * third;
         feed_short_writes(&mut screen, 2 * third + 200, many);
         assert_eq!(shared.len(), 100, "joining records changed a shared one");
-        let start = screen.tail_start();
-        assert!(many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64);
-        let expected: Vec<u8> = (start..many).map(pattern).collect();
-        assert_eq!(replayed(&screen, start, many), expected);
+        assert_whole_tail(&screen, many);
         fs::remove_dir_all(path).unwrap();
     }
 
