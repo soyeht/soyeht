@@ -129,6 +129,21 @@ async fn only_a_connection_from_a_tailnet_listener_pairs() {
 }
 
 #[tokio::test]
+async fn a_local_connection_is_refused_even_if_a_tailnet_peer_were_recorded_for_it() {
+    // Nothing records a peer on the local endpoint today; the rule does not rely on that.
+    let (mut rig, _app, window) = rig_with_window();
+    let (outbox, _receiver) = outbox::channel();
+    let local = rig.core.connect(true, false, outbox).unwrap();
+    crate::pairing_gate::note_peer(
+        &mut rig.core,
+        &local,
+        Peer::new(ListenerKind::Tailnet, ip("100.100.0.2")),
+    );
+    let answer = begin(&mut rig, &local, &window, "Test phone", 31);
+    refused_with(&answer, Refusal::Listener);
+}
+
+#[tokio::test]
 async fn an_address_that_is_not_a_tailscale_one_is_refused_even_from_a_tailnet_listener() {
     let (mut rig, _app, window) = rig_with_window();
     for address in [

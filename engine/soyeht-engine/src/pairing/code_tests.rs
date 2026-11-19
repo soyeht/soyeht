@@ -717,6 +717,22 @@ async fn a_refused_system_refuses_the_local_human_and_says_the_app_cannot_prove_
 }
 
 #[tokio::test]
+async fn a_shipped_engine_has_no_hook_and_offers_the_code_on_linux_only() {
+    let directory = std::env::temp_dir().join(format!("soyeht-pairing-prod-{}", Uuid::new_v4()));
+    std::fs::create_dir(&directory).unwrap();
+    let core = Core::open(&directory).unwrap();
+    assert_eq!(core.approval(), Approval::for_this_system());
+    // Only Linux asks for the person's code, and it offers the capability with it.
+    assert_eq!(core.approval().asks_for_code(), cfg!(target_os = "linux"));
+    assert_eq!(
+        core.capabilities().contains(&"pairing-code".to_string()),
+        cfg!(target_os = "linux")
+    );
+    drop(core);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
 async fn a_paired_device_and_a_chief_cannot_manage_devices_in_the_person_s_code_mode() {
     let mut rig = Rig::new(Approval::PersonsCode);
     let (outbox, _receiver) = outbox::channel();
