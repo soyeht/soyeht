@@ -397,11 +397,11 @@ impl Core {
     /// Whether the stored checkpoint of the pane is past `before`: a commit that failed after
     /// the store took it must not be applied again.
     fn checkpoint_moved(&self, pane: &str, before: u64) -> bool {
-        self.store
-            .agent_runtime(pane)
-            .ok()
-            .flatten()
-            .is_none_or(|stored| stored.acknowledged_offset != before)
+        // A checkpoint that cannot be read is taken as moved: the group is not applied twice.
+        match self.store.agent_runtime(pane) {
+            Ok(Some(stored)) => stored.acknowledged_offset != before,
+            _ => true,
+        }
     }
 
     /// First consume any raw records synced before an engine crash. The public
