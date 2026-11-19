@@ -99,6 +99,23 @@ impl Rig {
         self.core.pump_streams().unwrap();
     }
 
+    /// A client that subscribed the one terminal from the start, with the first slice's read
+    /// from the disk on its way.
+    fn with_a_disk_read_in_flight() -> (Self, String) {
+        let mut rig = Self::new(1);
+        let pane = rig.panes[0].clone();
+        rig.subscribe_from_start(&pane);
+        rig.tick();
+        (rig, pane)
+    }
+
+    /// Nothing more comes once the replays have ended; then the rig is removed.
+    async fn end(mut self) {
+        self.tick_for(Duration::from_millis(100));
+        assert!(self.read(usize::MAX).await.is_empty());
+        remove_after(self.core, self.root);
+    }
+
     /// Ticks and reads what the engine queues until `handle`, which gets each frame, says the
     /// replays have ended. The queue never holds more than the replay's share.
     async fn read_until(&mut self, mut handle: impl FnMut(Frame) -> bool) {
@@ -176,9 +193,7 @@ async fn a_replay_waits_in_slices_for_a_client_that_reads_nothing_and_arrives_wh
     })
     .await;
     assert_eq!(next, PANE_BYTES);
-    rig.tick_for(Duration::from_millis(100));
-    assert!(rig.read(usize::MAX).await.is_empty());
-    remove_after(rig.core, rig.root);
+    rig.end().await;
 }
 
 #[tokio::test]
@@ -208,11 +223,8 @@ async fn the_first_subscribed_is_served_to_its_end_before_the_next() {
 
 #[tokio::test]
 async fn a_subscription_made_again_while_its_slice_is_read_is_replayed_once_whole() {
-    let mut rig = Rig::new(1);
-    let pane = rig.panes[0].clone();
-    rig.subscribe_from_start(&pane);
-    rig.tick();
-    // The disk read of the first is on its way when the client subscribes the terminal again.
+    let (mut rig, pane) = Rig::with_a_disk_read_in_flight();
+    // The client subscribes the terminal again.
     rig.subscribe_from_start(&pane);
     let mut next = 0;
     rig.read_until(|frame| {
@@ -231,17 +243,12 @@ async fn a_subscription_made_again_while_its_slice_is_read_is_replayed_once_whol
     })
     .await;
     assert_eq!(next, PANE_BYTES as u64);
-    rig.tick_for(Duration::from_millis(100));
-    assert!(rig.read(usize::MAX).await.is_empty());
-    remove_after(rig.core, rig.root);
+    rig.end().await;
 }
 
 #[tokio::test]
 async fn a_connection_that_ends_while_its_slice_is_read_leaves_nothing_behind() {
-    let mut rig = Rig::new(1);
-    let pane = rig.panes[0].clone();
-    rig.subscribe_from_start(&pane);
-    rig.tick();
+    let (mut rig, _) = Rig::with_a_disk_read_in_flight();
     rig.core.disconnect(&rig.connection).unwrap();
     rig.tick_for(Duration::from_millis(300));
     assert!(rig.core.clients.is_empty());
@@ -274,11 +281,8 @@ async fn a_disk_that_cannot_be_read_ends_the_connection_instead_of_leaving_the_r
 
 #[tokio::test]
 async fn a_subscription_that_is_dropped_while_its_slice_is_read_is_not_sent() {
-    let mut rig = Rig::new(1);
-    let pane = rig.panes[0].clone();
-    rig.subscribe_from_start(&pane);
-    rig.tick();
-    // The disk read is on its way; the client lets go of the terminal.
+    let (mut rig, pane) = Rig::with_a_disk_read_in_flight();
+    // The client lets go of the terminal.
     rig.core
         .stream_request(
             &rig.connection,
