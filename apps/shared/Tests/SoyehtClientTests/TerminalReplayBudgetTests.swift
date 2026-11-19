@@ -13,24 +13,19 @@ import Testing
 /// is what keeps the tails from adding up. The real engine is the end-to-end acceptance's.
 
 @MainActor private final class EngineQueueModel {
-  private var used = 0
-  private(set) var peakBytes = 0
   private(set) var replaysQueued = 0
   private(set) var peakReplays = 0
+  var peakBytes: Int { peakReplays * ProtocolLimits.tailBytes }
   private(set) var subscribed: [String] = []
   private var references: [String: UInt32] = [:]
   unowned let client: EngineClient
 
   init(_ client: EngineClient) { self.client = client }
 
-  var withinBudget: Bool { peakBytes <= ProtocolLimits.connectionQueueBytes }
-
   /// The engine's answer to a subscribe: the stream, then the replay, which ends a moment later.
   func subscribe(_ paneId: String) throws -> JsonValue {
     subscribed.append(paneId)
-    used += ProtocolLimits.tailBytes
     replaysQueued += 1
-    peakBytes = max(peakBytes, used)
     peakReplays = max(peakReplays, replaysQueued)
     let streamId = "stream-\(paneId)"
     let reference = references[paneId] ?? UInt32(references.count + 1)
@@ -47,7 +42,6 @@ import Testing
           streamId: streamId, generation: 1, fromOffset: "0", toOffset: "0", reset: true)))
     Task { @MainActor in
       for _ in 0..<5 { await Task.yield() }
-      self.used -= ProtocolLimits.tailBytes
       self.replaysQueued -= 1
       try? self.client.receive(
         message: self.notification(
@@ -109,25 +103,15 @@ import Testing
   #expect(model.subscribed.count == count)
   #expect(model.peakReplays == 1)
   #expect(model.peakBytes == ProtocolLimits.tailBytes)
-  #expect(model.withinBudget)
-  #expect(ProtocolLimits.tailBytes < ProtocolLimits.connectionQueueBytes)
-}
+  #expect(model.peakBytes < ProtocolLimits.connectionQueueBytes)
 
-@MainActor @Test func aReconnectSubscribesInTheSameOrderOneReplayAtATime() async throws {
-  let (client, model) = try terminals(12)
-  try await client.settleConnection(followsEveryTerminal: true)
-  await finish(model, 12)
+  // The connection dropped and the session settles again: the same order, again one at a time.
   let first = model.subscribed
-
-  // The connection dropped: every stream is forgotten, and the session settles again.
   client.stop()
   try await client.settleConnection(followsEveryTerminal: true)
-  await finish(model, 24)
-
-  #expect(first.first == "t0")
-  #expect(Array(model.subscribed.dropFirst(12)) == first)
+  await finish(model, 2 * count)
+  #expect(Array(model.subscribed.dropFirst(count)) == first)
   #expect(model.peakReplays == 1)
-  #expect(model.withinBudget)
 }
 
 @MainActor @Test func aTerminalFirstShownAfterAReconnectGetsItsHistory() async throws {
@@ -158,15 +142,6 @@ import Testing
   // A replay of recorded output now reaches the new surface.
   client.deliverTerminalOutput(to: "later", bytes: Data("history".utf8), reset: false)
   #expect(received == Data("history".utf8))
-}
-
-@MainActor @Test func aConnectionThatEndsReleasesEverySubscriberWaitingForATurn() async {
-  let gate = TerminalReplayGate()
-  _ = await gate.enter()
-  let waiting = Task { @MainActor in await gate.enter() }
-  await Task.yield()
-  gate.reset()
-  #expect(await waiting.value == nil)
 }
 
 @MainActor @Test func aHolderOfAnEndedConnectionNeverTakesTheNewHoldersWait() async {

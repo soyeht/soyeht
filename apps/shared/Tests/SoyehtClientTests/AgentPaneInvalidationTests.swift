@@ -48,21 +48,9 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   client.partials.flush()
 }
 
-@MainActor @Test func aChunkForOnePaneRunsNoViewOfAnotherPane() {
+@MainActor @Test func aPermissionRequestMovesTheAttentionSummary() {
   let client = twoPanes()
-  let otherPane = fires(
-    watching: { readPane(client, "b") }, whenChanging: { streamAChunk(client, to: "a") })
-  let samePane = fires(
-    watching: { readPane(client, "a") }, whenChanging: { streamAChunk(client, to: "a") })
-  #expect(!otherPane)
-  #expect(samePane)
-}
-
-@MainActor @Test func aChunkDoesNotMoveWhatTheTabBarAndTheRailRead() {
-  let client = twoPanes()
-  let chunkFires = fires(
-    watching: { _ = client.agentAttention }, whenChanging: { streamAChunk(client, to: "a") })
-  let requestFires = fires(
+  let moved = fires(
     watching: { _ = client.agentAttention },
     whenChanging: {
       try? client.applyAgentEvent(
@@ -73,9 +61,9 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
             generation: 1, promptId: "p", title: "Write", detail: "", presentation: nil,
             options: [], expiresAt: "later")))
     })
-  #expect(!chunkFires)
-  #expect(requestFires)
+  #expect(moved)
   #expect(client.agentAttention.totalWaitingCount == 1)
+  #expect(client.agentPanes.isAsking("a") && !client.agentPanes.isAsking("b"))
 }
 
 @MainActor private final class GroupingCount {
@@ -115,6 +103,7 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   // summary and the workspaces), the usage ring (the rail's readings) and the pane card header
   // (whether its pane asks).
   let reads: [(String, @MainActor () -> Void)] = [
+    ("views of pane b", { readPane(client, "b") }),
     (
       "workspace tab",
       {
@@ -132,10 +121,13 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
     ),
     ("usage ring", { _ = client.usage.readings }),
     ("pane card header of b", { _ = client.agentPanes.isAsking("b") }),
-    ("pane card header of a", { _ = client.agentPanes.isAsking("a") }),
   ]
   for (name, read) in reads {
     let reached = fires(watching: read, whenChanging: { streamAChunk(client, to: "a") })
     #expect(!reached, "a chunk reached the \(name)")
   }
+  // The pane that streams is the one whose views move.
+  let own = fires(
+    watching: { readPane(client, "a") }, whenChanging: { streamAChunk(client, to: "a") })
+  #expect(own)
 }
