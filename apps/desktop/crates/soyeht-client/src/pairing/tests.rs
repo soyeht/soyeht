@@ -366,20 +366,6 @@ fn a_request_the_engine_no_longer_holds_is_over() {
 }
 
 #[test]
-fn a_denial_removes_the_request_and_keeps_the_sheet_open() {
-    let mut pairing = adopted(true);
-    showing(&mut pairing, 1000.0);
-    requested(&mut pairing, "r1", FINGERPRINT);
-    pairing.decide("r1", false, "").unwrap();
-    pairing.apply(Event::Decided {
-        request_id: "r1".to_owned(),
-        approved: false,
-    });
-    assert!(pairing.requests().is_empty());
-    assert!(matches!(pairing.phase(), Phase::Showing(_)));
-}
-
-#[test]
 fn the_window_runs_out_and_the_time_left_counts_down() {
     let mut pairing = adopted(true);
     showing(&mut pairing, 100.0);

@@ -29,19 +29,19 @@ fn pending(expires: i64) -> Pending {
 }
 
 #[test]
-fn pairing_rule_uses_the_clock_and_store_ports_for_expiry() {
+fn a_request_the_store_does_not_hold_is_unauthorized_and_one_it_holds_is_returned() {
+    // Whether a request has run out is the store's to say (`soyeht-store`'s tests hold that, on the
+    // real database); this is what the engine makes of its answer.
     let mut store = MemoryStore::default();
     store
         .pair_requests
         .insert("request".into(), serde_json::to_value(pending(11)).unwrap());
-
+    let clock = FixedClock(10_000);
     assert_eq!(
-        active_pending(&store, &FixedClock(10_000), "request")
-            .unwrap()
-            .name,
+        active_pending(&store, &clock, "request").unwrap().name,
         "Phone"
     );
-    let error = active_pending(&store, &FixedClock(11_000), "request").unwrap_err();
+    let error = active_pending(&store, &clock, "another").unwrap_err();
     assert_eq!(errors::kind(&error), ErrorKind::Unauthorized);
 }
 

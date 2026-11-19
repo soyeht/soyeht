@@ -466,8 +466,10 @@ step e2e both e2e:writing uv run python scripts/e2e_writing.py --report .cache/e
 # break it with every Rust test green, and the full `swift test` runs only after the merge. It sits
 # between the TCC snapshot and its check, is the `swift` area's (the Mac runs it, the Linux host has
 # no Swift) and builds the programs itself, so it also holds when the e2e steps ran on another host.
+# The paired device's test starts the engine with the test hooks and the fake agent, so it builds
+# the same programs as `swift:engine-binaries`.
 swift_client_fast() {
-    build_product_programs && uv run python scripts/e2e_swift_client.py
+    build_engine_programs && uv run python scripts/e2e_swift_client.py
 }
 step swift fast swift:test-shared-fast swift_client_fast
 if [[ "${SOYEHT_REAL_ACP:-}" == 1 ]]; then

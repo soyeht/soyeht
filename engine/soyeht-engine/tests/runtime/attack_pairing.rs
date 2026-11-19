@@ -253,10 +253,7 @@ fn a_device_key_that_signs_for_anyone_or_is_not_a_key_cannot_begin_pairing() {
             json!({"code":window.code,"deviceName":"Test phone","devicePublicKey":key,
                 "idempotencyKey":format!("weak-{index}")}),
         );
-        assert!(
-            matches!(kind(&answer), "unauthorized" | "invalid_params"),
-            "{key}: {answer}"
-        );
+        assert_eq!(kind(&answer), "invalid_params", "{key}: {answer}");
     }
 }
 

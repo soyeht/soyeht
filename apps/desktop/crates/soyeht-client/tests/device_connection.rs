@@ -218,5 +218,5 @@ fn an_engine_with_a_wrong_proof_is_not_your_computer_and_gets_no_request() {
 
 #[test]
 fn a_welcome_with_the_wrong_role_is_refused_and_gets_no_request() {
-    refused(Welcome::WrongRole, "");
+    refused(Welcome::WrongRole, "unexpected engine handshake");
 }
