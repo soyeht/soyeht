@@ -4,16 +4,8 @@ import Testing
 
 @testable import SoyehtClient
 
-/// The tree a frame is parsed into is read into types directly. These tests hold it to what the
-/// text route (write the tree out, parse it again) read.
-
-private func viaText<T: Codable>(_ type: T.Type, _ tree: JsonValue) throws -> JsonValue {
-  try .encoded(JSONDecoder().decode(type, from: JSONEncoder().encode(tree)))
-}
-
-private func viaTree<T: Codable>(_ type: T.Type, _ tree: JsonValue) throws -> JsonValue {
-  try .encoded(tree.decoded(type))
-}
+/// The tree a frame is parsed into is read into types directly. `ProtocolVectors` holds it to
+/// what `JSONDecoder` reads for every vector; these are the cases outside the vectors.
 
 @Test func aValueOfTheWrongKindOrAMissingFieldIsRefused() throws {
   let tree = try JsonValue.encoded(PaneLayoutFixture.pane("p", workspace: "w", mode: .agent))

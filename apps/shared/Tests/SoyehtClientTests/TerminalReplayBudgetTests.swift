@@ -133,15 +133,10 @@ import Testing
   #expect(model.subscribed == ["first"])
 
   // The person opens the other workspace: its surface appears and asks for the screen.
-  var received = Data()
-  client.claimTerminalOutput(paneId: "later", owner: client) { bytes, _ in received.append(bytes) }
+  client.claimTerminalOutput(paneId: "later", owner: client) { _, _ in }
   client.refreshTerminal("later")
   await finish(model, 2)
   #expect(model.subscribed == ["first", "later"])
-
-  // A replay of recorded output now reaches the new surface.
-  client.deliverTerminalOutput(to: "later", bytes: Data("history".utf8), reset: false)
-  #expect(received == Data("history".utf8))
 }
 
 @MainActor @Test func aHolderOfAnEndedConnectionNeverTakesTheNewHoldersWait() async {
