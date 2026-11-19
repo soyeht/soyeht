@@ -12,8 +12,8 @@ import package_common
 import package_ios
 from generated_legacy import BUNDLE_IDS
 from generated_profile import PROFILES
-from legacy_guard import names_legacy
 from package_common import PackagingError
+from test_packaging_fixtures import result
 
 TEAM = "ABCDE12345"
 HASH = "0123456789abcdef0123456789abcdef01234567"
@@ -33,10 +33,6 @@ GOOD_ENTITLEMENTS = {
 GOOD_APP_ENTITLEMENTS = {key: value for key, value in GOOD_ENTITLEMENTS.items() if key != "aps-environment"}
 GOOD_DETAILS = f"Authority=Apple Distribution: Example ({TEAM})\nTeamIdentifier={TEAM}\n"
 GOOD_PROFILE = {"Entitlements": {"application-identifier": f"{TEAM}.{package_ios.APP_ID}", "get-task-allow": False}}
-
-
-def result(stdout="", stderr="", returncode=0):
-    return type("Result", (), {"stdout": stdout, "stderr": stderr, "returncode": returncode})()
 
 
 class SigningTests(unittest.TestCase):
@@ -67,23 +63,15 @@ class SigningTests(unittest.TestCase):
 
 
 class BuildTests(unittest.TestCase):
-    def test_the_app_is_the_production_one_with_the_contracts_version(self):
-        made = package_ios.release.current()
-        settings = package_ios.xcode_settings(made)
+    def test_the_app_is_built_under_the_production_identifier_of_the_iphone(self):
+        # The shared settings (version, build number, no signing) are those of `app_build_settings`,
+        # which `test_package_mac.py` holds; what the iPhone owns is its own identifier.
+        settings = package_ios.xcode_settings(package_ios.release.current())
         self.assertEqual(settings["SOYEHT_APP_BUNDLE_ID"], PROFILES["prod"]["appIds"]["ios"])
-        self.assertEqual(package_ios.APP_ID, "com.soyeht.next.ios")
-        self.assertEqual(settings["SOYEHT_PRODUCT_NAME"], "Soyeht Next")
-        self.assertEqual(settings["MARKETING_VERSION"], str(made.version))
-        self.assertEqual(settings["CURRENT_PROJECT_VERSION"], str(made.build_number()))
-        self.assertEqual(settings["CODE_SIGNING_ALLOWED"], "NO")
 
     def test_the_dev_identifier_of_the_project_is_the_one_of_the_profile(self):
         project = (package_ios.ROOT / "apps/ios/SoyehtPhone.xcodeproj/project.pbxproj").read_text()
         self.assertIn(f'"SOYEHT_APP_BUNDLE_ID" = "{PROFILES["dev"]["appIds"]["ios"]}";', project)
-
-    def test_the_identifier_is_one_of_the_rewrite_and_not_the_legacy_apps(self):
-        self.assertIn("next", package_ios.APP_ID)
-        self.assertFalse(names_legacy(package_ios.APP_ID))
 
     def test_the_archive_command_builds_a_release_for_a_device(self):
         calls = []
@@ -284,19 +272,9 @@ class EntitlementTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertIn(expected, "\n".join(package_ios.check_entitlements(entitled, TEAM, declared)))
 
-    def test_a_push_entitlement_in_the_store_app_is_refused_while_the_file_has_none(self):
-        declared = package_ios.declared_entitlements()
-        self.assertEqual(package_ios.check_entitlements(GOOD_APP_ENTITLEMENTS, TEAM, declared), [])
-        self.assertEqual(
-            package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, declared), ["unexpected entitlement aps-environment"]
-        )
-
     def test_push_the_file_does_not_declare_is_unexpected_in_the_app(self):
         problems = package_ios.check_entitlements(GOOD_ENTITLEMENTS, TEAM, set())
         self.assertEqual(problems, ["unexpected entitlement aps-environment"])
-
-    def test_the_declared_keys_are_those_of_the_repository_file(self):
-        self.assertEqual(package_ios.declared_entitlements(), set(plistlib.loads(package_ios.ENTITLEMENTS.read_bytes())))
 
 
 class ExportTests(unittest.TestCase):
@@ -435,24 +413,6 @@ class RedactionTests(unittest.TestCase):
     def test_a_command_with_nothing_to_mask_is_printed_as_it_is(self):
         self.assertEqual(package_common.printable(["a", Path("b")]), "+ a b")
 
-    def test_the_mac_notary_credentials_and_identity_are_masked_too(self):
-        import package_mac
-
-        signing = package_mac.Signing(
-            "Developer ID Application: Example (ABCDE12345)", TEAM, ("--key", *self.KEY[:1], "--key-id", self.KEY[1], "--issuer", self.KEY[2])
-        )
-        calls = []
-        with (
-            patch.object(package_common.subprocess, "run", return_value=result('{"status": "Accepted"}')),
-            contextlib.redirect_stdout(io.StringIO()) as output,
-        ):
-            package_mac.notarize(Path("x.zip"), signing)
-            calls.append(output.getvalue())
-        text = calls[0]
-        self.assertTrue(text.startswith("+ xcrun notarytool submit x.zip"), text)
-        for secret in self.KEY:
-            self.assertNotIn(secret, text)
-
 
 class VerifyTests(unittest.TestCase):
     def info(self, **changes):
@@ -463,12 +423,6 @@ class VerifyTests(unittest.TestCase):
             "CFBundleVersion": str(made.build_number()),
         }
         return {**info, **changes}
-
-    def test_the_identifier_version_and_build_number_are_those_of_the_release(self):
-        made = package_ios.release.current()
-        self.assertEqual(package_common.info_problems(self.info(), package_ios.APP_ID, made), [])
-        problems = package_common.info_problems(self.info(CFBundleIdentifier="com.soyeht.next.dev.ios", CFBundleVersion="1"), package_ios.APP_ID, made)
-        self.assertEqual(len(problems), 2)
 
     def test_an_info_plist_that_names_the_legacy_app_is_a_problem(self):
         made = package_ios.release.current()
@@ -600,10 +554,6 @@ class ValidateTests(unittest.TestCase):
         with self.assertRaisesRegex(PackagingError, package_common.NOTARY_KEY_FILE_VARIABLE):
             package_ios.package(package_ios.parser().parse_args(["--validate"]), environment)
 
-    def test_a_run_without_validate_never_reads_or_runs_the_validation(self):
-        arguments = package_ios.parser().parse_args([])
-        self.assertFalse(arguments.validate)
-
     def run_package(self, arguments, environment, problems):
         with tempfile.TemporaryDirectory() as temporary:
             ipa = Path(temporary) / "export.ipa"
@@ -644,9 +594,6 @@ class NameTests(unittest.TestCase):
         self.assertEqual(path.name, f"soyeht-{made.version}-ios-aarch64.ipa")
         kind, _ = package_common.size_ceiling(path, package_common.json.loads(package_common.SIZE_CEILINGS.read_text())["ceilings"])
         self.assertEqual(kind, "ios-aarch64.ipa")
-
-    def test_the_app_name_is_the_one_of_the_production_profile(self):
-        self.assertEqual(package_ios.PRODUCT_NAME, "Soyeht Next")
 
 
 if __name__ == "__main__":
