@@ -159,6 +159,20 @@ import Testing
   var log: [String] = []
 }
 
+extension Requests {
+  /// Makes `client` answer every request with `answer`, and records what it was asked.
+  @MainActor static func recording(
+    _ client: EngineClient, answer: JsonValue = .object([:])
+  ) -> Requests {
+    let requests = Requests()
+    client.requestStub = { method, params in
+      requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
+      return answer
+    }
+    return requests
+  }
+}
+
 /// A connected client holding terminal panes `a`, `b` and `c`, whose engine answers every request.
 @MainActor private func client(selected: String? = nil) throws -> (EngineClient, Requests) {
   let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
@@ -170,12 +184,7 @@ import Testing
   }
   client.select(selected)
   client.connected = true
-  let requests = Requests()
-  client.requestStub = { method, params in
-    requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
-    return .object([:])
-  }
-  return (client, requests)
+  return (client, Requests.recording(client))
 }
 
 @MainActor func installStream(_ client: EngineClient, _ paneId: String) throws {
@@ -238,12 +247,7 @@ import Testing
   }
   client.select("g")
   for id in ["a", "c", "d"] { client.claimTerminalOutput(paneId: id, owner: client) { _, _ in } }
-  let requests = Requests()
-  client.requestStub = { method, params in
-    requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
-    return .object(["items": .array([])])
-  }
-  return (client, requests)
+  return (client, Requests.recording(client, answer: .object(["items": .array([])])))
 }
 
 @MainActor @Test func theMacLoadsTheSelectedPaneThenSubscribesTheScreenAndThenTheOtherSurfaces()
@@ -350,11 +354,7 @@ import Testing
 @MainActor @Test(arguments: [true, false])
 func aConnectionToAnEngineWithNoPaneSettlesAndAsksForNothing(everyTerminal: Bool) async throws {
   let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
-  let requests = Requests()
-  client.requestStub = { method, _ in
-    requests.log.append(method.rawValue)
-    return .object([:])
-  }
+  let requests = Requests.recording(client)
 
   try await client.settleConnection(followsEveryTerminal: everyTerminal)
 
@@ -369,11 +369,7 @@ func aConnectionToAnEngineWithNoPaneSettlesAndAsksForNothing(everyTerminal: Bool
       eventId: "1", at: "2026-11-19T12:00:00Z",
       pane: PaneLayoutFixture.pane("g", workspace: "w", mode: .agent)))
   client.select("g")
-  let requests = Requests()
-  client.requestStub = { method, params in
-    requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
-    return .object(["items": .array([])])
-  }
+  let requests = Requests.recording(client, answer: .object(["items": .array([])]))
 
   try await client.settleConnection(followsEveryTerminal: true)
 
