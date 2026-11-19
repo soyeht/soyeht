@@ -3,10 +3,14 @@ use crate::{
     dispatch::Outcome,
     errors::{self, Result},
     model::{self, Subscription},
+    outbox::{CloseReason, Outbox},
+    replay::{ROOM_LEVEL, SLICE_BYTES, Slice, settle},
+    screen::ReplayRead,
 };
 use serde_json::{Value, json};
+use soyeht_platform::log;
 use soyeht_protocol::{event, frame::Frame, limits, method};
-use soyeht_store::segments::Record;
+use soyeht_store::segments::{Reader, Record};
 use std::sync::{Arc, atomic::AtomicBool};
 
 impl Core {
@@ -94,17 +98,20 @@ impl Core {
                 current,
             },
         );
+        client.replays.add(pane_id, binary_ref);
         Ok(())
     }
 
-    /// Sends each subscriber what its pane has written since, and records whether any is left
-    /// behind (see `State::streams_behind`): the tick keeps its floor until they have caught up,
-    /// since nothing else says a full outbox has room again.
+    /// Sends each subscriber what its pane has written since, and the replays that connections
+    /// are owed as far as their queues have room (ADR 0168). It records whether a subscriber
+    /// that is caught up is left behind (see `State::streams_behind`): the tick keeps its floor
+    /// until they have caught up. A replay waits for the writer instead and is woken by it.
     pub fn pump_streams(&mut self) -> Result<()> {
+        let fed = self.feed_replays();
         let mut behind = false;
         let pumped = self.pump_each_stream(&mut behind);
         self.note_streams_behind(behind);
-        pumped
+        fed.and(pumped)
     }
 
     fn pump_each_stream(&mut self, behind: &mut bool) -> Result<()> {
@@ -113,7 +120,12 @@ impl Core {
             .values_mut()
             .filter(|c| c.actor.is_some() && !c.outbox.is_closed())
         {
-            let ids: Vec<_> = client.streams.keys().cloned().collect();
+            let ids: Vec<_> = client
+                .streams
+                .iter()
+                .filter(|(_, subscription)| !subscription.replaying)
+                .map(|(id, _)| id.clone())
+                .collect();
             for id in ids {
                 let Some(pane) = self.panes.get(&id).filter(|p| !p.stored.closed) else {
                     client.streams.remove(&id);
@@ -129,54 +141,237 @@ impl Core {
                         .close(crate::outbox::CloseReason::StreamChanged);
                     break; // Reconnect snapshot discovers the new stream generation.
                 }
-                let through = if subscription.replaying {
-                    subscription.replay_until
-                } else {
-                    pane.screen.next_offset()
-                };
+                let through = pane.screen.next_offset();
                 if subscription.next < pane.screen.first_offset() {
                     let to = pane.screen.first_offset().min(through);
-                    client.outbox.send_stream(model::notification(event::STREAM_GAP,json!({"streamId":subscription.stream_id,"fromOffset":subscription.next.to_string(),"toOffset":to.to_string()}))?,Arc::clone(&subscription.current));
-                    subscription.next = to;
+                    skip_to(&client.outbox, subscription, to)?;
                 }
                 let started_at = subscription.next;
                 if subscription.next < through {
-                    for record in pane.screen.read(
+                    let records = pane.screen.read(
                         subscription.next,
                         through,
                         limits::TERMINAL_PAYLOAD_BYTES,
-                    )? {
-                        let end = record.end();
-                        let frame = match record {
-                            Record::Data { offset, bytes } => Frame::Terminal {
-                                pane_ref: subscription.binary_ref,
-                                generation: subscription.generation,
-                                offset,
-                                bytes,
-                            },
-                            Record::Gap { from, to } => model::notification(
-                                event::STREAM_GAP,
-                                json!({"streamId":subscription.stream_id,"fromOffset":from.to_string(),"toOffset":to.to_string()}),
-                            )?,
-                        };
-                        if !client
-                            .outbox
-                            .send_stream(frame, Arc::clone(&subscription.current))
-                        {
-                            break;
-                        }
-                        subscription.next = end;
-                    }
+                    )?;
+                    deliver(&client.outbox, subscription, records)?;
                 }
                 // Left short of what it was owed, after sending something or being refused: another
                 // pump is due. One that sent nothing and was not refused has nothing more to send.
                 *behind |= subscription.next < through && subscription.next != started_at;
-                if subscription.replaying && subscription.next == subscription.replay_until {
-                    client.outbox.send_stream(model::notification(event::STREAM_REPLAY_DONE,json!({"streamId":subscription.stream_id,"nextOffset":subscription.next.to_string()}))?,Arc::clone(&subscription.current));
-                    subscription.replaying = false;
-                }
             }
         }
         Ok(())
     }
+
+    /// Sends the slices of replays that connections are owed, as far as their queues have room.
+    pub(crate) fn feed_replays(&mut self) -> Result<()> {
+        let owed: Vec<String> = self
+            .clients
+            .iter()
+            .filter(|(_, c)| c.actor.is_some() && !c.outbox.is_closed() && c.replays.wants_slice())
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut failed = Ok(());
+        for connection in owed {
+            if let Err(error) = self.feed_connection(&connection) {
+                failed = failed.and(Err(error));
+            }
+        }
+        failed
+    }
+
+    fn feed_connection(&mut self, connection: &str) -> Result<()> {
+        let kick = self.background.kicker();
+        loop {
+            let Some(client) = self.clients.get_mut(connection) else {
+                return Ok(());
+            };
+            if !client.replays.wants_slice()
+                || client.outbox.is_closed()
+                || !client.outbox.has_room_or_wake(ROOM_LEVEL, &kick)
+            {
+                return Ok(());
+            }
+            let Some((pane_id, binary_ref)) = client.replays.queue.pop_front() else {
+                return Ok(());
+            };
+            if let Slice::Disk(reader, from) =
+                self.replay_slice(connection, &pane_id, binary_ref)?
+            {
+                return self.read_from_disk(connection, pane_id, binary_ref, from, reader);
+            }
+        }
+    }
+
+    /// Sends the next slice of one replay that comes from memory, or says it comes from the disk.
+    fn replay_slice(&mut self, connection: &str, pane_id: &str, binary_ref: u32) -> Result<Slice> {
+        let Some(client) = self.clients.get_mut(connection) else {
+            return Ok(Slice::Sent);
+        };
+        let Some(subscription) = client
+            .streams
+            .get_mut(pane_id)
+            .filter(|s| s.binary_ref == binary_ref && s.replaying)
+        else {
+            // Unsubscribed, or subscribed again: this entry is stale.
+            return Ok(Slice::Sent);
+        };
+        let Some(pane) = self.panes.get(pane_id).filter(|p| !p.stored.closed) else {
+            client.streams.remove(pane_id);
+            return Ok(Slice::Sent);
+        };
+        if pane.stored.pane.stream_id.as_ref() != Some(&subscription.stream_id) {
+            client.outbox.close(CloseReason::StreamChanged);
+            return Ok(Slice::Sent);
+        }
+        let until = subscription.replay_until;
+        if subscription.next < pane.screen.first_offset() {
+            let to = pane.screen.first_offset().min(until);
+            skip_to(&client.outbox, subscription, to)?;
+        }
+        if subscription.next < until {
+            let from = subscription.next;
+            match pane.screen.replay_read(from, until, SLICE_BYTES)? {
+                ReplayRead::Disk(reader) => return Ok(Slice::Disk(reader, from)),
+                ReplayRead::Ready(records) => {
+                    deliver(&client.outbox, subscription, records)?;
+                    if subscription.next == from && !client.outbox.is_closed() {
+                        client.replays.add(pane_id, binary_ref);
+                        return Err(errors::internal("A replay read made no progress"));
+                    }
+                }
+            }
+        }
+        settle(client, pane_id, binary_ref)?;
+        Ok(Slice::Sent)
+    }
+
+    /// Starts the job that reads a slice from the disk. Its result is applied by
+    /// `apply_disk_slice`, and the pump that follows sends the next one.
+    fn read_from_disk(
+        &mut self,
+        connection: &str,
+        pane_id: String,
+        binary_ref: u32,
+        from: u64,
+        reader: Reader,
+    ) -> Result<()> {
+        let key = format!("replay:{connection}");
+        if !self.background.accepts(&key) {
+            self.requeue_front(connection, &pane_id, binary_ref);
+            return Err(errors::internal("A replay read is already running"));
+        }
+        if let Some(client) = self.clients.get_mut(connection) {
+            client.replays.reading = true;
+        }
+        // A disk that hangs must not hold one of the shared workers.
+        self.background.run_alone(&key);
+        let (owner, pane) = (connection.to_owned(), pane_id.clone());
+        let started = self.spawn_prompt_background(
+            key,
+            move || reader.read().map_err(errors::storage),
+            move |core, read| core.apply_disk_slice(&owner, &pane, binary_ref, from, read),
+            |_| true,
+        );
+        if started.is_err() {
+            if let Some(client) = self.clients.get_mut(connection) {
+                client.replays.reading = false;
+            }
+            self.requeue_front(connection, &pane_id, binary_ref);
+        }
+        started
+    }
+
+    fn requeue_front(&mut self, connection: &str, pane_id: &str, binary_ref: u32) {
+        if let Some(client) = self.clients.get_mut(connection) {
+            client
+                .replays
+                .queue
+                .push_front((pane_id.to_owned(), binary_ref));
+        }
+    }
+
+    /// Sends what the job read, if its subscription is still waiting for exactly that.
+    fn apply_disk_slice(
+        &mut self,
+        connection: &str,
+        pane_id: &str,
+        binary_ref: u32,
+        from: u64,
+        read: Result<Vec<Record>>,
+    ) -> Result<()> {
+        let Some(client) = self.clients.get_mut(connection) else {
+            return Ok(());
+        };
+        client.replays.reading = false;
+        let waiting = client
+            .streams
+            .get_mut(pane_id)
+            .filter(|s| s.binary_ref == binary_ref && s.replaying && s.next == from);
+        let (Some(subscription), Some(pane)) = (waiting, self.panes.get(pane_id)) else {
+            // Another subscription of the pane has its own entry.
+            return Ok(());
+        };
+        let records = match read {
+            Ok(records) if pane.stored.pane.stream_id.as_ref() == Some(&subscription.stream_id) => {
+                client.replays.failures = 0;
+                records
+            }
+            // The pane runs another stream: the next step closes the connection.
+            Ok(_) => Vec::new(),
+            Err(error) => {
+                // A segment that retention removed meanwhile is read again, from where the log now
+                // begins; a disk that keeps failing ends the connection, and its client starts over.
+                log::failure("engine.replay_read_failed", &error);
+                client.replays.failures += 1;
+                if client.replays.failures > 1 {
+                    client.outbox.close(CloseReason::WorkerFailed);
+                    return Ok(());
+                }
+                Vec::new()
+            }
+        };
+        deliver(&client.outbox, subscription, records)?;
+        settle(client, pane_id, binary_ref)
+    }
+}
+
+/// Sends `records` to the subscriber, moving its position past each one the connection accepts.
+pub(crate) fn deliver(
+    outbox: &Outbox,
+    subscription: &mut Subscription,
+    records: Vec<Record>,
+) -> Result<()> {
+    for record in records {
+        let end = record.end();
+        let frame = match record {
+            Record::Data { offset, bytes } => Frame::Terminal {
+                pane_ref: subscription.binary_ref,
+                generation: subscription.generation,
+                offset,
+                bytes,
+            },
+            Record::Gap { from, to } => gap_notice(subscription, from, to)?,
+        };
+        if !outbox.send_stream(frame, Arc::clone(&subscription.current)) {
+            break;
+        }
+        subscription.next = end;
+    }
+    Ok(())
+}
+
+fn gap_notice(subscription: &Subscription, from: u64, to: u64) -> Result<Frame> {
+    model::notification(
+        event::STREAM_GAP,
+        json!({"streamId":subscription.stream_id,"fromOffset":from.to_string(),"toOffset":to.to_string()}),
+    )
+}
+
+/// Tells the subscriber of the output that retention took, and moves its position past it.
+fn skip_to(outbox: &Outbox, subscription: &mut Subscription, to: u64) -> Result<()> {
+    let notice = gap_notice(subscription, subscription.next, to)?;
+    outbox.send_stream(notice, Arc::clone(&subscription.current));
+    subscription.next = to;
+    Ok(())
 }

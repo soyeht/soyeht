@@ -57,6 +57,8 @@ pub struct Connected {
     pub nonce: [u8; 32],
     pub events: bool,
     pub streams: BTreeMap<String, Subscription>,
+    /// The subscriptions whose replay is still to be sent, and the read one waits for.
+    pub replays: crate::replay::Replays,
     pub next_binary_ref: u32,
     pub pair_request: Option<String>,
     pub web_host: bool,

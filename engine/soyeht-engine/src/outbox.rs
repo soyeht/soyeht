@@ -1,4 +1,5 @@
 use soyeht_protocol::{frame::Frame, limits};
+use std::sync::OnceLock;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
@@ -9,6 +10,29 @@ struct Budget {
     used: AtomicUsize,
     close_reason: AtomicU8,
     wake: Notify,
+    /// What a replay waits for: the level the queue must fall to, `NOT_WAITING` when none does.
+    /// See [`Outbox::has_room_or_wake`].
+    room: AtomicUsize,
+    room_waker: OnceLock<Arc<Notify>>,
+}
+
+const NOT_WAITING: usize = usize::MAX;
+
+impl Budget {
+    /// Raises the waker of a replay that waits for the queue to fall to `level`, once it has.
+    fn wake_if_room(&self, used: usize) {
+        let level = self.room.load(Ordering::Acquire);
+        if level != NOT_WAITING
+            && used <= level
+            && self
+                .room
+                .compare_exchange(level, NOT_WAITING, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            && let Some(waker) = self.room_waker.get()
+        {
+            waker.notify_one();
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,7 +103,8 @@ struct Permit {
 }
 impl Drop for Permit {
     fn drop(&mut self) {
-        self.budget.used.fetch_sub(self.size, Ordering::AcqRel);
+        let before = self.budget.used.fetch_sub(self.size, Ordering::AcqRel);
+        self.budget.wake_if_room(before.saturating_sub(self.size));
     }
 }
 
@@ -126,6 +151,8 @@ pub fn channel() -> (Outbox, Receiver) {
         used: AtomicUsize::new(0),
         close_reason: AtomicU8::new(0),
         wake: Notify::new(),
+        room: AtomicUsize::new(NOT_WAITING),
+        room_waker: OnceLock::new(),
     });
     let (control, control_rx) = mpsc::unbounded_channel();
     let (terminal, terminal_rx) = mpsc::unbounded_channel();
@@ -156,11 +183,31 @@ impl Outbox {
         );
         self.budget.wake.notify_one();
     }
+    /// The bytes waiting for the writer.
+    #[cfg(test)]
+    pub fn queued(&self) -> usize {
+        self.budget.used.load(Ordering::Acquire)
+    }
     pub fn is_closed(&self) -> bool {
         self.close_reason().is_some()
     }
     pub fn close_reason(&self) -> Option<CloseReason> {
         CloseReason::from_byte(self.budget.close_reason.load(Ordering::Acquire))
+    }
+
+    /// Whether the queue holds `level` bytes or fewer. When it holds more, `waker` is raised
+    /// once, as soon as the writer has brought it down to `level`: a replay that stops short
+    /// of a full queue is started again then, and nothing polls for it (ADR 0168).
+    pub fn has_room_or_wake(&self, level: usize, waker: &Arc<Notify>) -> bool {
+        if self.budget.used.load(Ordering::Acquire) <= level {
+            return true;
+        }
+        self.budget.room_waker.get_or_init(|| Arc::clone(waker));
+        self.budget.room.store(level, Ordering::Release);
+        // The writer may have emptied the queue between the check and the store.
+        self.budget
+            .wake_if_room(self.budget.used.load(Ordering::Acquire));
+        false
     }
 
     pub fn send(&self, frame: Frame) -> bool {
@@ -389,5 +436,35 @@ mod tests {
         assert_eq!(outbox.budget.used.load(Ordering::Acquire), 0);
         packet.written();
         assert!(task.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_replay_that_waits_for_room_is_woken_once_the_writer_has_made_it() {
+        let (outbox, mut receiver) = channel();
+        let waker = Arc::new(Notify::new());
+        let frame = || Frame::Terminal {
+            pane_ref: 1,
+            generation: 1,
+            offset: 0,
+            bytes: vec![1; 1000],
+        };
+        assert!(outbox.has_room_or_wake(1500, &waker));
+        assert!(outbox.send(frame()) && outbox.send(frame()));
+        assert!(!outbox.has_room_or_wake(1500, &waker));
+        let woken = |waker: &Arc<Notify>| {
+            let waker = Arc::clone(waker);
+            async move {
+                tokio::time::timeout(std::time::Duration::from_millis(20), waker.notified())
+                    .await
+                    .is_ok()
+            }
+        };
+        // One frame taken and written leaves 1021 bytes: below the level.
+        drop(receiver.next().await.unwrap().unwrap());
+        assert!(woken(&waker).await);
+        // Nobody waits now: the next frame leaving does not raise it again.
+        assert!(outbox.has_room_or_wake(1500, &waker));
+        drop(receiver.next().await.unwrap().unwrap());
+        assert!(!woken(&waker).await);
     }
 }
