@@ -159,6 +159,20 @@ import Testing
   var log: [String] = []
 }
 
+extension Requests {
+  /// Makes `client` answer every request with `answer`, and records what it was asked.
+  @MainActor static func recording(
+    _ client: EngineClient, answer: JsonValue = .object([:])
+  ) -> Requests {
+    let requests = Requests()
+    client.requestStub = { method, params in
+      requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
+      return answer
+    }
+    return requests
+  }
+}
+
 /// A connected client holding terminal panes `a`, `b` and `c`, whose engine answers every request.
 @MainActor private func client(selected: String? = nil) throws -> (EngineClient, Requests) {
   let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
@@ -170,12 +184,7 @@ import Testing
   }
   client.select(selected)
   client.connected = true
-  let requests = Requests()
-  client.requestStub = { method, params in
-    requests.log.append("\(method.rawValue) \(params["paneId"].string ?? "")")
-    return .object([:])
-  }
-  return (client, requests)
+  return (client, Requests.recording(client))
 }
 
 @MainActor func installStream(_ client: EngineClient, _ paneId: String) throws {
@@ -223,14 +232,65 @@ import Testing
       == ["pane.stream.subscribe c", "pane.stream.subscribe a", "pane.stream.subscribe b"])
 }
 
-@MainActor @Test func theMacSubscribesEveryTerminalWhenAConnectionSettles() async throws {
-  let (client, requests) = try client(selected: "c")
-  client.connected = false
+/// Workspace `w1` holds the terminals `a` and `b` and the agent `g`; `w2` holds the terminals `c` and
+/// `d`. A surface exists for `a`, `c` and `d`; `g` is selected.
+@MainActor private func macWithSurfaces() throws -> (EngineClient, Requests) {
+  let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
+  let layout =
+    [("a", "w1", PaneMode.terminal), ("b", "w1", .terminal), ("g", "w1", .agent)]
+    + [("c", "w2", .terminal), ("d", "w2", .terminal)]
+  for (index, (id, workspace, mode)) in layout.enumerated() {
+    try client.applyPaneCreated(
+      PaneCreatedEvent(
+        eventId: String(index + 1), at: "2026-11-18T12:00:00Z",
+        pane: PaneLayoutFixture.pane(id, workspace: workspace, mode: mode)))
+  }
+  client.select("g")
+  for id in ["a", "c", "d"] { client.claimTerminalOutput(paneId: id, owner: client) { _, _ in } }
+  return (client, Requests.recording(client, answer: .object(["items": .array([])])))
+}
+
+@MainActor @Test func theMacLoadsTheSelectedPaneThenSubscribesTheScreenAndThenTheOtherSurfaces()
+  async throws
+{
+  let (client, requests) = try macWithSurfaces()
 
   try await client.settleConnection(followsEveryTerminal: true)
 
-  #expect(client.connected)
-  #expect(requests.log.sorted() == (["a", "b", "c"].map { "pane.stream.subscribe \($0)" }))
+  // `b` has no surface: it asks for its screen when one appears.
+  #expect(
+    requests.log
+      == [
+        "pane.transcript g", "pane.queue.list g", "pane.stream.subscribe a",
+        "pane.stream.subscribe c", "pane.stream.subscribe d",
+      ])
+}
+
+@MainActor @Test func aSurfaceThatAppearsAfterItsOutputWentNowhereAsksForTheScreenAgain()
+  async throws
+{
+  let (client, requests) = try client(selected: "b")
+  try installStream(client, "a")
+  // The stream's replay arrived before any surface claimed the pane.
+  client.deliverTerminalOutput(to: "a", bytes: Data("history".utf8), reset: false)
+  client.claimTerminalOutput(paneId: "a", owner: client) { _, _ in }
+
+  client.refreshTerminal("a")
+  await settle()
+
+  #expect(requests.log == ["pane.stream.subscribe a"])
+}
+
+@MainActor @Test func aSurfaceThatTookTheReplayDoesNotAskForItAgain() async throws {
+  let (client, requests) = try client(selected: "b")
+  try installStream(client, "a")
+  client.claimTerminalOutput(paneId: "a", owner: client) { _, _ in }
+  client.deliverTerminalOutput(to: "a", bytes: Data("history".utf8), reset: false)
+
+  client.refreshTerminal("a")
+  await settle()
+
+  #expect(requests.log.isEmpty)
 }
 
 @MainActor @Test func aBoardTerminalGoingAwayFreesItsSinkAndStream() async throws {
@@ -289,4 +349,105 @@ import Testing
 
   #expect(requests.log.isEmpty)
   #expect(client.terminalStreams.contains("a"))
+}
+
+@MainActor @Test(arguments: [true, false])
+func aConnectionToAnEngineWithNoPaneSettlesAndAsksForNothing(everyTerminal: Bool) async throws {
+  let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
+  let requests = Requests.recording(client)
+
+  try await client.settleConnection(followsEveryTerminal: everyTerminal)
+
+  #expect(client.connected)
+  #expect(requests.log.isEmpty)
+}
+
+@MainActor @Test func aMacWhoseSelectedPaneIsNotATerminalSettlesWithoutAnyScreen() async throws {
+  let client = EngineClient(socket: "/tmp/terminal-presenters.sock")
+  try client.applyPaneCreated(
+    PaneCreatedEvent(
+      eventId: "1", at: "2026-11-19T12:00:00Z",
+      pane: PaneLayoutFixture.pane("g", workspace: "w", mode: .agent)))
+  client.select("g")
+  let requests = Requests.recording(client, answer: .object(["items": .array([])]))
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  #expect(requests.log == ["pane.transcript g", "pane.queue.list g"])
+}
+
+@MainActor @Test func aMacWhoseSelectedTerminalHasNoSurfaceYetSubscribesTheOthersOnly() async throws
+{
+  let (client, requests) = try client(selected: "b")
+  client.claimTerminalOutput(paneId: "a", owner: client) { _, _ in }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  // `b` is selected and asks for its screen when its surface appears.
+  #expect(requests.log == ["pane.stream.subscribe a"])
+}
+
+@MainActor @Test func aClientThatReadsTheSelectedTerminalThroughTheSelectionSinkSubscribesIt()
+  async throws
+{
+  let (client, requests) = try client(selected: "b")
+  client.terminalOutput = { _, _ in }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  // A paired device has no surface per pane, only the screen that follows its selection.
+  #expect(requests.log == ["pane.stream.subscribe b"])
+}
+
+/// A client with the terminals `a`, `b` and `c`, a surface each, which answers subscribes through
+/// `answer` and says what it was asked.
+@MainActor private func macWithThreeSurfaces(
+  _ answer: @escaping @MainActor (EngineClient, String) throws -> JsonValue
+) throws -> (EngineClient, Requests) {
+  let (client, requests) = try client(selected: "a")
+  for id in ["a", "b", "c"] { client.claimTerminalOutput(paneId: id, owner: client) { _, _ in } }
+  client.requestStub = { [unowned client] method, params in
+    let paneId = params["paneId"].string ?? ""
+    requests.log.append("\(method.rawValue) \(paneId)")
+    return try answer(client, paneId)
+  }
+  return (client, requests)
+}
+
+@MainActor @Test func aTerminalTheEngineRefusesDoesNotEndTheSession() async throws {
+  let (client, requests) = try macWithThreeSurfaces { _, paneId in
+    if paneId == "b" { throw ClientFailure.remote("not_found", "Pane not found") }
+    return .object([:])
+  }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  #expect(client.connected)
+  #expect(requests.log.map { $0.split(separator: " ").last! } == ["a", "b", "c"])
+}
+
+@MainActor @Test func aTerminalThatClosedWhileItWaitedForItsTurnIsNotAskedFor() async throws {
+  let (client, requests) = try macWithThreeSurfaces { client, paneId in
+    // The person closes `b` while the first subscribe is being answered.
+    if paneId == "a" { client.discardTerminalPane("b") }
+    if paneId == "a" { client.panes.removeAll { $0.paneId == "b" } }
+    return .object([:])
+  }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  #expect(requests.log == ["pane.stream.subscribe a", "pane.stream.subscribe c"])
+}
+
+@MainActor @Test func aTerminalSubscribedWhileTheConnectionSettlesIsNotReplayedAgain() async throws
+{
+  let (client, requests) = try macWithThreeSurfaces { client, paneId in
+    // The person clicks `c` while the first subscribe is being answered: its stream arrives.
+    if paneId == "a" { try installStream(client, "c") }
+    return .object([:])
+  }
+
+  try await client.settleConnection(followsEveryTerminal: true)
+
+  #expect(requests.log == ["pane.stream.subscribe a", "pane.stream.subscribe b"])
 }
