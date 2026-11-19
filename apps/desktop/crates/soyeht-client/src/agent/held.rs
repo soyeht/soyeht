@@ -8,7 +8,7 @@
 use super::AgentView;
 use crate::Result;
 use soyeht_protocol::{
-    ToolStatus, TranscriptKind, TranscriptMessage, TranscriptRole,
+    TranscriptKind, TranscriptMessage, TranscriptRole,
     client_policy::{CAPS_HELD_MESSAGES, CAPS_OFFSCREEN_MESSAGES, PAGE_SIZE_TRANSCRIPT},
 };
 
@@ -65,7 +65,7 @@ fn is_needed(message: &TranscriptMessage, newest_usage: bool, in_latest_turn: bo
         return false;
     }
     if let Some(tool) = &message.tool {
-        return !matches!(tool.status, ToolStatus::Completed | ToolStatus::Failed);
+        return !super::finished(&tool.status);
     }
     !message.complete && message.kind != TranscriptKind::Terminal
 }

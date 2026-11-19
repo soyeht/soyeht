@@ -43,7 +43,7 @@ enum AgentTranscriptWindow {
   ) -> Bool {
     if message.kind == .usage { return index == newestUsage }
     guard index >= turnStart else { return false }
-    if let status = message.tool?.status { return status != .completed && status != .failed }
+    if let status = message.tool?.status { return !status.isFinished }
     return !message.complete && message.kind != .terminal
   }
 

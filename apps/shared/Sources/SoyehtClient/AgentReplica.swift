@@ -384,6 +384,19 @@ extension EngineClient {
     }
   }
 
+  /// A tool call's row: it is complete when the call is over, whichever way.
+  private func toolEntry(
+    _ paneId: String, _ localId: String, _ generation: UInt32, _ seq: String, _ tool: ToolCall,
+    _ subagentId: String?
+  ) -> (String, TranscriptMessage) {
+    (
+      paneId,
+      TranscriptMessage(
+        localId: localId, generation: generation, seq: seq, role: .assistant, kind: .tool,
+        text: "", complete: tool.status.isFinished, tool: tool, subagentId: subagentId)
+    )
+  }
+
   private func transcriptMessage(_ update: PaneUpdateEvent) -> (String, TranscriptMessage) {
     switch update {
     case .v0(let value):
@@ -404,23 +417,11 @@ extension EngineClient {
           subagentId: value.subagentId)
       )
     case .v2(let value):
-      return (
-        value.paneId,
-        TranscriptMessage(
-          localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .tool, text: "",
-          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool,
-          subagentId: value.subagentId)
-      )
+      return toolEntry(
+        value.paneId, value.localId, value.generation, value.seq, value.tool, value.subagentId)
     case .v3(let value):
-      return (
-        value.paneId,
-        TranscriptMessage(
-          localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .tool, text: "",
-          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool,
-          subagentId: value.subagentId)
-      )
+      return toolEntry(
+        value.paneId, value.localId, value.generation, value.seq, value.tool, value.subagentId)
     case .v4(let value):
       return (
         value.paneId,

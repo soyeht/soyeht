@@ -136,6 +136,9 @@ extension TranscriptMessage {
 }
 
 extension ToolStatus {
+  /// Whether a tool call is over, whichever way: a failed call is a finished one.
+  var isFinished: Bool { self == .completed || self == .failed }
+
   /// How far a tool call has got: waiting, running, or finished (completed or failed).
   fileprivate var progress: Int {
     switch self {

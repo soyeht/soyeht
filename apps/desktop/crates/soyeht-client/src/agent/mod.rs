@@ -264,6 +264,11 @@ fn sequence(message: &TranscriptMessage) -> Result<u64> {
         .map_err(|_| Error::Invalid("a transcript message has a sequence that is not a decimal"))
 }
 
+/// Whether a tool call is over, whichever way: a failed call is a finished one.
+pub(super) fn finished(status: &ToolStatus) -> bool {
+    matches!(status, ToolStatus::Completed | ToolStatus::Failed)
+}
+
 /// How far a tool call has got.
 fn progress(status: &ToolStatus) -> u8 {
     match status {
@@ -337,6 +342,21 @@ fn base(
 
 const ASSISTANT: TranscriptRole = TranscriptRole::Assistant;
 
+/// The tool call of an update of either version as a transcript message.
+macro_rules! tool_event {
+    ($value:expr) => {{
+        let value = $value;
+        tool_entry(
+            value.pane_id,
+            value.local_id,
+            value.generation,
+            value.seq,
+            value.tool,
+            value.subagent_id,
+        )
+    }};
+}
+
 /// The pane an update belongs to and the message it leaves behind. Terminal output,
 /// configuration changes and subagent runs arrive with the transcript instead.
 pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)> {
@@ -370,36 +390,8 @@ pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)
             built.subagent_id = value.subagent_id;
             (value.pane_id, built)
         }
-        PaneUpdateEvent::V2(value) => {
-            let complete = matches!(
-                value.tool.status,
-                ToolStatus::Completed | ToolStatus::Failed
-            );
-            tool_entry(
-                value.pane_id,
-                value.local_id,
-                value.generation,
-                value.seq,
-                value.tool,
-                value.subagent_id,
-                complete,
-            )
-        }
-        PaneUpdateEvent::V3(value) => {
-            let complete = matches!(
-                value.tool.status,
-                ToolStatus::Completed | ToolStatus::Failed
-            );
-            tool_entry(
-                value.pane_id,
-                value.local_id,
-                value.generation,
-                value.seq,
-                value.tool,
-                value.subagent_id,
-                complete,
-            )
-        }
+        PaneUpdateEvent::V2(value) => tool_event!(value),
+        PaneUpdateEvent::V3(value) => tool_event!(value),
         PaneUpdateEvent::V4(value) => {
             let mut built = base(
                 value.local_id,
@@ -429,7 +421,8 @@ pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)
     })
 }
 
-/// A tool call as a transcript message, with the pane it belongs to.
+/// A tool call as a transcript message, with the pane it belongs to; it is complete when the call
+/// is over.
 fn tool_entry(
     pane_id: String,
     local_id: String,
@@ -437,7 +430,6 @@ fn tool_entry(
     seq: String,
     tool: ToolCall,
     subagent_id: Option<String>,
-    complete: bool,
 ) -> (String, TranscriptMessage) {
     let mut built = base(
         local_id,
@@ -445,7 +437,7 @@ fn tool_entry(
         seq,
         (ASSISTANT, TranscriptKind::Tool),
         String::new(),
-        complete,
+        finished(&tool.status),
     );
     built.tool = Some(tool);
     built.subagent_id = subagent_id;
