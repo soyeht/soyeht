@@ -281,20 +281,26 @@ fn a_page_that_is_behind_the_known_message_changes_nothing() {
     assert_eq!(view.messages()[0].text, "hello");
 }
 
-#[test]
-fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
+/// A state with workspaces `a` (selected) and `b`, and the agent panes `(id, workspace)`.
+fn two_workspaces(panes: &[(&str, &str)]) -> crate::State {
     let mut state = crate::State::default();
     state.apply(crate::Event::Connected(crate::Snapshot {
         workspaces: vec![
             crate::testing::workspace("a"),
             crate::testing::workspace("b"),
         ],
-        panes: vec![
-            crate::testing::pane("p", "a", "agent"),
-            crate::testing::pane("q", "b", "agent"),
-        ],
+        panes: panes
+            .iter()
+            .map(|(id, workspace)| crate::testing::pane(id, workspace, "agent"))
+            .collect(),
         ..crate::Snapshot::default()
     }));
+    state
+}
+
+#[test]
+fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
+    let mut state = two_workspaces(&[("p", "a"), ("q", "b")]);
     let count = held::Limits::default().held;
     for pane in ["p", "q"] {
         for index in 0..count {
@@ -319,15 +325,7 @@ fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
 
 #[test]
 fn a_turn_that_ends_while_a_pane_is_not_shown_is_read_when_it_is_shown() {
-    let mut state = crate::State::default();
-    state.apply(crate::Event::Connected(crate::Snapshot {
-        workspaces: vec![
-            crate::testing::workspace("a"),
-            crate::testing::workspace("b"),
-        ],
-        panes: vec![crate::testing::pane("q", "b", "agent")],
-        ..crate::Snapshot::default()
-    }));
+    let mut state = two_workspaces(&[("q", "b")]);
     let ended = |state: &mut crate::State| {
         state
             .agent_notification(EventName::PaneTurnEnded, json!({"paneId": "q"}))
