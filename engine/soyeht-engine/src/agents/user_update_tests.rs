@@ -12,6 +12,7 @@ use super::{
 use crate::{core::Core, outbox, test_panes};
 use serde_json::{Value, json};
 use soyeht_acp::subagents::Spawned;
+use soyeht_protocol::{event, method};
 
 const PANE: &str = "agent-pane";
 
@@ -57,14 +58,14 @@ impl Rig {
         let methods = events.iter().map(|event| event.method.clone()).collect();
         let updates = events
             .into_iter()
-            .filter(|event| event.method == "pane.update")
+            .filter(|event| event.method == event::PANE_UPDATE)
             .map(|event| event.params)
             .collect();
         (updates, methods)
     }
 
-    fn call(&mut self, method: &str, extra: Value) -> crate::errors::Result<Value> {
-        let mut params = json!({"paneId":PANE,"idempotencyKey":format!("key-{method}")});
+    fn call(&mut self, name: &str, extra: Value) -> crate::errors::Result<Value> {
+        let mut params = json!({"paneId":PANE,"idempotencyKey":format!("key-{name}")});
         params.as_object_mut().unwrap().extend(
             extra
                 .as_object()
@@ -72,11 +73,11 @@ impl Rig {
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone())),
         );
-        if method == "pane.close" {
+        if name == method::PANE_CLOSE {
             self.core.close_agent(&self.connection, &params)
         } else {
             self.core
-                .agent_method(&self.connection, method, &params, Vec::new())
+                .agent_method(&self.connection, name, &params, Vec::new())
         }
     }
 
@@ -120,17 +121,22 @@ fn assert_each_names_the_person(updates: &[Value], kinds: &[&str]) {
 }
 
 /// Stages `open` (what the pane had under way), closes the pane as the person, and returns the
-/// `pane.update` events of the close, checked to name the closer and to come with `pane.closed`.
+/// `pane.update` events of the close, checked to name the closer and to end the commit with `pane.closed`.
 fn close_with(open: fn(&Core, &mut State, &mut Changes), kinds: &[&str]) -> Vec<Value> {
     let mut rig = Rig::new();
     rig.stage(open);
     let cursor = rig.cursor();
 
-    rig.call("pane.close", json!({})).unwrap();
+    rig.call(method::PANE_CLOSE, json!({})).unwrap();
 
     let (updates, methods) = rig.after(cursor);
     assert_each_names_the_person(&updates, kinds);
-    assert!(methods.contains(&"pane.closed".to_owned()), "{methods:?}");
+    // The completing updates come first, and nothing about the pane follows the close.
+    assert_eq!(
+        methods.last().map(String::as_str),
+        Some(event::PANE_CLOSED),
+        "{methods:?}"
+    );
     rig.finish();
     updates
 }
@@ -156,7 +162,8 @@ fn a_prompt_sent_while_the_pane_signs_in_is_noted_under_the_senders_name() {
     });
     let cursor = rig.cursor();
 
-    rig.call("pane.prompt", json!({"text":"hello"})).unwrap();
+    rig.call(method::PANE_PROMPT, json!({"text":"hello"}))
+        .unwrap();
 
     let (updates, _) = rig.after(cursor);
     assert_each_names_the_person(&updates, &["system_message"]);

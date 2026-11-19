@@ -525,7 +525,8 @@ builds its events from the generated types of these schemas (the `...Draft` type
 out what the store assigns), and the `contract-checks` feature checks every event and result it
 sends against them (ADR 0090).
 - `workspace.created|renamed|closed`
-- `pane.created|closed|renamed|arranged`. Closing a pane publishes `pane.closed` alone: no
+- `pane.created|closed|renamed|arranged`. Closing a pane ends with `pane.closed`: the
+  `pane.update`s that complete its open messages come before it in the same commit; no
   `pane.updated` or `pane.state_changed` for that pane in the same commit or after it, so a
   client that applies events in order never sees a closed pane again.
 - `pane.session_started {harness, version, sessionId, generation, options}`
