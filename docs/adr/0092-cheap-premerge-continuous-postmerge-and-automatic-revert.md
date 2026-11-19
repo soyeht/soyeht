@@ -31,9 +31,10 @@ and iOS app builds (`check_mac.sh --fast` and `check_ios.sh --fast` are gone), e
 measurement and the timing tests. The sibling-binary edges of `gate_plan.py` (`TEST_EDGES`,
 the platform and the CLI always tested, the Swift suites launched by engine binaries) went
 with them: a unit test starts no other crate. A fast step that builds in place of a full test
-is named `<full id>-build`. Moving steps from `both` to `full` lowers the per-area count that
+is named `<full id>-build`. Moving steps from `both` to `full` weakens a step
 the verification ratchet watches, so the pull request that makes the move carries a
-`Verification change:` line; later pull requests are held to the new counts.
+`Verification change: removes step <id> because <reason>` line for each step; later pull requests
+are held to the new set of steps (ADR 0027, amendment).
 
 **A gate-script change still runs everything, except a test-only one.** A change to the
 scripts that run the gate upgrades the run to the full tier (ADR 0089), because a partial run
@@ -153,5 +154,5 @@ pull request (about 190 s: `post-merge:unit` 100 s, `quality:unit` 35 s, `main-w
 and the waiver, list and timings tests). They are the area `gate_scripts`, selected by a change
 under `scripts/`, `contracts/*.py` or `.githooks/` and by the full tier. `gate-plan:unit` stays
 in `always`: it reads engine and desktop sources through `CROSS_READS`, so any change can break
-it. Moving them out of `always` lowers the ratchet's per-area count; the pull request carries
-the `Verification change:` line.
+it. Moving them out of `always` weakens the step the ratchet watches; the pull request carries
+a `Verification change: removes step <id> because <reason>` line for each.

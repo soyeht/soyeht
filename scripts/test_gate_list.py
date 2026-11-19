@@ -11,7 +11,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import e2e_swift_client
 import gate_plan
+import gate_vectors
+import hardening_gate
 import post_merge_gate
 import post_merge_hosts
 
@@ -91,9 +94,10 @@ def gate_list_problems(name: str, text: str) -> list[str]:
     return problems
 
 
-STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
 # A fast step that stands in for a full one is named `<full id>-changed`, `-fast` or `-build`.
 STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
+# An area that runs the part of another area's full step which reads the shared vector files.
+SUB_AREAS = {"swift_vectors": "swift", "protocol_vectors": "engine"}
 # The steps that only the full tier (after the merge) runs, whichever area they belong to.
 # (`desktop:test` and the e2e steps run before the merge too.)
 AFTER_MERGE = (
@@ -155,8 +159,8 @@ def engine_cargo_tests() -> list[str]:
 
 
 def gate_steps() -> list[tuple[str, str, str]]:
-    """(area, tiers, id) of every `step` line of check_all.sh."""
-    return STEP.findall((ROOT / "scripts/check_all.sh").read_text())
+    """(area, tiers, id) of every `step` line of check_all.sh, by the parser the ratchet uses."""
+    return [step[:3] for step in hardening_gate.gate_steps((ROOT / "scripts/check_all.sh").read_text())]
 
 
 STEP_COMMAND = re.compile(r"^\s*step\s+\w+\s+\w+\s+\S+\s+(.*)$", re.MULTILINE)
@@ -216,7 +220,9 @@ class StepListTests(unittest.TestCase):
             with self.subTest(step=step_id):
                 match = STAND_IN.match(step_id)
                 self.assertIsNotNone(match, f"{step_id}: name it <full id>-changed or <full id>-fast")
-                self.assertEqual(steps.get(match["full"]), (area, "full"))
+                full_area, full_tiers = steps.get(match["full"], (None, None))
+                self.assertEqual(full_tiers, "full")
+                self.assertIn(area, {full_area, *(sub for sub, whole in SUB_AREAS.items() if whole == full_area)})
 
     def test_the_heavy_steps_run_only_after_the_merge(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -239,6 +245,10 @@ class StepListTests(unittest.TestCase):
         self.assertNotIn("desktop:test-fast", commands)
         self.assertIn("swift build --package-path apps/shared", commands)
         self.assertNotRegex(commands, r"step \w+ (?:both|fast) \S+ .*swift test")
+        # Only two scripts run `swift test` in the fast tier, and both give it a filter.
+        self.assertNotRegex(re.search(r"swift_vector_tests\(\) {.*?\n}", commands, re.S)[0], r"swift test")
+        for command in (e2e_swift_client.swift_command(), gate_vectors.swift_command()):
+            self.assertIn("--filter", command)
 
     def test_the_end_to_end_set_runs_in_both_tiers(self):
         steps = {step_id: (area, tiers) for area, tiers, step_id in gate_steps()}
@@ -422,6 +432,36 @@ class SelectionByChangeTests(unittest.TestCase):
         listed = listed_steps("fast", EDITOR_CRATE)
         self.assertEqual([i for i in listed if i in E2E_SET], list(E2E_SET))
         self.assertNotIn("desktop:test", listed)
+
+    def vector_read_by(self, wanted: set[str], unwanted: set[str] = frozenset()):
+        """A vector file whose readers include `wanted` and none of `unwanted`: the rule is tested, not today's readers."""
+        for name, groups in gate_vectors.readers().items():
+            if wanted <= set(groups) and not unwanted & set(groups):
+                return [f"contracts/vectors/{name}.json"]
+        self.skipTest(f"no vector is read by {sorted(wanted)} only")
+
+    def test_a_vector_that_swift_and_the_desktop_read_runs_both_and_no_engine_step(self):
+        listed = listed_steps("fast", self.vector_read_by({"apps/shared", "apps/desktop"}, {"apps/android"}))
+        for step_id in ("swift:test-shared-changed", "desktop:test"):
+            self.assertIn(step_id, listed)
+
+    def test_a_vector_an_engine_crate_reads_runs_that_crate_and_no_program(self):
+        listed = listed_steps("fast", self.vector_read_by({"engine/soyeht-avatar"}))
+        self.assertIn("engine:test-changed", listed)
+        for step_id in ("e2e:core", "engine:build-test-engine"):
+            self.assertNotIn(step_id, listed)
+
+    def test_a_vector_that_only_the_protocol_integration_tests_read_runs_them_in_the_fast_tier(self):
+        files = self.vector_read_by({"engine/soyeht-protocol/tests"}, {"engine/soyeht-protocol"})
+        listed = listed_steps("fast", files)
+        self.assertIn("engine:test-fast", listed)
+        self.assertNotIn("engine:test-changed", listed)
+        self.assertNotIn("engine:test-fast", listed_steps("full", files))
+
+    def test_the_shared_package_runs_the_swift_vector_tests_and_the_apps_do_not(self):
+        self.assertIn("swift:test-shared-changed", listed_steps("fast", ["apps/shared/Sources/SoyehtClient/A.swift"]))
+        self.assertNotIn("swift:test-shared-changed", listed_steps("fast", ["apps/mac/Sources/A.swift"]))
+        self.assertNotIn("swift:test-shared-changed", listed_steps("full", ["apps/shared/Sources/SoyehtClient/A.swift"]))
 
     def test_an_android_change_lists_the_core_steps_and_not_the_app_build(self):
         # The core is built on the host in the fast tier; Gradle, the NDK and the APK only after the merge.

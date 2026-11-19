@@ -143,23 +143,31 @@ def lex(source: str) -> tuple[str, list[tuple[int, str]]]:
     return "".join(out), comments
 
 
-def without_test_items(code: str) -> str:
-    """Blank every item, statement or field that follows a `#[cfg(test)]` attribute.
+def test_item_spans(code: str) -> list[tuple[int, int]]:
+    """(start, end) of every item, statement or field that follows a `#[cfg(test)]` attribute.
 
-    A file that starts with `#![cfg(test)]` is blanked whole.
+    A file that starts with `#![cfg(test)]` is one span. `code` has its comments and literals
+    blanked (`blank_literals_and_comments`). `growth_gate.py` counts test lines with the same spans.
     """
     if INNER_CFG_TEST.search(code):
-        return re.sub(r"[^\n]", " ", code)
-    chars = list(code)
+        return [(0, len(code))]
+    spans: list[tuple[int, int]] = []
     copied = 0
     for match in CFG_TEST.finditer(code):
         if match.start() < copied:
             continue
-        end = test_item_end(code, match.end())
-        for k in range(match.start(), end):
+        copied = test_item_end(code, match.end())
+        spans.append((match.start(), copied))
+    return spans
+
+
+def without_test_items(code: str) -> str:
+    """Blank every item, statement or field that follows a `#[cfg(test)]` attribute."""
+    chars = list(code)
+    for start, end in test_item_spans(code):
+        for k in range(start, end):
             if chars[k] != "\n":
                 chars[k] = " "
-        copied = end
     return "".join(chars)
 
 
