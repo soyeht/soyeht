@@ -287,10 +287,10 @@ impl Core {
             move |core, read| core.apply_disk_slice(&owner, &pane, binary_ref, from, read),
             |_| true,
         );
-        if started.is_err() {
-            if let Some(client) = self.clients.get_mut(connection) {
-                client.replays.reading = false;
-            }
+        if started.is_err()
+            && let Some(client) = self.clients.get_mut(connection)
+        {
+            client.replays.reading = false;
         }
         started
     }
