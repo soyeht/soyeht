@@ -49,7 +49,8 @@ public struct AgentPaneView: Sendable {
     }
   }
 
-  @discardableResult mutating func merge(_ message: TranscriptMessage) -> MergeCost {
+  @discardableResult mutating func merge(_ incoming: TranscriptMessage) -> MergeCost {
+    let message = incoming.light
     if tracksEveryMessage, let last = messages.last {
       if last.localId == message.localId, Self.order(last) == Self.order(message) {
         messages[messages.count - 1] = message
@@ -59,11 +60,13 @@ public struct AgentPaneView: Sendable {
       if revisions[message.localId] == nil, Self.order(last) < Self.order(message) {
         messages.append(message)
         stamp(message.localId)
+        trimToWindow()
         return .appended
       }
     }
     replaceOrAdd(message)
     messages.sort { Self.order($0) < Self.order($1) }
+    trimToWindow()
     return .searched
   }
 
@@ -85,7 +88,8 @@ public struct AgentPaneView: Sendable {
     var index = Dictionary(
       messages.enumerated().map { ($1.localId, $0) }, uniquingKeysWith: { _, latest in latest })
     var changed: [String] = []
-    for message in page {
+    for incoming in page {
+      let message = incoming.light
       if let known = index[message.localId] {
         guard message.supersedes(messages[known]) else { continue }
         messages[known] = message
@@ -104,9 +108,13 @@ public struct AgentPaneView: Sendable {
     if replacing {
       messages = []
       revisions = [:]
+      nextTranscriptCursor = page.nextCursor
+    } else {
+      nextTranscriptCursor = AgentTranscriptWindow.older(
+        nextTranscriptCursor, page.nextCursor, newestHeld: messages.last.flatMap { UInt64($0.seq) })
     }
     merge(page.items)
-    nextTranscriptCursor = page.nextCursor
+    trimToWindow()
   }
 }
 
@@ -129,6 +137,9 @@ extension TranscriptMessage {
 }
 
 extension ToolStatus {
+  /// Whether a tool call is over, whichever way: a failed call is a finished one.
+  var isFinished: Bool { self == .completed || self == .failed }
+
   /// How far a tool call has got: waiting, running, or finished (completed or failed).
   fileprivate var progress: Int {
     switch self {

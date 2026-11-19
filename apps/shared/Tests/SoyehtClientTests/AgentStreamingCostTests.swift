@@ -82,13 +82,14 @@ private func counting(to count: Int) -> String {
 
 @Test func aStreamedReplyIsAlwaysMergedAtTheEndWhateverTheTranscriptLength() {
   var view = AgentPaneView()
+  view.scroll.isShown = true
   view.merge(history(500))
   let before = view.revisions
   var costs: [AgentPaneView.MergeCost] = []
   for count in 1...2_000 { costs.append(view.merge(reply(counting(to: count / 50 + 1)))) }
   #expect(costs.first == .appended)
   #expect(costs.dropFirst().allSatisfy { $0 == .replacedLast })
-  #expect(view.messages.count == 501)
+  #expect(view.messages.count == ClientPolicy.capsHeldMessages, "the oldest left the window")
   // Entries copied: one. Every other message kept the revision it had.
   let changed = view.revisions.filter { before[$0.key] != $0.value }
   #expect(changed.keys.sorted() == [streamingMessage])

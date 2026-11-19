@@ -91,6 +91,20 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   #expect(passes == 21)
 }
 
+@MainActor @Test func aPaneIsShownWhileAnyViewShowsItAndAcrossAReconnect() {
+  let store = AgentPaneStore()
+  let (first, second) = (AgentPaneViewer(), AgentPaneViewer())
+  store["p"] = AgentPaneView()
+  #expect(store.setViewer(first, "p", shown: true))
+  #expect(!store.setViewer(second, "p", shown: true), "a second view changes nothing")
+  #expect(!store.setViewer(first, "p", shown: false) && store["p"]?.scroll.isShown == true)
+  // A reconnect drops the panes while the mounted view never reports again.
+  store.removeAll()
+  store["p"] = AgentPaneView()
+  #expect(store["p"]?.scroll.isShown == true)
+  #expect(store.setViewer(second, "p", shown: false) && store["p"]?.scroll.isShown == false)
+}
+
 @MainActor @Test func aChunkForAHiddenPaneRunsNoBodyOfTheWindowChrome() {
   let client = twoPanes()
   client.upsertWorkspace(Workspace(workspaceId: "w", name: "w", path: "/tmp", layout: .null))
@@ -120,4 +134,54 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   let own = fires(
     watching: { readPane(client, "a") }, whenChanging: { streamAChunk(client, to: "a") })
   #expect(own)
+}
+
+/// A pane no view shows is not read when a turn ends, and is read, once, when a view shows it; a
+/// read that fails leaves the pane to be read the next time. The prompt of a turn reaches a client
+/// only with that read.
+@MainActor @Test func aTurnThatEndsOnAPaneNoViewShowsIsReadWhenItIsShown() async throws {
+  let client = EngineClient(socket: "/tmp/sn-pane-invalidation/engine.sock")
+  client.connected = true
+  client.upsertPane(agentPane("a"))
+  client.agentPanes["a"] = AgentPaneView()
+  var reads = 0
+  var failing = true
+  let prompt = TranscriptMessage(
+    localId: "prompt", generation: 1, seq: "1", role: .user, kind: .message, text: "hello",
+    complete: true)
+  client.requestStub = { method, _ in
+    switch method {
+    case .paneTranscript:
+      reads += 1
+      if failing { throw ClientFailure.remote("internal_error", "busy") }
+      return try .encoded(PaneTranscriptResult(items: [prompt], nextCursor: nil))
+    case .paneQueueList: return try .encoded(PaneQueueListResult(items: [], draft: false))
+    default: throw ClientFailure.invalidFrame
+    }
+  }
+  func settle(_ done: @MainActor () -> Bool) async {
+    for _ in 0..<200 where !done() { await Task.yield() }
+  }
+  let ended = PaneTurnEndedEvent(
+    eventId: "1", at: "2026-11-19T00:00:00Z", paneId: "a", promptId: "p", stopReason: .end_turn)
+  try client.applyAgentEvent(.paneTurnEnded, .encoded(ended))
+  await Task.yield()
+  #expect(reads == 0, "a pane no view shows is not read when a turn ends")
+
+  let viewer = AgentPaneViewer()
+  client.agentPaneShown(viewer, "a", true)
+  await settle { reads == 1 }
+  await Task.yield()
+  #expect(reads == 1 && client.agentPanes["a"]?.messages.isEmpty == true, "the read failed")
+
+  client.agentPaneShown(viewer, "a", false)
+  failing = false
+  client.agentPaneShown(viewer, "a", true)
+  await settle { client.agentPanes["a"]?.messages.isEmpty == false }
+  #expect(reads == 2 && client.agentPanes["a"]?.messages.first?.text == "hello")
+
+  client.agentPaneShown(viewer, "a", false)
+  client.agentPaneShown(viewer, "a", true)
+  await Task.yield()
+  #expect(reads == 2, "what the read brought is not read again")
 }

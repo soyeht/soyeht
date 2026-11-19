@@ -22,6 +22,13 @@ impl State {
         self.agents.get(pane_id)
     }
 
+    /// The message of an agent's conversation the person is looking at, none at the newest.
+    pub fn view_agent_from(&mut self, pane_id: &str, message: Option<&str>) {
+        if let Some(view) = self.agents.get_mut(pane_id) {
+            view.set_viewing(message);
+        }
+    }
+
     /// What an agent asks of the person about a web pane, until it is answered.
     pub fn web_permission(&self, pane_id: &str) -> Option<&PermissionRequest> {
         self.web_permissions.get(pane_id)
@@ -416,7 +423,8 @@ impl State {
                 }
                 Vec::new()
             }
-            EventName::PaneTurnEnded => self.reload_transcript(&params),
+            // A pane that is not shown is read again when it is shown.
+            EventName::PaneTurnEnded => self.reload_shown_transcript(&params),
             EventName::PaneHarnessSwitchDone => {
                 let event = serde_json::from_value::<PaneHarnessSwitchDoneEvent>(params.clone())?;
                 self.record_switch(
@@ -523,6 +531,32 @@ impl State {
             self.web_permissions.remove(&event.pane_id);
         }
         Ok(Vec::new())
+    }
+
+    /// The turn that ended is read now when the pane is shown, and when it is shown otherwise.
+    fn reload_shown_transcript(&mut self, params: &Value) -> Vec<Effect> {
+        let view = params
+            .get("paneId")
+            .and_then(Value::as_str)
+            .and_then(|id| self.agents.get_mut(id));
+        match view {
+            Some(view) if !view.is_shown() => {
+                view.mark_stale();
+                Vec::new()
+            }
+            _ => self.reload_transcript(params),
+        }
+    }
+
+    /// The command that reads the newest page of a pane that is shown again with less than a page
+    /// held, once each time it is shown.
+    pub fn refill_transcript(&mut self, pane_id: &str) -> Option<Command> {
+        self.agents
+            .get_mut(pane_id)?
+            .take_refill()
+            .then(|| Command::LoadTranscript {
+                pane_id: pane_id.to_owned(),
+            })
     }
 
     pub(crate) fn reload_transcript(&self, params: &Value) -> Vec<Effect> {

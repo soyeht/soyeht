@@ -310,7 +310,12 @@ impl Core {
 
     /// The pane the person looks at takes the keyboard on the computer too.
     pub fn focus(&self, pane_id: String) {
-        lock(&self.replica).state.focus_pane(&pane_id);
+        let refill = {
+            let mut replica = lock(&self.replica);
+            replica.state.focus_pane(&pane_id);
+            replica.state.refill_transcript(&pane_id)
+        };
+        refill.into_iter().for_each(|command| self.send(command));
         self.send(Command::Focus { pane_id });
     }
 }

@@ -120,6 +120,41 @@ pub(super) fn selection_after_closing(order: &[String], closed: &str) -> Option<
 }
 
 impl State {
+    /// Selects a workspace and focuses its first terminal. It reads and writes only this replica:
+    /// every workspace's panes already hold their screens, so the new workspace draws at once
+    /// and the engine is told afterwards.
+    pub fn select_workspace(&mut self, workspace_id: &str) {
+        if self
+            .workspaces
+            .iter()
+            .any(|workspace| workspace.workspace_id == workspace_id)
+        {
+            self.selected_workspace = Some(workspace_id.to_owned());
+            self.focused_pane = self.default_focus(workspace_id);
+            self.settle_agent_windows();
+        }
+    }
+
+    pub fn focus_pane(&mut self, pane_id: &str) {
+        if let Some(pane) = self.panes.iter().find(|pane| pane.pane_id == pane_id) {
+            self.selected_workspace = Some(pane.workspace_id.clone());
+            self.focused_pane = Some(pane_id.to_owned());
+            self.editors.activated(pane);
+            self.settle_agent_windows();
+        }
+    }
+
+    /// Tells each agent's replica whether its conversation is on screen: the panes of the
+    /// selected workspace are, and the rest hold the small window.
+    pub(crate) fn settle_agent_windows(&mut self) {
+        let selected = self.selected_workspace.as_deref();
+        for pane in &self.panes {
+            if let Some(view) = self.agents.get_mut(&pane.pane_id) {
+                view.set_shown(selected == Some(pane.workspace_id.as_str()));
+            }
+        }
+    }
+
     /// The request that renames `target` to `typed`, or `None` when that is blank or the name it
     /// has now. Breaks inside `typed` are replaced by blanks.
     pub fn rename_request(&self, target: &RenameTarget, typed: &str) -> Option<Command> {

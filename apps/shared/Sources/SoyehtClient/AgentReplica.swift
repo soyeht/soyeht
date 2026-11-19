@@ -214,6 +214,23 @@ extension EngineClient {
     try await loadAgentPane(paneId, replacing: true)
   }
 
+  /// A view of the conversation of `paneId` is on screen or no longer is. A pane that no view
+  /// shows keeps the small window, and what it holds beyond it goes at once. One that is shown
+  /// again with less than a page, and more at the engine, reads the newest page.
+  func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
+    guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
+    guard let view = agentPanes[paneId] else { return }
+    if shown {
+      let stale = agentPanes.isStale(paneId)
+      let wants = AgentTranscriptWindow.wantsNewestPage(
+        shown: true, stale: stale, held: view.messages.count, hasOlder: view.hasOlderMessages,
+        page: Int(ClientPolicy.pageSizeTranscript))
+      if wants, stale || agentTranscriptLoadsInFlight[paneId] == nil { refreshAgent(paneId) }
+    } else if view.messages.count > ClientPolicy.capsOffscreenMessages {
+      agentPanes.update(paneId) { $0.trimToWindow(force: true) }
+    }
+  }
+
   public func hydratePresentedAgentPanes(_ presented: [PresentedPane]) async {
     guard connected else { return }
     let revision = connectionRevision
@@ -318,7 +335,12 @@ extension EngineClient {
       refreshHarnesses()
     case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
-      refreshAgent(event.paneId, replacing: false)
+      // A pane that is not shown is read again when it is shown.
+      if agentPanes.isShown(event.paneId) {
+        refreshAgent(event.paneId, replacing: false)
+      } else {
+        agentPanes.markStale(event.paneId)
+      }
     case .paneSessionLost:
       let event = try params.decoded(PaneSessionLostEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
@@ -365,6 +387,19 @@ extension EngineClient {
     }
   }
 
+  /// A tool call's row: it is complete when the call is over, whichever way.
+  private func toolEntry(
+    _ paneId: String, _ localId: String, _ generation: UInt32, _ seq: String, _ tool: ToolCall,
+    _ subagentId: String?
+  ) -> (String, TranscriptMessage) {
+    (
+      paneId,
+      TranscriptMessage(
+        localId: localId, generation: generation, seq: seq, role: .assistant, kind: .tool,
+        text: "", complete: tool.status.isFinished, tool: tool, subagentId: subagentId)
+    )
+  }
+
   private func transcriptMessage(_ update: PaneUpdateEvent) -> (String, TranscriptMessage) {
     switch update {
     case .v0(let value):
@@ -385,22 +420,11 @@ extension EngineClient {
           subagentId: value.subagentId)
       )
     case .v2(let value):
-      return (
-        value.paneId,
-        TranscriptMessage(
-          localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .tool, text: "", complete: value.tool.status == .completed,
-          tool: value.tool, subagentId: value.subagentId)
-      )
+      return toolEntry(
+        value.paneId, value.localId, value.generation, value.seq, value.tool, value.subagentId)
     case .v3(let value):
-      return (
-        value.paneId,
-        TranscriptMessage(
-          localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .tool, text: "",
-          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool,
-          subagentId: value.subagentId)
-      )
+      return toolEntry(
+        value.paneId, value.localId, value.generation, value.seq, value.tool, value.subagentId)
     case .v4(let value):
       return (
         value.paneId,
@@ -468,6 +492,7 @@ extension EngineClient {
 
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
     let revision = connectionRevision
+    agentPanes.beginRead(paneId)
     let result = try await request(
       .paneTranscript,
       .encoded(PaneTranscriptParams(paneId: paneId, limit: ClientPolicy.pageSizeTranscript))
@@ -478,6 +503,7 @@ extension EngineClient {
     else { return }
     partials.flush()
     agentPanes.update(paneId) { $0.mergeTranscriptPage(result, replacing: replacing) }
+    agentPanes.finishRead(paneId)
     try await loadAgentQueue(paneId)
     if connected && connectionRevision == revision { agentTranscriptRevisions[paneId] = revision }
   }

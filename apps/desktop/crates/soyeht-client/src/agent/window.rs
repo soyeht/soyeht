@@ -45,6 +45,7 @@ mod tests {
 
     fn view_of_messages(count: usize, older: Option<&str>) -> AgentView {
         let mut view = AgentView::default();
+        view.set_shown(true);
         for index in 0..count {
             let item = json!({"localId": format!("m{index}"), "generation": 1,
                 "seq": (index + 1).to_string(), "role": "user", "kind": "message",

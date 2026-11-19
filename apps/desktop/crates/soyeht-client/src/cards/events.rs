@@ -273,6 +273,7 @@ mod tests {
             pane_id: "a".into(),
             items: Vec::new(),
             next_cursor: cursor.map(str::to_owned),
+            newest: true,
         };
         state.apply(page(Some("40")));
         assert!(state.agent("a").unwrap().cards.has_earlier(0));

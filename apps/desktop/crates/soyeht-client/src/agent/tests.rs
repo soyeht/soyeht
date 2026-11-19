@@ -1,6 +1,8 @@
 use super::*;
 use crate::testing::{cases, pane_json};
+use crate::{Effect, Event};
 use serde_json::{Value, json};
+use soyeht_protocol::EventName;
 
 fn message_json(id: &str, seq: &str, kind: &str, text: &str) -> Value {
     json!({"localId": id, "generation": 1, "seq": seq, "role": "assistant", "kind": kind,
@@ -21,6 +23,7 @@ fn a_sequence_that_is_not_a_decimal_is_refused() {
 #[test]
 fn the_tail_leaves_out_the_oldest_messages() {
     let mut view = AgentView::default();
+    view.set_shown(true);
     for index in 0..(TAIL + 5) {
         view.merge(message(&format!("m{index}"), &index.to_string(), "t"))
             .unwrap();
@@ -276,4 +279,104 @@ fn a_page_that_is_behind_the_known_message_changes_nothing() {
     view.merge_page(vec![behind]).unwrap();
     assert_eq!(view.revision_of("m"), known);
     assert_eq!(view.messages()[0].text, "hello");
+}
+
+/// A state with workspaces `a` (selected) and `b`, and the agent panes `(id, workspace)`.
+fn two_workspaces(panes: &[(&str, &str)]) -> crate::State {
+    let mut state = crate::State::default();
+    state.apply(crate::Event::Connected(crate::Snapshot {
+        workspaces: vec![
+            crate::testing::workspace("a"),
+            crate::testing::workspace("b"),
+        ],
+        panes: panes
+            .iter()
+            .map(|(id, workspace)| crate::testing::pane(id, workspace, "agent"))
+            .collect(),
+        ..crate::Snapshot::default()
+    }));
+    state
+}
+
+#[test]
+fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
+    let mut state = two_workspaces(&[("p", "a"), ("q", "b")]);
+    let count = held::Limits::default().held;
+    for pane in ["p", "q"] {
+        for index in 0..count {
+            let view = state.agents.get_mut(pane).unwrap();
+            view.merge(message(&format!("m{index}"), &index.to_string(), "t"))
+                .unwrap();
+        }
+    }
+    let held = |state: &crate::State, pane: &str| state.agent(pane).unwrap().messages().len();
+    state.select_workspace("a");
+    assert_eq!(held(&state, "p"), count);
+    assert!(
+        held(&state, "q") < count,
+        "a pane not shown trims as it grows"
+    );
+    state.select_workspace("b");
+    assert_eq!(
+        held(&state, "p"),
+        soyeht_protocol::client_policy::CAPS_OFFSCREEN_MESSAGES
+    );
+}
+
+#[test]
+fn a_turn_that_ends_while_a_pane_is_not_shown_is_read_when_it_is_shown() {
+    let mut state = two_workspaces(&[("q", "b")]);
+    let ended = |state: &mut crate::State| {
+        state
+            .agent_notification(EventName::PaneTurnEnded, json!({"paneId": "q"}))
+            .unwrap()
+    };
+    assert!(
+        ended(&mut state).is_empty(),
+        "a pane not shown skips the reload"
+    );
+    assert_eq!(state.refill_transcript("q"), None);
+    state.select_workspace("b");
+    assert!(
+        state.refill_transcript("q").is_some(),
+        "short and complete, it is read all the same"
+    );
+    assert_eq!(
+        state.refill_transcript("q"),
+        None,
+        "once each time it is shown"
+    );
+    assert_eq!(ended(&mut state), [Effect::LoadTranscript("q".into())]);
+}
+
+#[test]
+fn a_reload_that_fails_is_made_again_the_next_time_the_pane_is_shown() {
+    let mut state = two_workspaces(&[("q", "b")]);
+    state
+        .agent_notification(EventName::PaneTurnEnded, json!({"paneId": "q"}))
+        .unwrap();
+    state.select_workspace("b");
+    assert!(state.refill_transcript("q").is_some());
+    // The page never arrives: the pane is left and shown again.
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert!(state.refill_transcript("q").is_some(), "still stale");
+    // A page of earlier messages that arrives meanwhile does not hold what the turn brought.
+    let page = |newest| Event::Transcript {
+        pane_id: "q".into(),
+        items: Vec::new(),
+        next_cursor: None,
+        newest,
+    };
+    state.apply(page(false));
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert!(
+        state.refill_transcript("q").is_some(),
+        "earlier messages leave it stale"
+    );
+    state.apply(page(true));
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert_eq!(state.refill_transcript("q"), None, "the page cleared it");
 }

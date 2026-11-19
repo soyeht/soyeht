@@ -65,6 +65,16 @@ pub struct AgentView {
     /// tells a frame which rows changed without the frame reading their content.
     revisions: HashMap<String, u64>,
     edits: u64,
+    /// Whether the conversation is on screen, which sets how much of it is held.
+    shown: bool,
+    /// The message the person is looking at while they read back; none at the newest.
+    viewing: Option<String>,
+    /// Whether the newest page was read again since the pane was shown.
+    refilled: bool,
+    /// A turn ended while the pane was not shown.
+    stale: bool,
+    /// The page that covers it was asked for.
+    reading: bool,
     /// How long the running turn has been going.
     pub turn: TurnClock,
     /// The request the agent is waiting on, if any.
@@ -91,7 +101,13 @@ impl AgentView {
     /// Folds an update in: a new message is inserted at its place and a known one is replaced,
     /// as the update carries the whole message.
     pub fn merge(&mut self, message: TranscriptMessage) -> Result<()> {
-        self.fold(message, |_, _| true)
+        let held = self.messages.len();
+        self.fold(message, |_, _| true)?;
+        // A replaced message adds nothing to trim.
+        if self.messages.len() > held {
+            self.trim(held::Limits::default(), false);
+        }
+        Ok(())
     }
 
     /// Folds a fetched page in. Nothing already known is dropped, and a known message that is
@@ -99,7 +115,9 @@ impl AgentView {
     /// was on its way.
     pub fn merge_page(&mut self, page: Vec<TranscriptMessage>) -> Result<()> {
         page.into_iter()
-            .try_for_each(|message| self.fold(message, supersedes))
+            .try_for_each(|message| self.fold(message, supersedes))?;
+        self.trim(held::Limits::default(), false);
+        Ok(())
     }
 
     /// Puts `message` at its place, replacing the known one with its `localId` when `replaces` says
@@ -109,6 +127,7 @@ impl AgentView {
         message: TranscriptMessage,
         replaces: fn(&TranscriptMessage, &TranscriptMessage) -> bool,
     ) -> Result<()> {
+        let message = held::light(message);
         let order = sequence(&message)?;
         if let Some(index) = self
             .messages
@@ -249,6 +268,11 @@ fn sequence(message: &TranscriptMessage) -> Result<u64> {
         .map_err(|_| Error::Invalid("a transcript message has a sequence that is not a decimal"))
 }
 
+/// Whether a tool call is over, whichever way: a failed call is a finished one.
+pub(super) fn finished(status: &ToolStatus) -> bool {
+    matches!(status, ToolStatus::Completed | ToolStatus::Failed)
+}
+
 /// How far a tool call has got.
 fn progress(status: &ToolStatus) -> u8 {
     match status {
@@ -322,6 +346,21 @@ fn base(
 
 const ASSISTANT: TranscriptRole = TranscriptRole::Assistant;
 
+/// The tool call of an update of either version as a transcript message.
+macro_rules! tool_event {
+    ($value:expr) => {{
+        let value = $value;
+        tool_entry(
+            value.pane_id,
+            value.local_id,
+            value.generation,
+            value.seq,
+            value.tool,
+            value.subagent_id,
+        )
+    }};
+}
+
 /// The pane an update belongs to and the message it leaves behind. Terminal output,
 /// configuration changes and subagent runs arrive with the transcript instead.
 pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)> {
@@ -355,33 +394,8 @@ pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)
             built.subagent_id = value.subagent_id;
             (value.pane_id, built)
         }
-        PaneUpdateEvent::V2(value) => {
-            let complete = value.tool.status == ToolStatus::Completed;
-            tool_entry(
-                value.pane_id,
-                value.local_id,
-                value.generation,
-                value.seq,
-                value.tool,
-                value.subagent_id,
-                complete,
-            )
-        }
-        PaneUpdateEvent::V3(value) => {
-            let complete = matches!(
-                value.tool.status,
-                ToolStatus::Completed | ToolStatus::Failed
-            );
-            tool_entry(
-                value.pane_id,
-                value.local_id,
-                value.generation,
-                value.seq,
-                value.tool,
-                value.subagent_id,
-                complete,
-            )
-        }
+        PaneUpdateEvent::V2(value) => tool_event!(value),
+        PaneUpdateEvent::V3(value) => tool_event!(value),
         PaneUpdateEvent::V4(value) => {
             let mut built = base(
                 value.local_id,
@@ -411,7 +425,8 @@ pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)
     })
 }
 
-/// A tool call as a transcript message, with the pane it belongs to.
+/// A tool call as a transcript message, with the pane it belongs to; it is complete when the call
+/// is over.
 fn tool_entry(
     pane_id: String,
     local_id: String,
@@ -419,7 +434,6 @@ fn tool_entry(
     seq: String,
     tool: ToolCall,
     subagent_id: Option<String>,
-    complete: bool,
 ) -> (String, TranscriptMessage) {
     let mut built = base(
         local_id,
@@ -427,7 +441,7 @@ fn tool_entry(
         seq,
         (ASSISTANT, TranscriptKind::Tool),
         String::new(),
-        complete,
+        finished(&tool.status),
     );
     built.tool = Some(tool);
     built.subagent_id = subagent_id;
@@ -559,6 +573,7 @@ pub fn status_word(state: &PaneState, needs_authentication: bool, has_session: b
 }
 
 pub mod disclosure;
+mod held;
 pub mod window;
 
 #[cfg(test)]

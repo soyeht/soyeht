@@ -20,6 +20,7 @@ pub fn outcome(command: &Command, result: Value) -> Result<Option<Event>> {
                 pane_id: pane_id.clone(),
                 items: page.items,
                 next_cursor: page.next_cursor,
+                newest: matches!(command, Command::LoadTranscript { .. }),
             })
         }
         Command::LoadTask { .. } => Some(Event::Task(TaskUpdate::Detail(Box::new(
