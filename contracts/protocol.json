@@ -5566,6 +5566,9 @@
         "at": {
           "type": "string"
         },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
         "paneId": {
           "$ref": "#/$defs/Id"
         },
@@ -5620,6 +5623,9 @@
         },
         "at": {
           "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
         },
         "paneId": {
           "$ref": "#/$defs/Id"
@@ -5676,6 +5682,9 @@
         "at": {
           "type": "string"
         },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
         "paneId": {
           "$ref": "#/$defs/Id"
         },
@@ -5727,6 +5736,9 @@
         "at": {
           "type": "string"
         },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
         "paneId": {
           "$ref": "#/$defs/Id"
         },
@@ -5777,6 +5789,9 @@
         },
         "at": {
           "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
         },
         "paneId": {
           "$ref": "#/$defs/Id"
@@ -5832,6 +5847,9 @@
         "at": {
           "type": "string"
         },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
         "paneId": {
           "$ref": "#/$defs/Id"
         },
@@ -5883,6 +5901,9 @@
         "at": {
           "type": "string"
         },
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
         "paneId": {
           "$ref": "#/$defs/Id"
         },
@@ -5930,6 +5951,9 @@
         },
         "at": {
           "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
         },
         "paneId": {
           "$ref": "#/$defs/Id"
@@ -5993,6 +6017,9 @@
         },
         "at": {
           "type": "string"
+        },
+        "actor": {
+          "$ref": "#/$defs/Actor"
         },
         "paneId": {
           "$ref": "#/$defs/Id"
