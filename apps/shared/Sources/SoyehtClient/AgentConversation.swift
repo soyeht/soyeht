@@ -90,6 +90,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
   private let style: AgentConversationStyle
   private let onExplicitRemoteAction: () -> Void
   private let harnessControl: HarnessControl
+  @State private var viewer = AgentPaneViewer()
   @State private var follow = AgentConversationFollow()
   @State private var bottomVisibleId: String?
   @State private var subagents = AgentSubagentDisclosure()
@@ -180,9 +181,11 @@ extension AgentConversationView where HarnessControl == EmptyView {
         do { try await Task.sleep(for: .milliseconds(ClientPolicy.draftBeatMs)) } catch { return }
       }
     }
-    .onChange(of: isVisible, initial: true) { _, shown in client.agentPaneShown(paneId, shown) }
+    .onChange(of: isVisible, initial: true) { _, shown in
+      client.agentPaneShown(viewer, paneId, shown)
+    }
     .onDisappear {
-      client.agentPaneShown(paneId, false)
+      client.agentPaneShown(viewer, paneId, false)
       if !prompt.isEmpty { client.setDraft(paneId, active: false) }
     }
   }

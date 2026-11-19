@@ -61,8 +61,29 @@ public final class AgentPaneModel {
 @MainActor @Observable
 public final class AgentPaneStore {
   private var models: [String: AgentPaneModel] = [:]
+  /// The views that show each pane, by owner, so two views of one pane (a card rebuilt before the
+  /// old one is taken down) never end each other's showing. It outlives a pane's model: a
+  /// reconnect drops the models while the views stay mounted and never report again.
+  @ObservationIgnored private var viewers: [String: Set<ObjectIdentifier>] = [:]
 
   public init() {}
+
+  /// Whether a view shows the pane, which sets how much of its conversation the replica holds.
+  func isShown(_ paneId: String) -> Bool { viewers[paneId]?.isEmpty == false }
+
+  /// A view starts or stops showing the pane; true when the pane went from shown to not or back.
+  func setViewer(_ owner: AnyObject, _ paneId: String, shown: Bool) -> Bool {
+    let was = isShown(paneId)
+    if shown {
+      viewers[paneId, default: []].insert(ObjectIdentifier(owner))
+    } else {
+      viewers[paneId]?.remove(ObjectIdentifier(owner))
+      if viewers[paneId]?.isEmpty == true { viewers.removeValue(forKey: paneId) }
+    }
+    let now = isShown(paneId)
+    if let scroll = models[paneId]?.view.scroll { scroll.isShown = now }
+    return now != was
+  }
 
   public func model(_ paneId: String) -> AgentPaneModel? { models[paneId] }
 
@@ -90,6 +111,7 @@ public final class AgentPaneStore {
     -> AgentPaneModel
   {
     if let model = models[paneId] { return model }
+    view.scroll.isShown = isShown(paneId)
     let model = AgentPaneModel(view)
     models[paneId] = model
     return model
@@ -99,6 +121,7 @@ public final class AgentPaneStore {
     get { models[paneId]?.view }
     set {
       if let newValue {
+        newValue.scroll.isShown = isShown(paneId)
         model(creating: paneId, from: newValue).view = newValue
       } else {
         guard models[paneId] != nil else { return }
@@ -134,3 +157,6 @@ public final class AgentPaneStore {
     models.removeAll()
   }
 }
+
+/// One view of a conversation, which the store counts as showing the pane while it is on screen.
+final class AgentPaneViewer {}

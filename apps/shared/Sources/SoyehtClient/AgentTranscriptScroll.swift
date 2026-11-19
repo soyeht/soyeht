@@ -18,7 +18,8 @@ public final class AgentTranscriptScroll: @unchecked Sendable {
 
   public private(set) var place: Place = .bottom
   /// Whether the conversation is on screen, which sets how much of it the replica holds
-  /// (`AgentTranscriptWindow`); written by `EngineClient.agentPaneShown`.
+  /// (`AgentTranscriptWindow`); the store keeps it from the views that show the pane
+  /// (`AgentPaneStore.setViewer`) and sets it on each view it makes.
   var isShown = false
   /// True from the moment a view is mounted until its restoration ends, and again once the view
   /// is gone: the next one starts restoring before its first report, which would otherwise be

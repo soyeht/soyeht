@@ -91,6 +91,20 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   #expect(passes == 21)
 }
 
+@MainActor @Test func aPaneIsShownWhileAnyViewShowsItAndAcrossAReconnect() {
+  let store = AgentPaneStore()
+  let (first, second) = (AgentPaneViewer(), AgentPaneViewer())
+  store["p"] = AgentPaneView()
+  #expect(store.setViewer(first, "p", shown: true))
+  #expect(!store.setViewer(second, "p", shown: true), "a second view changes nothing")
+  #expect(!store.setViewer(first, "p", shown: false) && store["p"]?.scroll.isShown == true)
+  // A reconnect drops the panes while the mounted view never reports again.
+  store.removeAll()
+  store["p"] = AgentPaneView()
+  #expect(store["p"]?.scroll.isShown == true)
+  #expect(store.setViewer(second, "p", shown: false) && store["p"]?.scroll.isShown == false)
+}
+
 @MainActor @Test func aChunkForAHiddenPaneRunsNoBodyOfTheWindowChrome() {
   let client = twoPanes()
   client.upsertWorkspace(Workspace(workspaceId: "w", name: "w", path: "/tmp", layout: .null))

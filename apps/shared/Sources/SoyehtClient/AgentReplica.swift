@@ -214,19 +214,20 @@ extension EngineClient {
     try await loadAgentPane(paneId, replacing: true)
   }
 
-  /// The conversation of `paneId` is on screen or no longer is. A pane that is not shown keeps the
-  /// small window, and what it holds beyond it goes at once. One that is shown again with less
-  /// than a page, and more at the engine, reads the newest page.
-  func agentPaneShown(_ paneId: String, _ shown: Bool) {
-    guard var view = agentPanes[paneId], view.scroll.isShown != shown else { return }
-    view.scroll.isShown = shown
-    let held = view.messages.count
-    view.trimToWindow(force: true)
-    if view.messages.count != held { agentPanes[paneId] = view }
-    if shown, view.messages.count < Int(ClientPolicy.pageSizeTranscript), view.hasOlderMessages,
-      agentTranscriptLoadsInFlight[paneId] == nil
-    {
-      refreshAgent(paneId)
+  /// A view of the conversation of `paneId` is on screen or no longer is. A pane that no view
+  /// shows keeps the small window, and what it holds beyond it goes at once. One that is shown
+  /// again with less than a page, and more at the engine, reads the newest page.
+  func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
+    guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
+    guard let view = agentPanes[paneId] else { return }
+    if shown {
+      if view.messages.count < Int(ClientPolicy.pageSizeTranscript), view.hasOlderMessages,
+        agentTranscriptLoadsInFlight[paneId] == nil
+      {
+        refreshAgent(paneId)
+      }
+    } else if view.messages.count > ClientPolicy.capsOffscreenMessages {
+      agentPanes.update(paneId) { $0.trimToWindow(force: true) }
     }
   }
 
@@ -335,7 +336,7 @@ extension EngineClient {
     case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
       // A pane that is not shown is read again when it is shown.
-      if agentPanes[event.paneId]?.scroll.isShown == true {
+      if agentPanes.isShown(event.paneId) {
         refreshAgent(event.paneId, replacing: false)
       }
     case .paneSessionLost:
