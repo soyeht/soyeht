@@ -39,8 +39,10 @@ every stand-in (the full step may be in the area that the stand-in's area is par
 tests that read a shared vector file are the exception to the rule above: the Swift ones, the
 `protocol-vectors` program and the integration tests of `soyeht-protocol` run in the fast tier
 (`swift:test-shared-changed`, `engine:test-fast`), so a change to a vector file or to the shared
-package cannot break the Swift or the protocol side after the merge. The ratchet counts the steps that run in both tiers per area, so moving one
-out of the fast tier needs a `Verification change:` line, as removing it does.
+package cannot break the Swift or the protocol side after the merge. The ratchet watches the steps
+by id, so moving one out of the fast tier needs a
+`Verification change: removes step <id> because <reason>` line, as removing it does (ADR 0027,
+amendment).
 
 **The areas come from the paths.** `scripts/gate_plan.py` maps the files that differ from the
 merge-base of `origin/main` (or `--base`) to areas, and `check_all.sh` prints the plan at the

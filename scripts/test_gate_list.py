@@ -14,6 +14,7 @@ from pathlib import Path
 import e2e_swift_client
 import gate_plan
 import gate_vectors
+import hardening_gate
 import post_merge_gate
 import post_merge_hosts
 
@@ -93,7 +94,6 @@ def gate_list_problems(name: str, text: str) -> list[str]:
     return problems
 
 
-STEP = re.compile(r"^\s*step\s+(\S+)\s+(\S+)\s+(\S+)", re.MULTILINE)
 # A fast step that stands in for a full one is named `<full id>-changed`, `-fast` or `-build`.
 STAND_IN = re.compile(r"^(?P<full>.+)-(?:changed|fast|build)$")
 # An area that runs the part of another area's full step which reads the shared vector files.
@@ -159,8 +159,8 @@ def engine_cargo_tests() -> list[str]:
 
 
 def gate_steps() -> list[tuple[str, str, str]]:
-    """(area, tiers, id) of every `step` line of check_all.sh."""
-    return STEP.findall((ROOT / "scripts/check_all.sh").read_text())
+    """(area, tiers, id) of every `step` line of check_all.sh, by the parser the ratchet uses."""
+    return [step[:3] for step in hardening_gate.gate_steps((ROOT / "scripts/check_all.sh").read_text())]
 
 
 STEP_COMMAND = re.compile(r"^\s*step\s+\w+\s+\w+\s+\S+\s+(.*)$", re.MULTILINE)

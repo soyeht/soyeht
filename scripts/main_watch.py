@@ -63,6 +63,9 @@ import post_merge
 import post_merge_editor
 import post_merge_records
 from gate_base import main_checkout, main_health_dir
+from growth_gate import ALLOWANCE_LABEL, LIMIT, tree_test_lines
+from hardening_gate import CommitTree, metrics
+from verification_gate import revert_lines
 
 STATUS_FILE = "watch.json"
 LOCK_FILE = "main_watch.lock"
@@ -110,7 +113,7 @@ def revert_reason(record: dict, culprit: dict) -> str:
     )
 
 
-def revert_body(record: dict, culprit: dict) -> str:
+def revert_body(record: dict, culprit: dict, waiver_lines: list[str] = ()) -> str:
     """No text of the gate log: it is local output that nothing has scanned, and this body is public.
     The step, the commits and the name of the log are enough to find it on the machine that ran it."""
     log = Path(record.get("log", "")).name or "unknown"
@@ -123,6 +126,7 @@ def revert_body(record: dict, culprit: dict) -> str:
         + f"Log: `{log}` in `.cache/main-health` of the machine that ran the gate.\n\n"
         "The author re-lands a fixed change. This revert skips the fast gate: it restores a state "
         "that was green.\n"
+        + "".join(f"\n{line}" for line in waiver_lines)
     )
 
 
@@ -158,8 +162,19 @@ def run_command(arguments: list[str], cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def prepare_revert(root: Path, tree: Path, branch: str, culprit: dict, record: dict) -> None:
-    """Commit the revert on a new branch from origin/main in `tree`."""
+def waiver_lines(root: Path, base: str, head: str, culprit: dict) -> list[str]:
+    """The lines a pull request body needs for the gate that runs after its merge: the revert
+    restores what the culprit deleted, which can be more test code than the limit allows or a gate
+    step, an acceptance or an ignored test that the culprit removed or added."""
+    reason = f"this reverts {culprit['sha'][:12]} and restores the state before it"
+    before, after = CommitTree(base, root), CommitTree(head, root)
+    net = sum(tree_test_lines(after).values()) - sum(tree_test_lines(before).values())
+    growth = [f"{ALLOWANCE_LABEL}: {net} lines because {reason}"] if net > LIMIT else []
+    return growth + revert_lines(metrics(before), metrics(after), reason)
+
+
+def prepare_revert(root: Path, tree: Path, branch: str, culprit: dict, record: dict) -> list[str]:
+    """Commit the revert on a new branch from origin/main in `tree`; the waiver lines it needs."""
     gate_worktree.git(root, "worktree", "add", "-B", branch, str(tree), "origin/main")
     parents = gate_worktree.git(root, "rev-list", "--parents", "-n", "1", culprit["sha"]).split()
     options = ["-m", "1"] if len(parents) > 2 else []
@@ -170,6 +185,12 @@ def prepare_revert(root: Path, tree: Path, branch: str, culprit: dict, record: d
         raise RuntimeError("the revert does not apply cleanly to origin/main") from None
     message = f"{revert_title(culprit['subject'])}\n\n{revert_reason(record, culprit)}"
     run_command(["git", *identity(root), "commit", "--quiet", "-m", message], tree)
+    lines = waiver_lines(root, gate_worktree.git(tree, "rev-parse", "origin/main"),
+                         gate_worktree.git(tree, "rev-parse", "HEAD"), culprit)
+    if lines:
+        message = message + "".join(f"\n\n{line}" for line in lines)
+        run_command(["git", *identity(root), "commit", "--quiet", "--amend", "-m", message], tree)
+    return lines
 
 
 def land_revert(root: Path, branch: str, title: str, body: str, gh: list[str]) -> str:
@@ -201,11 +222,11 @@ def revert_culprit(root: Path, record: dict, culprit: dict, apply: bool, gh: lis
         return Revert(culprit["sha"], branch, title, "planned", reason="dry run; pass --apply")
     tree = scratch / "revert-tree"
     try:
-        prepare_revert(root, tree, branch, culprit, record)
-        url = land_revert(root, branch, title, revert_body(record, culprit), gh)
+        lines = prepare_revert(root, tree, branch, culprit, record)
+        url = land_revert(root, branch, title, revert_body(record, culprit, lines), gh)
     except MergeFailed as error:
         return Revert(culprit["sha"], branch, title, "open", pr=error.url, reason=str(error))
-    except RuntimeError as error:
+    except (RuntimeError, subprocess.CalledProcessError, OSError) as error:
         return Revert(culprit["sha"], branch, title, "failed", reason=str(error))
     finally:
         gate_worktree.git(root, "worktree", "remove", "--force", str(tree), check=False)

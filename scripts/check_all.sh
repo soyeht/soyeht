@@ -288,6 +288,7 @@ step always both forbidden-terms:scan uv run python scripts/forbidden_terms.py "
 unset FORBIDDEN_TERMS
 
 step always both hardening:unit uv run python -m unittest discover -s scripts -p 'test_hardening_gate.py'
+step always both growth-gate:unit uv run python -m unittest discover -s scripts -p 'test_growth_gate.py'
 step gate_scripts both gate-list:unit uv run python -m unittest discover -s scripts -p 'test_gate_list.py'
 step always both gate-plan:unit uv run python -m unittest discover -s scripts -p 'test_gate_plan.py'
 # Reads the sources of every client for the shared vector files, so any change can break it.
@@ -312,6 +313,7 @@ step always both hardening:no-sql-outside-store uv run python scripts/hardening_
 step always both hardening:no-panic-in-production uv run python scripts/hardening_gate.py check-no-panic-in-production "$@"
 step always both hardening:verification-not-weakened uv run python scripts/hardening_gate.py check-verification-not-weakened "$@"
 step always both hardening:function-length uv run python scripts/hardening_gate.py check-function-length "$@"
+step always both hardening:test-growth uv run python scripts/growth_gate.py "$@"
 step gate_scripts both quality:unit uv run python -m unittest discover -s scripts -p 'test_check_quality.py'
 step always both pane-interior:unit uv run python -m unittest discover -s scripts -p 'test_check_pane_interior.py'
 step always both swallowed-errors:unit uv run python -m unittest discover -s scripts -p 'test_check_swallowed_errors.py'
