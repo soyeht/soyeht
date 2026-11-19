@@ -4,6 +4,14 @@ use crate::package::{ErrorKind, Package, PartKind, png_size};
 use crate::params::{Params, Shape, weights_from_params};
 
 #[test]
+fn a_field_this_version_does_not_know_is_ignored_inside_the_package_too() {
+    // The vector case patches top-level members only; a part of the mouth is nested.
+    let mut doc = package_json();
+    doc["mouth"]["parts"][0]["newField"] = 3.into();
+    assert!(Package::load(&doc.to_string(), &assets()).is_ok());
+}
+
+#[test]
 fn acting_constants_a_package_leaves_out_keep_their_default() {
     let mut doc = package_json();
     doc["acting"] = serde_json::json!({ "blink": { "doubleChance": 0.5 } });
