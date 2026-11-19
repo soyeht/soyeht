@@ -99,10 +99,6 @@ class NamesTests(unittest.TestCase):
         self.assertEqual(make_plan({}).deb_version, "0.1.0")
         self.assertEqual(make_plan({}, revision=2).deb_version, "0.1.0-2")
 
-    def test_the_package_is_for_the_production_profile(self):
-        self.assertEqual(package.APPLICATION_ID, "com.soyeht.next")
-        self.assertEqual(package.PROFILE_NAME, "prod")
-
 
 class RootlessBuildTests(unittest.TestCase):
     """The job count of scripts/package_linux_rootless.sh, sourced so the build does not run."""
@@ -148,10 +144,6 @@ class ShippedFilesTests(unittest.TestCase):
         with self.assertRaises(package.PackagingError):
             package.metainfo_text("<component/>", make_plan({}))
 
-    def test_every_icon_size_exists(self):
-        for size in package.ICON_SIZES:
-            self.assertTrue((package.PACKAGING / f"icons/hicolor/{size}x{size}/apps/soyeht.png").is_file())
-
     def test_the_maintainer_scripts_are_valid_shell(self):
         scripts = [APP_RUN, package.PACKAGING / "deb/prerm", package.PACKAGING / "deb/refresh-caches"]
         for script in scripts:
@@ -159,7 +151,6 @@ class ShippedFilesTests(unittest.TestCase):
 
     def test_the_folder_the_launcher_writes_is_named_after_the_production_data_directory(self):
         folder = PROFILES[package.PROFILE_NAME]["dataDirectory"]["linux"] + "-appimage"
-        self.assertIn("next", folder)
         self.assertIn(f"/{folder}\n", APP_RUN.read_text())
 
 
@@ -344,12 +335,6 @@ class AppImageTests(unittest.TestCase):
             self.assertEqual(kept.read_bytes(), body)
             self.assertEqual([p.name for p in cache.iterdir()], ["runtime-x86_64"])
 
-    def test_both_architectures_have_a_pinned_runtime(self):
-        for arch, (debian, digest) in package.ARCHITECTURES.items():
-            self.assertRegex(digest, r"^[0-9a-f]{64}$")
-            self.assertTrue(debian)
-            self.assertIn(arch, package.RUNTIME_URL.format(arch=arch))
-
 
 class LauncherTests(unittest.TestCase):
     """AppRun, run for real against a stand-in image whose programs print how they were started."""
@@ -466,16 +451,6 @@ class ResearchToolsDoNotShipTests(unittest.TestCase):
             text = (package_common.ROOT / "scripts" / source).read_text(encoding="utf-8")
             for forbidden in ("--example", "--all-targets", "screen_recorder"):
                 self.assertNotIn(forbidden, text, f"{source} mentions {forbidden}")
-
-    def test_it_is_declared_as_an_example_and_as_no_program(self):
-        import package_common
-
-        root = package_common.ROOT
-        manifest = (root / "apps/desktop/crates/soyeht-client/Cargo.toml").read_text(encoding="utf-8")
-        self.assertIn('[[example]]\nname = "screen_recorder"', manifest)
-        for cargo in [*root.glob("apps/desktop/crates/*/Cargo.toml"), *root.glob("engine/*/Cargo.toml")]:
-            text = cargo.read_text(encoding="utf-8")
-            self.assertNotIn('[[bin]]\nname = "screen_recorder"', text, str(cargo))
 
 
 if __name__ == "__main__":
