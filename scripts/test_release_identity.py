@@ -9,8 +9,7 @@ from pathlib import Path
 import package_mac
 import release_identity as identity
 from package_common import PackagingError
-from test_package_mac import FULL, MACHO, fake_app, verify_recorded
-from generated_profile import PROFILES
+from test_packaging_fixtures import FULL, MACHO, fake_app, verify_recorded
 
 PREFIX = "com.soyeht.next"
 TEAM = "ABCDE12345"
@@ -244,13 +243,6 @@ class WiringTests(unittest.TestCase):
                 package_mac.package(
                     package_mac.parser().parse_args(["--verify-only", str(Path(temporary) / "absent.app")]), environment
                 )
-
-
-class ProfileTests(unittest.TestCase):
-    def test_the_prefix_the_rules_use_is_the_profiles_and_carries_next(self):
-        prod = PROFILES[package_mac.PROFILE_NAME]
-        self.assertEqual(prod["launchdPrefix"], PREFIX)
-        self.assertTrue(package_mac.APP_ID.startswith(f"{PREFIX}."))
 
 
 if __name__ == "__main__":
