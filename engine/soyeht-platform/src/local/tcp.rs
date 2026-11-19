@@ -282,6 +282,30 @@ mod tests {
         assert!(crate::net::is_accept_give_up(&ended));
     }
 
+    /// A listener that is out of descriptors waits and asks again, however long that lasts: it
+    /// does not give up, which would end the supervisor.
+    #[test]
+    fn an_accept_that_has_no_descriptor_is_waited_out_and_never_ends_the_listener() {
+        let began = std::time::Instant::now();
+        let incoming = std::iter::from_fn(move || {
+            if began.elapsed() >= Duration::from_millis(500) {
+                return None;
+            }
+            #[cfg(unix)]
+            let code = libc::EMFILE;
+            // `WSAEMFILE`.
+            #[cfg(windows)]
+            let code = 10024;
+            Some(Err(io::Error::from_raw_os_error(code)))
+        });
+        // The limit of a run of connection errors is far under the 500 ms the errors go on.
+        let heard = heard_from_serve(incoming, Duration::from_millis(100), Duration::from_secs(3));
+        assert!(
+            matches!(heard, Err(std::sync::mpsc::TryRecvError::Disconnected)),
+            "the listener gave up: {heard:?}"
+        );
+    }
+
     /// Errors for 300 ms, one connection, errors for 400 ms more. The limit is 500 ms: the two
     /// runs are each under it and together over it, so only a connection that ends the run keeps
     /// the listener.

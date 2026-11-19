@@ -23,7 +23,7 @@ Each layer depends only on the layers listed above it.
    Soyeht dependencies and no IO or async runtime.
    `engine/soyeht-platform` sits at the same level: the operating-system seams
    (the local endpoint, owner-only files, process launch and termination, the user's
-   identity, the native data directory, the structured log line). It has no Soyeht dependencies, and these system
+   identity, the native data directory, the structured log line, the limit of open files). It has no Soyeht dependencies, and these system
    calls live there (ADR 0086). It also holds `hold_cost`, an accounting facility like `log`
    and not an operating-system seam: the time a hold of the engine's Core lock spent on
    statements, segment files and the file port (ADR 0147). A crate above it may keep a `cfg` module for a concern

@@ -114,9 +114,10 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
     case `ink_limit_exceeded`
     case `ink_recognition_failed`
     case `pairing_code_invalid`
+    case `too_many_open_files`
     /// A value a later engine sends: shown as it comes, never an error.
     case unknown(String)
-    public static let allCases: [ErrorKind] = [.`not_found`, .`invalid_params`, .`unauthorized`, .`forbidden_role`, .`pane_busy`, .`task_has_owner`, .`transition_refused`, .`stale_version`, .`idempotency_conflict`, .`harness_unavailable`, .`needs_login`, .`cursor_too_old`, .`resync_required`, .`slow_consumer`, .`protocol_version_unsupported`, .`disk_full`, .`ptyd_unavailable`, .`stale_engine_generation`, .`internal_error`, .`snapshot_too_large`, .`engine_identity_changed`, .`stale_attempt`, .`dependency_cycle`, .`dependency_open`, .`rate_limited`, .`stale_reference`, .`human_took_over`, .`web_host_unavailable`, .`navigation_refused`, .`writing_kind_refused`, .`writing_limit_exceeded`, .`writing_sidecar_conflict`, .`writing_line_not_found`, .`writing_scene_not_found`, .`writing_section_refused`, .`harness_switch_failed`, .`attachment_limit_exceeded`, .`platform_unsupported`, .`git_unavailable`, .`file_not_text`, .`file_too_large`, .`adapter_not_acknowledged`, .`workspace_folder_missing`, .`push_unavailable`, .`ink_unsupported`, .`ink_language_unavailable`, .`ink_limit_exceeded`, .`ink_recognition_failed`, .`pairing_code_invalid`]
+    public static let allCases: [ErrorKind] = [.`not_found`, .`invalid_params`, .`unauthorized`, .`forbidden_role`, .`pane_busy`, .`task_has_owner`, .`transition_refused`, .`stale_version`, .`idempotency_conflict`, .`harness_unavailable`, .`needs_login`, .`cursor_too_old`, .`resync_required`, .`slow_consumer`, .`protocol_version_unsupported`, .`disk_full`, .`ptyd_unavailable`, .`stale_engine_generation`, .`internal_error`, .`snapshot_too_large`, .`engine_identity_changed`, .`stale_attempt`, .`dependency_cycle`, .`dependency_open`, .`rate_limited`, .`stale_reference`, .`human_took_over`, .`web_host_unavailable`, .`navigation_refused`, .`writing_kind_refused`, .`writing_limit_exceeded`, .`writing_sidecar_conflict`, .`writing_line_not_found`, .`writing_scene_not_found`, .`writing_section_refused`, .`harness_switch_failed`, .`attachment_limit_exceeded`, .`platform_unsupported`, .`git_unavailable`, .`file_not_text`, .`file_too_large`, .`adapter_not_acknowledged`, .`workspace_folder_missing`, .`push_unavailable`, .`ink_unsupported`, .`ink_language_unavailable`, .`ink_limit_exceeded`, .`ink_recognition_failed`, .`pairing_code_invalid`, .`too_many_open_files`]
     /// Never fails: a value this build does not know is `unknown`.
     public init?(rawValue: String) {
         switch rawValue {
@@ -169,6 +170,7 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
         case "ink_limit_exceeded": self = .`ink_limit_exceeded`
         case "ink_recognition_failed": self = .`ink_recognition_failed`
         case "pairing_code_invalid": self = .`pairing_code_invalid`
+        case "too_many_open_files": self = .`too_many_open_files`
         default: self = .unknown(rawValue)
         }
     }
@@ -223,6 +225,7 @@ public enum ErrorKind: RawRepresentable, Codable, Hashable, Sendable, CaseIterab
         case .`ink_limit_exceeded`: "ink_limit_exceeded"
         case .`ink_recognition_failed`: "ink_recognition_failed"
         case .`pairing_code_invalid`: "pairing_code_invalid"
+        case .`too_many_open_files`: "too_many_open_files"
         case .unknown(let value): value
         }
     }

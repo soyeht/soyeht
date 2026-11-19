@@ -6,6 +6,16 @@ use std::{collections::VecDeque, path::Path, sync::Arc};
 /// A record kept in memory: the output bytes are shared with the supervisor, so a clone is cheap.
 type LiveRecord = Record<Arc<Vec<u8>>>;
 
+/// The records a screen keeps in memory at most, so a terminal of tiny records holds bounded memory.
+const LIVE_RECORDS: usize = 1024;
+
+/// The most a record in memory of a pane that does not record grows to by taking in the short
+/// records that follow it. Two neighbours that are not merged hold more than this together, so
+/// `LIVE_RECORDS` records hold more than `TAIL_BYTES` whatever size the pty hands its output over
+/// in, and the count never cuts a tail short. It is far below `TERMINAL_PAYLOAD_BYTES`, so a
+/// record is still one frame at most.
+const MERGED_RECORD_BYTES: usize = limits::TAIL_BYTES / (LIVE_RECORDS / 2);
+
 pub struct Screen {
     /// The pane's output on disk. `None` once the pane is closed (see [`Screen::release`]).
     disk: Option<Log>,
@@ -168,16 +178,38 @@ impl Screen {
             )?;
         }
         self.next = record.end();
+        self.keep_live(record);
+        Ok(())
+    }
+
+    /// Keeps `record` in memory, after what is there, and lets go of the oldest output past the
+    /// bounds. Where nothing is recorded, memory is the whole tail, and a short data record joins
+    /// the one before it: a terminal that reads in small pieces would otherwise run out of records
+    /// long before it holds a tail. Where the disk records the output, the disk serves the tail and
+    /// every record stays as it came, which is the unit an agent's output is decoded in.
+    fn keep_live(&mut self, record: LiveRecord) {
+        let merged = match (&record, self.live.back_mut()) {
+            (LiveRecord::Data { bytes, .. }, Some(LiveRecord::Data { bytes: last, .. }))
+                if !self.recording && last.len() + bytes.len() <= MERGED_RECORD_BYTES =>
+            {
+                let last = Arc::make_mut(last);
+                last.reserve_exact(bytes.len());
+                last.extend_from_slice(bytes);
+                true
+            }
+            _ => false,
+        };
         if let LiveRecord::Data { bytes, .. } = &record {
             self.live_bytes += bytes.len();
         }
-        self.live.push_back(record);
-        while self.live_bytes > limits::TAIL_BYTES || self.live.len() > 1024 {
+        if !merged {
+            self.live.push_back(record);
+        }
+        while self.live_bytes > limits::TAIL_BYTES || self.live.len() > LIVE_RECORDS {
             if let Some(LiveRecord::Data { bytes, .. }) = self.live.pop_front() {
                 self.live_bytes -= bytes.len();
             }
         }
-        Ok(())
     }
 
     /// Records the stretch the disk missed (while recording was off) before a record at `to`.
@@ -221,12 +253,7 @@ impl Screen {
             self.disk_append(Record::Gap { from, to }, flush)?;
         }
         self.next = record.end();
-        self.live.push_back(record);
-        while self.live.len() > 1024 {
-            if let Some(LiveRecord::Data { bytes, .. }) = self.live.pop_front() {
-                self.live_bytes -= bytes.len();
-            }
-        }
+        self.keep_live(record);
         Ok(())
     }
 
@@ -250,10 +277,15 @@ impl Screen {
             .max(self.first_offset());
         let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
         if desired < live_first {
-            self.disk
-                .as_ref()
-                .map_or(self.next, |disk| disk.align_forward(desired))
-                .min(live_first)
+            // The disk serves what memory no longer holds only when it reaches memory: with a
+            // hole between them (recording was off), the tail starts at memory, where the
+            // output is whole, and no gap is announced for bytes that are still held.
+            match self.disk.as_ref() {
+                Some(disk) if disk.next_offset() >= live_first => {
+                    disk.align_forward(desired).min(live_first)
+                }
+                _ => live_first,
+            }
         } else {
             self.live
                 .iter()
@@ -457,6 +489,188 @@ mod tests {
                 })
                 .collect::<Vec<_>>(),
             bytes
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// The bytes of `[from, to)` the screen replays, which must all be data.
+    fn replayed(screen: &Screen, from: u64, to: u64) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        let mut next = from;
+        while next < to {
+            let batch = screen
+                .read(next, to, limits::TERMINAL_PAYLOAD_BYTES)
+                .unwrap();
+            assert!(!batch.is_empty(), "no progress at {next}");
+            for record in batch {
+                let Record::Data {
+                    offset,
+                    bytes: data,
+                } = record
+                else {
+                    panic!("a gap at {next} for output the screen holds");
+                };
+                assert_eq!(offset, next);
+                next += data.len() as u64;
+                bytes.extend(data);
+            }
+        }
+        bytes
+    }
+
+    /// The pattern the short writes carry, so a replay is checked byte for byte.
+    fn pattern(offset: u64) -> u8 {
+        (offset / 7 % 251) as u8
+    }
+
+    const SHORT_WRITE: usize = 128;
+
+    fn feed_short_writes(screen: &mut Screen, from: u64, to: u64) {
+        let mut offset = from;
+        while offset < to {
+            let end = (offset + SHORT_WRITE as u64).min(to);
+            screen
+                .append_deferred(Record::Data {
+                    offset,
+                    bytes: (offset..end).map(pattern).collect(),
+                })
+                .unwrap();
+            offset = end;
+        }
+    }
+
+    /// The tail the screen replays for output that ended at `many`: it starts within the contract's
+    /// window (section 6 of contract 08), and is contiguous, with no gap, and byte for byte what was
+    /// written. Returns where it starts.
+    fn assert_whole_tail(screen: &Screen, many: u64) -> u64 {
+        let start = screen.tail_start();
+        assert!(
+            many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64
+                && many - start <= limits::TAIL_BYTES as u64,
+            "the tail starts at {start} of {many}"
+        );
+        let expected: Vec<u8> = (start..many).map(pattern).collect();
+        assert_eq!(replayed(screen, start, many), expected);
+        start
+    }
+
+    /// A terminal that does not record to the disk keeps a tail in memory only. The pty hands its
+    /// output over in short reads, and the tail must still be what the contract promises: the last
+    /// `TAIL_BYTES`, to the record boundary after them (the window of contract 08 section 6), as one
+    /// contiguous replay with no gap, while memory stays bounded.
+    #[test]
+    fn short_writes_without_recording_replay_the_tail_the_contract_promises() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, false).unwrap();
+        let few = 64 * 1024;
+        feed_short_writes(&mut screen, 0, few);
+        // Less than a tail was written: all of it replays.
+        assert_eq!(screen.tail_start(), 0);
+        let expected: Vec<u8> = (0..few).map(pattern).collect();
+        assert_eq!(replayed(&screen, 0, few), expected);
+
+        let many = (limits::TAIL_BYTES * 3) as u64;
+        feed_short_writes(&mut screen, few, many);
+        assert_whole_tail(&screen, many);
+        // Memory stays bounded by the tail, in bytes and in records.
+        assert!(screen.held_bytes() <= limits::TAIL_BYTES);
+        assert!(screen.live.len() <= LIVE_RECORDS);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// A recorded terminal keeps each record it is given, on the disk and in memory, and its replay
+    /// reads the tail from the disk past what memory holds.
+    #[test]
+    fn short_writes_with_recording_keep_their_records() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        let many = (limits::TAIL_BYTES * 3) as u64;
+        feed_short_writes(&mut screen, 0, many);
+        assert_whole_tail(&screen, many);
+        // Memory keeps the records as they came too: they are the unit an agent's output decodes in.
+        assert!(
+            screen
+                .live
+                .iter()
+                .all(|record| record.end() - record.from() == SHORT_WRITE as u64)
+        );
+        drop(screen);
+
+        let screen = Screen::open(&path, true).unwrap();
+        let records = screen.read(0, many, SHORT_WRITE * 4).unwrap();
+        assert!(
+            records
+                .iter()
+                .all(|record| record.end() - record.from() == SHORT_WRITE as u64)
+        );
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// A hole the disk does not fill (recording was switched off) is not part of the tail: the tail
+    /// starts where memory holds the output whole, and announces no gap for it.
+    #[test]
+    fn a_tail_never_starts_before_a_hole_the_disk_does_not_fill() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        feed_short_writes(&mut screen, 0, 1024);
+        screen.recording = false;
+        let many = (limits::TAIL_BYTES * 3) as u64;
+        feed_short_writes(&mut screen, 1024, many);
+        assert!(assert_whole_tail(&screen, many) > 1024);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// Recording switched off and on again, and output a capture shares with the screen: the bytes
+    /// a replay reads are the bytes that were written, and what the capture holds does not change.
+    #[test]
+    fn switching_recording_and_sharing_bytes_do_not_change_what_a_replay_reads() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        let third = limits::TAIL_BYTES as u64;
+        feed_short_writes(&mut screen, 0, third);
+        screen.recording = false;
+        feed_short_writes(&mut screen, third, 2 * third);
+        let shared = Arc::new(
+            (2 * third..2 * third + 100)
+                .map(pattern)
+                .collect::<Vec<u8>>(),
+        );
+        screen
+            .append_shared_data_deferred(2 * third, Arc::clone(&shared))
+            .unwrap();
+        feed_short_writes(&mut screen, 2 * third + 100, 2 * third + 200);
+        screen.recording = true;
+        let many = 3 * third;
+        feed_short_writes(&mut screen, 2 * third + 200, many);
+        assert_eq!(shared.len(), 100, "joining records changed a shared one");
+        assert_whole_tail(&screen, many);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// A record that is a gap is never joined to the data around it.
+    #[test]
+    fn a_gap_between_short_records_stays_a_gap() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, false).unwrap();
+        feed_short_writes(&mut screen, 0, 300);
+        screen
+            .append_deferred(Record::Gap { from: 300, to: 500 })
+            .unwrap();
+        feed_short_writes(&mut screen, 500, 800);
+        let records = screen.read(0, 800, limits::TERMINAL_PAYLOAD_BYTES).unwrap();
+        let shape: Vec<(bool, u64, u64)> = records
+            .iter()
+            .map(|record| {
+                (
+                    matches!(record, Record::Gap { .. }),
+                    record.from(),
+                    record.end(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [(false, 0, 300), (true, 300, 500), (false, 500, 800)]
         );
         fs::remove_dir_all(path).unwrap();
     }

@@ -18,7 +18,7 @@ use crate::{
     tick_due::Next,
 };
 use soyeht_platform::log::Line;
-use soyeht_protocol::PaneState;
+use soyeht_protocol::{ErrorKind, PaneState};
 use soyeht_ptyd::wire::{Request, Response};
 use std::collections::BTreeMap;
 
@@ -31,6 +31,9 @@ const MAX_ATTEMPTS: u32 = 5;
 const SPAWN_FAILED_EVENT: &str = "engine.pane_spawn_failed";
 /// Why a pane that could not be started says it stopped; it names no path or command.
 const NOT_STARTED: &str = "The pane's process could not be started";
+/// The same, when the supervisor had no descriptor left to start it with: the person is told the
+/// cause, which closing a pane may cure.
+const NOT_STARTED_OPEN_FILES: &str = "The pane's process could not be started: Soyeht reached the system's limit of open files. Close a pane and open this one again.";
 
 struct Pending {
     streak: Streak,
@@ -124,9 +127,10 @@ impl Core {
             .get(id)
             .is_some_and(|pane| pane.stored.instance_id.is_none());
         let retryable = waiting && self.ptyd.is_some() && !errors::supervisor_link_lost(&error);
+        let out_of_files = errors::kind(&error) == ErrorKind::TooManyOpenFiles;
         self.settle_supervisor_call(SPAWN_FAILED_EVENT, Err(error));
         if retryable && self.ptyd.is_some() {
-            self.schedule_spawn_retry(id);
+            self.schedule_spawn_retry(id, out_of_files);
         }
     }
 
@@ -141,8 +145,8 @@ impl Core {
     }
 
     /// Counts one more failed start of `id`, and either schedules the next try or stops the
-    /// pane.
-    pub(crate) fn schedule_spawn_retry(&mut self, id: &str) {
+    /// pane, saying why when the supervisor had no descriptor left (`out_of_files`).
+    pub(crate) fn schedule_spawn_retry(&mut self, id: &str, out_of_files: bool) {
         let now = self.now_ms();
         let pending = self
             .supervisor_retry
@@ -154,8 +158,15 @@ impl Core {
             return;
         }
         self.supervisor_retry.spawn_retries.0.remove(id);
-        Line::new("engine.pane_not_started").emit();
-        let stopped = self.stop_pane(id, NOT_STARTED);
+        let (reason, cause) = if out_of_files {
+            (NOT_STARTED_OPEN_FILES, "out_of_descriptors")
+        } else {
+            (NOT_STARTED, "failed")
+        };
+        Line::new("engine.pane_not_started")
+            .field("cause", cause)
+            .emit();
+        let stopped = self.stop_pane(id, reason);
         self.settle_supervisor_call("engine.pane_stop_failed", stopped);
     }
 
@@ -456,10 +467,11 @@ mod tests {
         assert_eq!(events_named(&mut core, event::PTYD_RECONNECTED), 0);
     }
 
-    #[test]
-    fn a_spawn_that_keeps_failing_is_retried_a_bounded_number_of_times_and_ends_dead() {
+    /// A pane whose every start fails with `failure` is retried a bounded number of times, then
+    /// ends dead with `phrase` beside its state. The link is never dropped for it.
+    fn keeps_failing(failure: fn() -> soyeht_ptyd::Result<Response>, phrase: &str) {
         let (mut core, _directory, id, calls, clock) =
-            failed_first_start((0..MAX_ATTEMPTS).map(|_| failed_start()).collect());
+            failed_first_start((0..MAX_ATTEMPTS).map(|_| failure()).collect());
         for _ in 1..MAX_ATTEMPTS {
             assert_ne!(core.panes[&id].stored.pane.state, PaneState::Dead);
             clock.0.fetch_add(10_000, Ordering::SeqCst);
@@ -467,7 +479,7 @@ mod tests {
         }
         let pane = &core.panes[&id].stored.pane;
         assert_eq!(pane.state, PaneState::Dead);
-        assert_eq!(pane.phrase, NOT_STARTED);
+        assert_eq!(pane.phrase, phrase);
         assert_eq!(core.supervisor_retry.spawn_retries.attempts(&id), 0);
         let asked = calls.load(Ordering::SeqCst);
         assert_eq!(asked, MAX_ATTEMPTS as usize);
@@ -478,6 +490,28 @@ mod tests {
         assert_eq!(calls.load(Ordering::SeqCst), asked);
         assert!(core.ptyd.is_some());
         assert_eq!(events_named(&mut core, event::PTYD_LOST), 0);
+    }
+
+    #[test]
+    fn a_spawn_that_keeps_failing_is_retried_a_bounded_number_of_times_and_ends_dead() {
+        keeps_failing(failed_start, NOT_STARTED);
+    }
+
+    #[test]
+    fn a_pane_the_supervisor_had_no_descriptor_for_ends_dead_and_says_so() {
+        keeps_failing(
+            || {
+                Err(PtydError::Remote {
+                    kind: wire_kind::TOO_MANY_OPEN_FILES.into(),
+                    message: "too many open files".into(),
+                })
+            },
+            NOT_STARTED_OPEN_FILES,
+        );
+        assert_eq!(
+            errors::kind(&remote(wire_kind::TOO_MANY_OPEN_FILES)),
+            ErrorKind::TooManyOpenFiles
+        );
     }
 
     #[test]
