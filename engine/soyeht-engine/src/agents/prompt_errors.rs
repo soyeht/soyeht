@@ -145,7 +145,7 @@ fn assistant_already_reported_error(
 ) -> Result<bool> {
     for (key, seq) in &state.open_messages {
         if (key == "message" || key.starts_with("message:"))
-            && let Some(message) = transcript::message(store, pane, *seq)?
+            && let Some(message) = transcript::message(store, &Default::default(), pane, *seq)?
             && message.text.trim() == error
         {
             return Ok(true);

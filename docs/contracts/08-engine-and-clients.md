@@ -536,6 +536,10 @@ sends against them (ADR 0090).
   `usage`, `terminal_output {terminalId, bytes}`, `config_option_update`,
   `subagent {subagent}`); message, thought, tool, plan and subagent updates
   carry `subagentId` when a harness subagent owns them (contract 04 §2.7)
+  The engine commits the agent records it reads together, so a `pane.update` of a kind
+  that carries the whole message so far (message, thought, tool, plan, usage, subagent) is
+  coalesced per commit: a client must not rely on seeing the intermediate states of a message,
+  only on each update holding it up to that point and the last one holding all of it.
 - `pane.turn_ended {promptId, stopReason}`, `pane.queued {n, promptIds}`
 - `pane.queue.paused {paneId, paused, reason}`,
   `pane.queue.resumed {paneId, paused}`. A steering event is introduced
