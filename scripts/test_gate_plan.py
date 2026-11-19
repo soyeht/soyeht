@@ -207,7 +207,8 @@ class AreaTests(unittest.TestCase):
     def test_a_test_only_change_of_the_gate_scripts_stays_in_the_fast_tier(self):
         for path in ("scripts/test_gate_plan.py", "scripts/test_post_merge.py", "scripts/test_main_watch.py",
                      "scripts/test_gate_list.py", "scripts/test_tcc_guard.py", "scripts/test_check_quality.py",
-                     "scripts/test_post_merge_fixtures.py", "scripts/test_post_merge_load.py"):
+                     "scripts/test_post_merge_fixtures.py", "scripts/test_post_merge_load.py",
+                     "scripts/test_packaging_fixtures.py"):
             with self.subTest(path=path):
                 result = plan(path)
                 self.assertEqual(result.upgrade, ())

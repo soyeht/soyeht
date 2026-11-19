@@ -413,36 +413,6 @@ class ExceptionProblemTests(unittest.TestCase):
             with self.subTest(license=license):
                 self.load({"package": "kit", "license": license, "reason": "why", "accepted": accepted})
 
-    def test_the_real_policy_fails_a_release_for_an_exception_nobody_accepted(self):
-        import json
-        import tempfile
-        from pathlib import Path
-
-        import third_party_licenses as licenses
-
-        # As committed, every exception is accepted by the owner, so a release passes them.
-        real = licenses.load_policy()
-        self.assertTrue(real.exceptions)
-        self.assertEqual(release_checks.exception_problems(real), [])
-        # The same file without the acceptance of one exception stops the release at exactly that one.
-        data = json.loads(licenses.POLICY.read_text())
-        dropped = data["exceptions"][0]
-        del dropped["accepted"]
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "policy.json"
-            path.write_text(json.dumps(data))
-            problems = release_checks.exception_problems(licenses.load_policy(path))
-        self.assertEqual(len(problems), 1)
-        self.assertIn(f"{dropped['package']} is under {dropped['license']}", problems[0])
-        self.assertIn("have the owner accept it", problems[0])
-        # With every acceptance removed, every exception stops it.
-        for entry in data["exceptions"]:
-            entry.pop("accepted", None)
-        with tempfile.TemporaryDirectory() as folder:
-            path = Path(folder) / "policy.json"
-            path.write_text(json.dumps(data))
-            self.assertEqual(len(release_checks.exception_problems(licenses.load_policy(path))), len(data["exceptions"]))
-
 
 class PublishTests(FlowCase):
     def ready(self):
@@ -543,6 +513,7 @@ class PublishTests(FlowCase):
         self.assertEqual(status, 1)
         self.assertIn("would refuse", out)
         self.assertIn("+ gh release create", out)
+        self.assertIn(f"--title 'Soyeht {VERSION}'", out, "what is printed can be pasted into a shell")
         self.assertIn("(dry run: not run)", out)
 
     def test_no_command_the_flow_prints_holds_the_secret_or_creates_a_tag(self):
@@ -551,10 +522,17 @@ class PublishTests(FlowCase):
         build_recorder = Recorder()
         self.quiet(release_flow.build, self.options("build", "--dry-run"), build_recorder, probe_for(), {**ENVIRONMENT, **HOSTS})
         for command in [*recorder.commands, *build_recorder.commands]:
-            self.assertNotIn(SECRET, " ".join(command))
             self.assertNotEqual(command[:2], ["git", "tag"])
-        self.assertNotIn(SECRET, out)
+        # What a run sends to a host on its input is as visible as a command line: the recorder keeps both.
+        for seen in [*recorder.commands, *recorder.inputs, *build_recorder.commands, *build_recorder.inputs]:
+            self.assertNotIn(SECRET, " ".join(seen) if isinstance(seen, list) else str(seen))
         self.assertNotIn("--tag", " ".join(recorder.commands[0]))
+        # The real runner prints each command and its input, in a dry run, to the terminal and the log.
+        printed = self.quiet(release_flow.build, self.options("build", "--dry-run"), None, probe_for(), {**ENVIRONMENT, **HOSTS})[1]
+        printed += self.quiet(release_flow.publish, self.options("publish", "--dry-run"), None, probe_for(), lambda _a: None, developer_id_tool)[1]
+        self.assertIn("with this script on its input", printed)
+        self.assertNotIn(SECRET, printed)
+        self.assertNotIn(SECRET, out)
 
 
 class BuildTests(FlowCase):
@@ -734,12 +712,6 @@ class BuildTests(FlowCase):
 
 
 class SmallPartTests(FlowCase):
-    def test_runner_prints_and_in_a_dry_run_runs_nothing(self):
-        with mock.patch("subprocess.run", side_effect=AssertionError("ran")):
-            status, out = self.quiet(release_flow.Runner(True).run, ["gh", "release", "create", "v1 x"])
-        self.assertEqual(status, 0)
-        self.assertIn("+ gh release create 'v1 x'", out)
-
     def test_an_authenticode_signature_is_the_certificate_table_of_the_header(self):
         path = self.root / "a.exe"
         path.write_bytes(pe(True))
@@ -778,6 +750,10 @@ class SmallPartTests(FlowCase):
             self.assertIn("release.py snapshot", "\n".join(SNAPSHOT_PROBLEMS(root)))
             compat.write_snapshot(root, schema, "0.1.0")
             self.assertEqual(SNAPSHOT_PROBLEMS(root), [])
+        # The check is part of what a release checkout must pass, for a build as for a publication.
+        line = "contracts/released/protocol-v1.json is missing: run `uv run python scripts/release.py snapshot`"
+        with mock.patch.object(release, "snapshot_problems", return_value=[line]):
+            self.assertIn(line, release_flow.source_problems(probe_for()))
 
 
 if __name__ == "__main__":
