@@ -78,7 +78,7 @@ struct PaneCardHeader: View {
   /// The agent asks for the person: the header's status word turns `accent`.
   private var needsYou: Bool {
     AgentHeaderStatus.needsYou(
-      state: pane.state, view: client.agentPanes[pane.paneId] ?? AgentPaneView())
+      state: pane.state, asking: client.agentPanes.isAsking(pane.paneId))
   }
 
   @ViewBuilder private var inlineActions: some View {

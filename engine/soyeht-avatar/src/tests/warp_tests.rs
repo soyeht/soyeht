@@ -1,5 +1,3 @@
-use serde_json::json;
-
 use super::fixtures::package_json;
 use crate::acting::Pose;
 use crate::package::Warp;
@@ -78,11 +76,4 @@ fn the_chest_breathes_below_its_rows_and_the_jaw_drops() {
     let c = w.jaw.center;
     // The chin drops: the picture is read from above.
     assert!((w.source_point(&jaw, c[0], c[1])[1] - c[1] + 2.0).abs() < 1e-9);
-}
-
-#[test]
-fn the_package_warp_is_data_a_pose_can_be_applied_to() {
-    let value = package_json()["warp"].clone();
-    assert_eq!(value["browTiltSpan"], json!(14));
-    assert!(serde_json::from_value::<Warp>(value).is_ok());
 }

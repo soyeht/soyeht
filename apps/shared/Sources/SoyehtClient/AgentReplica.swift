@@ -243,20 +243,20 @@ extension EngineClient {
   func applyAgentSnapshot(_ sections: [String: [JsonValue]], panes: [Pane]) throws {
     partials.flush()
     let paneIds = Set(panes.filter { $0.mode == .agent }.map(\.paneId))
-    agentPanes = agentPanes.filter { paneIds.contains($0.key) }
+    agentPanes.retainOnly(paneIds)
     agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
     agentTranscriptLoadsInFlight = agentTranscriptLoadsInFlight.filter { paneIds.contains($0.key) }
     for pane in panes where pane.mode == .agent {
-      var view = agentPanes[pane.paneId] ?? AgentPaneView()
-      view.permission = nil
-      view.elicitation = nil
-      view.queuePaused = pane.agent?.queuePaused ?? false
-      view.authMethods = pane.agent?.authMethods ?? []
-      view.harnessSwitch = pane.agent?.harnessSwitch.map {
-        AgentHarnessSwitchView(
-          fromHarness: $0.fromHarness, toHarness: $0.toHarness, phase: .switching)
+      agentPanes.update(pane.paneId) { view in
+        view.permission = nil
+        view.elicitation = nil
+        view.queuePaused = pane.agent?.queuePaused ?? false
+        view.authMethods = pane.agent?.authMethods ?? []
+        view.harnessSwitch = pane.agent?.harnessSwitch.map {
+          AgentHarnessSwitchView(
+            fromHarness: $0.fromHarness, toHarness: $0.toHarness, phase: .switching)
+        }
       }
-      agentPanes[pane.paneId] = view
     }
     for entry in sections["requests"] ?? [] {
       switch entry["kind"].string {
@@ -462,7 +462,7 @@ extension EngineClient {
 
   func discardAgentPane(_ paneId: String) {
     partials.flush()
-    agentPanes.removeValue(forKey: paneId)
+    agentPanes[paneId] = nil
     agentWebDrafts.removeValue(forKey: paneId)
   }
 
@@ -477,9 +477,7 @@ extension EngineClient {
       panes.contains(where: { $0.paneId == paneId && $0.mode == .agent })
     else { return }
     partials.flush()
-    var view = agentPanes[paneId] ?? AgentPaneView()
-    view.mergeTranscriptPage(result, replacing: replacing)
-    agentPanes[paneId] = view
+    agentPanes.update(paneId) { $0.mergeTranscriptPage(result, replacing: replacing) }
     try await loadAgentQueue(paneId)
     if connected && connectionRevision == revision { agentTranscriptRevisions[paneId] = revision }
   }
@@ -499,9 +497,7 @@ extension EngineClient {
       )
       .decoded(PaneTranscriptResult.self)
       self.partials.flush()
-      var view = self.agentPanes[paneId] ?? AgentPaneView()
-      view.mergeTranscriptPage(result, replacing: false)
-      self.agentPanes[paneId] = view
+      self.agentPanes.update(paneId) { $0.mergeTranscriptPage(result, replacing: false) }
     }
   }
 
