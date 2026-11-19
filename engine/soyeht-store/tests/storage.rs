@@ -393,6 +393,43 @@ fn output_gap_and_delta_survive_reopen_without_inventing_bytes() {
 }
 
 #[test]
+fn a_reader_holds_what_it_needs_so_the_log_can_go_on_while_it_reads() {
+    let directory = Profile::new();
+    let mut log = Log::open(&directory.0).unwrap();
+    for n in 0..4u64 {
+        log.append(Record::Data {
+            offset: n * 3,
+            bytes: format!("{n}{n}{n}").into_bytes(),
+        })
+        .unwrap();
+    }
+    let reader = log.reader(2, 12, 4).unwrap();
+    let whole = log.read(2, 12, 4).unwrap();
+    // The log goes on, and is not needed to read what the reader was taken for.
+    log.append(Record::Data {
+        offset: 12,
+        bytes: b"later".to_vec(),
+    })
+    .unwrap();
+    let records = reader.read().unwrap();
+    assert_eq!(records, whole);
+    assert_eq!(
+        records,
+        vec![
+            Record::Data {
+                offset: 2,
+                bytes: b"0".to_vec()
+            },
+            Record::Data {
+                offset: 3,
+                bytes: b"111".to_vec()
+            }
+        ]
+    );
+    assert!(log.reader(0, 99, 4).is_err());
+}
+
+#[test]
 fn incomplete_last_record_is_truncated_but_checksum_corruption_is_refused() {
     let directory = Profile::new();
     let mut log = Log::open(&directory.0).unwrap();

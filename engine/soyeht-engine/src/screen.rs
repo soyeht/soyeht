@@ -1,6 +1,6 @@
 use crate::errors::{self, Result};
 use soyeht_protocol::limits;
-use soyeht_store::segments::{Log, Record, Unsynced};
+use soyeht_store::segments::{Log, Reader, Record, Unsynced};
 use std::{collections::VecDeque, path::Path, sync::Arc};
 
 /// A record kept in memory: the output bytes are shared with the supervisor, so a clone is cheap.
@@ -15,6 +15,13 @@ pub struct Screen {
     /// The supervisor's output position this screen has taken in and not yet told it to drop.
     unacknowledged: Option<u64>,
     pub recording: bool,
+}
+
+/// What one slice of a replay is read from: the memory of the screen, read already, or the
+/// disk, read by whoever holds the [`Reader`] with no lock.
+pub enum ReplayRead {
+    Ready(Vec<Record>),
+    Disk(Reader),
 }
 
 /// Output a screen holds that the supervisor may drop once its flush to the disk is done.
@@ -253,6 +260,24 @@ impl Screen {
                 .find(|record| record.from() >= desired)
                 .map(Record::from)
                 .unwrap_or(self.next)
+        }
+    }
+
+    /// The next slice of at most `maximum` bytes of a replay from `from` up to `to`. Output that
+    /// is only on the disk is not read here, which would wait for the disk under the Core lock.
+    pub fn replay_read(&self, from: u64, to: u64, maximum: usize) -> Result<ReplayRead> {
+        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
+        let on_disk = self.disk.as_ref().map_or(0, Log::next_offset);
+        match self
+            .disk
+            .as_ref()
+            .filter(|_| from < live_first && from < on_disk)
+        {
+            Some(disk) => disk
+                .reader(from, to.min(live_first).min(on_disk), maximum)
+                .map(ReplayRead::Disk)
+                .map_err(errors::storage),
+            None => self.read(from, to, maximum).map(ReplayRead::Ready),
         }
     }
 
