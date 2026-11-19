@@ -4,6 +4,7 @@ import SoyehtAvatarRaster
 import SoyehtProtocol
 import UniformTypeIdentifiers
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 /// A synthetic avatar package of any canvas size, with a mouth mesh of a few thousand triangles,

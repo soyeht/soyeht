@@ -3,8 +3,13 @@ import PackageDescription
 
 let package = Package(
   name: "SoyehtClient",
-  platforms: [.macOS(.v14), .iOS(.v17)],
-  products: [.library(name: "SoyehtClient", targets: ["SoyehtClient"])],
+  platforms: [.macOS(.v14), .iOS(.v17), .watchOS(.v11)],
+  products: [
+    .library(name: "SoyehtClient", targets: ["SoyehtClient"]),
+    // The two targets a watch app links without `SoyehtClient` (no terminal, no speech framework).
+    .library(name: "SoyehtAvatar", targets: ["SoyehtAvatar"]),
+    .library(name: "SoyehtVoice", targets: ["SoyehtVoice"]),
+  ],
   dependencies: [
     .package(path: "../../contracts/swift"),
     .package(url: "https://github.com/soyeht/SwiftTerm", exact: "1.20.0-soyeht.2"),
@@ -19,17 +24,28 @@ let package = Package(
       name: "SoyehtAvatarRaster",
       swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
     ),
+    .target(name: "SoyehtAvatar", dependencies: ["SoyehtAvatarRaster"]),
+    .target(
+      name: "SoyehtVoice",
+      dependencies: [
+        .product(name: "SoyehtProtocol", package: "swift"),
+        .product(name: "Markdown", package: "swift-markdown"),
+      ]
+    ),
     .target(
       name: "SoyehtClient",
       dependencies: [
-        "SoyehtAvatarRaster",
+        "SoyehtAvatar",
+        "SoyehtVoice",
         .product(name: "SoyehtProtocol", package: "swift"),
         .product(name: "SwiftTerm", package: "SwiftTerm"),
-        .product(name: "Markdown", package: "swift-markdown"),
       ],
       resources: [.process("Resources")]
     ),
     .executableTarget(name: "SoyehtIconGenerator", dependencies: ["SoyehtClient"]),
-    .testTarget(name: "SoyehtClientTests", dependencies: ["SoyehtClient", "SoyehtAvatarRaster"]),
+    .testTarget(
+      name: "SoyehtClientTests",
+      dependencies: ["SoyehtClient", "SoyehtAvatar", "SoyehtAvatarRaster", "SoyehtVoice"]
+    ),
   ]
 )

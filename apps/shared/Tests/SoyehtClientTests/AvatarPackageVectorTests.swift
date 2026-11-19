@@ -3,6 +3,7 @@ import SoyehtAvatarRaster
 import SoyehtProtocol
 import Testing
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 /// The cases of `contracts/vectors/avatar-package.json`, which `soyeht-avatar` passes as well:

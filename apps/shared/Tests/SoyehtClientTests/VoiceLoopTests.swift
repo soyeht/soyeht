@@ -4,6 +4,7 @@ import Testing
 import os
 
 @testable import SoyehtClient
+@testable import SoyehtVoice
 
 // MARK: - Fakes
 
