@@ -150,8 +150,13 @@ def acceptance_streaming(services, client, pane, results):
         copies.append(updates)
         observer.close()
     require(copies[0] == copies[1], "two clients received different conversation updates")
-    require(sum(item["kind"] == "agent_message_chunk" for item in copies[0]) >= 2,
-            "response was not streamed in chunks")
+    # One read of the agent's output can hold both chunks of the reply, and the engine then sends
+    # one update with the whole text: what a client may count on is that each update holds the
+    # reply so far and that the last holds all of it.
+    chunks = [item["text"] for item in copies[0] if item["kind"] == "agent_message_chunk"]
+    require(chunks and chunks[-1] == "Echo: hello world", "response did not stream to its end")
+    require(all(later.startswith(earlier) for earlier, later in zip(chunks, chunks[1:])),
+            "a streamed update did not hold the reply so far")
     before = transcript(client, pane)
     require(any(item["role"] == "user" and item["text"] == "hello world" for item in before),
             "accepted user prompt was not persisted")

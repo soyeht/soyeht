@@ -18,7 +18,8 @@ apply to the original UTF-8 prompt; JSON escaping cannot reduce that capacity.
 
 All storage writes take the engine's transaction. The complete native records
 that one read of a pane's output decodes are applied to the runtime state in
-memory and committed together, once per read and pane: the byte checkpoint of
+memory and committed together, once per call of `decode_agent_log` and pane (a poll
+makes two calls): the byte checkpoint of
 the last of them, the runtime state they left, the transcript messages they
 changed and their public events. (Each record used to be a transaction of its
 own: an `fsync`, the whole runtime state serialized and an event for every
@@ -38,7 +39,9 @@ load response publishes them. A crash before the commit loses nothing: the
 checkpoint is where the last commit left it, the raw output is already durable
 (it is flushed before the supervisor is acknowledged), and the next start
 decodes the same bytes again and reaches the same state. A record that fails
-commits the ones before it first, so the decoder starts again after them.
+commits the ones before it first, so the decoder starts again after them. If the store refuses the group as a whole (a
+mutation the group could not foresee), its records are committed one by one for that call, as they
+were before they were grouped, so only the record the store refuses fails.
 Answering a request commits the winning decision, native reply and public
 event together. The engine sends native bytes only after that commit.
 

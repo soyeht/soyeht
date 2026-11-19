@@ -250,3 +250,31 @@ fn a_record_that_fails_leaves_the_records_before_it_committed_and_the_decoder_af
     assert_eq!(core.agents.agent(PANE).decoder.next_offset(), kept);
     crate::test_paths::remove_after(core, directory);
 }
+
+#[test]
+fn a_group_the_store_refuses_is_committed_record_by_record_so_only_the_refused_one_fails() {
+    let (mut core, directory) = core(false);
+    // A completed message the engine does not know sits where its second message will go, so
+    // saving that one is refused, which the group could not foresee.
+    let other: TranscriptMessage = serde_json::from_value(json!({"localId":"other","generation":1,"seq":"1","role":"assistant","kind":"message","text":"x","complete":true,"promptId":"p"})).unwrap();
+    crate::ports::StorePort::mutate(&mut core.store, "test", "seed", "seed", |change| {
+        soyeht_store::agents::save_message(change, PANE, &other)?;
+        Ok((json!({}), Vec::new()))
+    })
+    .unwrap();
+    let lines = [
+        text("agent_thought_chunk", "kept"),
+        text("agent_message_chunk", "refused"),
+    ];
+    feed(&mut core, &lines);
+    assert!(core.decode_agent_log(PANE).is_err());
+    let kept = lines[0].len() as u64;
+    assert_eq!(
+        messages(&core, 1)[0].text,
+        "kept",
+        "the first record was not lost"
+    );
+    assert_eq!(core.agents.agent(PANE).state.acknowledged_offset, kept);
+    assert_eq!(core.agents.agent(PANE).decoder.next_offset(), kept);
+    crate::test_paths::remove_after(core, directory);
+}

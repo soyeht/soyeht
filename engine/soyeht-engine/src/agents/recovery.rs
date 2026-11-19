@@ -342,7 +342,7 @@ impl Core {
     ) -> Result<()> {
         if !matches!(&record.message, Message::Notification { method, .. } if method == "session/update")
         {
-            self.commit_batch(batch)?;
+            self.commit_batch(pane, batch)?;
             return self.native_record(pane, record, true);
         }
         let (mut state, mut saved, earlier) = match batch {
@@ -353,27 +353,55 @@ impl Core {
                 Earlier::default(),
             ),
         };
+        let kept = Record {
+            from_seq: record.from_seq,
+            to_seq: record.to_seq,
+            message: record.message.clone(),
+        };
         let changes =
             self.apply_native_record(pane, record, true, (&mut state, &mut saved), earlier)?;
         match batch {
-            Some(open) if open.takes(&changes) => open.absorb(changes, saved, state),
+            Some(open) if open.takes(&changes) => open.absorb(changes, saved, state, kept),
             None if batch::transcript_only(&changes) => {
-                *batch = Some(Batch::start(saved, state, changes));
+                *batch = Some(Batch::start(saved, state, changes, kept));
             }
             _ => {
-                self.commit_batch(batch)?;
+                self.commit_batch(pane, batch)?;
                 self.commit_agent(saved, state, changes, None, json!({}))?;
             }
         }
         Ok(())
     }
 
-    /// Commits what the poll applied so far, as one transaction.
-    fn commit_batch(&mut self, batch: &mut Option<Batch>) -> Result<()> {
-        if let Some((saved, state, changes)) = batch.take().map(Batch::finish) {
-            self.commit_agent(saved, state, changes, None, json!({}))?;
+    /// Commits what the poll applied so far, as one transaction. If the store refuses the whole
+    /// (a mutation the group could not foresee), the records are committed one by one, as they
+    /// were before they were grouped, so the ones the store accepts are not lost with the one it
+    /// refuses and the failure is the failing record's.
+    fn commit_batch(&mut self, pane: &str, batch: &mut Option<Batch>) -> Result<()> {
+        let Some((saved, state, changes, records)) = batch.take().map(Batch::finish) else {
+            return Ok(());
+        };
+        let before = self.agents.require(pane)?.state.acknowledged_offset;
+        match self.commit_agent(saved, state, changes, None, json!({})) {
+            Err(errors::Error::Storage(_))
+                if records.len() > 1 && !self.checkpoint_moved(pane, before) =>
+            {
+                records
+                    .into_iter()
+                    .try_for_each(|record| self.native_record(pane, record, true))
+            }
+            other => other.map(drop),
         }
-        Ok(())
+    }
+
+    /// Whether the stored checkpoint of the pane is past `before`: a commit that failed after
+    /// the store took it must not be applied again.
+    fn checkpoint_moved(&self, pane: &str, before: u64) -> bool {
+        self.store
+            .agent_runtime(pane)
+            .ok()
+            .flatten()
+            .is_none_or(|stored| stored.acknowledged_offset != before)
     }
 
     /// First consume any raw records synced before an engine crash. The public
@@ -401,7 +429,7 @@ impl Core {
         let records = self.pane(pane)?.screen.read(from, end, 64 * 1024)?;
         let mut batch = None;
         match self.decode_records(pane, base, records, &mut batch) {
-            Ok(()) => match self.commit_batch(&mut batch) {
+            Ok(()) => match self.commit_batch(pane, &mut batch) {
                 Ok(()) => Ok(()),
                 Err(error) => self.abandon_decoding(pane, &mut None, error),
             },
@@ -418,7 +446,7 @@ impl Core {
         batch: &mut Option<Batch>,
         error: errors::Error,
     ) -> Result<()> {
-        let committed = self.commit_batch(batch);
+        let committed = self.commit_batch(pane, batch);
         let running = errors::invariant(
             self.agents.get_mut(pane),
             "Agent runtime disappeared after a failure decoding output",
@@ -437,7 +465,7 @@ impl Core {
         for record in records {
             let (mut offset, mut bytes) = match record {
                 SegmentRecord::Gap { to, .. } => {
-                    self.commit_batch(batch)?;
+                    self.commit_batch(pane, batch)?;
                     if !self.agent_output_gap(pane, to - base)? {
                         return Ok(());
                     }
@@ -445,10 +473,13 @@ impl Core {
                 }
                 SegmentRecord::Data { offset, bytes } => (offset, bytes),
             };
+            // The flag is only set by the recovery paths above and in `skip_interrupted_agent_record`,
+            // which commit on their own after the group is committed, so the committed state is
+            // the current one here even while a group of plain records is open.
             if self.agents.require(pane)?.state.discard_until_newline {
                 let newline = bytes.iter().position(|byte| *byte == b'\n');
                 let skipped = newline.map_or(bytes.len(), |at| at + 1);
-                self.commit_batch(batch)?;
+                self.commit_batch(pane, batch)?;
                 if !self.skip_interrupted_agent_record(
                     pane,
                     offset - base + skipped as u64,

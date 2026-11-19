@@ -9,6 +9,7 @@
 use super::{Changes, state::State};
 use crate::model::StoredPane;
 use serde_json::Value;
+use soyeht_acp::rpc::Record;
 use soyeht_protocol::{TranscriptMessage, event};
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -114,6 +115,8 @@ pub struct Batch {
     earlier: Earlier,
     /// Whether the messages are staged for a native replay instead of saved.
     replay: bool,
+    /// The records, in case the commit of the whole refuses what each would have accepted.
+    records: Vec<Record>,
     events: Vec<Option<(String, Value)>>,
     /// Where the last event of a whole-state message is in `events`, by kind and local ID.
     last_event: HashMap<(String, String), usize>,
@@ -121,12 +124,13 @@ pub struct Batch {
 
 impl Batch {
     /// A batch of the first record `takes` accepted, with the state and pane it left.
-    pub fn start(saved: StoredPane, state: State, changes: Changes) -> Self {
+    pub fn start(saved: StoredPane, state: State, changes: Changes, record: Record) -> Self {
         let mut batch = Self {
             saved,
             state,
             earlier: Earlier::default(),
             replay: changes.replay_messages,
+            records: vec![record],
             events: Vec::new(),
             last_event: HashMap::new(),
         };
@@ -161,11 +165,12 @@ impl Batch {
     }
 
     /// Adds a record `takes` accepted, with the state and pane it left.
-    pub fn absorb(&mut self, changes: Changes, saved: StoredPane, state: State) {
+    pub fn absorb(&mut self, changes: Changes, saved: StoredPane, state: State, record: Record) {
         if self.earlier.0.is_empty() {
             self.replay = changes.replay_messages;
         }
         self.merge(changes);
+        self.records.push(record);
         self.saved = saved;
         self.state = state;
     }
@@ -200,7 +205,7 @@ impl Batch {
 
     /// What to commit: the state and pane the last record left, with the messages and events of
     /// all of them, in order.
-    pub fn finish(self) -> (StoredPane, State, Changes) {
+    pub fn finish(self) -> (StoredPane, State, Changes, Vec<Record>) {
         let messages = Arc::try_unwrap(self.earlier.0)
             .unwrap_or_else(|shared| (*shared).clone())
             .into_values()
@@ -211,7 +216,7 @@ impl Batch {
             events: self.events.into_iter().flatten().collect(),
             ..Changes::default()
         };
-        (self.saved, self.state, changes)
+        (self.saved, self.state, changes, self.records)
     }
 }
 

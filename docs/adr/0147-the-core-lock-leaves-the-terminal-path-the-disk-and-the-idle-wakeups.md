@@ -655,7 +655,7 @@ heaviest hold left under the lock. A streamed reply is one native record per chu
 was a transaction: an `fsync` (2.5 to 2.9 ms in the table above), the whole agent state
 serialized, the stored message read, parsed and written again with its whole text, and an event
 with that text. `decode_agent_log` now applies the records of one read to the state in memory and
-commits them once per pane (ADR 0020), and the event of a message is sent once per commit, in
+commits them once per call and pane, and a poll makes two calls (ADR 0020), and the event of a message is sent once per commit, in
 its last state. On the engine unit test rig (debug build, a quiet host) 300 chunks of one
 message ran 3,901 SQL statements and took 1.03 s as 300 commits, and 14 statements and 55 ms as
 one; the number of statements no longer depends on the number of chunks. The hold is also
