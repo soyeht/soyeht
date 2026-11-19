@@ -119,6 +119,23 @@ fn codex_execute_permission_uses_adapter_command_not_generic_title() {
     assert!(!public.to_string().contains("/project"));
 }
 
+#[test]
+fn codex_2_permission_title_and_reason_come_from_the_air_extension_key() {
+    // codex-acp 2.6.0 to a client that declares the AIR extension: the same title and reason,
+    // under `_meta.jetbrains.air.permission`, next to the extension's version.
+    let params = json!({
+        "toolCall": {"kind": "execute", "title": "List files", "status": "pending",
+            "rawInput": {"command": "ls -la", "cwd": "/project"}},
+        "options": [{"optionId": "yes", "kind": "allow_once", "name": "Yes"}],
+        "_meta": {"jetbrains": {"air": {"version": 1, "permission": {"version": 1,
+            "title": "Run command?", "description": "It lists the folder."}}}}
+    });
+    let (public, _) = permission(&params, None, &PaneNames::new()).expect("displayable");
+    assert_eq!(public["title"], "Run command?");
+    assert_eq!(public["detail"], "It lists the folder.");
+    assert_eq!(public["presentation"]["command"], "ls -la");
+}
+
 fn workspace_panes() -> PaneNames<'static> {
     PaneNames::from([("pane-claude", "Claude"), ("pane-codex", "Codex")])
 }

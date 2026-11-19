@@ -147,10 +147,15 @@ def scan(label, raw, forbidden):
     return bool(found)
 
 
+def message_refused(text):
+    """Whether `scan_message` would refuse this text (the built-in patterns), printing nothing."""
+    return any(pattern in text.lower() for pattern in MESSAGE_PATTERNS)
+
+
 def scan_message(label, text):
     failed = False
     for number, line in enumerate(text.splitlines(), 1):
-        if any(pattern in line.lower() for pattern in MESSAGE_PATTERNS):
+        if message_refused(line):
             print(f"{label}:{number}", file=sys.stderr)
             failed = True
     return failed

@@ -116,12 +116,12 @@
     {
       "id": "registry.codex-acp",
       "name": "Codex",
-      "version": "1.11.0",
+      "version": "2.6.0",
       "support": "supported",
       "command": "npx",
       "args": [
         "--yes",
-        "@agentclientprotocol/codex-acp@1.11.0"
+        "@agentclientprotocol/codex-acp@2.6.0"
       ],
       "environment": [],
       "userDirectories": [],

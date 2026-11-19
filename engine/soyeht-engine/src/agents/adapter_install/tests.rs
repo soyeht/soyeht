@@ -46,6 +46,69 @@ fn only_the_exact_pinned_launch_of_a_locked_adapter_is_installed() {
     }
 }
 
+/// The variables the engine gives an adapter are those of its own entry of the table, and only for
+/// its exact launch.
+#[test]
+fn only_the_launch_of_a_locked_adapter_is_given_the_variables_of_its_entry() {
+    for locked in &LOCKED {
+        let launch = argv(&["npx", "--yes", &pinned(locked)]);
+        assert_eq!(fixed_environment(&launch), locked.environment);
+        let stale = argv(&["npx", "--yes", &format!("{}@0.0.1", locked.package)]);
+        assert!(fixed_environment(&stale).is_empty());
+    }
+    assert_eq!(
+        LOCKED
+            .iter()
+            .flat_map(|locked| locked.environment)
+            .collect::<Vec<_>>(),
+        [&soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF]
+    );
+    assert!(fixed_environment(&argv(&["npx", "--yes", "@scope/other@1.0.0"])).is_empty());
+}
+
+/// A launch saved under an older pin is not run through `npx` unlocked by a built-in pane, which
+/// is what a plain `npx --yes <package>@<version>` of the locked packages would do. A custom
+/// entry that names another version is its author's and starts as written.
+#[test]
+fn a_built_in_launch_at_another_version_is_refused_and_a_custom_one_still_starts() {
+    let profile = soyeht_platform::testing::scratch_dir("adapter-stale-pin");
+    for locked in &LOCKED {
+        let stale = format!("{}@0.0.1", locked.package);
+        assert!(locked_launch(&argv(&["npx", "--yes", &stale])).is_none());
+        let launch = |id: &str| soyeht_protocol::HarnessLaunch {
+            id: id.into(),
+            name: "Adapter".into(),
+            command: "npx".into(),
+            args: argv(&["--yes", &stale]),
+            version: "0.0.1".into(),
+            environment: None,
+        };
+        let error = refuse_stale_builtin(&launch("registry.adapter")).unwrap_err();
+        assert_eq!(
+            errors::kind(&error),
+            soyeht_protocol::ErrorKind::HarnessUnavailable
+        );
+        assert!(error.unstartable_reason().is_some_and(|reason| {
+            reason.contains(&pinned(locked)) && reason.contains("switch this pane's harness")
+        }));
+        refuse_stale_builtin(&launch("custom-adapter")).unwrap();
+        let custom = spawn(&["npx", "--yes", &stale, "--flag"]);
+        assert_eq!(installed_spawn(&profile, custom.clone()).unwrap(), custom);
+        // The locked version, another package, a package that only starts with the name, and a
+        // launch that is not npx's are not this refusal's.
+        for other in [
+            argv(&["npx", "--yes", &pinned(locked)]),
+            argv(&["npx", "--yes", "@scope/other@0.0.1"]),
+            argv(&["npx", "--yes", &format!("{}-extra@0.0.1", locked.package)]),
+            argv(&["uvx", "--yes", &stale]),
+            argv(&["node", &stale]),
+        ] {
+            assert!(stale_locked_launch(&other).is_none(), "{other:?}");
+        }
+    }
+    std::fs::remove_dir_all(profile).unwrap();
+}
+
 /// What the catalogue tells a picker before the first start: the package a built-in adapter of a
 /// package runner fetches and whether the engine installs it from its lock.
 #[test]
@@ -64,7 +127,7 @@ fn the_catalogue_names_the_package_of_a_runner_adapter_and_whether_it_is_locked(
     );
     assert_eq!(
         package("registry.codex-acp"),
-        Some(("@agentclientprotocol/codex-acp@1.11.0".to_owned(), true))
+        Some(("@agentclientprotocol/codex-acp@2.6.0".to_owned(), true))
     );
     // Fetched by the runner, nothing checked.
     assert_eq!(

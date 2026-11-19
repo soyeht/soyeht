@@ -35,12 +35,20 @@ areas `dictation`, `mac_app`, `ios_app`, `e2e`, `editor_perf` and `timing`, and 
 steps of the others); only the full tier runs them. A fast step that stands in for a full
 one is named `<full id>-changed`, `<full id>-fast` or `<full id>-build`, and
 `test_gate_list.py` checks the list: known areas and tiers, unique ids, a full step behind
-every stand-in. The ratchet counts the steps that run in both tiers per area, so moving one
-out of the fast tier needs a `Verification change:` line, as removing it does.
+every stand-in (the full step may be in the area that the stand-in's area is part of). The
+tests that read a shared vector file are the exception to the rule above: the Swift ones, the
+`protocol-vectors` program and the integration tests of `soyeht-protocol` run in the fast tier
+(`swift:test-shared-changed`, `engine:test-fast`), so a change to a vector file or to the shared
+package cannot break the Swift or the protocol side after the merge. The ratchet watches the steps
+by id, so moving one out of the fast tier needs a
+`Verification change: removes step <id> because <reason>` line, as removing it does (ADR 0027,
+amendment).
 
 **The areas come from the paths.** `scripts/gate_plan.py` maps the files that differ from the
 merge-base of `origin/main` (or `--base`) to areas, and `check_all.sh` prints the plan at the
-top of the log. A change to `contracts/` (other than the Swift and TypeScript outputs),
+top of the log. A change to `contracts/` (other than the Swift and TypeScript outputs and the
+vector files, which select only the areas of the sources that read them: `gate_vectors.py` scans
+for those readers),
 `engine/soyeht-protocol`, the gate tooling (`scripts/`, `.github/`, `.githooks/`; not the unit tests `scripts/test_*.py`), a lockfile
 or a workspace manifest selects every code area, and so does a cargo workspace that cannot
 be read. A change to the scripts that run the gate (`check_all.sh`, `gate_*`, `post_merge*`,

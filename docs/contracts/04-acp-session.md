@@ -94,11 +94,19 @@ Raw terminal panes continue to exist and do not use this path.
    reads); older adapters put it on the spawning Agent call as
    `_meta.claudeCode.toolResponse.resolvedModel`, whose `agentId` names the
    subagent session. That call updates the row and never becomes a tool row.
-   Codex reports no model. Codex's collaboration
-   `wait` calls (`_meta.codex.collaboration.tool: "wait"`) on subagents the
-   pane tracks never become tool rows either: an empty `receiverThreadIds`
+   The Codex adapter reports it the same way from 2.x on (1.x reported none).
+   Codex's collaboration `wait` calls on subagents the pane tracks never become
+   tool rows either. The 1.x adapter marked them on every report
+   (`_meta.codex.collaboration.tool: "wait"`); the 2.x adapter sends no such
+   `_meta`: the first report is titled `wait` and carries
+   `rawInput.senderThreadId` and `receiverThreadIds`, and a later report only
+   the fields that changed (the report that ended the waits captured with
+   2.6.0 had the status alone; one whose `agentsStates` changed would carry
+   `rawInput` again). The engine reads either shape on the first report and
+   then recognizes the call by its session and ID until a report says it
+   ended. An empty `receiverThreadIds`
    counts as tied only while the pane tracks a subagent, and a wait naming a
-   session it does not track stays a tool row. Clients show a waiting status
+   session it does not track stays a tool row, along with its later reports. Clients show a waiting status
    while the transcript ends in running subagent rows. Times are wall-clock
    times the engine observed live; a replay leaves them absent. Permission,
    file and terminal requests from a reported subagent session are accepted
@@ -157,8 +165,8 @@ shows those names; the harness decides which actions it asks about.
   in full, whichever harness sends it (codex-acp: kind `execute` with
   `rawInput {server, tool, arguments}`; claude-acp: tool name
   `mcp__<server>__<tool>`). Pane ids of the same workspace show as pane names.
-  codex-acp 1.11.0 sends only the tool call id, kind and status in the
-  request; the engine judges every request on the tool call as last reported
+  codex-acp 1.11.0 sent only the tool call id, kind and status in the
+  request (2.6.0 adds the title and `rawInput`); the engine judges every request on the tool call as last reported
   by `session/update` in the same prompt, overlaid with the request's own
   fields. An `execute` request with neither a command nor this shape is refused.
 - A user's `allow_always` selection applies only to this pane (DECIDED,

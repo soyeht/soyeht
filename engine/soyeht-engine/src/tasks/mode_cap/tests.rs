@@ -5,7 +5,8 @@ use crate::{
     ports::StorePort,
     tasks::rules::tests::task_fixture,
     test_panes::{
-        CLAUDE_MODES, CODEX_MODES, agent_with_modes, core_with_workspace, insert_agent_pane,
+        CLAUDE_MODES, CODEX_MODES, agent_with_modes, codex_2_agent, core_with_workspace,
+        insert_agent_pane,
     },
 };
 use serde_json::json;
@@ -23,7 +24,12 @@ fn modes(harness: &str) -> &'static [(&'static str, &'static str)] {
 
 /// The state of a ready agent of `harness` in `current`.
 fn agent(harness: &str, current: &str) -> crate::agents::state::State {
-    agent_with_modes(harness, current, modes(harness))
+    if harness == "claude" {
+        agent_with_modes(harness, current, modes(harness))
+    } else {
+        // The Codex adapter announces the kinds where it does to this client.
+        codex_2_agent(harness, current)
+    }
 }
 
 fn executor_state(rig: &Rig) -> &crate::agents::state::State {
@@ -777,4 +783,5 @@ fn a_person_cancelling_a_turn_keeps_the_usual_transcript_line() {
     );
 }
 
+mod codex_modes;
 mod message;
