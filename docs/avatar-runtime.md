@@ -226,7 +226,8 @@ changes is a mouth that changes.
 
 ## The Swift runtime and rasteriser (slice 4)
 
-`apps/shared` (`SoyehtClient`) holds the second implementation, in the `Avatar*` files: the package
+`apps/shared` holds the second implementation, in the `Avatar*` files of its `SoyehtAvatar` target
+(`SoyehtClient` re-exports it, so an app imports `SoyehtClient` only): the package
 reader and validator (`AvatarPackage`, `AvatarPackageValidator`, with the same limits, the same
 order of rules and the same failure kinds), the mouth (`AvatarParams`, `AvatarMorphWeights`,
 `AvatarTrack`, `AvatarClip`, `AvatarMouth`), the aligner (`AvatarLetters`, `AvatarAligner`), the
@@ -246,8 +247,8 @@ values, the Rust reader refuses the document), and a trailing comma. Closing tha
 The rasteriser is software, on one core, in premultiplied RGBA bytes, and has no GPU path yet.
 The per-pixel code (`AvatarRasterizer`, `AvatarBitmap`, the loop of the warp) is its own target of
 the `apps/shared` package, `SoyehtAvatarRaster`, compiled optimised in a debug build too (an unsafe
-flag, allowed because the package is consumed by path); it shares its types with `SoyehtClient`
-by `package` access. `AvatarRenderer`, in `SoyehtClient`, drives it. A frame is:
+flag, allowed because the package is consumed by path); it shares its types with `SoyehtAvatar`
+by `package` access. `AvatarRenderer`, in `SoyehtAvatar`, drives it. A frame is:
 
 1. the base picture, scaled once at load with CoreGraphics' high-quality interpolation (a smooth
    filter, not an exact area average: a canvas of 1024 pixels drawn at 512 is not point-sampled)
@@ -285,7 +286,8 @@ step (the worst pair is 4.5).
 the runtime and the renderer; the package is read, once, and the first frame drawn off the main
 actor, and the main actor only assigns the finished picture. Frames are paced by completion: the
 next one starts when the last has been drawn, no sooner than 1/30 s after it started (1/60 s while
-speaking). The loop runs while at least one view of the model is on screen, in a scene that is not
+speaking; `AvatarStageSettings` holds these intervals, the largest picture and the logger, which the
+host passes in: the target has no log of its own). The loop runs while at least one view of the model is on screen, in a scene that is not
 in the background, and (on the Mac) in a window that is not covered or minimised; there is one loop
 however many views show the model. With Reduce Motion on, one still picture is drawn per state and
 nothing is drawn between changes of state. A package that did not load leaves a failure the views

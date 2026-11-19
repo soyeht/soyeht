@@ -2,6 +2,7 @@ import Foundation
 import SoyehtProtocol
 import Testing
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 /// The cases of `contracts/vectors/avatar-mouth.json`, which `soyeht-avatar` and the desktop

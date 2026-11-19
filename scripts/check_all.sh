@@ -497,6 +497,10 @@ step swift full swift:engine-binaries build_engine_programs
 step swift full swift:test-shared swift test --package-path apps/shared
 # The fast stand-in compiles the shared package without running its tests.
 step swift fast swift:test-shared-build swift build --package-path apps/shared
+# The two targets a watch app links (the avatar and the voice rules), for the watchOS SDK, in both
+# slices a watch runs, `arm64` and `arm64_32`. The Mac and iOS builds never compile them for a
+# watch, so an AppKit or Speech import there would pass every other step.
+step swift both swift:watchos-build bash scripts/check_watchos.sh
 # The part of `swift:test-shared` that reads `contracts/vectors/`: the rules every client passes, which a
 # change to a vector file or to the shared package can break with every Rust test green, and the
 # `protocol-vectors` program of contracts/swift. The filter is the test files that the vector scan finds

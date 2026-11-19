@@ -62,6 +62,10 @@ class EditorPerformanceGateTests(unittest.TestCase):
         self.assertTrue(any("Release" in failure for failure in result))
         self.assertTrue(any("editor paths changed" in failure for failure in result))
 
+    def test_the_markdown_parser_of_the_voice_target_invalidates_the_measurement(self):
+        self.assertTrue(gate.editor_path("apps/shared/Sources/SoyehtVoice/Markdown.swift"))
+        self.assertFalse(gate.editor_path("apps/shared/Sources/SoyehtVoice/VoiceText.swift"))
+
     def test_editor_hash_ignores_unrelated_engine_changes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

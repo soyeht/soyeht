@@ -146,7 +146,8 @@ def gate_runner(path: str) -> bool:
         and (name == "check_all.sh"
              or name.startswith(("gate_", "post_merge", "main_watch", "remote_gate",
                                  "e2e", "tcc_guard", "require_one_rust_test"))
-             or name in {"check_mac.sh", "check_ios.sh", "check_swift.sh", "check_editor_performance.py"})
+             or name in {"check_mac.sh", "check_ios.sh", "check_swift.sh", "check_watchos.sh",
+                         "check_editor_performance.py"})
     )
 
 

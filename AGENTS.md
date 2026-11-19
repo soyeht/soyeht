@@ -77,8 +77,13 @@ Each layer depends only on the layers listed above it.
    client, replicas, presentation policies, layout math and the theme. Put logic
    here so `swift test --package-path apps/shared` covers it. The package has a second, small
    target, `SoyehtAvatarRaster`: the avatar's per-pixel code (`docs/avatar-runtime.md`), compiled
-   optimised in a debug build too, which `SoyehtClient` uses by `package` access and which has no
-   Soyeht dependency.
+   optimised in a debug build too, which the targets above it use by `package` access and which has
+   no Soyeht dependency. Two more targets sit below `SoyehtClient` so that a watch app can link
+   them without it: `SoyehtAvatar` (the avatar runtime, renderer and stage, over
+   `SoyehtAvatarRaster`) and `SoyehtVoice` (the voice loop's rules, the speech protocols and the
+   Markdown reply parser, over `SoyehtProtocol`). Neither depends on SwiftTerm, the speech
+   framework or a view of the client, `SoyehtClient` re-exports both, and `scripts/check_watchos.sh`
+   (step `swift:watchos-build`) builds them for the watchOS SDK in `arm64` and `arm64_32`.
    `apps/dictation` (`SoyehtDictation`) is a second package on top of it: the
    dictation engines and the text-to-speech providers that need third-party
    dependencies (Nemotron, Kokoro), and the catalogues of both
@@ -427,7 +432,8 @@ links may be GPL (espeak-ng is), and a model whose license is not permissive is 
   from the changed paths (the plan is the top of the log), format, lint, a build and the
   tests: `cargo test --lib --bins` of the engine crates changed and the crates that depend on
   them, the whole `cargo test` of the desktop (its `tests/` directories included),
-  `swift format lint` and `swift build` of `apps/shared`, the Swift tests that read
+  `swift format lint` and `swift build` of `apps/shared`, the watchOS build of its avatar and
+  voice targets (`swift:watchos-build`), the Swift tests that read
   `contracts/vectors/` and the `protocol-vectors` program (`swift:test-shared-changed`, area
   `swift_vectors`: a vector file or `apps/shared` or `contracts/swift` selects it), the
   integration tests of `soyeht-protocol` that read a vector (`engine:test-fast`), and TypeScript. The e2e suites
