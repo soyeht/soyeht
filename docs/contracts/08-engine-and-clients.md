@@ -518,7 +518,9 @@ Names **match those published in contracts 01–04 and 07** (R01); fields are
 English in every contract (mapping table at the end). Durable state events
 carry `eventId`, `at`, `actor?`. Notifications declared non-durable in the
 executable schema carry no state cursor and never enter replay. Every durable event schema
-declares `actor?`, the actor of the mutation that made it, because the store adds it. The engine
+declares `actor?`, the actor of the mutation that made it, because the store adds it (each of
+the nine updates of `pane.update` does: closing a pane completes its open messages under the
+closer's name). The engine
 builds its events from the generated types of these schemas (the `...Draft` types, which leave
 out what the store assigns), and the `contract-checks` feature checks every event and result it
 sends against them (ADR 0090).

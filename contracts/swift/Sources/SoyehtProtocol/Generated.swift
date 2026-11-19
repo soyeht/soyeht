@@ -3596,6 +3596,7 @@ public enum AgentMessageUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct AgentMessageUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: AgentMessageUpdateKind
     public var `generation`: UInt32
@@ -3604,9 +3605,10 @@ public struct AgentMessageUpdate: Codable, Sendable {
     public var `text`: String
     public var `complete`: Bool
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentMessageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: AgentMessageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3625,6 +3627,7 @@ public enum AgentThoughtUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct AgentThoughtUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: AgentThoughtUpdateKind
     public var `generation`: UInt32
@@ -3633,9 +3636,10 @@ public struct AgentThoughtUpdate: Codable, Sendable {
     public var `text`: String
     public var `complete`: Bool
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: AgentThoughtUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: AgentThoughtUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `text`: String, `complete`: Bool, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3654,6 +3658,7 @@ public enum ToolCallUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct ToolCallUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: ToolCallUpdateKind
     public var `generation`: UInt32
@@ -3661,9 +3666,10 @@ public struct ToolCallUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `tool`: ToolCall
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolCallUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: ToolCallUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3681,6 +3687,7 @@ public enum ToolProgressUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct ToolProgressUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: ToolProgressUpdateKind
     public var `generation`: UInt32
@@ -3688,9 +3695,10 @@ public struct ToolProgressUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `tool`: ToolCall
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ToolProgressUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: ToolProgressUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `tool`: ToolCall, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3708,6 +3716,7 @@ public enum PlanUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct PlanUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: PlanUpdateKind
     public var `generation`: UInt32
@@ -3715,9 +3724,10 @@ public struct PlanUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `entries`: [PlanEntry]
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: PlanUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `entries`: [PlanEntry], `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: PlanUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `entries`: [PlanEntry], `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3735,6 +3745,7 @@ public enum SubagentUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct SubagentUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: SubagentUpdateKind
     public var `generation`: UInt32
@@ -3742,9 +3753,10 @@ public struct SubagentUpdate: Codable, Sendable {
     public var `localId`: Id
     public var `subagent`: SubagentRun
     public var `subagentId`: Id?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: SubagentUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `subagent`: SubagentRun, `subagentId`: Id? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: SubagentUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `subagent`: SubagentRun, `subagentId`: Id? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3762,15 +3774,17 @@ public enum UsageUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct UsageUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: UsageUpdateKind
     public var `generation`: UInt32
     public var `seq`: Decimal
     public var `localId`: Id
     public var `usage`: TokenUsage
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: UsageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `usage`: TokenUsage) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: UsageUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `usage`: TokenUsage) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3787,6 +3801,7 @@ public enum TerminalOutputUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct TerminalOutputUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: TerminalOutputUpdateKind
     public var `generation`: UInt32
@@ -3797,9 +3812,10 @@ public struct TerminalOutputUpdate: Codable, Sendable {
     public var `offset`: Decimal
     public var `truncated`: Bool
     public var `exitCode`: Int64?
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: TerminalOutputUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `terminalId`: Id, `bytes`: ByteString, `offset`: Decimal, `truncated`: Bool, `exitCode`: Int64? = nil) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: TerminalOutputUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `terminalId`: Id, `bytes`: ByteString, `offset`: Decimal, `truncated`: Bool, `exitCode`: Int64? = nil) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`
@@ -3820,15 +3836,17 @@ public enum ConfigOptionUpdateKind: String, Codable, Sendable, CaseIterable {
 public struct ConfigOptionUpdate: Codable, Sendable {
     public var `eventId`: Decimal
     public var `at`: String
+    public var `actor`: Actor?
     public var `paneId`: Id
     public var `kind`: ConfigOptionUpdateKind
     public var `generation`: UInt32
     public var `seq`: Decimal
     public var `localId`: Id
     public var `options`: [ConfigOption]
-    public init(`eventId`: Decimal, `at`: String, `paneId`: Id, `kind`: ConfigOptionUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `options`: [ConfigOption]) {
+    public init(`eventId`: Decimal, `at`: String, `actor`: Actor? = nil, `paneId`: Id, `kind`: ConfigOptionUpdateKind, `generation`: UInt32, `seq`: Decimal, `localId`: Id, `options`: [ConfigOption]) {
         self.`eventId` = `eventId`
         self.`at` = `at`
+        self.`actor` = `actor`
         self.`paneId` = `paneId`
         self.`kind` = `kind`
         self.`generation` = `generation`

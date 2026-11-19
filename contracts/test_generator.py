@@ -114,8 +114,13 @@ class SchemaTests(unittest.TestCase):
         for name, event in self.schema["x-events"].items():
             if event["durable"]:
                 definition = self.schema["$defs"][event["params"]["$ref"].split("/")[-1]]
-                if definition.get("type") == "object":
-                    self.assertIn("actor", definition["properties"], name)
+                # A union (`pane.update`) is a durable event too: each variant carries it.
+                variants = [
+                    self.schema["$defs"][variant["$ref"].split("/")[-1]]
+                    for variant in definition.get("oneOf", [])
+                ] or [definition]
+                for variant in variants:
+                    self.assertIn("actor", variant["properties"], name)
 
     def test_mutations_require_an_idempotency_key(self):
         for name, method in self.schema["x-methods"].items():
