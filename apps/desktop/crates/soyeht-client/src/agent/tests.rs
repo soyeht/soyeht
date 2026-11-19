@@ -348,3 +348,26 @@ fn a_turn_that_ends_while_a_pane_is_not_shown_is_read_when_it_is_shown() {
     );
     assert_eq!(ended(&mut state), [Effect::LoadTranscript("q".into())]);
 }
+
+#[test]
+fn a_reload_that_fails_is_made_again_the_next_time_the_pane_is_shown() {
+    let mut state = two_workspaces(&[("q", "b")]);
+    state
+        .agent_notification(EventName::PaneTurnEnded, json!({"paneId": "q"}))
+        .unwrap();
+    state.select_workspace("b");
+    assert!(state.refill_transcript("q").is_some());
+    // The page never arrives: the pane is left and shown again.
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert!(state.refill_transcript("q").is_some(), "still stale");
+    state
+        .agents
+        .get_mut("q")
+        .unwrap()
+        .merge_transcript(Vec::new(), None)
+        .unwrap();
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert_eq!(state.refill_transcript("q"), None, "the page cleared it");
+}

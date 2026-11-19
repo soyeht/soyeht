@@ -219,9 +219,9 @@ extension EngineClient {
   /// again with less than a page, and more at the engine, reads the newest page.
   func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
     guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
-    let stale = shown && agentPanes.takeStale(paneId)
     guard let view = agentPanes[paneId] else { return }
     if shown {
+      let stale = agentPanes.isStale(paneId)
       let wants = AgentTranscriptWindow.wantsNewestPage(
         shown: true, stale: stale, held: view.messages.count, hasOlder: view.hasOlderMessages,
         page: Int(ClientPolicy.pageSizeTranscript))
@@ -492,6 +492,7 @@ extension EngineClient {
 
   func loadAgentPane(_ paneId: String, replacing: Bool) async throws {
     let revision = connectionRevision
+    agentPanes.beginRead(paneId)
     let result = try await request(
       .paneTranscript,
       .encoded(PaneTranscriptParams(paneId: paneId, limit: ClientPolicy.pageSizeTranscript))
@@ -502,6 +503,7 @@ extension EngineClient {
     else { return }
     partials.flush()
     agentPanes.update(paneId) { $0.mergeTranscriptPage(result, replacing: replacing) }
+    agentPanes.finishRead(paneId)
     try await loadAgentQueue(paneId)
     if connected && connectionRevision == revision { agentTranscriptRevisions[paneId] = revision }
   }

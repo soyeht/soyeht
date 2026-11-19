@@ -67,13 +67,28 @@ public final class AgentPaneStore {
   @ObservationIgnored private var viewers: [String: Set<ObjectIdentifier>] = [:]
 
   /// The panes a turn ended in while no view showed them: what the turn brought (the person's
-  /// prompt, the messages of other agents) comes with the reload that was skipped.
+  /// prompt, the messages of other agents) comes with the reload that was skipped. The mark stays
+  /// until a page that was asked for after it arrives, so a reload that fails is made again.
   @ObservationIgnored private var stale: Set<String> = []
+  @ObservationIgnored private var reading: Set<String> = []
 
   public init() {}
 
-  func markStale(_ paneId: String) { stale.insert(paneId) }
-  func takeStale(_ paneId: String) -> Bool { stale.remove(paneId) != nil }
+  func markStale(_ paneId: String) {
+    stale.insert(paneId)
+    reading.remove(paneId)
+  }
+
+  func isStale(_ paneId: String) -> Bool { stale.contains(paneId) }
+
+  /// A page is asked for: if it arrives, it covers what made the pane stale until now.
+  func beginRead(_ paneId: String) {
+    if stale.contains(paneId) { reading.insert(paneId) }
+  }
+
+  func finishRead(_ paneId: String) {
+    if reading.remove(paneId) != nil { stale.remove(paneId) }
+  }
 
   /// Whether a view shows the pane, which sets how much of its conversation the replica holds.
   func isShown(_ paneId: String) -> Bool { viewers[paneId]?.isEmpty == false }

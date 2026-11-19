@@ -139,6 +139,7 @@ impl AgentView {
     /// A turn ended while the pane was not shown: it reads the newest page when it is shown.
     pub(crate) fn mark_stale(&mut self) {
         self.stale = true;
+        self.reading = false;
     }
 
     /// Whether the pane reads the newest page, once each time it is shown.
@@ -153,7 +154,8 @@ impl AgentView {
                 page,
             );
         self.refilled |= wanted;
-        self.stale &= !wanted;
+        // The mark stays until the page arrives, so a reload that fails is made again.
+        self.reading = wanted && self.stale;
         wanted
     }
 
@@ -165,7 +167,11 @@ impl AgentView {
     ) -> Result<()> {
         let newest = self.messages.last().and_then(|last| last.seq.parse().ok());
         self.cards.older = older(self.cards.older.as_deref(), next, newest);
-        self.merge_page(page)
+        self.merge_page(page)?;
+        if std::mem::take(&mut self.reading) {
+            self.stale = false;
+        }
+        Ok(())
     }
 
     /// Lets go of the oldest messages beyond the window, and points "Load earlier" at the oldest
