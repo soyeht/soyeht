@@ -9,7 +9,7 @@ from pathlib import Path
 import package_mac
 import release_identity as identity
 from package_common import PackagingError
-from packaging_testkit import FULL, MACHO, fake_app, verify_recorded
+from test_packaging_fixtures import FULL, MACHO, fake_app, verify_recorded
 
 PREFIX = "com.soyeht.next"
 TEAM = "ABCDE12345"

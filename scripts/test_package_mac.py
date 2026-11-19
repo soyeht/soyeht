@@ -13,7 +13,7 @@ import package_common
 import package_mac
 from package_common import PackagingError
 from generated_profile import PROFILES
-from packaging_testkit import FULL, MACHO, fake_app, result, verify_recorded
+from test_packaging_fixtures import FULL, MACHO, fake_app, result, verify_recorded
 
 ROOT = Path(__file__).resolve().parents[1]
 

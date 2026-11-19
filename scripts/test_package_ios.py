@@ -13,7 +13,7 @@ import package_ios
 from generated_legacy import BUNDLE_IDS
 from generated_profile import PROFILES
 from package_common import PackagingError
-from packaging_testkit import result
+from test_packaging_fixtures import result
 
 TEAM = "ABCDE12345"
 HASH = "0123456789abcdef0123456789abcdef01234567"

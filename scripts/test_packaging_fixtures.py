@@ -1,6 +1,6 @@
-"""Stand-ins the packaging tests share: the result of a command, a built Mac bundle, and the
-bundle check with `codesign` replaced by recorded answers (`test_package_mac.py`,
-`test_package_ios.py`, `test_release_identity.py`)."""
+"""Stand-ins the packaging tests share, in a test module with no case of its own: the result of a
+command, a built Mac bundle, and the bundle check with `codesign` replaced by recorded answers
+(`test_package_mac.py`, `test_package_ios.py`, `test_release_identity.py`)."""
 
 import plistlib
 from pathlib import Path
