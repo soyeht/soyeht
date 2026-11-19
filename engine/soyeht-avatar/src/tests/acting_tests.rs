@@ -92,16 +92,34 @@ fn the_pose_stays_small_and_smooth() {
     }
 }
 
-#[test]
-fn a_question_lifts_the_brows_and_an_exclamation_accents() {
+/// How far the brows rise in the next 30 frames of an idle avatar after this word starts (the
+/// accents are the same in every state; an idle avatar has the brows down to begin with).
+fn lift_after(word: &str, index: usize, count: usize, text: &str) -> f64 {
     let mut a = Acting::new(ActingTune::default(), 2, 1.0);
     for _ in 0..30 {
-        a.step(DT, input(State::Speaking, true));
+        a.step(DT, input(State::Idle, false));
     }
-    a.word_start("sério?", 1, 2, false, "Sério?");
-    let lifted = (0..12)
-        .map(|_| a.step(DT, input(State::Speaking, true)).pose)
+    a.word_start(word, index, count, false, text);
+    (0..30)
+        .map(|_| a.step(DT, input(State::Idle, false)).pose)
         .map(|p| p.brow_l.min(p.brow_r))
-        .fold(0.0, f64::max);
-    assert!(lifted > 1.0, "the brows rose only {lifted}");
+        .fold(0.0, f64::max)
+}
+
+#[test]
+fn a_question_lifts_the_brows_at_its_last_word_and_an_exclamation_accents_its_word() {
+    // The default accent is 5 pixels; a question is that and 2 more.
+    assert!(lift_after("sério?", 1, 2, "Sério?") > 5.0, "the question");
+    assert!(
+        lift_after("sim", 0, 2, "Sim sério?") < 0.5,
+        "not the last word"
+    );
+    // An exclamation of two letters or more is accented whatever its length (this one is too short
+    // to be a content word); the same word without it, and a lone letter, are not.
+    assert!(
+        lift_after("pare!", 0, 3, "Pare! Já") > 4.0,
+        "the exclamation"
+    );
+    assert!(lift_after("pare", 0, 3, "Pare já") < 0.5, "no exclamation");
+    assert!(lift_after("a!", 0, 3, "A! Já") < 0.5, "a lone letter");
 }

@@ -2,7 +2,9 @@
 
 use crate::{
     core::Core,
+    dispatch::Outcome,
     model::{RunningPane, StoredPane},
+    outbox,
     pane_observations::SegmentStore,
     panes::persist_new_pane,
     ports::{StorePort, SupervisorPort, testing::FixedClock},
@@ -458,4 +460,17 @@ pub(crate) fn avatar(avatar_id: &str, name: &str) -> soyeht_protocol::Avatar {
         voice: None,
         created_at: "2026-11-15T10:00:00Z".into(),
     }
+}
+
+/// A local, signed connection that has said `hello`; the receiver keeps its outbox open.
+pub(crate) fn handshaken_connection(core: &mut Core) -> (String, outbox::Receiver) {
+    let (sender, receiver) = outbox::channel();
+    let connection = core.connect(true, true, sender).unwrap();
+    let hello = json!({"jsonrpc":"2.0","id":"hello","method":"hello",
+        "params":{"client":"test","clientVersion":"1","protocolVersion":1}});
+    assert!(matches!(
+        core.dispatch(&connection, hello).unwrap(),
+        Outcome::Reply(_)
+    ));
+    (connection, receiver)
 }

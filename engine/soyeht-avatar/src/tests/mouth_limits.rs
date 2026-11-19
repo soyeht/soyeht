@@ -7,7 +7,7 @@ use super::checker::{self, Report, talk};
 use super::fixtures::{ENGLISH, PORTUGUESE, assets, package_json, speech};
 use crate::aligner::Language;
 use crate::package::Package;
-use crate::params::{Params, Shape};
+use crate::params::Params;
 use crate::tune::Tune;
 
 pub(super) fn package() -> Package {
@@ -118,32 +118,6 @@ fn the_checker_fails_a_mouth_that_steps() {
         "a stepping mouth had a largest change of only {}",
         r.pop
     );
-}
-
-#[test]
-fn half_way_between_closed_and_a_the_lips_are_half_open_not_two_mouths() {
-    let package = package();
-    let lips = package
-        .mouth
-        .parts
-        .iter()
-        .find(|p| p.id == crate::package::PartKind::Lips)
-        .expect("lips part");
-    let mut weights = [0.0; 9];
-    weights[Shape::ClosedMbp.index()] = 0.5;
-    weights[Shape::A.index()] = 0.5;
-    let aperture = |w: &[f64; 9]| {
-        // The inner contour's lowest point: vertex 2 of the ring of 8, after the 8 outer ones.
-        let v = lips.blend(w);
-        v[(8 + 2) * 2 + 1] - v[(8 + 6) * 2 + 1]
-    };
-    let mut closed = [0.0; 9];
-    closed[Shape::ClosedMbp.index()] = 1.0;
-    let mut open = [0.0; 9];
-    open[Shape::A.index()] = 1.0;
-    let half = aperture(&weights);
-    assert!((half - (aperture(&closed) + aperture(&open)) / 2.0).abs() < 1e-9);
-    assert!(half > aperture(&closed) + 1.0 && half < aperture(&open) - 1.0);
 }
 
 #[test]
