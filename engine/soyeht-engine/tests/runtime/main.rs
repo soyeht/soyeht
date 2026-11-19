@@ -529,18 +529,39 @@ fn wait_for_editor_file(
     }
 }
 
-/// The open processes, read by taking the supervisor over from the engine.
+/// The open processes of the rig, read through a connection of the next engine generation.
+/// That connection takes the supervisor over: it ends the running engine's link for good, so the
+/// engine can close nothing afterwards. Count a process that the engine closes only after
+/// `wait_for_open_processes`, which reads the registry file and takes nothing over.
 fn process_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {
     let generation = rig.supervisor_takeover_generation().unwrap();
     process_instances_at(rig, generation)
 }
 
 /// Waits until `count` processes of the rig are open. A harness switch retires the old process
-/// and the engine closes it on its next tick, so a test that counts right after a switch waits.
+/// and a stopped agent retires its own; the engine closes it on its next tick, so a test that
+/// counts right after either waits. It reads the registry file: a count through
+/// `process_instances` would take the supervisor over and leave the engine unable to close it.
 fn wait_for_open_processes(rig: &Rig, count: usize) {
-    wait_until("the retired process was not closed", || {
-        process_instances(rig).len() == count
+    eventually("the retired process was not closed", || {
+        let open = process_registry_instances(rig);
+        if open.len() == count {
+            return Ok(());
+        }
+        let log = fs::read_to_string(rig.path.join("engine.log")).unwrap_or_default();
+        let tail: Vec<&str> = log.lines().rev().take(20).collect();
+        Err(format!(
+            "{} open, expected {count}; engine log, newest first: {tail:?}",
+            open.len()
+        ))
     });
+}
+
+/// Waits until `count` processes are open, then counts them through the supervisor. The count
+/// takes the supervisor over, so it comes last.
+fn assert_open_processes(rig: &Rig, count: usize) {
+    wait_for_open_processes(rig, count);
+    assert_eq!(process_instances(rig).len(), count);
 }
 
 fn process_registry_instances(rig: &Rig) -> Vec<soyeht_ptyd::wire::Instance> {

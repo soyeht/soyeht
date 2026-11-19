@@ -153,7 +153,7 @@ fn induced_candidate_failure_leaves_the_original_session_serving_prompts() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(process_instances(&rig).len(), 1);
+    assert_open_processes(&rig, 1);
 }
 
 #[test]
@@ -217,7 +217,7 @@ fn continuation_build_failure_leaves_the_original_session_serving_prompts() {
         );
         thread::sleep(Duration::from_millis(20));
     }
-    assert_eq!(process_instances(&rig).len(), 1);
+    assert_open_processes(&rig, 1);
     drop(client);
     rig.kill_engine();
     rig.start();
