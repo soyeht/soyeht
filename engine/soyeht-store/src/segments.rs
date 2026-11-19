@@ -14,10 +14,20 @@ use std::path::{Path, PathBuf};
 /// what waits for it. Compiled only with `test-support`.
 #[cfg(feature = "test-support")]
 pub mod slow_disk {
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::time::Duration;
 
     static PAUSE_MS: AtomicU64 = AtomicU64::new(0);
+    static FAILING: AtomicBool = AtomicBool::new(false);
+
+    /// Makes every flush fail, as a disk that refuses a write does.
+    pub fn fail(on: bool) {
+        FAILING.store(on, Ordering::Relaxed);
+    }
+
+    pub fn failing() -> bool {
+        FAILING.load(Ordering::Relaxed)
+    }
 
     pub fn set(pause: Duration) {
         PAUSE_MS.store(
@@ -39,7 +49,12 @@ pub mod slow_disk {
 /// seconds when the machine writes a lot.
 fn flush_to_disk(file: &File) -> io::Result<()> {
     #[cfg(feature = "test-support")]
-    slow_disk::wait();
+    {
+        slow_disk::wait();
+        if slow_disk::failing() {
+            return Err(io::Error::other("the disk refused the flush"));
+        }
+    }
     file.sync_all()
 }
 
@@ -207,15 +222,33 @@ impl Log {
                 number: *number,
                 size: position,
             });
-            // A record read here may have been written and never flushed, if the engine ended
-            // before its flush. The flush is owed with the next one, which comes before any
-            // acknowledgement of the pane's output (`take_unsynced`, or `append`), instead of
-            // making the start wait for every file. A truncated file was flushed above.
+            // A truncated file was flushed above; the others are settled after the loop.
             if !truncated {
                 log.unsynced.insert(*number);
             }
         }
+        log.settle_unsynced_at_start()?;
         Ok(log)
+    }
+
+    /// A record read at start may have been written and never flushed, if the engine ended before
+    /// its flush. A log written only by flushed appends can hold such a record only in its newest
+    /// file, which is flushed now, before anything is acknowledged: that is one flush per pane,
+    /// not one per retained file. The older files stay owed: a log written by `append_unsynced`
+    /// (the terminal) can hold one in any of them, and `take_unsynced` flushes them off the lock
+    /// before the pane's output is acknowledged.
+    fn settle_unsynced_at_start(&mut self) -> Result<()> {
+        let Some(newest) = self.segments.back().map(|segment| segment.number) else {
+            return Ok(());
+        };
+        if self.unsynced.remove(&newest) {
+            Unsynced {
+                files: vec![(newest, self.directory.join(filename(newest)))],
+                directory: None,
+            }
+            .flush()?;
+        }
+        Ok(())
     }
 
     pub fn next_offset(&self) -> u64 {
@@ -359,21 +392,7 @@ impl Log {
                 self.index.pop_front();
             }
         }
-        if flush {
-            self.flush_owed()?;
-        }
         Ok(())
-    }
-
-    /// Flushes the files whose flush is still owed, so a flushed `append` leaves nothing the
-    /// log has read or written unflushed.
-    fn flush_owed(&mut self) -> Result<()> {
-        let Some(unsynced) = self.take_unsynced() else {
-            return Ok(());
-        };
-        unsynced
-            .flush()
-            .inspect_err(|_| self.restore_unsynced(&unsynced))
     }
 
     pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {

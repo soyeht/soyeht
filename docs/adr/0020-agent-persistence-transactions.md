@@ -66,6 +66,9 @@ with the length of the conversation, nor does a replay of N messages cost N²/2 
 sequence of writes, retention trims and replay publications, and that a save takes the same
 number of SQLite steps with 20 and with 2,000 messages stored.
 
+An engine of an earlier schema refuses a database of schema 39, so reverting the change that added
+it must keep migration 039 and the schema version.
+
 Runtime checkpoints are limited to 16 MiB. The native outbox holds at most
 128 complete lines and 8 MiB per pane. Open native requests are limited to
 128, with 16 MiB of combined private and public parameters; public request
