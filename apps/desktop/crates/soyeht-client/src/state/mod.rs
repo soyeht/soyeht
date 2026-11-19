@@ -309,12 +309,7 @@ impl State {
                 Vec::new()
             }
             Event::Problem { cause, message } => self.request_failed(&cause, message),
-            Event::Transcript {
-                pane_id,
-                items,
-                next_cursor,
-                newest,
-            } => self.transcript_page(&pane_id, items, next_cursor, newest),
+            event @ Event::Transcript { .. } => self.transcript_page(event),
             Event::Task(update) => self.apply_task_update(update),
             Event::TaskPane {
                 task,
@@ -406,14 +401,17 @@ impl State {
     }
 
     /// A page of an agent's transcript arrived.
-    fn transcript_page(
-        &mut self,
-        pane_id: &str,
-        items: Vec<soyeht_protocol::TranscriptMessage>,
-        next_cursor: Option<String>,
-        newest: bool,
-    ) -> Vec<Effect> {
-        if let Some(view) = self.agents.get_mut(pane_id)
+    fn transcript_page(&mut self, page: Event) -> Vec<Effect> {
+        let Event::Transcript {
+            pane_id,
+            items,
+            next_cursor,
+            newest,
+        } = page
+        else {
+            return Vec::new();
+        };
+        if let Some(view) = self.agents.get_mut(&pane_id)
             && let Err(error) = view.merge_transcript(items, next_cursor, newest)
         {
             self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
