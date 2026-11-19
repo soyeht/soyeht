@@ -101,16 +101,11 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   let reads: [(String, @MainActor () -> Void)] = [
     ("views of pane b", { readPane(client, "b") }),
     (
-      "workspace tab",
+      "workspace tab and rail button",
       {
         _ = client.agentAttention.waitingCount(in: "w")
         _ = client.agentAttention.hasWorkingAgent(in: "w")
         _ = client.workspaces
-      }
-    ),
-    (
-      "rail button",
-      {
         _ = client.agentAttention.totalWaitingCount
         _ = client.agentAttention.hasWorkingAgent
       }

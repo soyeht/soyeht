@@ -12,13 +12,8 @@ private func agentPane(
     cols: 80, rows: 24, record: true)
 }
 
-extension AgentAttentionPolicy {
-  /// The summary of panes whose views are at hand.
-  fileprivate static func summarize(
-    panes: [Pane], views: [String: AgentPaneView]
-  ) -> AgentAttentionSummary {
-    summarize(panes: panes, attention: { AgentPaneAttention(views[$0]) })
-  }
+private func summaryOf(_ panes: [Pane], _ views: [String: AgentPaneView]) -> AgentAttentionSummary {
+  AgentAttentionPolicy.summarize(panes: panes, attention: { AgentPaneAttention(views[$0]) })
 }
 
 @Test func attentionAggregatesWorkingAndWaitingAcrossWorkspaces() {
@@ -40,8 +35,7 @@ extension AgentAttentionPolicy {
   otherRequest.elicitation = ElicitationRequest(
     requestId: "question", paneId: "four", generation: 1, promptId: "prompt",
     title: "Question", schema: .object([:]), expiresAt: "later")
-  let summary = AgentAttentionPolicy.summarize(
-    panes: panes, views: ["one": request, "four": otherRequest])
+  let summary = summaryOf(panes, ["one": request, "four": otherRequest])
   #expect(summary.totalWaitingCount == 2)
   #expect(summary.waitingCount(in: "left") == 1)
   #expect(summary.waitingCount(in: "right") == 1)
@@ -56,20 +50,20 @@ extension AgentAttentionPolicy {
   view.permission = PermissionRequest(
     requestId: "permission", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let first = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
+  let first = summary([pane], ["one": view])
   #expect(first.waitingCount(in: "left") == 1)
   #expect(first.requests.map(\.identity) == ["one:1:permission"])
 
   view.elicitation = ElicitationRequest(
     requestId: "question", paneId: "one", generation: 1, promptId: "prompt",
     title: "Question", schema: .object([:]), expiresAt: "later")
-  let second = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
+  let second = summary([pane], ["one": view])
   #expect(second.waitingCount(in: "left") == 2)
   #expect(second.requests.map(\.requestId) == ["permission", "question"])
 
   view.permission = nil
   view.elicitation = nil
-  let cleared = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
+  let cleared = summary([pane], ["one": view])
   #expect(cleared.totalWaitingCount == 0)
   #expect(cleared.requests.isEmpty)
 }
@@ -85,8 +79,8 @@ extension AgentAttentionPolicy {
   view.permission = PermissionRequest(
     requestId: "permission", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let before = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
-  let after = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
+  let before = summary([pane], ["one": view])
+  let after = summary([pane], ["one": view])
   var cursor = AgentAttentionNotificationCursor()
   #expect(cursor.newRequests(in: before, connected: false).isEmpty)
   #expect(cursor.newRequests(in: before, connected: true).isEmpty)
@@ -97,7 +91,7 @@ extension AgentAttentionPolicy {
   view.permission = PermissionRequest(
     requestId: "next", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let next = AgentAttentionPolicy.summarize(panes: [pane], views: ["one": view])
+  let next = summary([pane], ["one": view])
   #expect(cursor.newRequests(in: next, connected: true).map(\.requestId) == ["next"])
   #expect(cursor.newRequests(in: next, connected: true).isEmpty)
 }
@@ -162,7 +156,7 @@ private func vectorSummary(_ panes: [JsonValue]) -> AgentAttentionSummary {
     }
     views[id] = view
   }
-  return AgentAttentionPolicy.summarize(panes: models, views: views)
+  return summaryOf(models, views)
 }
 
 /// The request an identity (`paneId:generation:requestId`) names.
