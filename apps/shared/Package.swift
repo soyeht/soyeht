@@ -36,11 +36,9 @@ let package = Package(
       name: "SoyehtClient",
       dependencies: [
         "SoyehtAvatar",
-        "SoyehtAvatarRaster",
         "SoyehtVoice",
         .product(name: "SoyehtProtocol", package: "swift"),
         .product(name: "SwiftTerm", package: "SwiftTerm"),
-        .product(name: "Markdown", package: "swift-markdown"),
       ],
       resources: [.process("Resources")]
     ),

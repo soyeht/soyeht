@@ -209,6 +209,28 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
   #expect(small.side == 120)
 }
 
+@Test func theQuietAllowanceIsTheShortestFrameOfTheStageNotAConstant() {
+  // A frame of 40 ms, inside the 100 ms a slow stage allows, is quiet for a stage whose shortest
+  // frame is 100 ms (under half of it) and never for the standard one (1/60 s).
+  func grows(_ pacer: inout AvatarFramePacer) -> Bool {
+    var now = 0.0
+    for _ in 0..<AvatarFramePacer.patience {
+      now += 0.1
+      _ = pacer.record(cost: 0.2, allowed: 0.1, now: now)
+    }
+    guard pacer.side < pacer.ceiling else { return false }
+    for _ in 0..<400 {
+      now += 0.1
+      if case .grew? = pacer.record(cost: 0.04, allowed: 0.1, now: now) { return true }
+    }
+    return false
+  }
+  var slow = AvatarFramePacer(side: 400, quietAllowance: 0.1)
+  var standard = AvatarFramePacer(side: 400)
+  #expect(grows(&slow))
+  #expect(!grows(&standard))
+}
+
 @Test func aFolderWithNoDocumentIsMalformed() async throws {
   try await withFolder { folder in
     #expect(error { try AvatarPackageFolder.load(folder) } == .malformed)

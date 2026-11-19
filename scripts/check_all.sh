@@ -499,7 +499,7 @@ step swift full swift:test-shared swift test --package-path apps/shared
 step swift fast swift:test-shared-build swift build --package-path apps/shared
 # The two targets a watch app links (the avatar and the voice rules), for the watchOS SDK, in both
 # slices a watch runs, `arm64` and `arm64_32`. The Mac and iOS builds never compile them for a
-# watch, so a UIKit or Speech import there would pass every other step.
+# watch, so an AppKit or Speech import there would pass every other step.
 step swift both swift:watchos-build bash scripts/check_watchos.sh
 # The part of `swift:test-shared` that reads `contracts/vectors/`: the rules every client passes, which a
 # change to a vector file or to the shared package can break with every Rust test green, and the
