@@ -49,9 +49,16 @@ import SoyehtProtocol
   func expectReplay(of paneId: String) { ended.remove(paneId) }
 
   /// Waits until the replay of `paneId` has been read, or the engine has been silent for the
-  /// request timeout, which must not hold the other terminals back for ever.
-  func awaitReplayEnd(of paneId: String) async {
+  /// request timeout, which must not hold the other terminals back for ever. After it, the next
+  /// subscribe may queue a second tail (about 4 MiB in all, within the connection's budget).
+  /// A holder of a connection that has ended returns at once.
+  func awaitReplayEnd(of paneId: String, turn: Int) async {
+    guard turn == epoch else { return }
     if ended.remove(paneId) != nil { return }
+    if let stale = waiting {
+      waiting = nil
+      stale.resume.resume()
+    }
     nextToken &+= 1
     let token = nextToken
     let timer = Task { [weak self, timeout] in

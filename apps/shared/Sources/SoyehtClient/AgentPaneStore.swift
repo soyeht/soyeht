@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SoyehtProtocol
 
 /// What a pane asks of the person, which is all the tab bar and the rail need of it. It changes
 /// when a request opens or closes, not when the pane streams, so the views that follow it are
@@ -27,11 +28,15 @@ public final class AgentPaneModel {
   public var view: AgentPaneView { didSet { viewChanged() } }
   private(set) var attention: AgentPaneAttention
   @ObservationIgnored private var grouped: [AgentTranscriptEntry]?
-  /// How many times the transcript was grouped.
-  @ObservationIgnored private(set) var groupings = 0
+  @ObservationIgnored private let group: ([TranscriptMessage]) -> [AgentTranscriptEntry]
 
-  init(_ view: AgentPaneView = AgentPaneView()) {
+  init(
+    _ view: AgentPaneView = AgentPaneView(),
+    group: @escaping ([TranscriptMessage]) -> [AgentTranscriptEntry] =
+      AgentTranscriptGrouping.entries
+  ) {
     self.view = view
+    self.group = group
     attention = AgentPaneAttention(view)
   }
 
@@ -39,8 +44,7 @@ public final class AgentPaneModel {
   public var entries: [AgentTranscriptEntry] {
     access(keyPath: \.view)
     if let grouped { return grouped }
-    groupings += 1
-    let entries = AgentTranscriptGrouping.entries(view.messages)
+    let entries = group(view.messages)
     grouped = entries
     return entries
   }
@@ -97,6 +101,7 @@ public final class AgentPaneStore {
       if let newValue {
         model(creating: paneId, from: newValue).view = newValue
       } else {
+        guard models[paneId] != nil else { return }
         models.removeValue(forKey: paneId)
       }
     }
@@ -107,6 +112,7 @@ public final class AgentPaneStore {
     _ paneId: String, default makeDefault: @autoclosure () -> AgentPaneView
   ) -> AgentPaneView {
     get { models[paneId]?.view ?? makeDefault() }
+    // A plain get and set would copy the message array of the pane on every chunk.
     _modify {
       let model = model(creating: paneId, from: makeDefault())
       yield &model.view

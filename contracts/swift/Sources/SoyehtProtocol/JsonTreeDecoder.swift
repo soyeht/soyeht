@@ -1,8 +1,15 @@
 import Foundation
 import SoyehtProtocol
 
-/// Decodes a typed value straight from a parsed `JsonValue`. A frame is parsed to a tree once; a
-/// handler that wants a type used to write the tree out as text and parse that text again.
+extension JsonValue {
+  /// A typed value read straight from this tree. A frame is parsed to a tree once; a handler
+  /// that wants a type used to write the tree out as text and parse that text again. It reads
+  /// what `JSONDecoder` reads (`ProtocolVectors` runs every vector through both).
+  public func decoded<T: Decodable>(_ type: T.Type) throws -> T {
+    try JsonTreeDecoder.decode(type, from: self)
+  }
+}
+
 struct JsonTreeDecoder: Decoder {
   let value: JsonValue
   var codingPath: [any CodingKey] = []
@@ -16,6 +23,17 @@ struct JsonTreeDecoder: Decoder {
     _ type: T.Type, from value: JsonValue, at path: [any CodingKey]
   ) throws -> T {
     if type == JsonValue.self, let same = value as? T { return same }
+    // The types `JSONDecoder` reads in a way of their own, with its default strategies.
+    if type == Data.self, case .string(let text) = value, let data = Data(base64Encoded: text),
+      let same = data as? T
+    {
+      return same
+    }
+    if type == URL.self, case .string(let text) = value, let url = URL(string: text),
+      let same = url as? T
+    {
+      return same
+    }
     return try T(from: JsonTreeDecoder(value: value, codingPath: path))
   }
 

@@ -48,18 +48,25 @@ private func viaTree<T: Codable>(_ type: T.Type, _ tree: JsonValue) throws -> Js
   #expect(throws: DecodingError.self) { try JsonValue.string("p").decoded(Pane.self) }
 }
 
-@Test func aJsonFrameIsParsedOnceAndAnyOtherFrameIsPassedOn() async throws {
+@Test func aJsonFrameIsParsedToItsTree() async throws {
   let json = Frame(kind: FrameKind.json, payload: Data(#"{"jsonrpc":"2.0","n":[1,2.5,null]}"#.utf8))
   guard case .message(let tree) = try await IncomingFrame.parse(json) else {
     Issue.record("a JSON frame becomes a tree")
     return
   }
   #expect(tree["n"] == .array([.integer(1), .number(2.5), .null]))
+}
 
-  let output = Frame(kind: FrameKind.terminal, header: Data([1]), payload: Data([65]))
-  guard case .other(let frame) = try await IncomingFrame.parse(output) else {
-    Issue.record("terminal output is not parsed")
-    return
-  }
-  #expect(frame == output)
+private struct Foundationish: Codable, Equatable {
+  var bytes: Data
+  var link: URL
+  var when: Date
+}
+
+@Test func theTypesJSONDecoderReadsInAWayOfItsOwnAreReadTheSameFromTheTree() throws {
+  let text = #"{"bytes":"aGVsbG8=","link":"https://example.com/a?b=1","when":1234.5}"#
+  let tree = try JSONDecoder().decode(JsonValue.self, from: Data(text.utf8))
+  #expect(
+    try tree.decoded(Foundationish.self)
+      == JSONDecoder().decode(Foundationish.self, from: Data(text.utf8)))
 }

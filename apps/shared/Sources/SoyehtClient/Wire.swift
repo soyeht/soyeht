@@ -42,10 +42,6 @@ extension JsonValue {
   var int: Int? { if case .integer(let value) = self { Int(exactly: value) } else { nil } }
   /// The notification a `method` field names, when it is one of the contract's events.
   var eventName: EventName? { string.flatMap(EventName.init(rawValue:)) }
-  /// A typed value read from the tree already parsed, not from the tree written out again.
-  func decoded<T: Decodable>(_ type: T.Type) throws -> T {
-    try JsonTreeDecoder.decode(type, from: self)
-  }
   static func encoded<T: Encodable>(_ value: T) throws -> JsonValue {
     try JSONDecoder().decode(JsonValue.self, from: JSONEncoder().encode(value))
   }
@@ -339,8 +335,8 @@ enum IncomingFrame: Sendable {
   case message(JsonValue)
   case other(Frame)
 
+  /// The tree of a JSON frame, parsed on a background executor.
   @concurrent static func parse(_ frame: Frame) async throws -> IncomingFrame {
-    guard frame.kind == FrameKind.json else { return .other(frame) }
-    return .message(try JSONDecoder().decode(JsonValue.self, from: frame.payload))
+    .message(try JSONDecoder().decode(JsonValue.self, from: frame.payload))
   }
 }

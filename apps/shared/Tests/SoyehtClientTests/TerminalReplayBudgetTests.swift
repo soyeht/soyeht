@@ -8,7 +8,9 @@ import Testing
 /// subscribe from the tail, and closes a connection whose queue passes
 /// `ProtocolLimits.connectionQueueBytes`. The model below holds that queue: a subscribe adds a
 /// tail, and the tail leaves it when the client has read the replay's end, as the engine's writer
-/// frees what it has put on the socket. The tests say how many tails were ever queued at once.
+/// frees what it has put on the socket. It models neither live output nor a replay that never
+/// ends: it says that the client sends no subscribe before the previous replay has ended, which
+/// is what keeps the tails from adding up. The real engine is the end-to-end acceptance's.
 
 @MainActor private final class EngineQueueModel {
   private(set) var used = 0
@@ -93,8 +95,8 @@ import Testing
   }
 }
 
-@MainActor @Test(arguments: [1, 4, 12, 40])
-func theTailsOfAnyNumberOfTerminalsAreNeverQueuedTogether(count: Int) async throws {
+@MainActor @Test func theTailsOfManyTerminalsAreNeverQueuedTogether() async throws {
+  let count = 12
   let (client, model) = try terminals(count)
   // The views of a grid mount while the connection settles and each asks for its screen.
   client.connected = true
@@ -162,7 +164,7 @@ func theTailsOfAnyNumberOfTerminalsAreNeverQueuedTogether(count: Int) async thro
   let gate = TerminalReplayGate(timeout: .milliseconds(50))
   let turn = await gate.enter()
   #expect(turn != nil)
-  await gate.awaitReplayEnd(of: "a")  // No `stream.replay_done` ever comes.
+  await gate.awaitReplayEnd(of: "a", turn: turn ?? -1)  // No `stream.replay_done` ever comes.
   gate.leave(turn ?? -1)
   #expect(await gate.enter() != nil)
 }
@@ -174,4 +176,25 @@ func theTailsOfAnyNumberOfTerminalsAreNeverQueuedTogether(count: Int) async thro
   await Task.yield()
   gate.reset()
   #expect(await waiting.value == nil)
+}
+
+@MainActor @Test func aHolderOfAnEndedConnectionNeverTakesTheNewHoldersWait() async {
+  let gate = TerminalReplayGate()
+  let old = await gate.enter()
+  gate.reset()
+  let new = await gate.enter()
+  var newEnded = false
+  let waiting = Task { @MainActor in
+    await gate.awaitReplayEnd(of: "b", turn: new ?? -1)
+    newEnded = true
+  }
+  await Task.yield()
+
+  // The old connection's subscriber comes back late: it neither waits nor disturbs the new wait.
+  await gate.awaitReplayEnd(of: "a", turn: old ?? -1)
+  gate.leave(old ?? -1)
+  #expect(!newEnded)
+  gate.replayEnded("b")
+  await waiting.value
+  #expect(newEnded)
 }

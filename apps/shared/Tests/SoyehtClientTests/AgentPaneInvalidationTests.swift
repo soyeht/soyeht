@@ -78,22 +78,34 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
   #expect(client.agentAttention.totalWaitingCount == 1)
 }
 
-@MainActor @Test func theTranscriptIsGroupedOncePerChangeAndNeverForAPaneNobodyReads() throws {
-  let client = twoPanes()
-  let model = try #require(client.agentPanes.model("a"))
-  let hidden = try #require(client.agentPanes.model("b"))
-  for _ in 0..<5 { _ = model.entries }
-  #expect(model.groupings == 1)
+@MainActor private final class GroupingCount {
+  var passes = 0
+}
 
-  for index in 1...20 {
-    try client.applyAgentEvent(.paneUpdate, chunk("a", "streaming \(index)"))
-    try client.applyAgentEvent(.paneUpdate, chunk("b", "streaming \(index)"))
-    client.partials.flush()
+@MainActor @Test func theTranscriptIsGroupedOncePerChangeAndNeverForAPaneNobodyReads() {
+  let count = GroupingCount()
+  let model = AgentPaneModel(group: { messages in
+    count.passes += 1
+    return AgentTranscriptGrouping.entries(messages)
+  })
+  func message(_ text: String) -> TranscriptMessage {
+    TranscriptMessage(
+      localId: "reply", generation: 1, seq: "9", role: .assistant, kind: .message, text: text,
+      complete: false)
+  }
+  // Nobody reads the pane while it streams: nothing is grouped.
+  for index in 1...20 { model.view.merge(message("streaming \(index)")) }
+  #expect(count.passes == 0)
+
+  for _ in 0..<5 { _ = model.entries }
+  #expect(count.passes == 1)
+
+  // A reader that looks at each change reads it three times and groups once.
+  for index in 21...40 {
+    model.view.merge(message("streaming \(index)"))
     for _ in 0..<3 { _ = model.entries }
   }
-  #expect(model.groupings == 21)
-  #expect(hidden.groupings == 0)
-  #expect(model.entries.count == 51)
+  #expect(count.passes == 21)
 }
 
 @MainActor @Test func aChunkForAHiddenPaneRunsNoBodyOfTheWindowChrome() {

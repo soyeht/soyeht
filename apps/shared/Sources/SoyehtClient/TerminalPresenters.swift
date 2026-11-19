@@ -88,7 +88,19 @@ extension EngineClient: TerminalStreamControl {
   }
   func hasStream(_ paneId: String) -> Bool { terminalStreams.contains(paneId) }
   func isShownAlone(_ paneId: String) -> Bool { terminalOutput != nil && selectedPaneId == paneId }
-  func subscribeStream(_ paneId: String) async throws { try await subscribe(paneId) }
+  func subscribeStream(_ paneId: String) async throws {
+    try await subscribeWithoutFailingTheSession(paneId)
+  }
+
+  /// A terminal the engine refuses, because it closed since the pane list was read, does not end
+  /// the session: the failure is logged by its kind and the next terminal is subscribed.
+  func subscribeWithoutFailingTheSession(_ paneId: String) async throws {
+    do {
+      try await subscribe(paneId)
+    } catch ClientFailure.remote(let kind, _, _) {
+      clientLogger.error("Terminal subscribe refused: \(kind, privacy: .public)")
+    }
+  }
   func unsubscribeStream(_ paneId: String) async throws {
     _ = try await request(.paneStreamUnsubscribe, .object(["paneId": .string(paneId)]))
   }
@@ -139,10 +151,15 @@ extension EngineClient: TerminalStreamControl {
       return
     }
     // The tmux-style Mac surface keeps every terminal it has current, including hidden ones.
-    var (shown, others) = macTerminalsToFollow()
-    if shown.first == selectedPaneId { try await subscribe(shown.removeFirst()) }
+    let (shown, others) = macTerminalsToFollow()
+    // `macTerminalsToFollow` puts the selected terminal first when it has a surface.
+    let selected = shown.first { $0 == selectedPaneId }
+    if let selected { try await subscribeWithoutFailingTheSession(selected) }
     try await loadSelectedPane()
-    for paneId in shown + others where connected { try await subscribe(paneId) }
+    // A pane that was subscribed meanwhile (the person clicked it) is not replayed again.
+    for paneId in shown.filter({ $0 != selected }) + others where connected && !hasStream(paneId) {
+      try await subscribeWithoutFailingTheSession(paneId)
+    }
   }
 
   private func loadSelectedPane() async throws {
@@ -174,7 +191,7 @@ extension EngineClient: TerminalStreamControl {
   /// panes that the reconnect did not remove stay where they are and never mount again.
   func subscribeShownTerminals() async throws {
     if let selected = selectedPaneId, isTerminal(selected), !hasStream(selected) {
-      try await subscribe(selected)
+      try await subscribeWithoutFailingTheSession(selected)
     }
     try await terminalPresenters.resubscribe()
   }

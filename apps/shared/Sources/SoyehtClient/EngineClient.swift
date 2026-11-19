@@ -218,7 +218,10 @@ public final class EngineClient {
     let reader = Task { [weak self] in
       do {
         while !Task.isCancelled {
-          let frame = try await IncomingFrame.parse(try await wire.next())
+          let next = try await wire.next()
+          // Only a JSON frame is worth the hop; terminal output is read where it arrives.
+          let frame =
+            next.kind == FrameKind.json ? try await IncomingFrame.parse(next) : .other(next)
           guard let self, self.wire === wire else { break }
           try self.receive(frame)
         }
@@ -592,11 +595,13 @@ public final class EngineClient {
     // the next subscribe waits until this one's replay has been read.
     guard let turn = await replayGate.enter() else { throw ClientFailure.disconnected }
     defer { replayGate.leave(turn) }
+    // The pane may have closed or changed while this subscribe waited for its turn.
+    guard isTerminal(pane) else { return }
     terminalsWithDroppedOutput.remove(pane)
     replayGate.expectReplay(of: pane)
     _ = try await request(
       .paneStreamSubscribe, .object(["paneId": .string(pane), "from": .string("tail")]))
-    if terminalStreams.contains(pane) { await replayGate.awaitReplayEnd(of: pane) }
+    if terminalStreams.contains(pane) { await replayGate.awaitReplayEnd(of: pane, turn: turn) }
   }
   public func refreshTerminal() {
     guard let pane = selectedPaneId, selectedPane?.mode == .terminal, connected else { return }
