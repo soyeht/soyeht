@@ -21,6 +21,8 @@ struct AgentPartialUpdates {
   private var order: [Key] = []
   /// How many updates were dropped because a newer one of the same message replaced them.
   private(set) var superseded = 0
+  /// How many updates were offered in all, kept or dropped.
+  private(set) var offered = 0
 
   var isEmpty: Bool { latest.isEmpty }
 
@@ -35,6 +37,7 @@ struct AgentPartialUpdates {
   /// when the caller starts the frame timer.
   mutating func offer(paneId: String, _ message: TranscriptMessage) -> Bool {
     let key = Key(paneId: paneId, localId: message.localId)
+    offered += 1
     let first = latest.isEmpty
     if latest.updateValue(Update(paneId: paneId, message: message), forKey: key) == nil {
       order.append(key)
@@ -67,6 +70,7 @@ struct AgentPartialUpdates {
   }
 
   var superseded: Int { updates.superseded }
+  var offered: Int { updates.offered }
 
   func offer(paneId: String, _ message: TranscriptMessage) {
     guard updates.offer(paneId: paneId, message) else { return }

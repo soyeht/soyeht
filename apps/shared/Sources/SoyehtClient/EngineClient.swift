@@ -4,7 +4,17 @@ import SoyehtProtocol
 
 @MainActor @Observable
 public final class EngineClient {
-  public internal(set) var panes: [Pane] = []
+  /// Every pane. Reading the list follows every change of every pane; a view that shows one pane
+  /// reads `pane(_:)`, one that shows a workspace `panes(in:)` (see `PaneStore`).
+  public internal(set) var panes: [Pane] {
+    get { paneStore.all }
+    set { paneStore.replaceAll(newValue) }
+  }
+  let paneStore = PaneStore()
+  @ObservationIgnored lazy var attentionTracker = AgentAttentionTracker { [unowned self] in
+    AgentAttentionPolicy.summarize(
+      panes: self.paneStore.allUntracked, attention: { self.agentPanes.attention(for: $0) })
+  }
   public private(set) var workspaces: [Workspace] = []
   public internal(set) var devices: [Device] = []
   public internal(set) var pairRequests: [PairPrompt] = []
@@ -119,13 +129,25 @@ public final class EngineClient {
     self.socket = socket
     credential = nil
     self.webHost = webHost
+    watchAttention()
   }
   public init(credential: DeviceCredential) {
     self.credential = credential
     socket = ""
     webHost = nil
+    watchAttention()
   }
-  public var selectedPane: Pane? { panes.first { $0.paneId == selectedPaneId } }
+  public var selectedPane: Pane? { pane(selectedPaneId) }
+
+  /// The pane `paneId`, followed on its own: a change in another pane does not run the reader.
+  public func pane(_ paneId: String?) -> Pane? { paneStore.pane(paneId) }
+
+  /// The panes of a workspace, followed on their own: a change in another workspace's pane does
+  /// not run the reader.
+  public func panes(in workspaceId: String) -> [Pane] { paneStore.panes(in: workspaceId) }
+
+  /// The panes of one mode, followed on their own.
+  public func panes(mode: PaneMode) -> [Pane] { paneStore.panes(mode: mode) }
 
   public func start() {
     guard lifecycle == nil else { return }
@@ -472,12 +494,14 @@ public final class EngineClient {
     case .paneClosed: removePane(params["paneId"].string)
     case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
-      if let index = panes.firstIndex(where: { $0.paneId == event.paneId }) {
-        panes[index].state = event.state
-        panes[index].source = event.source
-        panes[index].confidence = event.confidence
-        panes[index].phrase = event.phrase
-        if panes[index].mode == .agent && event.state == .dead { refreshHarnesses() }
+      if let pane = pane(event.paneId) {
+        paneStore.update(event.paneId) {
+          $0.state = event.state
+          $0.source = event.source
+          $0.confidence = event.confidence
+          $0.phrase = event.phrase
+        }
+        if pane.mode == .agent && event.state == .dead { refreshHarnesses() }
       }
     default: break
     }

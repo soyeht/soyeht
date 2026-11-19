@@ -29,7 +29,7 @@ struct AgentComposer<HarnessControl: View>: View {
   /// clipping the chips.
   @ScaledMetric(relativeTo: .body) private var controlHeight = AgentComposerMetrics.controlHeight
 
-  private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
+  private var pane: Pane? { client.pane(paneId) }
 
   private var controls: AgentComposerControls {
     let agent = pane?.agent

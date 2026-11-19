@@ -167,10 +167,33 @@ public final class AgentAttentionNotificationSettings {
   }
 }
 
+/// The attention summary as a value of its own, which changes when what it says changes. The
+/// panes and their requests change at every turn of every agent; the tab strip and the rail that
+/// read the summary are run only when the summary is not what it was.
+@MainActor @Observable
+final class AgentAttentionTracker {
+  private(set) var summary = AgentAttentionSummary.empty
+  @ObservationIgnored private let compute: () -> AgentAttentionSummary
+
+  init(compute: @escaping () -> AgentAttentionSummary) {
+    self.compute = compute
+  }
+
+  /// Makes the summary again, after what it reads changed; readers hear only of a different one.
+  func refresh() {
+    let next = compute()
+    if next != summary { summary = next }
+  }
+}
+
 extension EngineClient {
   public var agentAttention: AgentAttentionSummary {
-    guard connected else { return .empty }
-    return AgentAttentionPolicy.summarize(
-      panes: panes, attention: { agentPanes.attention(for: $0) })
+    connected ? attentionTracker.summary : .empty
+  }
+
+  /// The summary follows the panes and their requests: it is made again when either changes.
+  func watchAttention() {
+    paneStore.didChange = { [weak self] in self?.attentionTracker.refresh() }
+    agentPanes.attentionChanged = { [weak self] in self?.attentionTracker.refresh() }
   }
 }

@@ -29,6 +29,8 @@ public final class AgentPaneModel {
   private(set) var attention: AgentPaneAttention
   @ObservationIgnored private var grouped: [AgentTranscriptEntry]?
   @ObservationIgnored private let group: ([TranscriptMessage]) -> [AgentTranscriptEntry]
+  /// Told when the pane's requests change, which is when the attention summary can change.
+  @ObservationIgnored var attentionChanged: (@MainActor () -> Void)?
 
   init(
     _ view: AgentPaneView = AgentPaneView(),
@@ -52,7 +54,10 @@ public final class AgentPaneModel {
   private func viewChanged() {
     grouped = nil
     let next = AgentPaneAttention(view)
-    if next != attention { attention = next }
+    if next != attention {
+      attention = next
+      attentionChanged?()
+    }
   }
 }
 
@@ -71,6 +76,8 @@ public final class AgentPaneStore {
   /// until a page that was asked for after it arrives, so a reload that fails is made again.
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var reading: Set<String> = []
+  /// Told when a pane's requests change or a pane appears or goes: the attention summary reads them.
+  @ObservationIgnored var attentionChanged: (@MainActor () -> Void)?
 
   public init() {}
 
@@ -135,7 +142,9 @@ public final class AgentPaneStore {
     if let model = models[paneId] { return model }
     view.scroll.isShown = isShown(paneId)
     let model = AgentPaneModel(view)
+    model.attentionChanged = { [weak self] in self?.attentionChanged?() }
     models[paneId] = model
+    attentionChanged?()
     return model
   }
 
@@ -148,6 +157,7 @@ public final class AgentPaneStore {
       } else {
         guard models[paneId] != nil else { return }
         models.removeValue(forKey: paneId)
+        attentionChanged?()
       }
     }
   }
@@ -171,12 +181,15 @@ public final class AgentPaneStore {
 
   /// Drops the panes not in `paneIds`; readers hear of it only when one went.
   func retainOnly(_ paneIds: Set<String>) {
-    for paneId in models.keys where !paneIds.contains(paneId) { models.removeValue(forKey: paneId) }
+    let gone = models.keys.filter { !paneIds.contains($0) }
+    for paneId in gone { models.removeValue(forKey: paneId) }
+    if !gone.isEmpty { attentionChanged?() }
   }
 
   func removeAll() {
     guard !models.isEmpty else { return }
     models.removeAll()
+    attentionChanged?()
   }
 }
 

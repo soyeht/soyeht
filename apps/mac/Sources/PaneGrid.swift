@@ -87,7 +87,7 @@ struct PaneGrid: View {
 
   private var workspacePanes: [Pane] {
     guard let workspaceId else { return [] }
-    return client.panes.filter { $0.workspaceId == workspaceId }
+    return client.panes(in: workspaceId)
   }
 
   private var panes: [Pane] {

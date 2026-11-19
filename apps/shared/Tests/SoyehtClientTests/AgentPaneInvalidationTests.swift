@@ -13,7 +13,8 @@ private func agentPane(_ id: String) -> Pane {
     source: .protocol, confidence: 1, phrase: "", generation: 1, cols: 80, rows: 24, record: true)
 }
 
-/// A client with two streaming agent panes, `a` and `b`, each holding a long transcript.
+/// A client with two streaming agent panes, `a` and `b`, each holding a long transcript; a view
+/// shows `a`.
 @MainActor private func twoPanes() -> EngineClient {
   let client = EngineClient(socket: "/tmp/sn-pane-invalidation/engine.sock")
   client.connected = true
@@ -26,6 +27,7 @@ private func agentPane(_ id: String) -> Pane {
           kind: .message, text: "message \(index)", complete: true)
       })
   }
+  showPane(client, "a")
   return client
 }
 

@@ -10,7 +10,7 @@ struct PhonePaneDetail: View {
   let paneId: String
 
   var body: some View {
-    if let pane = client.panes.first(where: { $0.paneId == paneId }), pane.mode == .writing {
+    if let pane = client.pane(paneId), pane.mode == .writing {
       PhoneWritingWorkspace(
         client: client, workspaceId: pane.workspaceId, initialPaneId: pane.paneId)
     } else {
@@ -35,7 +35,7 @@ private struct PhonePane: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if client.connected, let pane = client.panes.first(where: { $0.paneId == paneId }) {
+      if client.connected, let pane = client.pane(paneId) {
         if pane.mode == .web {
           PhoneWebPane(client: client, pane: pane)
         } else if pane.mode == .agent {
@@ -68,11 +68,11 @@ private struct PhonePane: View {
       .overlay(alignment: .bottom) {
         if copyNotice.visible { PhoneCopyNotice() }
       }
-      .navigationTitle(client.panes.first(where: { $0.paneId == paneId })?.name ?? "Pane")
+      .navigationTitle(client.pane(paneId)?.name ?? "Pane")
       .navigationBarTitleDisplayMode(.inline)
       .onAppear { client.select(paneId) }
       .toolbar {
-        if client.panes.first(where: { $0.paneId == paneId })?.mode == .terminal {
+        if client.pane(paneId)?.mode == .terminal {
           ToolbarItem(placement: .primaryAction) {
             PhoneTerminalMenu(
               client: client, paneId: paneId, fontStore: fontStore, sizeModes: sizeModes)

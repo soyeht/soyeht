@@ -116,6 +116,7 @@ func shape(_ entries: [AgentTranscriptEntry]) -> [String] {
 @MainActor @Test func liveSubagentUpdatesKeepTheirOwnerInTheReplica() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
+  showPane(client, paneId)
   let run = SubagentRun(subagentId: "child", name: "Explore", task: "Look", status: .running)
   try client.applyAgentEvent(
     .paneUpdate,

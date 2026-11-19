@@ -219,7 +219,8 @@ extension EngineClient {
   /// again with less than a page, and more at the engine, reads the newest page.
   func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
     guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
-    guard let view = agentPanes[paneId] else { return }
+    // A pane that received nothing while it was not shown has no view yet; it can still be stale.
+    let view = agentPanes[paneId] ?? AgentPaneView()
     if shown {
       let stale = agentPanes.isStale(paneId)
       let wants = AgentTranscriptWindow.wantsNewestPage(
@@ -292,6 +293,13 @@ extension EngineClient {
     if eventName != .paneUpdate { partials.flush() }
     switch eventName {
     case .paneUpdate:
+      // A pane no view shows is not followed message by message: what it receives comes back
+      // in one reload when it is shown. Its update is not even read, so a reply that streams in
+      // a hidden pane costs this client no more than the line that says it arrived.
+      if let paneId = params["paneId"].string, !agentPanes.isShown(paneId) {
+        agentPanes.markStale(paneId)
+        return
+      }
       let update = try params.decoded(PaneUpdateEvent.self)
       let (paneId, message) = transcriptMessage(update)
       if AgentPartialUpdates.isPartial(message) {

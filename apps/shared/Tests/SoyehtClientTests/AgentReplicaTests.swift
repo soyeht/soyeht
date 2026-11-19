@@ -105,6 +105,7 @@ import Testing
 
 @MainActor @Test func agentReplicaAppliesAnUpdateThatNamesWhoCausedIt() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica-actor/engine.sock")
+  showPane(client, "pane-agent")
   let closer = Actor(role: .human_local, client: "mac")
   let update = PaneUpdateEvent.v0(
     AgentMessageUpdate(
@@ -120,6 +121,7 @@ import Testing
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
+  showPane(client, paneId)
   func update(text: String, complete: Bool) throws {
     try client.applyAgentEvent(
       .paneUpdate,
@@ -197,6 +199,7 @@ import Testing
 @MainActor @Test func rejectedPermissionAppearsAsSystemMessageInPane() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
+  showPane(client, paneId)
   try client.applyAgentEvent(
     .paneUpdate,
     .encoded(

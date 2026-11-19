@@ -411,6 +411,14 @@ impl State {
     ) -> serde_json::Result<Vec<Effect>> {
         Ok(match name {
             EventName::PaneUpdate => {
+                // A pane that is not shown is not followed message by message: what it receives
+                // comes back in the one reload made when it is shown. Its update is not read.
+                if let Some(id) = self.hidden_agent(&params).map(str::to_owned) {
+                    if let Some(view) = self.agents.get_mut(&id) {
+                        view.mark_stale();
+                    }
+                    return Ok(Vec::new());
+                }
                 if let Some((pane_id, message)) =
                     agent::message_of(serde_json::from_value::<PaneUpdateEvent>(params)?)
                     && let Some(view) = self.agents.get_mut(&pane_id)
@@ -546,6 +554,15 @@ impl State {
             }
             _ => self.reload_transcript(params),
         }
+    }
+
+    /// The pane an event names, when it is an agent that no workspace shows.
+    pub(crate) fn hidden_agent<'a>(&self, params: &'a Value) -> Option<&'a str> {
+        let id = params.get("paneId")?.as_str()?;
+        self.agents
+            .get(id)
+            .filter(|view| !view.is_shown())
+            .map(|_| id)
     }
 
     /// The command that reads the newest page of a pane that is shown again with less than a page
