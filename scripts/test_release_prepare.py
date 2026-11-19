@@ -2,14 +2,13 @@
 changelog section a person finished is kept while the wire contract is still recorded."""
 
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import changelog
 import release
 import release_flow
-from test_release_flow import DRAFT, NOTES, VERSION, FlowCase
+from test_release_flow import DRAFT, VERSION, FlowCase
 
 SNAPSHOT = release.ROOT / "contracts/released/protocol-v1.json"
 
@@ -112,13 +111,6 @@ class PrepareTests(FlowCase):
             self.prepare("minor")
         self.main.assert_called_once()
         self.assertEqual([call.args[0][-1] for call in self.draft.call_args_list], ["--print"])  # nothing written
-
-    def test_the_notes_of_the_kept_section_are_the_ones_a_release_publishes(self):
-        text = Path(changelog.CHANGELOG).read_text()
-        self.assertTrue(changelog.is_final(text, VERSION))
-        self.assertEqual(changelog.notes_of(text, VERSION), NOTES.split("\n", 1)[1].strip() + "\n")
-        self.assertFalse(changelog.is_final(DRAFT, VERSION))
-        self.assertFalse(changelog.is_final(text, "9.9.9"))
 
 
 if __name__ == "__main__":

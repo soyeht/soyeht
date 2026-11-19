@@ -274,7 +274,7 @@ private func counting(to count: Int) -> String {
   #expect(client.agentPanes[streamingPane]?.messages.first?.text == "last words")
   #expect(client.partials.deliveries == 1)
   // Nothing is left to arrive after the connection is gone.
-  client.agentPanes = [:]
+  client.agentPanes.removeAll()
   client.partials.flush()
   #expect(client.agentPanes[streamingPane] == nil)
 }

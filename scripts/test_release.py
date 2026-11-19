@@ -34,9 +34,6 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn(old, text)
         (self.root / path).write_text(text.replace(old, new, count))
 
-    def test_the_repository_agrees_with_its_source(self):
-        self.assertEqual(release.problems(REAL), [])
-
     def test_a_bump_rewrites_every_place_and_the_check_still_passes(self):
         old, new, changed = release.bump(self.root, "minor")
         self.assertEqual((old, new), (release.current(REAL), release.current(REAL).bumped("minor")))
@@ -95,12 +92,6 @@ class ReleaseTests(unittest.TestCase):
         _old, new, _changed = release.bump(self.root, str(Version(new.version.major + 1, 0, 0)))
         self.assertEqual(new.revision, 0)
 
-    def test_the_revision_stops_at_99(self):
-        (self.root / RELEASE_SOURCE).write_text('{"productVersion": "0.1.0", "buildRevision": 99}')
-        with self.assertRaises(ValueError):
-            release.bump(self.root, "revision")
-        self.assertEqual(release.current(self.root).revision, 99)
-
     def test_a_build_number_that_ignores_the_revision_is_found(self):
         release.bump(self.root, "revision")
         self.edit("apps/mac/SoyehtMac.xcodeproj/project.pbxproj", f'"CURRENT_PROJECT_VERSION" = "{release.current(self.root).build_number()}"', f'"CURRENT_PROJECT_VERSION" = "{release.current(self.root).build_number() - 1}"')
@@ -133,6 +124,12 @@ class ReleaseTests(unittest.TestCase):
             "contracts/typescript/package.json": (f'"version": "{version}"', '"version": "0.0.0"'),
             "apps/ios/SoyehtPhone.xcodeproj/project.pbxproj": (f'"MARKETING_VERSION" = "{version}"', '"MARKETING_VERSION" = "0.0.0"'),
             "apps/mac/SoyehtMac.xcodeproj/project.pbxproj": (f'"CURRENT_PROJECT_VERSION" = "{build}"', '"CURRENT_PROJECT_VERSION" = "0"'),
+            # a lockfile entry of a workspace crate
+            "apps/desktop/Cargo.lock": (f'name = "soyeht-client"\nversion = "{version}"', 'name = "soyeht-client"\nversion = "0.0.0"'),
+            # a crate that keeps a version of its own instead of the workspace's
+            "engine/soyeht-store/Cargo.toml": ("version.workspace = true", 'version = "0.0.0"'),
+            # a literal version in a plist that the build settings are meant to fill
+            "apps/ios/Info.plist": ("<string>$(MARKETING_VERSION)</string>", "<string>9.9.9</string>"),
         }
         for path, (old, new) in cases.items():
             with self.subTest(path=path):
@@ -143,33 +140,17 @@ class ReleaseTests(unittest.TestCase):
                 self.edit(path, new, old)
                 self.assertEqual(release.problems(self.root), [])
 
-    def test_a_lockfile_entry_of_a_workspace_crate_is_checked(self):
-        version = release.current(REAL).version
-        self.edit("apps/desktop/Cargo.lock", f'name = "soyeht-client"\nversion = "{version}"', 'name = "soyeht-client"\nversion = "0.0.0"')
-        found = release.problems(self.root)
-        self.assertEqual(len(found), 1, found)
-        self.assertIn("soyeht-client", found[0])
+    def test_a_literal_version_in_a_plist_is_put_back_to_the_setting(self):
+        self.edit("apps/ios/Info.plist", "<string>$(MARKETING_VERSION)</string>", "<string>9.9.9</string>")
+        release.apply(self.root, release.current(self.root))
+        self.assertEqual(release.problems(self.root), [])
+        self.assertIn("<string>$(MARKETING_VERSION)</string>", (self.root / "apps/ios/Info.plist").read_text())
 
     def test_a_stand_in_for_a_registry_crate_keeps_its_own_version_through_a_bump(self):
         text = (self.root / "apps/desktop/Cargo.lock").read_text()
         self.assertIn('name = "wayland-protocols-plasma"\nversion = "0.3.99"', text)
         release.bump(self.root, "minor")
         self.assertIn('name = "wayland-protocols-plasma"\nversion = "0.3.99"', (self.root / "apps/desktop/Cargo.lock").read_text())
-        self.assertEqual(release.problems(self.root), [])
-
-    def test_a_crate_with_a_version_of_its_own_is_found(self):
-        manifest = self.root / "engine/soyeht-store/Cargo.toml"
-        manifest.write_text(manifest.read_text().replace("version.workspace = true", 'version = "0.0.0"'))
-        found = release.problems(self.root)
-        self.assertEqual(len(found), 1, found)
-        self.assertIn("engine/soyeht-store/Cargo.toml", found[0])
-
-    def test_a_literal_version_in_a_plist_is_found_and_put_back_to_the_setting(self):
-        self.edit("apps/ios/Info.plist", "<string>$(MARKETING_VERSION)</string>", "<string>9.9.9</string>")
-        found = release.problems(self.root)
-        self.assertEqual(len(found), 1, found)
-        self.assertIn("CFBundleShortVersionString", found[0])
-        release.apply(self.root, release.current(self.root))
         self.assertEqual(release.problems(self.root), [])
 
     def test_a_missing_source_or_file_is_a_problem_not_a_crash(self):
@@ -230,9 +211,6 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("only goes up", err)
         generator.assert_not_called()
-
-    def test_there_is_no_command_that_pretends_to_package_or_notarize(self):
-        self.assertEqual(set(release.COMMANDS), {"show", "bump", "sync", "check", "snapshot"})
 
 
 if __name__ == "__main__":

@@ -41,9 +41,9 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
 
 /// Wait for a condition of the main actor, polling, up to a minute (a debug build is slow).
 @MainActor private func eventually(_ condition: () -> Bool) async -> Bool {
-  for _ in 0..<600 {
+  for _ in 0..<6000 {
     if condition() { return true }
-    do { try await Task.sleep(for: .milliseconds(100)) } catch { return false }
+    do { try await Task.sleep(for: .milliseconds(10)) } catch { return false }
   }
   return condition()
 }
@@ -61,14 +61,18 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
   #expect(a != nil && b != nil && a?.pixels != b?.pixels)
 }
 
-@Test func aStillFrameDependsOnTheStateAndNotOnTheTime() async throws {
-  let made = try AvatarFixture.make(canvas: 128)
-  let loaded = AvatarLoadedPackage(package: made.package, images: made.images)
-  let engine = try AvatarStageEngine(loaded: loaded, seed: 9, maxSide: 64)
-  let listening = await engine.stillFrame(state: .listening)
-  let again = await engine.stillFrame(state: .listening)
-  #expect(listening != nil && again != nil)
-  #expect(listening.flatMap { AvatarBitmap(image: $0.image) } != nil)
+@Test func aStillFrameIsTheFaceOfItsStateAndOfNoOther() async throws {
+  func still(_ state: AvatarState) async throws -> [UInt8] {
+    let made = try AvatarFixture.make(canvas: 128)
+    let loaded = AvatarLoadedPackage(package: made.package, images: made.images)
+    let engine = try AvatarStageEngine(loaded: loaded, seed: 9, maxSide: 64)
+    let picture = try #require(await engine.stillFrame(state: state))
+    return try #require(AvatarBitmap(image: picture.image)).pixels
+  }
+  // The same seed and state give the same picture; another state gives another one (the mouth
+  // holds the listening smile or the thinking expression, and the head is turned).
+  #expect(try await still(.listening) == still(.listening))
+  #expect(try await still(.listening) != still(.thinking))
 }
 
 @MainActor @Test func theLoopRunsWhileAViewShowsTheModelAndThereIsOnlyOne() async throws {

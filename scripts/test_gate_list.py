@@ -167,8 +167,9 @@ STEP_COMMAND = re.compile(r"^\s*step\s+\w+\s+\w+\s+\S+\s+(.*)$", re.MULTILINE)
 # What a discover step runs: `-s <directory> -p '<pattern>'`.
 DISCOVER_PATTERN = re.compile(r"discover\b[^&|;]*-s\s+(\S+)\s+-p\s+'([^']+)'")
 # A test module with no case of its own, which the tests of the gate import: the fixtures of the
-# post_merge tests. `unittest discover` finds nothing in it; the modules that import it run it.
-HELPER_TEST_MODULES = ("scripts/test_post_merge_fixtures.py",)
+# post_merge tests and the stand-ins of the packaging tests. `unittest discover` finds nothing in
+# them; the modules that import them run them.
+HELPER_TEST_MODULES = ("scripts/test_post_merge_fixtures.py", "scripts/test_packaging_fixtures.py")
 
 
 def test_modules() -> list[str]:

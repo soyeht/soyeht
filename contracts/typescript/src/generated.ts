@@ -1613,6 +1613,7 @@ export type AgentMessageUpdateKind = "agent_message_chunk" | "system_message";
 export interface AgentMessageUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": AgentMessageUpdateKind;
   "generation": number;
@@ -1628,6 +1629,7 @@ export type AgentThoughtUpdateKind = "agent_thought_chunk";
 export interface AgentThoughtUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": AgentThoughtUpdateKind;
   "generation": number;
@@ -1643,6 +1645,7 @@ export type ToolCallUpdateKind = "tool_call";
 export interface ToolCallUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": ToolCallUpdateKind;
   "generation": number;
@@ -1657,6 +1660,7 @@ export type ToolProgressUpdateKind = "tool_call_update";
 export interface ToolProgressUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": ToolProgressUpdateKind;
   "generation": number;
@@ -1671,6 +1675,7 @@ export type PlanUpdateKind = "plan";
 export interface PlanUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": PlanUpdateKind;
   "generation": number;
@@ -1685,6 +1690,7 @@ export type SubagentUpdateKind = "subagent";
 export interface SubagentUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": SubagentUpdateKind;
   "generation": number;
@@ -1699,6 +1705,7 @@ export type UsageUpdateKind = "usage";
 export interface UsageUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": UsageUpdateKind;
   "generation": number;
@@ -1712,6 +1719,7 @@ export type TerminalOutputUpdateKind = "terminal_output";
 export interface TerminalOutputUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": TerminalOutputUpdateKind;
   "generation": number;
@@ -1729,6 +1737,7 @@ export type ConfigOptionUpdateKind = "config_option_update";
 export interface ConfigOptionUpdate {
   "eventId": Decimal;
   "at": string;
+  "actor"?: Actor;
   "paneId": Id;
   "kind": ConfigOptionUpdateKind;
   "generation": number;

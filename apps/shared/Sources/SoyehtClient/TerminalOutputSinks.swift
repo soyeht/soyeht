@@ -16,6 +16,9 @@ final class TerminalOutputSinks {
 
   var count: Int { targets.count }
 
+  /// Whether a surface claimed the pane's output.
+  func hasSink(_ paneId: String) -> Bool { targets[paneId] != nil }
+
   /// The sink of the pane shown alone, with no owner: a direct assignment by the app.
   var selected: ((Data, Bool) -> Void)? {
     get { selectedSink }
@@ -50,8 +53,19 @@ final class TerminalOutputSinks {
 
   func retainOnly(_ paneIds: Set<String>) { targets = targets.filter { paneIds.contains($0.key) } }
 
-  func deliver(to paneId: String, bytes: Data, reset: Bool, selectedPaneId: String?) {
-    targets[paneId]?.sink(bytes, reset)
-    if paneId == selectedPaneId { selectedSink?(bytes, reset) }
+  /// Returns whether a sink took the bytes. Bytes with no sink are dropped, and the caller must
+  /// know, because the surface that claims the pane later starts empty.
+  @discardableResult
+  func deliver(to paneId: String, bytes: Data, reset: Bool, selectedPaneId: String?) -> Bool {
+    var taken = false
+    if let target = targets[paneId] {
+      target.sink(bytes, reset)
+      taken = true
+    }
+    if paneId == selectedPaneId, let selectedSink {
+      selectedSink(bytes, reset)
+      taken = true
+    }
+    return taken
   }
 }

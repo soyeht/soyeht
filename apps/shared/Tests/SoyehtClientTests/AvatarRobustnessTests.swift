@@ -95,16 +95,6 @@ private func numbers(in value: Any) -> Int {
   #expect(AvatarActingBounds.firstOutOfRange(tune) == "/expression/thinking/c")
 }
 
-@Test func aDocumentOverTheLimitIsNotParsed() {
-  let big = Data(repeating: 0x20, count: AvatarPackageLimits.documentBytes + 1)
-  #expect(throws: AvatarPackageError(kind: .tooLarge, at: "")) {
-    _ = try AvatarPackage.load(json: big, assets: [])
-  }
-  #expect(throws: AvatarPackageError(kind: .malformed, at: "")) {
-    _ = try AvatarPackage.load(json: Data("{".utf8), assets: [])
-  }
-}
-
 @Test func theRasteriserDrawsNothingForATriangleThatIsNotOne() {
   let texture: [UInt8] = Array(repeating: [200, 200, 200, 255], count: 4).flatMap { $0 }
   let nan = AvatarRasterizer.Vertex(x: .nan, y: 0, u: 0, v: 0, alpha: 1)

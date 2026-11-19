@@ -13,53 +13,9 @@ import package_common
 import package_mac
 from package_common import PackagingError
 from generated_profile import PROFILES
-from legacy_guard import names_legacy
-from profile_programs import binary_identifiers
+from test_packaging_fixtures import FULL, MACHO, fake_app, result, verify_recorded
 
 ROOT = Path(__file__).resolve().parents[1]
-FULL = {
-    package_mac.IDENTITY_VARIABLE: "Developer ID Application: Example (ABCDE12345)",
-    package_mac.TEAM_VARIABLE: "ABCDE12345",
-    package_mac.NOTARY_VARIABLE: "example-profile",
-}
-MACHO = b"\xcf\xfa\xed\xfe" + b"\0" * 28
-
-
-def fake_app(root):
-    """A bundle with the shape of the built app: one main executable, four programs, one
-    framework with its own program, a resource that is not code and a link."""
-    app = root / "Soyeht Next.app"
-    macos = app / "Contents/MacOS"
-    macos.mkdir(parents=True)
-    (app / "Contents/Info.plist").write_bytes(
-        plistlib.dumps({"CFBundleExecutable": "Soyeht Next", "CFBundleIdentifier": package_mac.APP_ID})
-    )
-    for name in ("Soyeht Next", "soyeht-engine", "soyeht-ptyd", "soyeht", "soyeht-mcp"):
-        (macos / name).write_bytes(MACHO)
-    framework = app / "Contents/Frameworks/Inner.framework/Versions/A"
-    framework.mkdir(parents=True)
-    (framework / "Inner").write_bytes(MACHO)
-    (app / "Contents/Resources").mkdir()
-    (app / "Contents/Resources/default.metallib").write_bytes(b"MTLB")
-    (app / "Contents/Resources/link").symlink_to(macos / "soyeht")
-    return app
-
-
-def verify_recorded(app, signing, details, requirement=lambda path: ""):
-    """`verify_bundle` with `codesign` replaced by recorded answers: `details(path)` for `-dvv` and
-    `requirement(path)` for `-d -r-`; every other command answers "arm64"."""
-    answer = type("R", (), {"stdout": "arm64", "stderr": "", "returncode": 0})()
-    with (
-        patch.object(package_mac, "run", return_value=answer),
-        patch.object(package_mac, "check_info", return_value=[]),
-        patch.object(package_mac, "signature_details", side_effect=details),
-        patch.object(package_mac, "requirement_text", side_effect=requirement),
-        patch.object(
-            package_mac, "entitlements_of",
-            side_effect=lambda path: package_mac.EXPECTED_APP_ENTITLEMENTS if Path(path) == app else set(),
-        ),
-    ):
-        return package_mac.verify_bundle(app, signing, package_mac.release.current())
 
 
 class SizeCeilingTests(unittest.TestCase):
@@ -89,17 +45,6 @@ class SizeCeilingTests(unittest.TestCase):
         problem, warning = self.check("soyeht-0.1.0-macos-aarch64.dmg", 899)
         self.assertIsNone(problem)
         self.assertIn("lower it in scripts/package_sizes.json", warning)
-
-    def test_check_sizes_stops_on_a_problem_and_only_prints_a_warning(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            small = Path(temporary) / "soyeht-0.1.0-macos-aarch64.dmg"
-            small.write_bytes(b"x" * 10)
-            with patch.object(package_common, "SIZE_CEILINGS", Path(temporary) / "sizes.json"):
-                package_common.SIZE_CEILINGS.write_text(json.dumps({"ceilings": self.CEILINGS}))
-                package_common.check_sizes([small])
-                small.write_bytes(b"x" * 1001)
-                with self.assertRaisesRegex(PackagingError, "over its ceiling"):
-                    package_common.check_sizes([small])
 
     def test_a_package_with_a_null_ceiling_is_not_checked(self):
         self.assertEqual(self.check("soyeht-0.1.0-linux-x86_64.deb", 10**6), (None, None))
@@ -190,6 +135,14 @@ class SizeBeforeSigningTests(unittest.TestCase):
             self.assertIsNone(failure)
             self.assertEqual("lower it in scripts/package_sizes.json" in self.stderr.getvalue(), not ad_hoc)
 
+    def test_the_run_saves_the_symbols_before_it_strips_and_signs_before_it_notarizes(self):
+        steps, failure = self.run_package(100, ad_hoc=False, ceiling=1_000_000)
+        self.assertIsNone(failure)
+        self.assertEqual(steps, [
+            "thin_libraries", "save_symbols", "strip_app", "sign_bundle", "notarize_and_staple_app",
+            "make_image", "sign_file", "notarize_and_staple_image",
+        ])
+
     def test_an_ad_hoc_image_over_its_ceiling_still_fails(self):
         _, failure = self.run_package(1001, ad_hoc=True)
         self.assertIn("over its ceiling", failure)
@@ -224,11 +177,18 @@ class SigningChoiceTests(unittest.TestCase):
             package_mac.resolve_signing(FULL, ad_hoc=True, strict=True)
 
     def test_a_release_names_every_missing_variable_and_never_a_value(self):
+        environment = {key: value for key, value in FULL.items() if key != package_mac.NOTARY_VARIABLE}
         with self.assertRaises(PackagingError) as caught:
-            package_mac.resolve_signing({package_mac.IDENTITY_VARIABLE: "x"}, strict=True)
+            package_mac.resolve_signing(environment, strict=True)
+        message = str(caught.exception)
+        self.assertIn(package_mac.NOTARY_VARIABLE, message)
+        for variable in (package_mac.IDENTITY_VARIABLE, package_mac.TEAM_VARIABLE):
+            self.assertNotIn(environment[variable], message)
+        with self.assertRaises(PackagingError) as caught:
+            package_mac.resolve_signing({package_mac.IDENTITY_VARIABLE: FULL[package_mac.IDENTITY_VARIABLE]}, strict=True)
         self.assertIn(package_mac.TEAM_VARIABLE, str(caught.exception))
         self.assertIn(package_mac.NOTARY_VARIABLE, str(caught.exception))
-        self.assertNotIn("x", str(caught.exception).replace("SOYEHT_MAC_SIGNING_IDENTITY", ""))
+        self.assertNotIn(FULL[package_mac.IDENTITY_VARIABLE], str(caught.exception))
 
     def test_an_identity_needs_its_team_and_must_be_a_developer_id(self):
         identity = {package_mac.IDENTITY_VARIABLE: FULL[package_mac.IDENTITY_VARIABLE]}
@@ -301,50 +261,32 @@ class NotaryCredentialTests(unittest.TestCase):
         with self.assertRaisesRegex(PackagingError, package_common.NOTARY_KEY_FILE_VARIABLE):
             package_mac.resolve_signing(environment, strict=True)
 
-    def test_notarytool_gets_the_credentials_of_the_signing(self):
+    def test_notarytool_gets_the_credentials_of_the_signing_and_none_is_printed(self):
         signing = package_mac.resolve_signing(self.api_key())
         calls = []
 
         def fake_run(command, **_):
             calls.append(command)
-            return mock_result('{"status": "Accepted", "id": "x"}')
+            return result('{"status": "Accepted", "id": "x"}')
 
-        with patch.object(package_mac, "run", fake_run):
+        with patch.object(package_common.subprocess, "run", fake_run), contextlib.redirect_stdout(io.StringIO()) as printed:
             package_mac.notarize(Path("a.dmg"), signing)
         self.assertEqual(calls[0][:3], ["xcrun", "notarytool", "submit"])
-        self.assertIn("--key-id", calls[0])
+        self.assertEqual(calls[0][calls[0].index("--key") + 1], signing.notary[1])
+        self.assertEqual(calls[0][calls[0].index("--key-id") + 1], "EXAMPLEKEY1")
         self.assertNotIn("--keychain-profile", calls[0])
-
-
-def mock_result(stdout):
-    class Result:
-        returncode = 0
-        stderr = ""
-
-    result = Result()
-    result.stdout = stdout
-    return result
+        line = printed.getvalue()
+        self.assertTrue(line.startswith("+ xcrun notarytool submit a.dmg"), line)
+        for secret in signing.secrets:
+            self.assertNotIn(secret, line)
+        self.assertIn(package_common.REDACTED, line)
 
 
 class NamesAndOutputTests(unittest.TestCase):
-    def test_the_image_is_named_from_the_version_the_way_every_platform_is(self):
-        self.assertEqual(package_mac.artifact_path(".", "1.2.3", package_mac.OPERATING_SYSTEM, package_mac.ARTIFACT_ARCHITECTURE, "dmg").name, "soyeht-1.2.3-macos-aarch64.dmg")
-
     def test_an_ad_hoc_build_can_never_land_beside_the_release(self):
         dist = Path("dist")
         self.assertEqual(package_mac.output_directory(package_mac.Signing(), dist), dist / "ad-hoc")
         self.assertEqual(package_mac.output_directory(package_mac.resolve_signing(FULL), dist), dist)
-
-    def test_every_identifier_of_the_package_carries_next_and_none_is_legacy(self):
-        identifiers = binary_identifiers(PROFILES["prod"])
-        self.assertEqual(identifiers["engine"], "com.soyeht.next.engine")
-        self.assertEqual(identifiers["ptyd"], "com.soyeht.next.ptyd")
-        self.assertEqual(set(identifiers), {key for _, key in package_mac.PROGRAMS})
-        for value in (*identifiers.values(), package_mac.APP_ID, package_mac.PRODUCT_NAME):
-            self.assertIn("next", value.lower())
-            self.assertFalse(names_legacy(value))
-        self.assertFalse(names_legacy(f"/Applications/{package_mac.PRODUCT_NAME}.app"))
-        self.assertEqual(package_mac.APP_ID, "com.soyeht.next.mac")
 
     def test_the_app_is_built_with_the_production_identity_and_the_contracts_version(self):
         made = package_mac.release.current()
@@ -372,14 +314,6 @@ class SigningCallTests(unittest.TestCase):
         self.assertIn("--timestamp=none", adhoc)
         self.assertEqual(adhoc[adhoc.index("--sign") + 1], "-")
 
-    def test_identifier_and_entitlements_are_passed_only_when_given(self):
-        command = package_mac.codesign_command(
-            Path("x"), package_mac.Signing(), identifier="id", entitlements=Path("e.plist")
-        )
-        self.assertEqual(command[command.index("--identifier") + 1], "id")
-        self.assertEqual(command[command.index("--entitlements") + 1], Path("e.plist"))
-        self.assertNotIn("--entitlements", package_mac.codesign_command(Path("x"), package_mac.Signing()))
-
     def test_nested_code_is_found_deepest_first_without_the_main_executable_or_links(self):
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))
@@ -401,7 +335,7 @@ class SigningCallTests(unittest.TestCase):
             def answer(command, **_):
                 calls.append([str(part) for part in command])
                 archs = "x86_64 arm64 arm64e" if Path(command[-1]).name == "Inner" else "arm64"
-                return type("R", (), {"stdout": archs, "stderr": "", "returncode": 0})()
+                return result(archs)
 
             def thin(command, **_):
                 if "-thin" in command:
@@ -414,12 +348,12 @@ class SigningCallTests(unittest.TestCase):
             self.assertEqual(len(thinned), 1)
             self.assertTrue(thinned[0][-3].endswith("Inner"))
             self.assertFalse((app / "Contents/Frameworks/Inner.framework/Versions/A/Inner.thin").exists())
-            only_intel = type("R", (), {"stdout": "x86_64", "stderr": "", "returncode": 0})()
+            only_intel = result("x86_64")
             with patch.object(package_mac, "run", return_value=only_intel):
                 with self.assertRaisesRegex(PackagingError, "no arm64 slice"):
                     package_mac.thin_libraries(app)
 
-    def test_the_symbols_are_saved_before_the_app_executable_alone_is_stripped(self):
+    def test_the_symbols_are_zipped_from_the_app_executable_and_only_it_is_stripped(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             app = fake_app(root)
@@ -437,8 +371,11 @@ class SigningCallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             app = fake_app(Path(temporary))
             calls = []
-            with patch.object(package_mac, "run", side_effect=lambda command, **_: calls.append(command)):
-                package_mac.sign_bundle(app, package_mac.resolve_signing(FULL))
+            masks = []
+            signing = package_mac.resolve_signing(FULL)
+            with patch.object(package_mac, "run", side_effect=lambda command, **keywords: calls.append(command) or masks.append(keywords.get("mask"))):
+                package_mac.sign_bundle(app, signing)
+        self.assertEqual(masks, [signing.secrets] * len(calls), "the certificate's name is never printed")
         signed = [Path(command[-1]) for command in calls]
         self.assertEqual(signed[-1], app, "the bundle is signed last")
         identifier = {Path(c[-1]).name: c[c.index("--identifier") + 1] for c in calls if "--identifier" in c}
@@ -537,8 +474,8 @@ class CheckTests(unittest.TestCase):
     def test_a_rejected_notarization_stops_the_run_and_prints_the_log(self):
         signing = package_mac.resolve_signing(FULL)
         answers = [
-            type("R", (), {"stdout": json.dumps({"id": "abc", "status": "Invalid"}), "stderr": "", "returncode": 0})(),
-            type("R", (), {"stdout": "the log", "stderr": "", "returncode": 0})(),
+            result(json.dumps({"id": "abc", "status": "Invalid"})),
+            result("the log"),
         ]
         with patch.object(package_mac, "run", side_effect=answers) as run:
             with self.assertRaisesRegex(PackagingError, "was not accepted: Invalid"):

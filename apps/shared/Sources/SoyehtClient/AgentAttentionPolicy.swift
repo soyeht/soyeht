@@ -56,24 +56,24 @@ public enum AgentAttentionPolicy {
     "\(count) \(count == 1 ? "request" : "requests") waiting"
   }
 
-  public static func summarize(
-    panes: [Pane], agentPanes: [String: AgentPaneView]
+  static func summarize(
+    panes: [Pane], attention: (String) -> AgentPaneAttention
   ) -> AgentAttentionSummary {
     var requests: [AgentAttentionRequest] = []
     var working: [String: Set<String>] = [:]
     for pane in panes where pane.mode == .agent {
-      let view = agentPanes[pane.paneId]
+      let asks = attention(pane.paneId)
       if pane.state == .working {
         working[pane.workspaceId, default: []].insert(pane.paneId)
       }
-      if let permission = view?.permission {
+      if let permission = asks.permission {
         requests.append(
           AgentAttentionRequest(
             requestId: permission.requestId, paneId: pane.paneId,
             workspaceId: pane.workspaceId, paneName: pane.name,
             harness: pane.agent?.harness, generation: permission.generation))
       }
-      if let elicitation = view?.elicitation {
+      if let elicitation = asks.elicitation {
         requests.append(
           AgentAttentionRequest(
             requestId: elicitation.requestId, paneId: pane.paneId,
@@ -170,6 +170,7 @@ public final class AgentAttentionNotificationSettings {
 extension EngineClient {
   public var agentAttention: AgentAttentionSummary {
     guard connected else { return .empty }
-    return AgentAttentionPolicy.summarize(panes: panes, agentPanes: agentPanes)
+    return AgentAttentionPolicy.summarize(
+      panes: panes, attention: { agentPanes.attention(for: $0) })
   }
 }
