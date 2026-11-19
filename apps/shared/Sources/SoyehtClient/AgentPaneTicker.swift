@@ -145,7 +145,9 @@ public struct AgentTurnClock: Equatable, Sendable {
 
 /// The status word at the header's trailing edge, and whether it asks for the person.
 public enum AgentHeaderStatus {
-  public static func needsYou(state: PaneState?, view: AgentPaneView) -> Bool {
-    state == .waiting_for_you || view.permission != nil || view.elicitation != nil
+  /// `asking`: a permission or a question is open (`AgentPaneStore.isAsking`), which a header
+  /// follows without following the pane's transcript.
+  public static func needsYou(state: PaneState?, asking: Bool) -> Bool {
+    state == .waiting_for_you || asking
   }
 }

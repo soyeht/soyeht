@@ -3,11 +3,7 @@ import SoyehtProtocol
 
 extension EngineClient {
   /// Questions still waiting for a person, across every agent pane.
-  public var openRequestIds: Set<String> {
-    Set(
-      agentPanes.values.flatMap { [$0.permission?.requestId, $0.elicitation?.requestId] }
-        .compactMap { $0 })
-  }
+  public var openRequestIds: Set<String> { agentPanes.openRequestIds }
 
   /// Waits for the handshake and snapshot, for work started before the app is on screen,
   /// such as a notification action.

@@ -239,9 +239,9 @@
     engine = try launchPhoneProcess(
       "soyeht-engine-test", bins: fixture.bins, data: fixture.data, output: fixture.output)
     local.start()
-    try await phoneWait { local.connected }
+    try await phoneWait("local client did not connect") { local.connected }
     _ = try await local.createTerminalPane(directory: fixture.data)
-    try await phoneWait { local.selectedPane?.pid != nil }
+    try await phoneWait("local terminal pane has no pid") { local.selectedPane?.pid != nil }
     let credential = try await pairCredential(local)
     let reader = EngineClient(credential: credential)
     phone = reader
@@ -251,15 +251,23 @@
       screen.append(bytes)
     }
     reader.start()
-    try await phoneWait { reader.connected && !reader.panes.isEmpty }
+    try await phoneWait("phone did not connect with panes") {
+      reader.connected && !reader.panes.isEmpty
+    }
     #expect(reader.pairedDevice)
     #expect(reader.selectedPane?.pid == local.selectedPane?.pid)
-    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READY>") }
+    try await phoneWait("phone screen has no prompt") {
+      String(decoding: screen, as: UTF8.self).contains("PHONE_READY>")
+    }
     local.input(Data("printf 'PHONE_READER_%s\\n' OK\r".utf8))
-    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK") }
+    try await phoneWait("phone screen has no reader output") {
+      String(decoding: screen, as: UTF8.self).contains("PHONE_READER_OK")
+    }
     // The paired device types through the same pane.input path as the Mac.
     reader.input(Data("printf 'PHONE_WRITER_%s\\n' OK\r".utf8))
-    try await phoneWait { String(decoding: screen, as: UTF8.self).contains("PHONE_WRITER_OK") }
+    try await phoneWait("phone screen has no writer output") {
+      String(decoding: screen, as: UTF8.self).contains("PHONE_WRITER_OK")
+    }
     try await exerciseAgentPane(local: local, reader: reader, data: fixture.data)
     try await reconnectAndRevoke(
       local: local, reader: reader, credential: credential, data: fixture.data)

@@ -1,8 +1,25 @@
 import Foundation
 import SoyehtProtocol
 
+/// Reads `data` as `type` by both routes, as text and from the parsed tree, and says what they
+/// read. The two must agree on every vector, valid or not.
 func codec<T: Codable>(_ type: T.Type, _ data: Data) throws -> Data {
-    try JSONEncoder().encode(JSONDecoder().decode(type, from: data))
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let text = Result { try JSONDecoder().decode(type, from: data) }
+    let tree = Result { try JSONDecoder().decode(JsonValue.self, from: data).decoded(type) }
+    switch (text, tree) {
+    case (.success(let viaText), .success(let viaTree)):
+        let encoded = try encoder.encode(viaText)
+        guard try encoder.encode(viaTree) == encoded else {
+            fatalError("The tree and the text read \(T.self) differently")
+        }
+        return encoded
+    case (.failure(let error), .failure):
+        throw error
+    default:
+        fatalError("The tree and the text disagree on whether \(T.self) is valid")
+    }
 }
 
 struct Vector: Decodable {
