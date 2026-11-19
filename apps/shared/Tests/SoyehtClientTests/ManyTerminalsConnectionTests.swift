@@ -10,7 +10,7 @@
   }
 
   /// What a Mac terminal surface holds of its pane: the end of the screen. It parses the bytes in
-  /// SwiftTerm on the main actor as the surface does, which is what makes a connection with twelve
+  /// SwiftTerm on the main actor as the surface does, which is what makes a connection with several
   /// long replays slower to read than the engine is to write.
   @MainActor private final class Surface {
     let paneId: String
@@ -39,8 +39,8 @@
     var holdsHistory: Bool { text.contains(lastLine) && text.contains(end) }
   }
 
-  /// Twelve terminals in two workspaces, each holding more output than the engine keeps for a
-  /// reconnecting client, and a client that connects as the Mac app does: the terminals of the
+  /// Enough terminals that their tails pass the queue, in two workspaces, each holding more output
+  /// than the engine keeps for a reconnecting client, and a client that connects as the Mac app does: the terminals of the
   /// selected workspace are on screen at launch, the others are shown later. The engine queues up
   /// to `tailBytes` of replay for every subscription and closes a connection that passes
   /// `connectionQueueBytes`, so a client that subscribes every terminal at once is closed as a slow
@@ -52,7 +52,10 @@
     defer { fixture.tearDown(creator, app) }
     try await fixture.start()
 
-    let lines = ProtocolLimits.tailBytes * 5 / 4 / 64
+    // Just over a tail each, and enough terminals that their tails together pass the queue.
+    let lines = (ProtocolLimits.tailBytes + ProtocolLimits.tailBytes / 16) / 64
+    let terminals = ProtocolLimits.connectionQueueBytes / ProtocolLimits.tailBytes + 2
+    let perWorkspace = (terminals + 1) / 2
     var surfaces: [Surface] = []
     var workspaces: [String] = []
     creator.start()
@@ -64,7 +67,7 @@
       let folder = fixture.directory.appendingPathComponent(workspace)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       var workspaceId: String?
-      for _ in 0..<6 {
+      for _ in 0..<perWorkspace {
         creatorScreen.receive(Data(), reset: true)
         let paneId = try await creator.createTerminalPane(
           directory: folder, workspaceId: workspaceId)
@@ -85,7 +88,7 @@
       workspaces.append(try #require(workspaceId))
     }
     creator.stop()
-    let (later, shown) = (Array(surfaces[..<6]), Array(surfaces[6...]))
+    let (later, shown) = (Array(surfaces[..<perWorkspace]), Array(surfaces[perWorkspace...]))
 
     // A surface claims its pane's output and asks for the screen, as `MacTerminal` does.
     func mount(_ surface: Surface) {
