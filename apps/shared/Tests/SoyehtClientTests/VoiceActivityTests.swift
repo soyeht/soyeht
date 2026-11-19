@@ -3,6 +3,7 @@ import SoyehtProtocol
 import Testing
 
 @testable import SoyehtClient
+@testable import SoyehtVoice
 
 @Test func theEnergyDetectorTellsAVoiceFromTheRoom() {
   let detector = EnergyVoiceActivity()

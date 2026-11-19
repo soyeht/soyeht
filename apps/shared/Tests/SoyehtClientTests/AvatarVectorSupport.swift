@@ -1,6 +1,7 @@
 import Foundation
 import SoyehtProtocol
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 /// Shared by the two vector files of the avatar (`avatar-mouth.json` and `avatar-package.json`),

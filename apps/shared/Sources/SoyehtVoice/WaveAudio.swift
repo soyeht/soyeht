@@ -2,14 +2,14 @@ import Foundation
 
 /// The WAV container, the one audio format the cloud speech endpoints share: the recording that
 /// goes out as 16-bit PCM, and the speech that comes back as 16-bit PCM or 32-bit float.
-enum WaveAudio {
+package enum WaveAudio {
   /// The rate a recording is sent at: what the Whisper-class models are trained on.
-  static let recordingSampleRate = 16_000
+  package static let recordingSampleRate = 16_000
   /// The rates a provider's speech may have; anything else is not speech this client plays.
-  static let speechSampleRates = 8_000...192_000
+  package static let speechSampleRates = 8_000...192_000
 
   /// A 16-bit mono PCM file with `samples`, clamped to -1...1.
-  static func encode(_ samples: [Float], sampleRate: Int) -> Data {
+  package static func encode(_ samples: [Float], sampleRate: Int) -> Data {
     var data = Data()
     let payload = samples.count * 2
     data.reserveCapacity(44 + payload)
@@ -37,7 +37,7 @@ enum WaveAudio {
   /// clamped. Throws `unsupportedAudio` for anything else, for example a compressed format a
   /// provider returned although WAV was asked for, or a sample rate outside `speechSampleRates`.
   /// The file is read in place: the only copy is the samples.
-  static func decode(_ data: Data) throws -> SynthesizedSpeech {
+  package static func decode(_ data: Data) throws -> SynthesizedSpeech {
     try data.withUnsafeBytes { bytes in
       guard bytes.count >= 12, bytes.starts(with: "RIFF".utf8),
         bytes[8..<12].elementsEqual("WAVE".utf8)

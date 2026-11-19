@@ -11,7 +11,7 @@ public enum SpeechEvent: Equatable, Sendable {
 
 extension SpeechEvent {
   /// What a recognizer callback carries, as one event: a transcript wins over an error.
-  init?(text: String?, isFinal: Bool, failure: String?) {
+  package init?(text: String?, isFinal: Bool, failure: String?) {
     if let text {
       self = isFinal ? .final(text) : .partial(text)
     } else if let failure {

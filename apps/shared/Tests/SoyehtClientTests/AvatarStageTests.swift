@@ -2,8 +2,24 @@ import CoreGraphics
 import Foundation
 import SoyehtAvatarRaster
 import Testing
+import os
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
+
+extension AvatarStageSettings {
+  /// A stage of a small picture, so a test draws fast.
+  fileprivate static let small = AvatarStageSettings(
+    logger: Logger(subsystem: "com.soyeht.next.tests", category: "avatar"), maxSide: 64)
+}
+
+/// A stage on the small test package, seeded so its pictures repeat.
+@MainActor private func smallModel() throws -> AvatarStageModel {
+  let made = try AvatarFixture.make(canvas: 64)
+  return AvatarStageModel(
+    loaded: AvatarLoadedPackage(package: made.package, images: made.images), seed: 1,
+    settings: .small)
+}
 
 /// A new folder that is removed when the test ends.
 private func withFolder<T>(
@@ -51,7 +67,7 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
 @Test func theEngineDrawsAFrameForEachStepAndTheHeadLives() async throws {
   let made = try AvatarFixture.make(canvas: 128)
   let loaded = AvatarLoadedPackage(package: made.package, images: made.images)
-  let engine = try AvatarStageEngine(loaded: loaded, seed: 9, maxSide: 64)
+  let engine = try AvatarStageEngine(loaded: loaded, seed: 9, settings: .small)
   let first = await engine.frame(dt: 0, state: .listening, allowed: 1)
   var later = first
   for _ in 1...120 { later = await engine.frame(dt: 1.0 / 60, state: .listening, allowed: 1) }
@@ -65,7 +81,7 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
   func still(_ state: AvatarState) async throws -> [UInt8] {
     let made = try AvatarFixture.make(canvas: 128)
     let loaded = AvatarLoadedPackage(package: made.package, images: made.images)
-    let engine = try AvatarStageEngine(loaded: loaded, seed: 9, maxSide: 64)
+    let engine = try AvatarStageEngine(loaded: loaded, seed: 9, settings: .small)
     let picture = try #require(await engine.stillFrame(state: state))
     return try #require(AvatarBitmap(image: picture.image)).pixels
   }
@@ -76,9 +92,7 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
 }
 
 @MainActor @Test func theLoopRunsWhileAViewShowsTheModelAndThereIsOnlyOne() async throws {
-  let made = try AvatarFixture.make(canvas: 64)
-  let model = AvatarStageModel(
-    loaded: AvatarLoadedPackage(package: made.package, images: made.images), seed: 1, maxSide: 64)
+  let model = try smallModel()
   let (one, two) = (UUID(), UUID())
   #expect(!model.isRunning)
   model.setViewing(one, true)
@@ -95,9 +109,7 @@ private func error(_ body: () throws -> Any) -> AvatarPackageErrorKind? {
 }
 
 @MainActor @Test func withReduceMotionTheModelDrawsOnePicturePerState() async throws {
-  let made = try AvatarFixture.make(canvas: 64)
-  let model = AvatarStageModel(
-    loaded: AvatarLoadedPackage(package: made.package, images: made.images), seed: 1, maxSide: 64)
+  let model = try smallModel()
   model.reducesMotion = true
   let viewer = UUID()
   model.setViewing(viewer, true)
@@ -324,9 +336,7 @@ extension AvatarBitmap {
 }
 
 @MainActor @Test func aViewThatComesBackWhileThePackageIsLoadingWaitsForTheSameLoad() async throws {
-  let made = try AvatarFixture.make(canvas: 64)
-  let model = AvatarStageModel(
-    loaded: AvatarLoadedPackage(package: made.package, images: made.images), seed: 1, maxSide: 64)
+  let model = try smallModel()
   let viewer = UUID()
   for _ in 0..<5 {
     model.setViewing(viewer, true)

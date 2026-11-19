@@ -2,6 +2,7 @@ import Foundation
 import SoyehtAvatarRaster
 import Testing
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 /// The host's numbers are whatever a machine computes, and a package is a file from a stranger:

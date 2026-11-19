@@ -3,6 +3,7 @@ import SoyehtAvatarRaster
 import SoyehtProtocol
 import Testing
 
+@testable import SoyehtAvatar
 @testable import SoyehtClient
 
 private let canvas = 256
