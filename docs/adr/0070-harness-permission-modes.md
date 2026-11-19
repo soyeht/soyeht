@@ -18,8 +18,12 @@ A pane's permission mode is the harness's own mode selector. The engine reads
 it from the configuration option with category `mode` and falls back to the
 deprecated `modes {availableModes, currentModeId}` announcement. Choices carry
 the adapter's `_meta.kind` as `kind` (`standard`, `plan`, `auto_review`,
-`full_access`); adapters that predate the kind still get `full_access` on their
-well-known bypass identifiers. Clients list the modes with the names the
+`full_access`), or, when that is absent, `_meta.jetbrains.air.kind`: codex-acp 2
+announces the kind there, and only to a client that declares the AIR extension, as the
+engine does. Adapters that predate the kind still get `full_access` on their
+well-known bypass identifiers. A mode with no kind has no rank and the engine never guesses
+one: the permission profiles of codex-acp 2.6 (`permission-profile:<id>`) announce none, so
+the caps of contract 03 (R24) treat them as unranked. Clients list the modes with the names the
 harness announced and never map them to a Soyeht vocabulary.
 
 Changing the mode is an ordinary `pane.config.set` on that option. The engine

@@ -32,7 +32,10 @@ published `dist` code:
 | `audio` | ignored | dropped |
 | replay of a user image | `user_message_chunk` with an `image` block (line 10926) | images from history as image blocks |
 
-Both providers take PNG, JPEG, GIF and WebP images.
+Both providers take PNG, JPEG, GIF and WebP images. The Codex column was read at 1.11.0. At 2.6.0,
+the version the registry has pinned since the Codex adapter moved off a command line too old for the
+current models, `scripts/e2e_real_acp.py` sends a generated PNG as an attachment and the agent names
+its color.
 
 ## Decision
 

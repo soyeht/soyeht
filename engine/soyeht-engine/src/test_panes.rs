@@ -371,11 +371,20 @@ pub(crate) fn agent_with_modes(
         .iter()
         .map(|(value, kind)| json!({"value":value,"name":value,"_meta":{"kind":kind}}))
         .collect();
+    agent_with_mode_options(harness, current, json!(choices))
+}
+
+/// The state of a ready agent of `harness` in `current`, announcing the mode `options` as given.
+fn agent_with_mode_options(
+    harness: &str,
+    current: &str,
+    options: serde_json::Value,
+) -> crate::agents::state::State {
     let mut state = ready_agent_state();
     state.launch.id = harness.into();
     state.options = soyeht_acp::config::Options::from_response(&json!({"configOptions":[{
         "id":"mode","name":"Mode","category":"mode","type":"select","currentValue":current,
-        "options":choices}]}))
+        "options":options}]}))
     .unwrap();
     state
 }
@@ -396,6 +405,34 @@ pub(crate) const CODEX_MODES: [(&str, &str); 3] = [
     ("agent", "auto_review"),
     ("agent-full-access", "full_access"),
 ];
+
+/// The state of a ready agent of `harness` in `current`, with the mode selector codex-acp 2.6.0
+/// announces to a client that declares the AIR extension (as the engine does): the kind of each
+/// mode under `_meta.jetbrains.air`, `workspace-write` among them, and a permission profile of the
+/// person's, which has no kind.
+pub(crate) fn codex_2_agent(harness: &str, current: &str) -> crate::agents::state::State {
+    let sandbox: Vec<_> = [
+        ("read-only", "Read-only", "standard"),
+        ("workspace-write", "Workspace access", "standard"),
+        ("agent", "Auto review", "auto_review"),
+        ("agent-full-access", "Full access", "full_access"),
+    ]
+    .iter()
+    .map(|(value, name, kind)| {
+        json!({"value":value,"name":name,
+            "_meta":{"jetbrains":{"air":{"version":1,"kind":kind}}}})
+    })
+    .collect();
+    agent_with_mode_options(
+        harness,
+        current,
+        json!([
+            {"group":"sandbox-modes","name":"Sandbox Modes","options":sandbox},
+            {"group":"permission-profiles","name":"Permission Profiles","options":[
+                {"value":"permission-profile:work","name":"work"}]}
+        ]),
+    )
+}
 
 /// What an agent announced at `initialize`, with or without the ACP `systemPrompt` capability.
 pub(crate) fn initialization(system_prompt: bool) -> soyeht_acp::session::Initialization {

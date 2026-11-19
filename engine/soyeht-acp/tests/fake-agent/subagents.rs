@@ -39,6 +39,18 @@ fn wait(session: &str, id: &str, update: &str, status: &str) -> Value {
         "_meta":{"codex":{"collaboration":collaboration}}})
 }
 
+/// The same call from codex-acp 2.6.0, as captured from the adapter by a client that declares the
+/// AIR extension (thread IDs replaced): no `_meta`, the title and the input on the first report,
+/// and on the report that ends it only the status, since nothing else changed.
+fn wait_2(session: &str, id: &str, update: &str, status: &str) -> Value {
+    if update == "tool_call_update" {
+        return json!({"sessionUpdate":update,"toolCallId":id,"status":status});
+    }
+    json!({"sessionUpdate":update,"toolCallId":id,"kind":"other","title":"wait","status":status,
+        "rawInput":{"prompt":null,"senderThreadId":session,"receiverThreadIds":[],
+            "agentsStates":{},"model":null,"reasoningEffort":null}})
+}
+
 /// The configuration a Claude Code subagent session reports: its model, and nothing to choose.
 fn child_model() -> Value {
     json!({"sessionUpdate":"config_option_update","configOptions":[
@@ -136,6 +148,25 @@ fn codex(session: &str, turn: usize) -> Script {
     ]
 }
 
+/// Codex with the 2.x adapter: the same turn, its waits reported in the 2.x shape.
+fn codex_2(session: &str, turn: usize) -> Script {
+    codex(session, turn)
+        .into_iter()
+        .map(|(target, update)| {
+            if update["title"] == "wait" {
+                let id = update["toolCallId"].as_str().unwrap_or_default().to_owned();
+                let kind = update["sessionUpdate"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_owned();
+                let status = update["status"].as_str().unwrap_or_default().to_owned();
+                return (target, wait_2(session, &id, &kind, &status));
+            }
+            (target, update)
+        })
+        .collect()
+}
+
 /// Two subagents whose activity interleaves; the first finishes last.
 fn parallel(session: &str, turn: usize) -> Script {
     let first = format!("{session}-first-{turn}");
@@ -189,6 +220,7 @@ pub fn script(prompt: &str, session: &str, turn: usize) -> Option<Script> {
     Some(match prompt {
         "subagents-claude" => claude(session, turn),
         "subagents-codex" => codex(session, turn),
+        "subagents-codex-2" => codex_2(session, turn),
         "subagents-parallel" => parallel(session, turn),
         "subagents-failure" => failure(session, turn),
         _ => return None,

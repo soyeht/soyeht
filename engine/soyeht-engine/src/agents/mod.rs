@@ -22,6 +22,7 @@ mod harness_sign_in;
 mod held_updates;
 pub mod hooks;
 pub mod idle;
+pub(crate) mod launch_refresh;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;

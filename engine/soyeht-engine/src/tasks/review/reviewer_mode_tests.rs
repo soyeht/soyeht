@@ -1,5 +1,5 @@
 use super::{ModeCeiling, State, reviewer_mode};
-use crate::test_panes::{CLAUDE_MODES, CODEX_MODES, agent_with_modes};
+use crate::test_panes::{CLAUDE_MODES, CODEX_MODES, agent_with_modes, codex_2_agent};
 
 /// An executor on the harness `test` that announces `choices` and runs in `current`.
 fn executor(current: &str, choices: &[(&str, &str)]) -> State {
@@ -51,4 +51,23 @@ fn a_reviewer_is_never_in_a_mode_above_its_executors() {
     let ceiling = ModeCeiling::of(&executor("plan", &planned), true);
     assert!(!ceiling.allows("test", "default", Some("standard")));
     assert!(ceiling.allows("test", "plan", Some("plan")));
+}
+
+#[test]
+fn a_reviewer_of_the_codex_adapter_2_modes_starts_read_only() {
+    // The kinds are where the adapter announces them to this client, and an executor in any mode
+    // it can rank gets the first standard one.
+    for current in ["read-only", "workspace-write", "agent", "agent-full-access"] {
+        assert_eq!(
+            reviewer(&codex_2_agent("test", current)).as_deref(),
+            Some("read-only"),
+            "an executor in {current}"
+        );
+    }
+    // A permission profile has no kind: the executor has no rank, and no reviewer mode is shown
+    // to stay under it.
+    assert_eq!(
+        reviewer(&codex_2_agent("test", "permission-profile:work")),
+        None
+    );
 }

@@ -57,6 +57,44 @@ pub(crate) fn awaits_subagents(state: &State, tool: &serde_json::Value) -> bool 
     })
 }
 
+/// Whether this report of a tool call (`id`, of the session `subagent` or the pane's own) is a wait
+/// the pane folds into its subagent rows, and so shows no row of its own. The first report decides
+/// (`awaits_subagents`); the key of the call then keeps its later reports out of the transcript,
+/// whatever fields they carry, until one says it ended.
+pub(crate) fn folds_wait(
+    state: &mut State,
+    subagent: Option<&str>,
+    id: &str,
+    tool: &serde_json::Value,
+) -> bool {
+    let key = super::transcript::open_key("wait", subagent, Some(id));
+    let known = state.folded_waits.iter().position(|folded| *folded == key);
+    if known.is_none() && !awaits_subagents(state, tool) {
+        return false;
+    }
+    let ended = matches!(tool["status"].as_str(), Some("completed" | "failed"));
+    match known {
+        Some(position) if ended => {
+            state.folded_waits.remove(position);
+        }
+        None if !ended => {
+            // A bound that a pane with a wait that never ends does not outgrow: the oldest goes.
+            if state.folded_waits.len() >= TRACKED_RUNS {
+                state.folded_waits.pop_front();
+            }
+            state.folded_waits.push_back(key);
+        }
+        _ => {}
+    }
+    true
+}
+
+/// Forgets every subagent and every wait folded into them: the session they belonged to is gone.
+pub(crate) fn forget_all(state: &mut State) {
+    state.subagents.clear();
+    state.folded_waits.clear();
+}
+
 /// The reported subagent session a native request comes from, if it is not
 /// the pane's own session.
 pub(crate) fn owner<'a>(state: &State, session: Option<&'a str>) -> Option<&'a str> {
@@ -267,7 +305,7 @@ pub(crate) fn disconnect_all(
             changes,
         )?;
     }
-    state.subagents.clear();
+    forget_all(state);
     Ok(())
 }
 
@@ -277,13 +315,7 @@ mod tests {
     use serde_json::json;
     use soyeht_protocol::HarnessLaunch;
 
-    fn wait(receivers: &[&str]) -> serde_json::Value {
-        json!({"toolCallId":"call_1","title":"wait","_meta":{"codex":{"collaboration":
-            {"tool":"wait","senderThreadId":"parent","receiverThreadIds":receivers}}}})
-    }
-
-    #[test]
-    fn only_waits_on_tracked_subagents_fold_into_their_rows() {
+    fn new_state() -> State {
         let launch = HarnessLaunch {
             id: "registry.codex-acp".into(),
             name: "Codex".into(),
@@ -292,7 +324,17 @@ mod tests {
             version: "1".into(),
             environment: None,
         };
-        let mut state = State::new(launch, "digest".into(), None).unwrap();
+        State::new(launch, "digest".into(), None).unwrap()
+    }
+
+    fn wait(receivers: &[&str]) -> serde_json::Value {
+        json!({"toolCallId":"call_1","title":"wait","_meta":{"codex":{"collaboration":
+            {"tool":"wait","senderThreadId":"parent","receiverThreadIds":receivers}}}})
+    }
+
+    #[test]
+    fn only_waits_on_tracked_subagents_fold_into_their_rows() {
+        let mut state = new_state();
         // Before any subagent runs, a wait is the agent's own tool call.
         assert!(!awaits_subagents(&state, &wait(&[])));
         state.subagents.insert(
@@ -310,5 +352,98 @@ mod tests {
             &state,
             &json!({"toolCallId":"call_2","title":"wait"})
         ));
+    }
+
+    /// The reports of a wait from codex-acp 2.6.0: the first has the title and the input, the
+    /// one that ends it only what changed.
+    fn wait_start(id: &str, receivers: &[&str]) -> serde_json::Value {
+        json!({"sessionUpdate":"tool_call","toolCallId":id,"kind":"other","title":"wait",
+            "status":"in_progress","rawInput":{"agentsStates":{},"model":null,"prompt":null,
+                "reasoningEffort":null,"receiverThreadIds":receivers,"senderThreadId":"parent"}})
+    }
+
+    #[test]
+    fn a_wait_is_folded_from_its_first_report_to_the_one_that_ends_it() {
+        let mut state = new_state();
+        let done = |id: &str| json!({"sessionUpdate":"tool_call_update","toolCallId":id,"status":"completed"});
+        // Before any subagent runs, the wait is the agent's own tool call, and so is its end.
+        assert!(!folds_wait(
+            &mut state,
+            None,
+            "early",
+            &wait_start("early", &[])
+        ));
+        assert!(!folds_wait(&mut state, None, "early", &done("early")));
+        state.subagents.insert(
+            "child".into(),
+            Tracked {
+                row: Some(3),
+                last_message: None,
+                finished: false,
+            },
+        );
+        assert!(folds_wait(
+            &mut state,
+            None,
+            "call_1",
+            &wait_start("call_1", &[])
+        ));
+        // Another session's call of the same ID is another call.
+        assert!(!folds_wait(
+            &mut state,
+            Some("child"),
+            "call_1",
+            &done("call_1")
+        ));
+        assert!(folds_wait(&mut state, None, "call_1", &done("call_1")));
+        // The end of a call is forgotten: nothing more is known about it.
+        assert!(state.folded_waits.is_empty());
+        assert!(!folds_wait(&mut state, None, "call_1", &done("call_1")));
+        // A wait that names a session the pane does not track stays a tool row.
+        assert!(!folds_wait(
+            &mut state,
+            None,
+            "call_2",
+            &wait_start("call_2", &["stranger"])
+        ));
+        assert!(!folds_wait(&mut state, None, "call_2", &done("call_2")));
+        // The old shape folds as before, and a failed call ends too.
+        assert!(folds_wait(&mut state, None, "call_3", &wait(&["child"])));
+        let failed = json!({"toolCallId":"call_3","status":"failed"});
+        assert!(folds_wait(&mut state, None, "call_3", &failed));
+        assert!(state.folded_waits.is_empty());
+    }
+
+    #[test]
+    fn the_memory_of_folded_waits_is_bounded_and_goes_with_the_subagents() {
+        let mut state = new_state();
+        state.subagents.insert(
+            "child".into(),
+            Tracked {
+                row: Some(3),
+                last_message: None,
+                finished: false,
+            },
+        );
+        let id = |index: usize| format!("many-{index}");
+        for index in 0..=TRACKED_RUNS {
+            let id = id(index);
+            assert!(folds_wait(&mut state, None, &id, &wait_start(&id, &[])));
+        }
+        assert_eq!(state.folded_waits.len(), TRACKED_RUNS);
+        // The oldest went, the others are all still known.
+        let ended = |id: &str| json!({"toolCallId":id,"status":"completed"});
+        assert!(!folds_wait(&mut state, None, &id(0), &ended(&id(0))));
+        assert!(folds_wait(&mut state, None, &id(1), &ended(&id(1))));
+        assert!(folds_wait(
+            &mut state,
+            None,
+            &id(TRACKED_RUNS),
+            &ended(&id(TRACKED_RUNS))
+        ));
+        let id = id(2);
+        assert!(state.folded_waits.iter().any(|key| key.ends_with(&id)));
+        forget_all(&mut state);
+        assert!(state.subagents.is_empty() && state.folded_waits.is_empty());
     }
 }
