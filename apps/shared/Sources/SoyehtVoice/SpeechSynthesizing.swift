@@ -117,7 +117,7 @@ public protocol SpeechSynthesizing: Sendable {
 
 extension SpeechSynthesisError {
   /// The text of an utterance without the blanks around it; nothing to say is an error.
-  static func utterance(_ text: String) throws -> String {
+  package static func utterance(_ text: String) throws -> String {
     let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { throw SpeechSynthesisError.emptyText }
     return trimmed

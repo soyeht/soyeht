@@ -3,6 +3,7 @@ import Foundation
 import Observation
 import SoyehtAvatarRaster
 import SwiftUI
+import os
 
 /// Decides how large the picture is drawn, from what a frame costs against the time it has.
 ///
@@ -22,10 +23,10 @@ struct AvatarFramePacer: Equatable, Sendable {
   /// How many frames in a row must be too slow before the picture shrinks.
   static let patience = 6
   static let firstWait = 10.0
-  /// "Quiet" is judged against the shortest time a frame ever has (1/60 s, while speaking),
-  /// whatever the state now: a picture that fits an idle frame (1/30 s) but not a speaking one
-  /// would otherwise grow while idle and shrink at the next sentence, and pulse.
-  static let quietAllowance = 1.0 / 60
+  /// "Quiet" is judged against the shortest time a frame ever has (while speaking), whatever the
+  /// state now: a picture that fits an idle frame but not a speaking one would otherwise grow
+  /// while idle and shrink at the next sentence, and pulse.
+  let quietAllowance: Double
 
   /// The largest the picture gets: the side it started at.
   let ceiling: Int
@@ -35,10 +36,12 @@ struct AvatarFramePacer: Equatable, Sendable {
   private var wait = firstWait
   private var grewAt: Double?
 
-  /// A pacer for a picture that starts at `side` pixels.
-  init(side: Int) {
+  /// A pacer for a picture that starts at `side` pixels, on a stage whose shortest frame is
+  /// `quietAllowance` seconds.
+  init(side: Int, quietAllowance: Double = AvatarStageSettings.standardSpeakingInterval) {
     self.side = side
     ceiling = side
+    self.quietAllowance = quietAllowance
   }
 
   /// Record what a frame cost against the time it had (seconds), at `now` (seconds on any clock
@@ -49,7 +52,7 @@ struct AvatarFramePacer: Equatable, Sendable {
       quietSince = nil
     } else {
       slow = 0
-      quietSince = cost < Self.quietAllowance / 2 ? (quietSince ?? now) : nil
+      quietSince = cost < quietAllowance / 2 ? (quietSince ?? now) : nil
     }
     if slow >= Self.patience, side > Self.minimumSide {
       slow = 0
@@ -69,6 +72,38 @@ struct AvatarFramePacer: Equatable, Sendable {
   }
 }
 
+/// What a stage is told by the app that hosts it: the largest picture, how often it is drawn, and
+/// where it logs. The numbers are the stage's for a phone and a Mac; a smaller screen (a watch)
+/// passes its own. The logger is the host's: this target has none of its own.
+public struct AvatarStageSettings: Sendable {
+  /// The side, in pixels, of the largest picture the stage draws.
+  public let maxSide: Int
+  /// The time one frame has while the avatar is not speaking, in seconds.
+  public let idleInterval: Double
+  /// The time one frame has while the avatar speaks, in seconds. Shorter: the mouth moves fast.
+  public let speakingInterval: Double
+  /// How long the stage waits between two looks for a change of state with Reduce Motion on.
+  public let stillInterval: Double
+  public let logger: Logger
+
+  public static let standardMaxSide = 512
+  public static let standardIdleInterval = 1.0 / 30
+  public static let standardSpeakingInterval = 1.0 / 60
+  public static let standardStillInterval = 0.25
+
+  public init(
+    logger: Logger, maxSide: Int = standardMaxSide, idleInterval: Double = standardIdleInterval,
+    speakingInterval: Double = standardSpeakingInterval,
+    stillInterval: Double = standardStillInterval
+  ) {
+    self.logger = logger
+    self.maxSide = maxSide
+    self.idleInterval = idleInterval
+    self.speakingInterval = speakingInterval
+    self.stillInterval = stillInterval
+  }
+}
+
 /// A finished picture, handed from the actor that drew it to the main actor that shows it.
 struct AvatarStagePicture: @unchecked Sendable {
   /// A `CGImage` is immutable once made, and the actor keeps no reference to it.
@@ -84,22 +119,27 @@ actor AvatarStageEngine {
   /// The pictures at full size, kept to draw the avatar again at another size.
   private let loaded: AvatarLoadedPackage
   private var pacer: AvatarFramePacer
+  private let logger: Logger
   private let clock = ContinuousClock()
   private let started: ContinuousClock.Instant
 
-  init(loaded: AvatarLoadedPackage, seed: UInt64, maxSide: Int) throws {
+  init(loaded: AvatarLoadedPackage, seed: UInt64, settings: AvatarStageSettings) throws {
     self.loaded = loaded
-    renderer = try loaded.renderer(maxSide: maxSide)
+    logger = settings.logger
+    renderer = try loaded.renderer(maxSide: settings.maxSide)
     runtime = AvatarRuntime(package: loaded.package, tune: AvatarTune(), seed: seed)
-    pacer = AvatarFramePacer(side: renderer.outputSide)
+    pacer = AvatarFramePacer(
+      side: renderer.outputSide, quietAllowance: settings.speakingInterval)
     started = clock.now
   }
 
   /// Read a package folder and make its engine, off the main actor.
   @concurrent
-  static func load(folder: URL, seed: UInt64, maxSide: Int) async throws -> AvatarStageEngine {
+  static func load(
+    folder: URL, seed: UInt64, settings: AvatarStageSettings
+  ) async throws -> AvatarStageEngine {
     try AvatarStageEngine(
-      loaded: try AvatarPackageFolder.load(folder), seed: seed, maxSide: maxSide)
+      loaded: try AvatarPackageFolder.load(folder), seed: seed, settings: settings)
   }
 
   /// The time this thread has spent computing, in seconds. The methods of an actor are
@@ -131,15 +171,15 @@ actor AvatarStageEngine {
     }
     do {
       renderer = try loaded.renderer(maxSide: side)
-      clientLogger.notice("avatar.picture \(what, privacy: .public) side=\(side)")
+      logger.notice("avatar.picture \(what, privacy: .public) side=\(side)")
     } catch let error as AvatarPackageError {
       // The same pictures drew the other size, so this is not expected: keep what draws.
-      pacer = AvatarFramePacer(side: renderer.outputSide)
-      clientLogger.error(
+      pacer = AvatarFramePacer(side: renderer.outputSide, quietAllowance: pacer.quietAllowance)
+      logger.error(
         "avatar.picture_refused kind=\(error.kind.rawValue, privacy: .public)")
     } catch {
-      pacer = AvatarFramePacer(side: renderer.outputSide)
-      clientLogger.error("avatar.picture_refused kind=unknown")
+      pacer = AvatarFramePacer(side: renderer.outputSide, quietAllowance: pacer.quietAllowance)
+      logger.error("avatar.picture_refused kind=unknown")
     }
   }
 
@@ -194,7 +234,7 @@ public final class AvatarStageModel {
   }
 
   private let source: Source
-  private let maxSide: Int
+  private let settings: AvatarStageSettings
   private var loading: Task<AvatarStageEngine, any Error>?
   /// How many times the package was read (once, whatever the views do).
   private(set) var loadsStarted = 0
@@ -204,14 +244,14 @@ public final class AvatarStageModel {
   /// A stage for the package in `folder` (an `avatar.json` and the PNG files it lists). It is read
   /// when the first view appears, off the main actor; a package that breaks a load rule leaves
   /// `failure` and draws nothing.
-  public init(folder: URL) {
+  public init(folder: URL, settings: AvatarStageSettings) {
     source = .folder(folder)
-    maxSide = 512
+    self.settings = settings
   }
 
-  init(loaded: AvatarLoadedPackage, seed: UInt64, maxSide: Int = 512) {
+  init(loaded: AvatarLoadedPackage, seed: UInt64, settings: AvatarStageSettings) {
     source = .loaded(loaded, seed: seed)
-    self.maxSide = maxSide
+    self.settings = settings
   }
 
   /// A view says whether it shows the model now (on screen, in a scene that is not in the
@@ -234,14 +274,14 @@ public final class AvatarStageModel {
   private func engine() async throws -> AvatarStageEngine {
     if loading == nil {
       loadsStarted += 1
-      let (source, maxSide) = (source, maxSide)
+      let (source, settings) = (source, settings)
       loading = Task {
         switch source {
         case .folder(let url):
           return try await AvatarStageEngine.load(
-            folder: url, seed: UInt64.random(in: UInt64.min...UInt64.max), maxSide: maxSide)
+            folder: url, seed: UInt64.random(in: UInt64.min...UInt64.max), settings: settings)
         case .loaded(let package, let seed):
-          return try AvatarStageEngine(loaded: package, seed: seed, maxSide: maxSide)
+          return try AvatarStageEngine(loaded: package, seed: seed, settings: settings)
         }
       }
     }
@@ -257,7 +297,7 @@ public final class AvatarStageModel {
       let kind = (error as? AvatarPackageError)?.kind ?? .malformed
       if failure == nil {
         failure = kind
-        clientLogger.error("avatar.load_failed kind=\(kind.rawValue, privacy: .public)")
+        settings.logger.error("avatar.load_failed kind=\(kind.rawValue, privacy: .public)")
       }
       return
     }
@@ -267,7 +307,7 @@ public final class AvatarStageModel {
     while !Task.isCancelled {
       let started = clock.now
       let state = state
-      let interval = state == .speaking ? 1.0 / 60 : 1.0 / 30
+      let interval = state == .speaking ? settings.speakingInterval : settings.idleInterval
       let picture: AvatarStagePicture?
       if reducesMotion {
         if stillState != state || image == nil {
@@ -286,7 +326,9 @@ public final class AvatarStageModel {
         image = picture.image
         pictureSize = picture.size
       }
-      let wait = reducesMotion ? 0.25 : max(interval - Self.seconds(clock.now - started), 0)
+      let wait =
+        reducesMotion
+        ? settings.stillInterval : max(interval - Self.seconds(clock.now - started), 0)
       do { try await Task.sleep(for: .seconds(wait)) } catch { return }
     }
   }

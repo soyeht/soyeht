@@ -187,7 +187,8 @@ class AreaTests(unittest.TestCase):
 
     def test_gate_scripts_upgrade_the_run_to_the_full_tier(self):
         for path in ("scripts/check_all.sh", "scripts/gate_plan.py", "scripts/post_merge.py",
-                     "scripts/e2e_agents.py", "scripts/check_mac.sh", ".github/workflows/check-all.yml"):
+                     "scripts/e2e_agents.py", "scripts/check_mac.sh", "scripts/check_watchos.sh",
+                     ".github/workflows/check-all.yml"):
             with self.subTest(path=path):
                 self.assertEqual(plan(path).upgrade, (path,))
         for path in ("scripts/check_quality.py", "docs/a.md", "engine/soyeht-web/src/lib.rs"):

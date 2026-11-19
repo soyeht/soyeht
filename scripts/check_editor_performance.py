@@ -50,6 +50,8 @@ def editor_path(path: str) -> bool:
             "scripts/check_editor_performance.py",
         }
         or path.startswith("apps/shared/Sources/SoyehtClient/")
+        # The reply parser of the editor's Markdown preview moved out of the client's folder.
+        or path == "apps/shared/Sources/SoyehtVoice/Markdown.swift"
         or path.startswith("contracts/swift/Sources/SoyehtProtocol/")
         or path.startswith("engine/soyeht-protocol/")
     )

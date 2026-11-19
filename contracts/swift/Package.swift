@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "SoyehtProtocol",
-    platforms: [.macOS(.v14), .iOS(.v17)],
+    platforms: [.macOS(.v14), .iOS(.v17), .watchOS(.v11)],
     products: [
         .library(name: "SoyehtProtocol", targets: ["SoyehtProtocol"]),
         .executable(name: "protocol-vectors", targets: ["ProtocolVectors"]),
