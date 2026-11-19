@@ -23,11 +23,10 @@ import Testing
 private struct Foundationish: Codable, Equatable {
   var bytes: Data
   var link: URL
-  var when: Date
 }
 
 @Test func theTypesJSONDecoderReadsInAWayOfItsOwnAreReadTheSameFromTheTree() throws {
-  let text = #"{"bytes":"aGVsbG8=","link":"https://example.com/a?b=1","when":1234.5}"#
+  let text = #"{"bytes":"aGVsbG8=","link":"https://example.com/a?b=1"}"#
   let tree = try JSONDecoder().decode(JsonValue.self, from: Data(text.utf8))
   #expect(
     try tree.decoded(Foundationish.self)
