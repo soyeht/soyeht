@@ -601,24 +601,24 @@ pub fn start_effect(change: &Change<'_>, id: &str, metadata: &Value) -> Result<(
 }
 
 pub fn save_message(change: &Change<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
-    save_message_in(change.connection(), pane, message, "agent_transcript")
+    save_message_in(change.connection(), pane, message, false)
 }
 
 pub fn stage_message(change: &Change<'_>, pane: &str, message: &TranscriptMessage) -> Result<()> {
-    save_message_in(
-        change.connection(),
-        pane,
-        message,
-        "agent_replay_transcript",
-    )
+    save_message_in(change.connection(), pane, message, true)
 }
 
 fn save_message_in(
     tx: &Connection,
     pane: &str,
     message: &TranscriptMessage,
-    table: &str,
+    staged: bool,
 ) -> Result<()> {
+    let table = if staged {
+        "agent_replay_transcript"
+    } else {
+        "agent_transcript"
+    };
     generation_matches(tx, pane, message.generation)?;
     let seq = message
         .seq
@@ -656,11 +656,16 @@ fn save_message_in(
         }
     }
     tx.execute(&format!("INSERT INTO {table}(pane_id,seq,local_id,generation,payload,bytes) VALUES (?1,?2,?3,?4,?5,?6) ON CONFLICT(pane_id,seq) DO UPDATE SET payload=excluded.payload,bytes=excluded.bytes"),params![pane,seq.to_be_bytes().as_slice(),message.local_id,message.generation,raw,raw.len() as i64])?;
-    let mut bytes: i64 = tx.query_row(
-        &format!("SELECT COALESCE(SUM(bytes),0) FROM {table} WHERE pane_id=?1"),
-        [pane],
-        |r| r.get(0),
-    )?;
+    // The pane's total is kept by the triggers of migration 039, so the work of a save does not
+    // depend on how many messages the pane holds.
+    let mut bytes: i64 = tx
+        .query_row(
+            "SELECT bytes FROM agent_transcript_total WHERE pane_id=?1 AND staged=?2",
+            params![pane, staged],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0);
     while bytes > limits::PANE_RETENTION_BYTES as i64 {
         let (old, size): (Vec<u8>, i64) = tx.query_row(
             &format!("SELECT seq,bytes FROM {table} WHERE pane_id=?1 ORDER BY seq LIMIT 1"),

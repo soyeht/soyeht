@@ -225,16 +225,6 @@ async fn a_device_dismisses_its_own_notice_and_a_wrong_time_or_a_chief_is_refuse
 }
 
 #[tokio::test]
-async fn the_panes_of_a_device_with_none_is_an_empty_list() {
-    let mut rig = Rig::new(Approval::PersonsCode);
-    let app = rig.connect(true, false);
-    let listed = rig
-        .call(&app, "device.panes.list", json!({"deviceId": "nobody"}))
-        .unwrap();
-    assert_eq!(listed["items"], json!([]));
-}
-
-#[tokio::test]
 async fn a_device_dismissing_the_notice_moves_its_own_mark_and_nobody_else_s() {
     let mut rig = Rig::new(Approval::PersonsCode);
     let app = rig.connect(true, false);

@@ -207,7 +207,7 @@
   },
   "oversized_files": {
     "engine/soyeht-store/src/editor.rs": 828,
-    "engine/soyeht-store/tests/agents.rs": 976,
+    "engine/soyeht-store/tests/agents.rs": 953,
     "engine/soyeht-store/tests/tasks.rs": 887
   },
   "swallowed_errors": {

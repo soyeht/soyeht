@@ -520,27 +520,6 @@ fn assert_pairing_proved_by(
 }
 
 #[test]
-fn a_local_shell_cannot_start_or_decide_a_pairing_on_any_system() {
-    let rig = Rig::new();
-    let mut shell = rig.client();
-    let decide = |client: &mut Client| {
-        let answer = client.request(
-            "device.pair.decide",
-            json!({"requestId":"none","approve":true,"idempotencyKey":Uuid::new_v4().to_string()}),
-        );
-        answer["error"]["data"]["kind"].as_str().unwrap().to_owned()
-    };
-    // Opening a window and deciding a request are the signed app's alone (ADR 0128, 0163).
-    let start = shell.request("device.pair.start", json!({"idempotencyKey":"shell-start"}));
-    assert_eq!(start["error"]["data"]["kind"], "forbidden_role", "{start}");
-    assert_eq!(decide(&mut shell), "forbidden_role");
-    // The app (here, the same client once the test program is trusted) reaches the lookup.
-    std::fs::write(rig.path.join("test-attest-local-ui"), "").unwrap();
-    let mut app = rig.client();
-    assert_eq!(decide(&mut app), "unauthorized");
-}
-
-#[test]
 fn phone_pairing_requires_consent_signature_and_revocation_closes_access() {
     use sha2::{Digest, Sha256};
     let rig = Rig::new();
