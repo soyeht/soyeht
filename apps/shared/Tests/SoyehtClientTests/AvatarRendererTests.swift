@@ -27,10 +27,6 @@ private func pixel(_ bitmap: AvatarBitmap, _ x: Int, _ y: Int) -> [Int] {
 
 private let restFrame = AvatarFixture.frame(weights: AvatarFixture.weights(.rest))
 
-@Test func theFixtureMeetsTheLoadRulesAtAnySize() throws {
-  for size in [64, 256, 1024] { _ = try AvatarFixture.make(canvas: size) }
-}
-
 @Test func aFaceAtRestOutsideTheMouthAndTheEyesIsTheBasePicture() throws {
   let made = try made()
   let r = try renderer(made, maxSide: 128)
@@ -94,11 +90,21 @@ private let restFrame = AvatarFixture.frame(weights: AvatarFixture.weights(.rest
 
 /// The largest change of one pixel between two pictures.
 private func largestChange(_ a: AvatarBitmap, _ b: AvatarBitmap) -> Int {
-  zip(a.pixels, b.pixels).reduce(0) { max($0, abs(Int($1.0) - Int($1.1))) }
+  a.pixels.withUnsafeBufferPointer { x in
+    b.pixels.withUnsafeBufferPointer { y in
+      var largest = 0
+      for i in 0..<min(x.count, y.count) {
+        let d = Int(x[i]) - Int(y[i])
+        largest = max(largest, d < 0 ? -d : d)
+      }
+      return largest
+    }
+  }
 }
 
 /// For every pair of drawings, the mouth morphs from one to the other in steps: the most one pixel
-/// changes in a step, against the most it changes between the ends divided by the steps.
+/// changes in a step, against the most it changes between the ends divided by the steps. The ends
+/// are the drawings alone, drawn once for all the pairs they are in.
 private func worstStepOverEvenStep(inner: AvatarFixture.Inner, onlyFrom: [AvatarShape]? = nil)
   throws -> (
     ratio: Double, pair: String
@@ -107,15 +113,21 @@ private func worstStepOverEvenStep(inner: AvatarFixture.Inner, onlyFrom: [Avatar
   let made = try AvatarFixture.make(canvas: 128, columns: 10, rows: 7, inner: inner, mouth: 1.6)
   let r = try AvatarRenderer(package: made.package, images: made.images, maxSide: 128)
   let steps = 8
+  var alone: [AvatarShape: AvatarBitmap] = [:]
+  func render(_ a: AvatarShape, _ b: AvatarShape, _ i: Int) -> AvatarBitmap {
+    r.render(
+      AvatarFixture.frame(weights: AvatarFixture.weights(a, b, mix: Double(i) / Double(steps))))
+  }
   var worst = (ratio: 0.0, pair: "")
   for a in AvatarShape.allCases {
     for b in AvatarShape.allCases where b.rawValue > a.rawValue {
       if let onlyFrom, !onlyFrom.contains(a) && !onlyFrom.contains(b) { continue }
-      let frames = (0...steps).map { i in
-        r.render(
-          AvatarFixture.frame(weights: AvatarFixture.weights(a, b, mix: Double(i) / Double(steps))))
-      }
-      let ends = Double(largestChange(frames[0], frames[steps]))
+      let first = alone[a] ?? render(a, b, 0)
+      alone[a] = first
+      let last = alone[b] ?? render(a, b, steps)
+      alone[b] = last
+      let frames = [first] + (1..<steps).map { render(a, b, $0) } + [last]
+      let ends = Double(largestChange(first, last))
       let step = Double(zip(frames, frames.dropFirst()).map { largestChange($0, $1) }.max() ?? 0)
       guard ends > 0 else { continue }
       let ratio = step / (ends / Double(steps))

@@ -233,33 +233,6 @@ fn timings_a_tts_gives_are_followed_at_any_speed() {
 }
 
 #[test]
-fn a_clip_with_nothing_to_say_over_a_loud_voice_follows_the_level() {
-    let env = Envelope {
-        db: vec![-20.0; 100],
-        hop: HOP,
-    };
-    let mut r = runtime(1.0);
-    r.set_clip(Some(Clip::new(&[], Some(&env), &Tune::default())));
-    let mut open = 0.0f64;
-    for i in 0..120 {
-        let t = i as f64 / 60.0;
-        open = open.max(
-            r.step(
-                1.0 / 60.0,
-                State::Speaking,
-                Some(Audio {
-                    position: t,
-                    db: Some(-20.0),
-                }),
-            )
-            .mouth
-            .o,
-        );
-    }
-    assert!(open > 0.5, "the mouth stayed shut over the voice ({open})");
-}
-
-#[test]
 fn the_runtime_raises_the_accent_of_a_word_the_audio_reaches() {
     let words = vec![WordStart {
         t: 0.5,

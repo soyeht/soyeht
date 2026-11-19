@@ -736,7 +736,8 @@ fn the_library_is_still_there_when_the_engine_starts_again_and_orphan_folders_ar
 #[test]
 fn the_engine_offers_the_avatars_capability() {
     let rig = Rig::new();
-    assert!(rig.core.capabilities().contains(&"avatars".to_owned()));
+    let avatars = crate::errors::wire_name(&soyeht_protocol::EngineCapability::Avatars);
+    assert!(rig.core.capabilities().contains(&avatars));
 }
 
 mod project_pane;
