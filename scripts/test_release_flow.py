@@ -488,6 +488,12 @@ class PublishTests(FlowCase):
         with self.assertRaisesRegex(release_flow.Refused, "BUILD_SHA is missing"):
             self.publish()
 
+    def test_a_package_of_another_version_added_after_collect_stops_the_publication(self):
+        self.ready()
+        (self.dist / "soyeht-0.0.9-macos-aarch64.dmg").write_bytes(b"old")
+        with self.assertRaisesRegex(release_flow.Refused, "another version than"):
+            self.publish()
+
     def test_a_leftover_draft_is_found_and_so_is_a_gh_that_cannot_list(self):
         self.ready()
         with self.assertRaisesRegex(release_flow.Refused, "a draft counts"):
@@ -671,11 +677,13 @@ class BuildTests(FlowCase):
         _, recorder, _ = self.build("--mac", "--linux-arch", "x86_64", environment=HOSTS)
         self.assertEqual([c[0] for c in recorder.commands], ["nice", "git", "ssh", "scp"])
 
-    def test_a_missing_linux_host_stops_the_build_before_the_mac_package(self):
-        recorder = Recorder()
-        with self.assertRaisesRegex(release_flow.Refused, "no Linux build host"):
-            self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), recorder, probe_for(), {})
-        self.assertEqual(recorder.commands, [])
+    def test_a_missing_or_malformed_linux_host_stops_the_build_before_the_mac_package(self):
+        for environment, reason in (({}, "no Linux build host"), ({release_flow.LINUX_HOST_VARIABLE: "-oProxyCommand=x"}, "is not a host name")):
+            with self.subTest(environment=environment):
+                recorder = Recorder()
+                with self.assertRaisesRegex(release_flow.Refused, reason):
+                    self.quiet(release_flow.build, self.options("build", "--mac", "--linux"), recorder, probe_for(), environment)
+                self.assertEqual(recorder.commands, [])
 
     def test_a_build_also_marks_an_ad_hoc_folder_and_refuses_one_of_another_commit(self):
         adhoc = self.dist / "ad-hoc"
