@@ -13,8 +13,58 @@ use std::{
         mpsc::{Receiver, Sender, channel},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+/// How long a listener waits after an accept the process had no descriptor for.
+const OUT_OF_DESCRIPTORS_PAUSE: Duration = Duration::from_millis(100);
+
+/// How often a listener that is still out of descriptors says so.
+const EXHAUSTION_SUMMARY: Duration = Duration::from_secs(60);
+
+/// The accepts that failed for lack of descriptors, in a row: the first is logged, then a summary
+/// each minute with the count, and the accept that works again is logged once.
+#[derive(Default)]
+struct Exhaustion {
+    /// When the run began and when it was last told, and how many accepts failed in it.
+    run: Option<(Instant, Instant, u64)>,
+}
+
+impl Exhaustion {
+    fn failed(&mut self) {
+        self.failed_at(Instant::now());
+    }
+
+    fn failed_at(&mut self, now: Instant) {
+        let (began, told, count) = self.run.get_or_insert_with(|| {
+            crate::log::event("local.accept_out_of_descriptors", &[]);
+            (now, now, 0)
+        });
+        *count += 1;
+        if now.duration_since(*told) >= EXHAUSTION_SUMMARY {
+            *told = now;
+            crate::log::event(
+                "local.accept_still_out_of_descriptors",
+                &[
+                    ("seconds", &now.duration_since(*began).as_secs().to_string()),
+                    ("failed", &count.to_string()),
+                ],
+            );
+        }
+    }
+
+    fn recovered(&mut self) {
+        if let Some((began, _, count)) = self.run.take() {
+            crate::log::event(
+                "local.accept_recovered",
+                &[
+                    ("seconds", &began.elapsed().as_secs().to_string()),
+                    ("failed", &count.to_string()),
+                ],
+            );
+        }
+    }
+}
 
 /// The connections of a listener that proved the secret, and the thread that examines them.
 pub(super) struct Accepting<S> {
@@ -92,6 +142,7 @@ pub(super) fn serve<S>(
     for<'a> &'a S: Read + Write,
 {
     let pending = Arc::new(Mutex::new(Admission::new(capacity)));
+    let mut exhaustion = Exhaustion::default();
     for raw in incoming {
         if stop.load(Ordering::Acquire) {
             return;
@@ -99,7 +150,17 @@ pub(super) fn serve<S>(
         let raw = match raw {
             Ok(raw) => {
                 errors.accepted();
+                exhaustion.recovered();
                 raw
+            }
+            Err(error) if crate::net::exhausts_resources(&error) => {
+                // The process is out of descriptors, buffers or memory. The listener is fine, and
+                // a connection or a pane that closes frees some: it waits and asks again, and
+                // never ends, because what ends here is the supervisor and every terminal it
+                // holds.
+                exhaustion.failed();
+                thread::sleep(OUT_OF_DESCRIPTORS_PAUSE);
+                continue;
             }
             Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {
                 match errors.failed() {
@@ -165,5 +226,24 @@ pub(super) fn serve<S>(
             raw.close();
             thread::sleep(Duration::from_millis(50));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_without_descriptors_is_told_once_a_minute_and_ends_when_an_accept_works() {
+        let start = Instant::now();
+        let mut exhaustion = Exhaustion::default();
+        exhaustion.failed_at(start);
+        exhaustion.failed_at(start + Duration::from_secs(30));
+        assert_eq!(exhaustion.run, Some((start, start, 2)));
+        let minute = start + Duration::from_secs(61);
+        exhaustion.failed_at(minute);
+        assert_eq!(exhaustion.run, Some((start, minute, 3)));
+        exhaustion.recovered();
+        assert_eq!(exhaustion.run, None);
     }
 }

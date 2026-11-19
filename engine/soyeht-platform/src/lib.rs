@@ -12,6 +12,8 @@
 //! - [`crash`]: the report a program writes when it panics, kept locally until a person sends it.
 //! - [`diagnostics`]: the report a person pastes into an issue, and the redaction that takes
 //!   paths, names and tokens out of it.
+//! - [`descriptors`]: the most files a program may hold open, which a supervisor of hundreds of
+//!   terminals raises when it starts and a started program gets back to what it was.
 //! - [`user`]: who is running the process.
 //! - [`hold_cost`]: what a hold of the engine's lock spent its time on (statements, segment
 //!   files, the file port), for the slow-hold log line.
@@ -32,6 +34,7 @@
 
 pub mod cpu;
 pub mod crash;
+pub mod descriptors;
 pub mod diagnostics;
 pub mod dialog;
 pub mod dirs;

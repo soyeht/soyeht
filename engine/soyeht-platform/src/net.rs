@@ -155,6 +155,25 @@ fn connection_code(_: i32) -> bool {
     false
 }
 
+/// Whether the process is out of descriptors, buffers or memory: an error of `accept` that says
+/// nothing is wrong with the listener, and that a connection or a pane that closes may cure. An
+/// accept loop pauses and asks again, and never ends for it. The one rule of every listener of the
+/// engine, the supervisor's included.
+pub fn exhausts_resources(error: &io::Error) -> bool {
+    error.kind() == io::ErrorKind::OutOfMemory || error.raw_os_error().is_some_and(resource_code)
+}
+
+#[cfg(unix)]
+fn resource_code(code: i32) -> bool {
+    [libc::EMFILE, libc::ENFILE, libc::ENOBUFS, libc::ENOMEM].contains(&code)
+}
+
+/// `WSAEMFILE` and `WSAENOBUFS`.
+#[cfg(windows)]
+fn resource_code(code: i32) -> bool {
+    [10024, 10055].contains(&code)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -204,6 +223,20 @@ mod tests {
                 kind
             )));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn running_out_of_descriptors_buffers_or_memory_is_told_from_a_dead_listener() {
+        for code in [libc::EMFILE, libc::ENFILE, libc::ENOBUFS, libc::ENOMEM] {
+            assert!(exhausts_resources(&io::Error::from_raw_os_error(code)));
+        }
+        assert!(exhausts_resources(&io::Error::from(
+            io::ErrorKind::OutOfMemory
+        )));
+        assert!(!exhausts_resources(&io::Error::from_raw_os_error(
+            libc::EBADF
+        )));
     }
 
     #[test]
