@@ -81,6 +81,18 @@ exclusive upper bound, and each page is returned in display order. Retention
 removes whole oldest records until at most 32 MiB remain per pane. The sequence
 allocator is stored in runtime state, not reconstructed from retained rows.
 
+Schema 39 keeps each pane's transcript size as a running total (`agent_transcript_total`, one
+row per pane and table), maintained by triggers in the transaction of every insert, update and
+delete of `agent_transcript` and `agent_replay_transcript`, so no writer can skip it. A save
+reads that row instead of summing the pane's messages, and the work of a save no longer grows
+with the length of the conversation, nor does a replay of N messages cost N²/2 row visits.
+`tests/agent_transcript_total.rs` checks the total against the sum of the rows after a random
+sequence of writes, retention trims and replay publications, and that a save takes the same
+number of SQLite steps with 20 and with 2,000 messages stored.
+
+An engine of an earlier schema refuses a database of schema 39, so reverting the change that added
+it must keep migration 039 and the schema version.
+
 Runtime checkpoints are limited to 16 MiB. The native outbox holds at most
 128 complete lines and 8 MiB per pane. Open native requests are limited to
 128, with 16 MiB of combined private and public parameters; public request

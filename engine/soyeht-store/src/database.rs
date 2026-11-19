@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 mod migrations;
 
-pub const SCHEMA_VERSION: u32 = 38;
+pub const SCHEMA_VERSION: u32 = 39;
 
 #[derive(Debug)]
 pub enum Error {
