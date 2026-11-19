@@ -257,7 +257,7 @@ fn a_group_the_store_refuses_is_committed_record_by_record_so_only_the_refused_o
     // A completed message the engine does not know sits where its second message will go, so
     // saving that one is refused, which the group could not foresee.
     let other: TranscriptMessage = serde_json::from_value(json!({"localId":"other","generation":1,"seq":"1","role":"assistant","kind":"message","text":"x","complete":true,"promptId":"p"})).unwrap();
-    crate::ports::StorePort::mutate(&mut core.store, "test", "seed", "seed", |change| {
+    crate::ports::StorePort::mutate(&mut core.store, "test", "occupied", "occupied", |change| {
         soyeht_store::agents::save_message(change, PANE, &other)?;
         Ok((json!({}), Vec::new()))
     })
