@@ -43,12 +43,12 @@
       "duplicated_lines": 124
     },
     "shared": {
-      "clones": 61,
-      "duplicated_lines": 442
+      "clones": 60,
+      "duplicated_lines": 437
     },
     "swift_all": {
-      "clones": 93,
-      "duplicated_lines": 652
+      "clones": 92,
+      "duplicated_lines": 647
     }
   },
   "engine_production_panics": 0,
