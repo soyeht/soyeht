@@ -209,7 +209,7 @@ fn change_row(
         return Ok(true);
     };
     let mut item = errors::invariant(
-        transcript::message(store, pane, row)?,
+        transcript::message(store, &changes.earlier, pane, row)?,
         "Subagent row disappeared",
     )?;
     let run = errors::invariant(item.subagent.as_mut(), "Subagent row has no run")?;
@@ -235,7 +235,7 @@ pub(crate) fn finished(
     tracked.finished = true;
     let summary = tracked
         .last_message
-        .map(|seq| transcript::message(store, pane, seq))
+        .map(|seq| transcript::message(store, &changes.earlier, pane, seq))
         .transpose()?
         .flatten()
         .map(|message| preview(&message.text))

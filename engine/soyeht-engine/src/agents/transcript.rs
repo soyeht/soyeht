@@ -1,4 +1,4 @@
-use super::{Changes, state::State};
+use super::{Changes, batch::Earlier, state::State};
 use crate::{
     errors::{self, Result},
     ports::StorePort,
@@ -11,7 +11,16 @@ use soyeht_protocol::{
 use std::collections::BTreeMap;
 use uuid::Uuid;
 
-pub fn message(store: &impl StorePort, pane: &str, seq: u64) -> Result<Option<TranscriptMessage>> {
+/// The message `seq`: as an earlier record of the batch left it, else as the store holds it.
+pub fn message(
+    store: &impl StorePort,
+    earlier: &Earlier,
+    pane: &str,
+    seq: u64,
+) -> Result<Option<TranscriptMessage>> {
+    if let Some(message) = earlier.get(seq) {
+        return Ok(Some(message));
+    }
     store.agent_message(pane, seq).map_err(errors::storage)
 }
 pub fn new_message(
@@ -75,7 +84,7 @@ pub fn attach_to_replayed_user(
 ) -> Result<()> {
     let key = chunk_key("user", None, message_id);
     let open = match state.open_messages.get(&key) {
-        Some(seq) => message(store, pane, *seq)?,
+        Some(seq) => message(store, &changes.earlier, pane, *seq)?,
         None => None,
     };
     let mut item = match open {
@@ -299,7 +308,7 @@ pub fn append_text_role(
         TranscriptKind::Message
     };
     let mut current = if let Some(seq) = state.open_messages.get(&key) {
-        message(store, pane, *seq)?
+        message(store, &changes.earlier, pane, *seq)?
     } else {
         None
     };
@@ -402,7 +411,7 @@ fn complete_where(
         .partition(|(key, _)| selected(key));
     state.open_messages = open;
     for (key, seq) in done {
-        if let Some(mut item) = message(store, pane, seq)? {
+        if let Some(mut item) = message(store, &changes.earlier, pane, seq)? {
             item.complete = true;
             let kind = match open_key_kind(&key) {
                 "thought" => "agent_thought_chunk",

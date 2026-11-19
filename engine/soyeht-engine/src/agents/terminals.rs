@@ -239,7 +239,7 @@ impl Core {
             };
             let prior = terminal
                 .message_seq
-                .map(|seq| transcript::message(&self.store, pane, seq))
+                .map(|seq| transcript::message(&self.store, &Default::default(), pane, seq))
                 .transpose()?
                 .flatten();
             let mut item = match prior {

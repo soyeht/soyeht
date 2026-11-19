@@ -1,5 +1,7 @@
 use super::{
-    Changes, native_error,
+    Changes,
+    batch::Earlier,
+    native_error,
     purpose::Purpose,
     questions, responses, sign_in,
     state::{Phase, State},
@@ -15,14 +17,13 @@ use serde_json::{Value, json};
 use soyeht_acp::{
     Message, RpcError,
     prompt::{self, PromptFile},
-    rpc::{Record as NativeRecord, decode},
+    rpc::Record as NativeRecord,
 };
 use soyeht_protocol::{
     PaneState, ProbeCapability, ProbeResult, PromptItem, TranscriptKind, TranscriptRole,
     ndjson::Decoder,
 };
 use soyeht_ptyd::wire::Request;
-use soyeht_store::segments::Record;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
@@ -162,6 +163,7 @@ impl Core {
         message: Message,
         state: &mut super::state::State,
         saved: &mut crate::model::StoredPane,
+        earlier: Earlier,
     ) -> Result<(Changes, bool)> {
         let NativeContext {
             pane,
@@ -169,7 +171,10 @@ impl Core {
             now_ms,
             timestamp,
         } = context;
-        let mut changes = Changes::default();
+        let mut changes = Changes {
+            earlier,
+            ..Changes::default()
+        };
         let observed_turn_activity = match message {
             response @ Message::Response { .. } => {
                 responses::response(
@@ -291,7 +296,16 @@ impl Core {
         let subagent = super::subagents::owner(state, params["sessionId"].as_str());
         let tracked_tool = params["toolCall"]["toolCallId"]
             .as_str()
-            .map(|id| updates::tracked_tool(&self.store, context.pane, state, subagent, id))
+            .map(|id| {
+                updates::tracked_tool(
+                    &self.store,
+                    &Earlier::default(),
+                    context.pane,
+                    state,
+                    subagent,
+                    id,
+                )
+            })
             .transpose()?
             .flatten()
             .and_then(|message| message.tool)
@@ -324,14 +338,15 @@ impl Core {
         Ok(question)
     }
 
-    pub(crate) fn native_record(
-        &mut self,
+    /// Applies one record to `state` and `saved`, which the caller commits.
+    pub(super) fn apply_native_record(
+        &self,
         pane: &str,
         record: NativeRecord,
         advances_stream: bool,
-    ) -> Result<()> {
-        let mut state = self.agent_state(pane)?;
-        let mut saved = self.pane(pane)?.stored.clone();
+        (state, saved): (&mut State, &mut crate::model::StoredPane),
+        earlier: Earlier,
+    ) -> Result<Changes> {
         let was_no_signal = saved.pane.state == PaneState::NoSignal;
         let had_active_prompt = state.active.is_some();
         let now_ms = self.now_ms();
@@ -344,8 +359,9 @@ impl Core {
                 timestamp: &timestamp,
             },
             record.message,
-            &mut state,
-            &mut saved,
+            state,
+            saved,
+            earlier,
         )?;
         // Unknown native frames keep the durable elapsed wait visible. That is
         // deliberately conservative while the notice is non-destructive: the
@@ -375,90 +391,25 @@ impl Core {
         }
         saved.pane.source = soyeht_protocol::StateSource::Protocol;
         saved.pane.confidence = 1.0;
-        self.commit_agent(saved, state, changes, None, json!({}))?;
-        Ok(())
+        Ok(changes)
     }
 
-    /// First consume any raw records synced before an engine crash. The public
-    /// checkpoint can lag the raw log, but it never advances beyond durable data.
-    fn decode_agent_log(&mut self, pane: &str) -> Result<()> {
-        let base = self.pane(pane)?.stored.sequence_base;
-        let offset = self.agents.require(pane)?.decoder.next_offset();
-        let end = self.pane(pane)?.screen.next_offset();
-        let mut from = base
-            .checked_add(offset)
-            .ok_or_else(|| errors::internal("Agent offset exhausted"))?;
-        let first = self.pane(pane)?.screen.first_offset();
-        if from < first {
-            // The requests the gap hides are read off the lock; the log is read again next poll.
-            if !self.agent_output_gap(pane, first - base)? {
-                return Ok(());
-            }
-            from = first;
-        }
-        if from == end {
-            return Ok(());
-        }
-        let records = self.pane(pane)?.screen.read(from, end, 64 * 1024)?;
-        for record in records {
-            let (mut offset, mut bytes) = match record {
-                Record::Gap { to, .. } => {
-                    if !self.agent_output_gap(pane, to - base)? {
-                        return Ok(());
-                    }
-                    continue;
-                }
-                Record::Data { offset, bytes } => (offset, bytes),
-            };
-            if self.agents.require(pane)?.state.discard_until_newline {
-                let newline = bytes.iter().position(|byte| *byte == b'\n');
-                let skipped = newline.map_or(bytes.len(), |at| at + 1);
-                if !self.skip_interrupted_agent_record(
-                    pane,
-                    offset - base + skipped as u64,
-                    newline.is_some(),
-                )? {
-                    return Ok(());
-                }
-                offset += skipped as u64;
-                bytes.drain(..skipped);
-                if bytes.is_empty() {
-                    continue;
-                }
-            }
-            let decoded = decode(
-                &mut self
-                    .agents
-                    .get_mut(pane)
-                    .ok_or_else(|| {
-                        errors::internal("Agent runtime disappeared while decoding output")
-                    })?
-                    .decoder,
-                offset - base,
-                &bytes,
-            );
-            let decoded = match decoded {
-                Ok(records) => records,
-                Err(error) => {
-                    let running = errors::invariant(
-                        self.agents.get_mut(pane),
-                        "Agent runtime disappeared after a decoder failure",
-                    )?;
-                    running.decoder = Decoder::new(running.state.acknowledged_offset);
-                    return Err(native_error(error));
-                }
-            };
-            for record in decoded {
-                if let Err(error) = self.native_record(pane, record, true) {
-                    let running = errors::invariant(
-                        self.agents.get_mut(pane),
-                        "Agent runtime disappeared after a native record failure",
-                    )?;
-                    running.decoder = Decoder::new(running.state.acknowledged_offset);
-                    return Err(error);
-                }
-            }
-        }
+    pub(crate) fn native_record(
+        &mut self,
+        pane: &str,
+        record: NativeRecord,
+        advances_stream: bool,
+    ) -> Result<()> {
+        let mut state = self.agent_state(pane)?;
+        let mut saved = self.pane(pane)?.stored.clone();
+        let changes = self.apply_native_record(
+            pane,
+            record,
+            advances_stream,
+            (&mut state, &mut saved),
+            Earlier::default(),
+        )?;
+        self.commit_agent(saved, state, changes, None, json!({}))?;
         Ok(())
     }
 
