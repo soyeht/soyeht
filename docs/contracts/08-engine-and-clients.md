@@ -595,6 +595,11 @@ sends against them (ADR 0090).
   at H. Barrier: no live byte before `replay_done`; no skip between replay
   end and live output. The client resets the terminal before applying
   replay with `reset: true`.
+  A pane that does not record its screen (`pane.record.set {on: false}`, or `record.default`
+  off) holds the tail in memory only, and holds the same window: the engine joins the short
+  reads a terminal hands over into records of a few KiB, so that its bound on the records
+  kept never cuts the tail short, and a tail that memory holds is replayed whole, with no
+  `stream.gap` for bytes the engine still has.
 - Replays are paced by the engine (ADR 0168). The `pane.stream.subscribe` reply
   and `stream.replay_start` are sent at once, but the bytes of a replay follow in
   slices, each sent only while the connection's queue holds little, so a client

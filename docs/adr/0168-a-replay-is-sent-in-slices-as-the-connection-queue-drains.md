@@ -55,5 +55,8 @@ disconnected, or lose history, for how many terminals it subscribes or how fast.
   the time of all of them), and a terminal gets no live output until its replay is done.
 - Live subscriptions that fall behind the memory of a screen are still read from the disk under the lock; they
   are rare (the memory holds the last 2 MiB), and a follow-up can move them to the same reader.
-- The tail of a pane that does not record its output is what the screen keeps in memory: its last 1024 records
-  or 2 MiB, whichever is less. Short reads from the pty make that less than the contract's 2 MiB.
+- The tail of a pane that does not record its output is what the screen keeps in memory. The screen joins the
+  short reads of the pty into records of a few KiB, so its bound of 1024 records always holds the contract's
+  2 MiB, and the tail starts at the first record in memory when the disk does not reach it: no `stream.gap`
+  is announced for bytes the engine still holds. A pane that records keeps each record as it came and reads
+  its tail from the disk.
