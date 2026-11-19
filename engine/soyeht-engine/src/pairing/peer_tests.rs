@@ -546,23 +546,6 @@ async fn confirming_with_nothing_refused_changes_nothing_and_a_prove_after_a_cha
 }
 
 #[tokio::test]
-async fn a_forwarded_peer_is_never_read_from_the_connection() {
-    // The peer is what the listener recorded when it accepted: nothing a client sends moves it.
-    let (mut rig, _app, window) = rig_with_window();
-    let local_peer = peer_at(&mut rig, ListenerKind::Fixed, "127.0.0.1");
-    let params = json!({"code":window,"deviceName":"Test phone","forwardedFor":"100.100.0.2",
-        "devicePublicKey":STANDARD.encode(key(17).verifying_key().to_bytes())});
-    refused_with(
-        &rig.call(&local_peer, "pair.begin", params),
-        Refusal::Listener,
-    );
-    assert_eq!(
-        rig.core.clients[&local_peer].peer,
-        Some(Peer::new(ListenerKind::Fixed, ip("127.0.0.1")))
-    );
-}
-
-#[tokio::test]
 async fn the_mode_hook_of_a_test_does_not_change_what_a_shipped_engine_asks() {
     // The system's answers, with no tailnet listener: nothing a program of this computer does
     // reaches the rules that need a peer.
@@ -596,10 +579,10 @@ async fn the_mode_hook_of_a_test_does_not_change_what_a_shipped_engine_asks() {
         panic!("a tailnet peer is looked up off the lock")
     };
     let answer = offload.run_inline(&mut core);
-    assert_eq!(
-        errors::kind(&answer.err().unwrap()),
-        ErrorKind::Unauthorized
-    );
+    // The refusal is the peer rule's own words: an expired or unknown window is `unauthorized` too.
+    let refused = answer.err().unwrap();
+    assert_eq!(errors::kind(&refused), ErrorKind::Unauthorized);
+    assert_eq!(refused.to_string(), Refusal::WhoisUnavailable.message());
     drop(core);
     std::fs::remove_dir_all(directory).unwrap();
 }

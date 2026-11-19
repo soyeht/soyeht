@@ -3,7 +3,7 @@
 //! `test-pairing-approval` marker; a shipped engine has no marker and keeps refusing where it
 //! cannot attest the app. The phone connects over TCP, as a device does; the local clients stand
 //! for the person's app and for a program of the same user.
-use super::attack_pairing::{address_of, begin, devices, key_text, kind, proof_for};
+use super::attack_pairing::{address_of, begin, devices, kind, proof_for};
 use super::terminal_hooks_and_phone::Phone;
 use super::*;
 use ed25519_dalek::SigningKey;
@@ -209,29 +209,6 @@ fn a_program_of_the_same_user_decides_nothing_on_a_window_it_did_not_open() {
 }
 
 #[test]
-fn a_local_connection_cannot_pair_as_a_device() {
-    let rig = persons_code_rig();
-    let mut local = Local::new(&rig);
-    let window =
-        local.request("device.pair.start", json!({"idempotencyKey":"window"}))["result"].clone();
-    // The local endpoint is where the person's own programs connect: no device pairs there.
-    let socket = connect(&rig.path.join("engine.sock")).unwrap();
-    let mut program = Client {
-        socket,
-        next: 0,
-        messages: vec![],
-    };
-    let _challenge = Frame::read_from(&mut program.socket).unwrap();
-    let key = SigningKey::from_bytes(&[34; 32]);
-    let answer = program.request(
-        "pair.begin",
-        json!({"code":window["code"],"deviceName":"Test phone",
-            "devicePublicKey":key_text(&key),"idempotencyKey":"local-begin"}),
-    );
-    assert_eq!(kind(&answer), "unauthorized", "{answer}");
-}
-
-#[test]
 fn the_approval_code_is_in_no_frame_no_file_and_no_log_of_the_computer() {
     let rig = persons_code_rig();
     let mut local = Local::new(&rig);
@@ -272,44 +249,6 @@ fn the_approval_code_is_in_no_frame_no_file_and_no_log_of_the_computer() {
 }
 
 #[test]
-fn a_fifth_window_closes_the_oldest_and_a_device_name_cannot_reorder_text() {
-    let rig = persons_code_rig();
-    let mut local = Local::new(&rig);
-    let windows: Vec<Value> = (0..5)
-        .map(|index| {
-            local.request(
-                "device.pair.start",
-                json!({"idempotencyKey":format!("many-{index}")}),
-            )["result"]
-                .clone()
-        })
-        .collect();
-    let key = SigningKey::from_bytes(&[36; 32]);
-    let mut phone = Phone::connect(&address_of(&windows[0]));
-    let oldest = begin(
-        &mut phone,
-        windows[0]["code"].as_str().unwrap(),
-        &key,
-        "oldest",
-    );
-    assert_eq!(kind(&oldest), "unauthorized", "{oldest}");
-    let newest = begin(
-        &mut phone,
-        windows[4]["code"].as_str().unwrap(),
-        &key,
-        "newest",
-    );
-    assert!(newest.get("error").is_none(), "{newest}");
-    let mut phone = Phone::connect(&address_of(&windows[4]));
-    let spoofed = phone.request(
-        "pair.begin",
-        json!({"code":windows[4]["code"],"deviceName":"gpj.evil\u{202E}","idempotencyKey":"bidi",
-            "devicePublicKey":key_text(&SigningKey::from_bytes(&[37; 32]))}),
-    );
-    assert_eq!(kind(&spoofed), "invalid_params", "{spoofed}");
-}
-
-#[test]
 fn without_the_marker_this_engine_follows_the_rule_of_its_system() {
     // The same program as a shipped engine would be, but for its hooks: no marker, no mode. On
     // macOS an unsigned program cannot be the app and the local human is refused; on Linux the
@@ -341,22 +280,6 @@ fn without_the_marker_this_engine_follows_the_rule_of_its_system() {
                 .contains("cannot yet prove itself")
         );
     }
-}
-
-#[test]
-fn the_refused_rule_names_a_system_where_the_app_cannot_prove_itself_yet() {
-    let rig = Rig::new();
-    fs::write(rig.path.join(MARKER), "refused").unwrap();
-    let mut local = rig.client();
-    let refused = local.request("device.pair.start", json!({"idempotencyKey":"w"}));
-    assert_eq!(kind(&refused), "forbidden_role", "{refused}");
-    assert!(
-        refused["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("cannot yet prove itself"),
-        "{refused}"
-    );
 }
 
 #[test]

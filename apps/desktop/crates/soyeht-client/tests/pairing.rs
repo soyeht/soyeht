@@ -568,14 +568,31 @@ fn an_open_sheet_hears_of_a_changed_tailnet_from_the_engine() {
     rig.open("2999-01-01T00:00:00Z");
     rig.remote.send(&notification(
         "device.pair_tailnet_changed",
-        json!({"tailnetChanged": true}),
+        json!({"tailnetChanged": true, "tailnetName": "moved.example", "tailnetPin": "pin-7"}),
     ));
     rig.settle(|state| state.pairing.tailnet_changed());
+    // What the person is shown, and what their confirmation sends back, are the event's.
+    assert_eq!(
+        rig.state
+            .pairing
+            .tailnet_change()
+            .and_then(|change| change.name.as_deref()),
+        Some("moved.example")
+    );
+    let effects = rig.state.confirm_tailnet();
+    rig.dispatch(effects);
+    let confirm = rig.remote.expect("device.pair.start");
+    assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-7", "{confirm}");
+    rig.remote.reply(
+        &confirm,
+        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
+    );
+    rig.settle(|state| !state.pairing.tailnet_changed());
     rig.finish();
 }
 
 #[test]
-fn a_request_that_waits_in_the_snapshot_is_listed_and_can_be_denied() {
+fn a_request_that_waits_in_the_snapshot_is_listed() {
     let (listener, path) = listen("pair-snapshot");
     let (engine, inbox) = Engine::start(path.clone());
     let mut remote = FakeEngine::accept(&listener);
