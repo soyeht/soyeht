@@ -592,6 +592,11 @@ sends against them (ADR 0090).
   at H. Barrier: no live byte before `replay_done`; no skip between replay
   end and live output. The client resets the terminal before applying
   replay with `reset: true`.
+  A pane that does not record its screen (`pane.record.set {on: false}`, or `record.default`
+  off) holds the tail in memory only, and holds the same window: the engine joins the short
+  reads a terminal hands over into records of a few KiB, so that its bound on the records
+  kept never cuts the tail short, and a tail that memory holds is replayed whole, with no
+  `stream.gap` for bytes the engine still has.
 - Valid retained `from: {streamId, offset}` → `stream.replay_start
   {reset: false}` and deliver EVERYTHING from there, paginated in frames,
   without a gap and WITHOUT resetting the screen (a delta). Outside retention
