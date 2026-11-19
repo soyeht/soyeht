@@ -7,7 +7,11 @@ use std::collections::HashMap;
 const TERMINALS: usize = 64;
 const LINE_BYTES: usize = 64;
 /// How long the client reads nothing after it asked, as an app does while it parses a long replay.
-const BUSY: Duration = Duration::from_secs(3);
+const BUSY: Duration = Duration::from_millis(500);
+/// What reading every replay may take once the client reads: about two seconds when the writer
+/// wakes the engine as the queue drains, and a wait for the tick's ceiling at each slice when it
+/// does not.
+const READING: Duration = Duration::from_secs(20);
 
 /// A client that subscribes every terminal from the tail at once, as the Mac app did at launch,
 /// and is busy for a while before it reads, is not disconnected, and every replay reaches it whole.
@@ -84,6 +88,7 @@ fn subscribing_every_terminal_without_waiting_does_not_disconnect_the_client() {
         );
         thread::sleep(Duration::from_millis(20));
     }
+    let reading_since = Instant::now();
     let mut replays = Replays::default();
     while replays.replies < TERMINALS || replays.done < TERMINALS {
         let frame = match Frame::read_from(&mut reader.socket) {
@@ -105,6 +110,11 @@ fn subscribing_every_terminal_without_waiting_does_not_disconnect_the_client() {
             } => replays.bytes(pane_ref, offset, bytes.len()),
             Frame::Attachment { .. } => {}
         }
+        assert!(
+            reading_since.elapsed() < READING,
+            "{} replays of {TERMINALS} took more than {READING:?} to read",
+            replays.done
+        );
     }
     reader.call("engine.status", json!({}));
 }

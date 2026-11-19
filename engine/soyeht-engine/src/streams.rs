@@ -8,7 +8,7 @@ use crate::{
     screen::ReplayRead,
 };
 use serde_json::{Value, json};
-use soyeht_platform::log;
+use soyeht_platform::log::{self, Failure as _};
 use soyeht_protocol::{event, frame::Frame, limits, method};
 use soyeht_store::segments::{Reader, Record};
 use std::sync::{Arc, atomic::AtomicBool};
@@ -195,12 +195,28 @@ impl Core {
             let Some((pane_id, binary_ref)) = client.replays.queue.pop_front() else {
                 return Ok(());
             };
-            if let Slice::Disk(reader, from) =
-                self.replay_slice(connection, &pane_id, binary_ref)?
-            {
-                return self.read_from_disk(connection, pane_id, binary_ref, from, reader);
+            // A step that fails has lost its place in the line: the connection ends and its client
+            // starts over, rather than one terminal never being told its replay is done.
+            let step = self.replay_slice(connection, &pane_id, binary_ref);
+            match self.closing_on_failure(connection, step)? {
+                Slice::Sent => {}
+                Slice::Disk(reader, from) => {
+                    let started =
+                        self.read_from_disk(connection, pane_id, binary_ref, from, reader);
+                    return self.closing_on_failure(connection, started);
+                }
             }
         }
+    }
+
+    /// Ends the connection with `worker_failed` when `result` is an error, and returns it.
+    fn closing_on_failure<T>(&self, connection: &str, result: Result<T>) -> Result<T> {
+        if result.is_err()
+            && let Some(client) = self.clients.get(connection)
+        {
+            client.outbox.close(CloseReason::WorkerFailed);
+        }
+        result
     }
 
     /// Sends the next slice of one replay that comes from memory, or says it comes from the disk.
@@ -236,7 +252,6 @@ impl Core {
                 ReplayRead::Ready(records) => {
                     deliver(&client.outbox, subscription, records)?;
                     if subscription.next == from && !client.outbox.is_closed() {
-                        client.replays.add(pane_id, binary_ref);
                         return Err(errors::internal("A replay read made no progress"));
                     }
                 }
@@ -258,7 +273,6 @@ impl Core {
     ) -> Result<()> {
         let key = format!("replay:{connection}");
         if !self.background.accepts(&key) {
-            self.requeue_front(connection, &pane_id, binary_ref);
             return Err(errors::internal("A replay read is already running"));
         }
         if let Some(client) = self.clients.get_mut(connection) {
@@ -277,18 +291,8 @@ impl Core {
             if let Some(client) = self.clients.get_mut(connection) {
                 client.replays.reading = false;
             }
-            self.requeue_front(connection, &pane_id, binary_ref);
         }
         started
-    }
-
-    fn requeue_front(&mut self, connection: &str, pane_id: &str, binary_ref: u32) {
-        if let Some(client) = self.clients.get_mut(connection) {
-            client
-                .replays
-                .queue
-                .push_front((pane_id.to_owned(), binary_ref));
-        }
     }
 
     /// Sends what the job read, if its subscription is still waiting for exactly that.
@@ -300,21 +304,41 @@ impl Core {
         from: u64,
         read: Result<Vec<Record>>,
     ) -> Result<()> {
+        let applied = self.send_disk_slice(connection, pane_id, binary_ref, from, read);
+        self.closing_on_failure(connection, applied)
+    }
+
+    fn send_disk_slice(
+        &mut self,
+        connection: &str,
+        pane_id: &str,
+        binary_ref: u32,
+        from: u64,
+        read: Result<Vec<Record>>,
+    ) -> Result<()> {
         let Some(client) = self.clients.get_mut(connection) else {
             return Ok(());
         };
         client.replays.reading = false;
-        let waiting = client
+        let Some(subscription) = client
             .streams
             .get_mut(pane_id)
-            .filter(|s| s.binary_ref == binary_ref && s.replaying && s.next == from);
-        let (Some(subscription), Some(pane)) = (waiting, self.panes.get(pane_id)) else {
-            // Another subscription of the pane has its own entry.
+            .filter(|s| s.binary_ref == binary_ref && s.replaying && s.next == from)
+        else {
+            // Unsubscribed, or subscribed again: the new subscription has its own entry.
+            return Ok(());
+        };
+        let Some(pane) = self.panes.get(pane_id) else {
+            // The next step finds the pane closed and lets the subscription go.
+            client
+                .replays
+                .queue
+                .push_front((pane_id.to_owned(), binary_ref));
             return Ok(());
         };
         let records = match read {
             Ok(records) if pane.stored.pane.stream_id.as_ref() == Some(&subscription.stream_id) => {
-                client.replays.failures = 0;
+                client.replays.failures.succeed();
                 records
             }
             // The pane runs another stream: the next step closes the connection.
@@ -322,9 +346,10 @@ impl Core {
             Err(error) => {
                 // A segment that retention removed meanwhile is read again, from where the log now
                 // begins; a disk that keeps failing ends the connection, and its client starts over.
-                log::failure("engine.replay_read_failed", &error);
-                client.replays.failures += 1;
-                if client.replays.failures > 1 {
+                if client.replays.failures.fail(&error.failure_kind()) {
+                    log::failure("engine.replay_read_failed", &error);
+                }
+                if client.replays.failures.attempts() > 1 {
                     client.outbox.close(CloseReason::WorkerFailed);
                     return Ok(());
                 }

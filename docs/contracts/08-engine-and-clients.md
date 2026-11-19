@@ -597,14 +597,14 @@ sends against them (ADR 0090).
   replay with `reset: true`.
 - Replays are paced by the engine (ADR 0168). The `pane.stream.subscribe` reply
   and `stream.replay_start` are sent at once, but the bytes of a replay follow in
-  slices of 256 KiB, one terminal after another in turn, each slice sent only
-  while the connection's queue holds little, so a client may subscribe any
-  number of terminals without waiting for `stream.replay_done` and is never
-  closed for it. Frames of the replays of different terminals may therefore be
-  interleaved; each frame carries its `binaryPaneRef`, and the order within one
-  terminal (`replay_start`, bytes in offset order, `replay_done`, then live bytes)
-  does not change. A terminal whose replay is done receives its live output
-  while the others still replay.
+  slices, each sent only while the connection's queue holds little, so a client
+  may subscribe any number of terminals without waiting for `stream.replay_done`
+  and is never closed for it. Replays are served in the order of the subscribes,
+  each to its end (`replay_done`) before the next one starts, so the terminal
+  subscribed first is the first ready; a client subscribes the terminals it
+  shows first. The order within one terminal (`replay_start`, bytes in offset
+  order, `replay_done`, then live bytes) is as above, and a terminal whose
+  replay is done receives its live output while the others still replay.
 - Valid retained `from: {streamId, offset}` → `stream.replay_start
   {reset: false}` and deliver EVERYTHING from there, paginated in frames,
   without a gap and WITHOUT resetting the screen (a delta). Outside retention

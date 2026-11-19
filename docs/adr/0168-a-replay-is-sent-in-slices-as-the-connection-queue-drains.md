@@ -18,15 +18,17 @@ disconnected, or lose history, for how many terminals it subscribes or how fast.
 
 ## Decision
 
-- **A replay is fed to the queue only as it drains.** Each connection keeps a round robin of the subscriptions
-  it is owed a replay for (`replay.rs`). A step sends one slice of 256 KiB (four frames of the largest payload)
-  of one replay, and puts the subscription back at the end of the line, or sends `stream.replay_done` when
-  it has reached its end. A step is taken only while the queue holds 768 KiB or less, so a replay never takes
-  more than 1 MiB of the queue; the rest is for what the client is owed live and for its replies. The wire is
-  the same: the same frames, and for one terminal `stream.replay_start`, its bytes in order, `stream.replay_done`.
-  Only the frames of different terminals may interleave, which they could already.
+- **A replay is fed to the queue only as it drains, and the first is served to its end first.** Each
+  connection keeps the subscriptions it is owed a replay for in the order they were made (`replay.rs`). A step
+  sends one slice of 256 KiB (four frames of the largest payload) of the first, which stays first until its
+  `stream.replay_done` is sent; then the next is served. A step is taken only while the queue holds 768 KiB or
+  less, so a replay never takes more than 1 MiB of the queue; the rest is for what the client is owed live and
+  for its replies. The wire is the same: the same frames, and for one terminal `stream.replay_start`, its bytes
+  in order, `stream.replay_done`. Nothing of a later replay is sent before the earlier one is done.
 - **Nothing polls for room.** When the queue is above the level, the replay asks the outbox
-  (`Outbox::has_room_or_wake`) to raise the tick's kick once the writer has brought it down. A client that reads
+  (`Outbox::has_room_or_wake`) to raise the tick's kick once the writer has brought it down. The request and
+  the writer's check are `SeqCst`: each side stores and then reads what the other writes, and with weaker
+  orderings both can read the old value and the wake is lost until the tick's ceiling. A client that reads
   nothing leaves its replays waiting, at no cost and with no spinning, and the connection is closed only if what
   it is owed live passes the queue, which is the `slow_consumer` that stays.
 - **A terminal that is caught up is not held behind the others.** Live output of a subscription whose replay is
@@ -47,8 +49,10 @@ disconnected, or lose history, for how many terminals it subscribes or how fast.
 
 - A client may subscribe every terminal it has at once and read at its own pace; `TerminalReplayGate` is no
   longer needed for the connection's sake, and stays as the order the Mac draws the terminals in.
-- Replays of many terminals finish together, near the end, rather than one by one: a client that wants the
-  terminals on screen first subscribes those first, which they are served first in.
+- Replays are served in the order they were subscribed, so a client that wants the terminals on screen first
+  subscribes those first: the first is ready after its own bytes, not after everyone's. A round robin of
+  slices was tried first and made every terminal ready last (the first `replay_done` came after about 80% of
+  the time of all of them), and a terminal gets no live output until its replay is done.
 - Live subscriptions that fall behind the memory of a screen are still read from the disk under the lock; they
   are rare (the memory holds the last 2 MiB), and a follow-up can move them to the same reader.
 - The tail of a pane that does not record its output is what the screen keeps in memory: its last 1024 records

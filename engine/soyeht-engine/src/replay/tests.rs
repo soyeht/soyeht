@@ -82,7 +82,10 @@ impl Rig {
                         Frame::Terminal { bytes, .. } => bytes.len(),
                         _ => 0,
                     };
-                    frames.push(packet.frame);
+                    // The writer does not send what a subscription that ended left queued.
+                    if packet.is_current() {
+                        frames.push(packet.frame);
+                    }
                 }
                 _ => break,
             }
@@ -170,31 +173,105 @@ async fn a_replay_waits_in_slices_for_a_client_that_reads_nothing_and_arrives_wh
 }
 
 #[tokio::test]
-async fn replays_take_turns_a_slice_each() {
-    let mut rig = Rig::new(2);
+async fn the_first_subscribed_is_served_to_its_end_before_the_next() {
+    let mut rig = Rig::new(3);
     for pane in rig.panes.clone() {
         rig.subscribe_from_start(&pane);
     }
-    let mut turns: Vec<u32> = Vec::new();
-    let mut ended = 0;
+    // Binary references are given in the order of the subscribes.
+    let (mut finished, mut bytes) = (Vec::new(), [0usize; 4]);
     let deadline = Instant::now() + Duration::from_secs(30);
-    while ended < 2 {
+    while finished.len() < 3 {
         assert!(Instant::now() < deadline, "the replays never ended");
         rig.tick();
         for frame in rig.read(usize::MAX).await {
             match frame {
-                Frame::Terminal { pane_ref, .. } if turns.last() != Some(&pane_ref) => {
-                    turns.push(pane_ref)
+                Frame::Terminal {
+                    pane_ref, bytes: b, ..
+                } => {
+                    // Nothing of a replay is sent before the one ahead of it is done.
+                    assert_eq!(finished.len() as u32 + 1, pane_ref, "{finished:?}");
+                    bytes[pane_ref as usize] += b.len();
                 }
-                other if is_done(&other) => ended += 1,
+                other if is_done(&other) => {
+                    finished.push(finished.len() as u32 + 1);
+                }
                 _ => {}
             }
         }
     }
-    // Each turn is one slice (four frames of a record), so the panes alternate many times
-    // over, rather than one replay going all the way before the other starts.
-    assert!(turns.len() >= 2 * PANE_BYTES / SLICE_BYTES - 2, "{turns:?}");
-    assert!(turns.windows(2).all(|pair| pair[0] != pair[1]));
+    assert_eq!(bytes[1..], [PANE_BYTES; 3]);
+    remove_after(rig.core, rig.root);
+}
+
+#[tokio::test]
+async fn a_subscription_made_again_while_its_slice_is_read_is_replayed_once_whole() {
+    let mut rig = Rig::new(1);
+    let pane = rig.panes[0].clone();
+    rig.subscribe_from_start(&pane);
+    rig.tick();
+    // The disk read of the first is on its way when the client subscribes the terminal again.
+    rig.subscribe_from_start(&pane);
+    let (mut next, mut done) = (0, 0);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while done == 0 {
+        assert!(Instant::now() < deadline, "the replay never ended");
+        rig.tick();
+        for frame in rig.read(usize::MAX).await {
+            match frame {
+                Frame::Terminal {
+                    pane_ref,
+                    offset,
+                    bytes,
+                    ..
+                } => {
+                    assert_eq!(pane_ref, 2, "bytes of the first subscription were sent");
+                    assert_eq!(offset, next);
+                    next += bytes.len() as u64;
+                }
+                other => done += usize::from(is_done(&other)),
+            }
+        }
+    }
+    assert_eq!(next, PANE_BYTES as u64);
+    rig.tick_for(Duration::from_millis(100));
+    assert!(rig.read(usize::MAX).await.is_empty());
+    remove_after(rig.core, rig.root);
+}
+
+#[tokio::test]
+async fn a_connection_that_ends_while_its_slice_is_read_leaves_nothing_behind() {
+    let mut rig = Rig::new(1);
+    let pane = rig.panes[0].clone();
+    rig.subscribe_from_start(&pane);
+    rig.tick();
+    rig.core.disconnect(&rig.connection).unwrap();
+    rig.tick_for(Duration::from_millis(300));
+    assert!(rig.core.clients.is_empty());
+    assert!(!rig.core.background.has_work());
+    remove_after(rig.core, rig.root);
+}
+
+#[tokio::test]
+async fn a_disk_that_cannot_be_read_ends_the_connection_instead_of_leaving_the_replay_unfinished() {
+    let mut rig = Rig::new(1);
+    let pane = rig.panes[0].clone();
+    // What retention does, with nothing the screen could tell: the segments are gone.
+    let segments = rig.root.join("sessions").join(&pane);
+    for file in std::fs::read_dir(segments).unwrap() {
+        std::fs::remove_file(file.unwrap().path()).unwrap();
+    }
+    rig.subscribe_from_start(&pane);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !rig.core.clients[&rig.connection].outbox.is_closed() {
+        assert!(Instant::now() < deadline, "the connection was never ended");
+        rig.tick();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert_eq!(
+        rig.core.clients[&rig.connection].outbox.close_reason(),
+        Some(crate::outbox::CloseReason::WorkerFailed)
+    );
     remove_after(rig.core, rig.root);
 }
 

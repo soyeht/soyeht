@@ -20,8 +20,13 @@ const NOT_WAITING: usize = usize::MAX;
 
 impl Budget {
     /// Raises the waker of a replay that waits for the queue to fall to `level`, once it has.
+    ///
+    /// The feeder stores `room` and then reads `used`; the writer lowers `used` and then reads
+    /// `room`. Each side must see the other's write or the other side's read, which a store
+    /// followed by a load only guarantees when both are `SeqCst`: with weaker orderings both
+    /// can read the old value and the wake is lost until the tick's next deadline.
     fn wake_if_room(&self, used: usize) {
-        let level = self.room.load(Ordering::Acquire);
+        let level = self.room.load(Ordering::SeqCst);
         if level != NOT_WAITING
             && used <= level
             && self
@@ -103,7 +108,8 @@ struct Permit {
 }
 impl Drop for Permit {
     fn drop(&mut self) {
-        let before = self.budget.used.fetch_sub(self.size, Ordering::AcqRel);
+        // `SeqCst`: see `Budget::wake_if_room`.
+        let before = self.budget.used.fetch_sub(self.size, Ordering::SeqCst);
         self.budget.wake_if_room(before.saturating_sub(self.size));
     }
 }
@@ -203,10 +209,11 @@ impl Outbox {
             return true;
         }
         self.budget.room_waker.get_or_init(|| Arc::clone(waker));
-        self.budget.room.store(level, Ordering::Release);
+        // `SeqCst` on the store and the load after it: see `Budget::wake_if_room`.
+        self.budget.room.store(level, Ordering::SeqCst);
         // The writer may have emptied the queue between the check and the store.
         self.budget
-            .wake_if_room(self.budget.used.load(Ordering::Acquire));
+            .wake_if_room(self.budget.used.load(Ordering::SeqCst));
         false
     }
 
