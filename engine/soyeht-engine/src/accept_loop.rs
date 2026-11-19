@@ -75,7 +75,7 @@ impl Kind {
     fn of(error: &io::Error) -> Self {
         if soyeht_platform::net::accept_error_concerns_one_connection(error) {
             Self::Connection
-        } else if exhausts_resources(error) {
+        } else if soyeht_platform::net::exhausts_resources(error) {
             Self::Resources
         } else {
             Self::Listener
@@ -89,22 +89,6 @@ impl Kind {
             Self::Listener => "listener",
         }
     }
-}
-
-/// Whether the process is out of descriptors, buffers or memory.
-fn exhausts_resources(error: &io::Error) -> bool {
-    error.kind() == io::ErrorKind::OutOfMemory || error.raw_os_error().is_some_and(resource_code)
-}
-
-#[cfg(unix)]
-fn resource_code(code: i32) -> bool {
-    [libc::EMFILE, libc::ENFILE, libc::ENOBUFS, libc::ENOMEM].contains(&code)
-}
-
-/// `WSAEMFILE` and `WSAENOBUFS`.
-#[cfg(windows)]
-fn resource_code(code: i32) -> bool {
-    [10024, 10055].contains(&code)
 }
 
 /// What to do after a failed `accept`.
@@ -307,18 +291,6 @@ mod tests {
         assert_eq!(accepted.unwrap(), 3);
         // The pause reached its cap and stayed there.
         assert!(waited > Duration::from_secs(400), "{waited:?}");
-        assert!(exhausts_resources(&io::Error::from_raw_os_error(
-            libc::ENFILE
-        )));
-        assert!(exhausts_resources(&io::Error::from_raw_os_error(
-            libc::ENOBUFS
-        )));
-        assert!(exhausts_resources(&io::Error::from_raw_os_error(
-            libc::ENOMEM
-        )));
-        assert!(!exhausts_resources(&io::Error::from_raw_os_error(
-            libc::EBADF
-        )));
     }
 
     #[cfg(unix)]

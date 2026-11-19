@@ -159,3 +159,44 @@ pub fn warm_up(binary: &Path) -> Duration {
     }
     started.elapsed()
 }
+
+/// The soft limit of open files of this process.
+///
+/// # Errors
+/// The error of the system when it cannot say.
+#[cfg(unix)]
+pub fn open_files_limit() -> io::Result<u64> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `limit` is valid and writable for the call, which only fills it in.
+    let done = unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) };
+    if done != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(limit.rlim_cur)
+}
+
+/// Lowers the soft limit of open files of this process to `soft` (or the hard limit, when that is
+/// lower), as a service the system started has it. The programs this process starts inherit it.
+///
+/// # Errors
+/// The error of the system when it refuses.
+#[cfg(unix)]
+pub fn lower_open_files_limit(soft: u64) -> io::Result<()> {
+    let mut limit = libc::rlimit {
+        rlim_cur: 0,
+        rlim_max: 0,
+    };
+    // SAFETY: `limit` is valid and writable for the call, which only fills it in.
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    limit.rlim_cur = soft.min(limit.rlim_max);
+    // SAFETY: `limit` is valid for the call, which only reads it; a soft limit may always drop.
+    if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}

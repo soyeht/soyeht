@@ -195,6 +195,8 @@ pub enum ErrorKind {
     InkRecognitionFailed,
     #[serde(rename = "pairing_code_invalid")]
     PairingCodeInvalid,
+    #[serde(rename = "too_many_open_files")]
+    TooManyOpenFiles,
     /// A value this build does not know (ADR 0161).
     #[cfg(feature = "open-enums")]
     #[serde(other, skip_serializing)]
@@ -9727,6 +9729,7 @@ pub fn error_code(kind: &ErrorKind) -> i64 {
         ErrorKind::InkLimitExceeded => -32046,
         ErrorKind::InkRecognitionFailed => -32047,
         ErrorKind::PairingCodeInvalid => -32048,
+        ErrorKind::TooManyOpenFiles => -32049,
         #[cfg(feature = "open-enums")]
         ErrorKind::Unknown => -32018,
     }

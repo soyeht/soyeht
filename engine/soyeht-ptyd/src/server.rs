@@ -357,6 +357,9 @@ fn execute_spawn(state: &mut State, shared: &Arc<Mutex<State>>, config: Spawn) -
         guard,
     } = match process::spawn(&config, &state.directory, &instance_id) {
         Ok(spawned) => spawned,
+        Err(failure) if failure.out_of_descriptors() => {
+            return Ok(error(wire_kind::TOO_MANY_OPEN_FILES, &failure.to_string()));
+        }
         Err(failure) if failure.spawn_refused() => {
             // Setup either never starts a child or kills and reaps it before returning an
             // error. No process needs adoption.

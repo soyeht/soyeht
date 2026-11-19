@@ -15,6 +15,9 @@ pub const SPAWN_FAILED: &str = "spawn_failed";
 /// A spawn the system refused for a reason repeating cannot fix: the folder or the program is
 /// not there, or is not allowed.
 pub const SPAWN_REFUSED: &str = "spawn_refused";
+/// A spawn that failed because the supervisor has no descriptor left to give: the person's panes
+/// need more than the limit of open files allows. It passes when a pane closes.
+pub const TOO_MANY_OPEN_FILES: &str = "too_many_open_files";
 pub const NOT_FOUND: &str = "not_found";
 pub const WRONG_PROCESS_KIND: &str = "wrong_process_kind";
 pub const INVALID_PARAMS: &str = "invalid_params";
