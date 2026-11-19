@@ -35,6 +35,9 @@ fn run() -> Result<()> {
         soyeht_ptyd::pipe_guard::run(fd)?;
         return Ok(());
     }
+    // One descriptor or more for every terminal and agent: the limit a service starts with holds
+    // about seventy panes. The guardian above is not a supervisor and keeps the one it got.
+    soyeht_platform::descriptors::raise_and_log();
     let directory = match args.as_slice() {
         [] => {
             let profile = selected_profile(env::var_os(SELECTION_ENV).as_deref())?;

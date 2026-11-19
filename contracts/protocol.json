@@ -137,7 +137,8 @@
         "ink_language_unavailable",
         "ink_limit_exceeded",
         "ink_recognition_failed",
-        "pairing_code_invalid"
+        "pairing_code_invalid",
+        "too_many_open_files"
       ]
     },
     "RpcError": {
@@ -15848,7 +15849,8 @@
     "ink_language_unavailable": -32045,
     "ink_limit_exceeded": -32046,
     "ink_recognition_failed": -32047,
-    "pairing_code_invalid": -32048
+    "pairing_code_invalid": -32048,
+    "too_many_open_files": -32049
   },
   "x-clientPolicy": {
     "timeouts": {

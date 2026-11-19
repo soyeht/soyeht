@@ -69,6 +69,8 @@ pub(crate) fn spawn(config: &Spawn, directory: &Path, id: &str) -> Result<Spawne
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(stderr);
+    // The guardian starts the agent's program: both get the limit the supervisor started with.
+    soyeht_platform::descriptors::restore_in_child(&mut command);
     // SAFETY: only async-signal-safe calls; the descriptor is kept alive through spawn.
     unsafe {
         command.pre_exec(move || {

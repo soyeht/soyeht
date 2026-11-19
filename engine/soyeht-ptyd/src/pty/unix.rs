@@ -91,6 +91,8 @@ const TERMINAL_SIGNALS: [libc::c_int; 7] = [
 /// the caller has attached to the slave side, and start with the default action for the signals
 /// of the terminal and none of them blocked.
 fn control_from_stdin(command: &mut Command) {
+    // The person's shell gets the limit of open files the supervisor started with, not the raised one.
+    soyeht_platform::descriptors::restore_in_child(command);
     // SAFETY: the closure uses only async-signal-safe syscalls between fork and
     // exec. Stdio has been attached by Command before this closure executes.
     unsafe {

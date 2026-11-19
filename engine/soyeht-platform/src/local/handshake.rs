@@ -16,6 +16,9 @@ use std::{
     time::Duration,
 };
 
+/// How long a listener waits after an accept the process had no descriptor for.
+const OUT_OF_DESCRIPTORS_PAUSE: Duration = Duration::from_millis(100);
+
 /// The connections of a listener that proved the secret, and the thread that examines them.
 pub(super) struct Accepting<S> {
     ready: Receiver<io::Result<S>>,
@@ -92,6 +95,7 @@ pub(super) fn serve<S>(
     for<'a> &'a S: Read + Write,
 {
     let pending = Arc::new(Mutex::new(Admission::new(capacity)));
+    let mut out_of_descriptors = false;
     for raw in incoming {
         if stop.load(Ordering::Acquire) {
             return;
@@ -99,7 +103,19 @@ pub(super) fn serve<S>(
         let raw = match raw {
             Ok(raw) => {
                 errors.accepted();
+                out_of_descriptors = false;
                 raw
+            }
+            Err(error) if crate::descriptors::is_exhausted(&error) => {
+                // The process holds as many descriptors as it may. The listener is fine, and a
+                // connection or a pane that closes frees one: it waits and asks again, and never
+                // ends, because what ends here is the supervisor and every terminal it holds.
+                if !out_of_descriptors {
+                    out_of_descriptors = true;
+                    crate::log::event("local.accept_out_of_descriptors", &[]);
+                }
+                thread::sleep(OUT_OF_DESCRIPTORS_PAUSE);
+                continue;
             }
             Err(error) if crate::net::accept_error_concerns_one_connection(&error) => {
                 match errors.failed() {

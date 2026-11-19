@@ -68,6 +68,14 @@ task names none either; the engine there reads its own process `PATH` (there is 
 which is the account's at logon. launchd starts a program with almost none, so the Mac agent names
 the system and user tool folders, under the shell's answer.
 
+**Open files.** The supervisor holds about three descriptors for each terminal and agent, and a
+person runs hundreds. A launchd agent starts with a soft limit of 256 open files and a systemd unit
+with 1024, which holds about seventy panes, so every definition carries the number the programs
+raise themselves to (`soyeht_platform::descriptors::WANTED`, 65,536): `SoftResourceLimits` and
+`HardResourceLimits` with `NumberOfFiles` in the launchd agent and `LimitNOFILE=` in the unit. A
+task has no such limit. The supervisor and the engine also raise their own soft limit to the hard
+limit, up to the same number, when they start, so a program a window starts has it too (ADR 0168).
+
 `StandardOutput=append:` needs systemd 240 or later (Ubuntu 20.04 and later, Debian 10 and later,
 Fedora 30 and later). An older systemd ignores the line and the output goes to the journal
 (Ubuntu 18.04 and RHEL 8 are in that case).

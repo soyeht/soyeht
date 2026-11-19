@@ -11,6 +11,8 @@
 //! `ConditionPathExists=` the program skips the start, without a failure and so without the
 //! one-second restart, when the program has been removed or moved (a package removed, a folder
 //! deleted) while the unit file stays in the person's home (ADR 0121).
+//! `LimitNOFILE=` gives the program the number of open files the supervisor needs for a person's
+//! panes before its own code runs (a unit starts with 1024).
 
 use crate::{definition::Definition, policy};
 
@@ -52,7 +54,8 @@ pub(super) fn render(definition: &Definition) -> String {
         ));
     }
     text.push_str(&format!(
-        "Restart=always\nRestartSec={}\n",
+        "LimitNOFILE={}\nRestart=always\nRestartSec={}\n",
+        soyeht_platform::descriptors::WANTED,
         policy::RESTART_DELAY_SECONDS
     ));
     if let Some(log) = &definition.log {
@@ -83,7 +86,7 @@ StartLimitIntervalSec=0\n\n\
 [Service]\nType=simple\n\
 ExecStart=\"/opt/next/soyeht-engine\" \"--data-dir\" \"/data/next\"\n\
 Environment=\"PATH=/usr/bin\"\n\
-Restart=always\nRestartSec=1\n\
+LimitNOFILE=65536\nRestart=always\nRestartSec=1\n\
 StandardOutput=append:/data/next/logs/engine.log\n\
 StandardError=append:/data/next/logs/engine.log\n\n\
 [Install]\nWantedBy=default.target\n"

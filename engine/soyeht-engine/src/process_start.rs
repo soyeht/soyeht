@@ -279,7 +279,7 @@ impl Core {
                 // The start of this identity has not ended as far as the job table knows, so it
                 // is the tick that starts it again, on the link that replaced the one it used.
                 if wanted && self.ptyd.is_some() {
-                    self.schedule_spawn_retry(id);
+                    self.schedule_spawn_retry(id, false);
                 }
                 return;
             }

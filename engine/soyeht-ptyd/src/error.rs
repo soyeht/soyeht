@@ -5,6 +5,9 @@ use std::{fmt, io};
 /// sent a variable an older supervisor does not know reads it to start the process without it.
 pub const ENVIRONMENT_NOT_ALLOWED: &str = "environment variable is not allowed";
 
+/// What the supervisor says when it has no descriptor left to start a process with.
+const OUT_OF_DESCRIPTORS: &str = "too many open files";
+
 #[derive(Debug)]
 pub enum Error {
     Io(io::Error),
@@ -48,6 +51,8 @@ pub enum Error {
     SupervisorGenerationExhausted,
     InvalidGuardianFd,
     InvalidArguments,
+    /// The supervisor has no descriptor left to start a process with.
+    OutOfDescriptors,
 }
 
 /// Whether the system refused to start a program for a reason that does not pass: the folder
@@ -76,12 +81,28 @@ impl Error {
     /// diagnostic log, the supervisor's own executable, the guardian's start). It is never a
     /// refusal, whatever its kind.
     pub(crate) fn guardian_setup(error: io::Error) -> Self {
+        if soyeht_platform::descriptors::is_exhausted(&error) {
+            return Self::OutOfDescriptors;
+        }
         Self::GuardianFailed(error.to_string())
+    }
+
+    /// Whether the system has no descriptor left to give this process: the supervisor holds as
+    /// many as its limit allows. The person is told so, and the start may pass when a pane closes.
+    pub fn out_of_descriptors(&self) -> bool {
+        match self {
+            Self::Io(error) => soyeht_platform::descriptors::is_exhausted(error),
+            Self::OutOfDescriptors => true,
+            _ => false,
+        }
     }
 
     /// A start failure of the guardian or of a pipe process, kept apart by whether it can pass.
     pub fn guardian(error: &io::Error) -> Self {
         let message = error.to_string();
+        if soyeht_platform::descriptors::is_exhausted(error) {
+            return Self::OutOfDescriptors;
+        }
         if refuses_to_start(error.kind()) {
             Self::GuardianRefused(message)
         } else {
@@ -161,6 +182,7 @@ impl fmt::Display for Error {
                 formatter.write_str("supervisor generation exhausted")
             }
             Self::InvalidGuardianFd => formatter.write_str("invalid pipe guardian descriptor"),
+            Self::OutOfDescriptors => formatter.write_str(OUT_OF_DESCRIPTORS),
             Self::InvalidArguments => {
                 formatter.write_str("usage: soyeht-ptyd [--data-dir <isolated-directory>]")
             }
@@ -215,6 +237,9 @@ impl From<&Error> for ErrorKind {
         match error {
             Error::Remote { kind, .. } if kind == crate::wire_kind::STALE_ENGINE_GENERATION => {
                 ErrorKind::StaleEngineGeneration
+            }
+            Error::Remote { kind, .. } if kind == crate::wire_kind::TOO_MANY_OPEN_FILES => {
+                ErrorKind::TooManyOpenFiles
             }
             Error::Remote { kind, .. }
                 if kind == crate::wire_kind::SPAWN_FAILED
