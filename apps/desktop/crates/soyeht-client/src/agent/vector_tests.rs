@@ -191,7 +191,7 @@ fn the_cursor_after_a_page_is_the_older_of_the_one_held_and_the_pages() {
             view.merge(window_message(&json!("m"), newest as usize))
                 .unwrap();
         }
-        view.merge_transcript(Vec::new(), case["page"].as_str().map(str::to_owned))
+        view.merge_transcript(Vec::new(), case["page"].as_str().map(str::to_owned), true)
             .unwrap();
         assert_eq!(
             view.cards.older.as_deref(),

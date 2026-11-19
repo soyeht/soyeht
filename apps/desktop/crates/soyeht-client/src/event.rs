@@ -31,6 +31,9 @@ pub enum Event {
         items: Vec<TranscriptMessage>,
         /// Where the page before this one starts, when the engine has earlier messages.
         next_cursor: Option<String>,
+        /// Whether this is the newest page (asked for without a cursor), which holds what was
+        /// said last, rather than a page of earlier messages.
+        newest: bool,
     },
     /// What the engine told about the tasks.
     Task(TaskUpdate),

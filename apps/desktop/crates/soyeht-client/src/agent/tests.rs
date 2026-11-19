@@ -1,6 +1,6 @@
 use super::*;
-use crate::Effect;
 use crate::testing::{cases, pane_json};
+use crate::{Effect, Event};
 use serde_json::{Value, json};
 use soyeht_protocol::EventName;
 
@@ -361,12 +361,21 @@ fn a_reload_that_fails_is_made_again_the_next_time_the_pane_is_shown() {
     state.select_workspace("a");
     state.select_workspace("b");
     assert!(state.refill_transcript("q").is_some(), "still stale");
-    state
-        .agents
-        .get_mut("q")
-        .unwrap()
-        .merge_transcript(Vec::new(), None)
-        .unwrap();
+    // A page of earlier messages that arrives meanwhile does not hold what the turn brought.
+    let page = |newest| Event::Transcript {
+        pane_id: "q".into(),
+        items: Vec::new(),
+        next_cursor: None,
+        newest,
+    };
+    state.apply(page(false));
+    state.select_workspace("a");
+    state.select_workspace("b");
+    assert!(
+        state.refill_transcript("q").is_some(),
+        "earlier messages leave it stale"
+    );
+    state.apply(page(true));
     state.select_workspace("a");
     state.select_workspace("b");
     assert_eq!(state.refill_transcript("q"), None, "the page cleared it");

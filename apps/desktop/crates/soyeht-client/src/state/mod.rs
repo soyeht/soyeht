@@ -313,7 +313,8 @@ impl State {
                 pane_id,
                 items,
                 next_cursor,
-            } => self.transcript_page(&pane_id, items, next_cursor),
+                newest,
+            } => self.transcript_page(&pane_id, items, next_cursor, newest),
             Event::Task(update) => self.apply_task_update(update),
             Event::TaskPane {
                 task,
@@ -410,9 +411,10 @@ impl State {
         pane_id: &str,
         items: Vec<soyeht_protocol::TranscriptMessage>,
         next_cursor: Option<String>,
+        newest: bool,
     ) -> Vec<Effect> {
         if let Some(view) = self.agents.get_mut(pane_id)
-            && let Err(error) = view.merge_transcript(items, next_cursor)
+            && let Err(error) = view.merge_transcript(items, next_cursor, newest)
         {
             self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
         }

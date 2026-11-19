@@ -81,6 +81,7 @@ fn a_transcript_page_replaces_the_messages_and_updates_extend_them() {
         pane_id: "a".into(),
         items: vec![serde_json::from_value(item).unwrap()],
         next_cursor: None,
+        newest: true,
     });
     state.apply(notification(
         EventName::PaneUpdate,
@@ -403,6 +404,7 @@ fn a_transcript_page_for_a_pane_that_is_gone_is_ignored() {
         pane_id: "gone".into(),
         items: Vec::new(),
         next_cursor: None,
+        newest: true,
     });
     assert!(state.agent("gone").is_none());
 }

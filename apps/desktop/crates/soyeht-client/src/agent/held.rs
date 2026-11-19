@@ -159,16 +159,18 @@ impl AgentView {
         wanted
     }
 
-    /// Folds in a page of the transcript that `next` is the cursor before.
+    /// Folds in a page of the transcript that `next` is the cursor before. Only the newest page
+    /// covers what made the pane stale: a page of earlier messages does not hold it.
     pub(crate) fn merge_transcript(
         &mut self,
         page: Vec<TranscriptMessage>,
         next: Option<String>,
+        newest: bool,
     ) -> Result<()> {
-        let newest = self.messages.last().and_then(|last| last.seq.parse().ok());
-        self.cards.older = older(self.cards.older.as_deref(), next, newest);
+        let newest_held = self.messages.last().and_then(|last| last.seq.parse().ok());
+        self.cards.older = older(self.cards.older.as_deref(), next, newest_held);
         self.merge_page(page)?;
-        if std::mem::take(&mut self.reading) {
+        if newest && std::mem::take(&mut self.reading) {
             self.stale = false;
         }
         Ok(())

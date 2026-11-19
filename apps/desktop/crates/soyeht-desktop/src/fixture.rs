@@ -96,6 +96,7 @@ pub fn events(fixture: &Value) -> Result<Vec<Event>, String> {
                     .map(str::to_owned),
                 pane_id,
                 items: serde_json::from_value(items).map_err(describe("transcripts"))?,
+                newest: true,
             });
         }
     }
