@@ -355,9 +355,17 @@ class StepListTests(unittest.TestCase):
         text = (ROOT / "scripts/check_all.sh").read_text()
         self.assertRegex(text, r"(?m)^step swift fast swift:test-shared-fast swift_client_fast$")
         self.assertRegex(
-            text, r"(?m)^swift_client_fast\(\) {\n    build_product_programs && uv run python scripts/e2e_swift_client\.py\n}$")
-        self.assertIn(r"nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
-                      (ROOT / "scripts/e2e_swift_client.py").read_text())
+            text, r"(?m)^swift_client_fast\(\) {\n    build_engine_programs && uv run python scripts/e2e_swift_client\.py\n}$")
+        # The step runs the client's whole surface, the paired device's pairing and the many-terminals test.
+        script = (ROOT / "scripts/e2e_swift_client.py").read_text()
+        for name in ("nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
+                     "phonePairsByConsentReadsFreshStateAndLosesRevokedAccess",
+                     "manyLongTerminalsConnectOnceAndKeepTheirHistory"):
+            self.assertIn(name, script)
+            self.assertIn(name, e2e_swift_client.TEST_NAMES)
+        # The paired device's test starts the engine with the test hooks and the fake agent.
+        self.assertIn(e2e_swift_client.e2e.TEST_ENGINE, e2e_swift_client.PROGRAMS)
+        self.assertIn("soyeht-fake-acp", e2e_swift_client.PROGRAMS)
         for name in e2e_swift_client.TEST_NAMES:
             with self.subTest(test=name):
                 self.assertIn(f"func {name}()", "".join(

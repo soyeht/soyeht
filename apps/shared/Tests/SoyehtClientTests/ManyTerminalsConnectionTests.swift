@@ -39,10 +39,10 @@
     var holdsHistory: Bool { text.contains(lastLine) && text.contains(end) }
   }
 
-  /// Enough terminals that their tails pass the queue, in two workspaces, each holding more output
-  /// than the engine keeps for a reconnecting client, and a client that connects as the Mac app does: the terminals of the
-  /// selected workspace are on screen at launch, the others are shown later. The engine queues up
-  /// to `tailBytes` of replay for every subscription and closes a connection that passes
+  /// Enough terminals on screen at launch that their tails alone pass the queue, and more in
+  /// another workspace that are shown later, each holding more output than the engine keeps for a
+  /// reconnecting client, and a client that connects as the Mac app does. The engine queues up to
+  /// `tailBytes` of replay for every subscription and closes a connection that passes
   /// `connectionQueueBytes`, so a client that subscribes every terminal at once is closed as a slow
   /// consumer and reconnects for ever.
   @MainActor @Test func manyLongTerminalsConnectOnceAndKeepTheirHistory() async throws {
@@ -52,10 +52,11 @@
     defer { fixture.tearDown(creator, app) }
     try await fixture.start()
 
-    // Just over a tail each, and enough terminals that their tails together pass the queue.
+    // Just over a tail each. The terminals on screen at launch are one more than the queue holds
+    // tails, so subscribing them without waiting would close the connection at launch already.
     let lines = (ProtocolLimits.tailBytes + ProtocolLimits.tailBytes / 16) / 64
-    let terminals = ProtocolLimits.connectionQueueBytes / ProtocolLimits.tailBytes + 2
-    let perWorkspace = (terminals + 1) / 2
+    let shownCount = ProtocolLimits.connectionQueueBytes / ProtocolLimits.tailBytes + 1
+    let laterCount = 2
     var surfaces: [Surface] = []
     var workspaces: [String] = []
     creator.start()
@@ -63,7 +64,7 @@
     let creatorScreen = Surface(paneId: "", lastLine: "", end: "", parses: false)
     creator.terminalOutput = { bytes, reset in creatorScreen.receive(bytes, reset: reset) }
     // The workspace made last holds the focus the app restores, so it is the one on screen.
-    for workspace in ["later", "shown"] {
+    for (workspace, perWorkspace) in [("later", laterCount), ("shown", shownCount)] {
       let folder = fixture.directory.appendingPathComponent(workspace)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       var workspaceId: String?
@@ -88,7 +89,7 @@
       workspaces.append(try #require(workspaceId))
     }
     creator.stop()
-    let (later, shown) = (Array(surfaces[..<perWorkspace]), Array(surfaces[perWorkspace...]))
+    let (later, shown) = (Array(surfaces[..<laterCount]), Array(surfaces[laterCount...]))
 
     // A surface claims its pane's output and asks for the screen, as `MacTerminal` does.
     func mount(_ surface: Surface) {
@@ -117,6 +118,10 @@
     try await until(seconds: 60) { app.connected }
     #expect(app.selectedPane?.workspaceId == workspaces[1], "the app starts on the last workspace")
     _ = await hold(shown, "the terminals on screen at launch")
+    // Surfaces that appear once the connection has settled and every subscribe it made has been
+    // answered: a terminal that was subscribed with no surface would have dropped its replay by now.
+    let idle = await settles(seconds: 40) { app.connected && app.replayGate.isIdle }
+    #expect(idle, "the connection settled with no subscribe waiting")
     later.forEach(mount)
     _ = await hold(later, "the terminals shown after the connection settled")
     expectOneConnection(1, "launch")

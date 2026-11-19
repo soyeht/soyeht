@@ -3,8 +3,10 @@
 
 The tests (in `apps/shared`) start the supervisor and the engine and drive them through
 `EngineClient`: `nativeClientReconnectsAndDrivesItsOwnShellAndEditor` is the client's whole
-surface, and `manyLongTerminalsConnectOnceAndKeepTheirHistory` is twelve terminals of long output
-in two workspaces, the connection a Mac app with that many terminals makes (one connection, no
+surface, `phonePairsByConsentReadsFreshStateAndLosesRevokedAccess` is the paired device's
+(pairing by consent, fresh state, revoked access), and
+`manyLongTerminalsConnectOnceAndKeepTheirHistory` is seven terminals of long output in two
+workspaces, the connection a Mac app with that many terminals makes (one connection, no
 slow-consumer close, every terminal's history, and again after a reconnect). A change to the
 engine's stream, screen or outbox code, or to the client's terminal or connection code, can break
 them while every unit test passes, and the full `swift test` that would say so runs only after the
@@ -27,7 +29,11 @@ import e2e
 TEST_NAMES = (
     "nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
     "manyLongTerminalsConnectOnceAndKeepTheirHistory",
+    "phonePairsByConsentReadsFreshStateAndLosesRevokedAccess",
 )
+# What the tests start: the product programs, the engine with the test hooks and the fake agent
+# (`PhoneConnectionTests` starts both).
+PROGRAMS = (*e2e.PRODUCT_NAMES, e2e.TEST_ENGINE, "soyeht-fake-acp")
 PACKAGE = e2e.ROOT / "apps/shared"
 BIN_DIR_ENV = "SOYEHT_TEST_BIN_DIR"
 
@@ -45,7 +51,7 @@ def swift_command(name: str) -> list[str]:
 
 def run_test(name: str, environment: dict[str, str]) -> int:
     """One test in its own `swift test`: Swift Testing runs the tests of a run at the same time,
-    and these two both keep the main actor busy, so alone each has the host to itself."""
+    and the many-terminals one keeps the main actor busy, so alone each has the host to itself."""
     lines = []
     with subprocess.Popen(swift_command(name), env=environment, stdin=subprocess.DEVNULL,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True) as run:
@@ -65,11 +71,14 @@ def main() -> int:
     parser.add_argument("--bin-dir", type=Path, default=e2e.ROOT / "engine/target/debug")
     args = parser.parse_args()
     binaries = args.bin_dir.resolve()
-    e2e.require_binaries(binaries, e2e.PRODUCT_NAMES, "build workspace binaries before this test")
-    programs = e2e.stage_programs(binaries) if e2e.MACOS else binaries
+    e2e.require_binaries(binaries, PROGRAMS, "build the engine programs (the workspace and the test engine) before this test")
+    staged = tuple(map(e2e.executable, PROGRAMS))
+    programs = e2e.stage_programs(binaries, staged) if e2e.MACOS else binaries
     environment = {**os.environ, BIN_DIR_ENV: str(programs)}
-    # Every test runs, so one failure does not hide the other.
-    return max(run_test(name, environment) for name in TEST_NAMES)
+    # Every test runs, so one failure does not hide the next, and any non-zero code fails the step:
+    # a `swift test` killed by a signal returns a negative code that a `max` would read as a pass.
+    codes = [run_test(name, environment) for name in TEST_NAMES]
+    return 1 if any(codes) else 0
 
 
 if __name__ == "__main__":

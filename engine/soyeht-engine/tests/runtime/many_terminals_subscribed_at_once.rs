@@ -66,6 +66,9 @@ fn subscribing_every_terminal_without_waiting_does_not_disconnect_the_client() {
         thread::sleep(Duration::from_millis(20));
     }
     let (mut replies, mut replays) = (0, 0);
+    // The replays arrive one after the other, so the terminal frames between a `stream.replay_start`
+    // and its `stream.replay_done` are that replay's bytes.
+    let mut replay_bytes = 0;
     while replies < TERMINALS || replays < TERMINALS {
         let frame = match Frame::read_from(&mut reader.socket) {
             Ok(Some(frame)) => frame,
@@ -73,14 +76,38 @@ fn subscribing_every_terminal_without_waiting_does_not_disconnect_the_client() {
                 "the connection ended after {replies} replies and {replays} replays of {TERMINALS}: {other:?}"
             ),
         };
-        let Frame::Json(bytes) = frame else { continue };
+        let bytes = match frame {
+            Frame::Json(bytes) => bytes,
+            Frame::Terminal { bytes, .. } => {
+                replay_bytes += bytes.len();
+                continue;
+            }
+            Frame::Attachment { .. } => continue,
+        };
         let message: Value = serde_json::from_slice(&bytes).unwrap();
         assert_ne!(
             message["error"]["data"]["kind"], "slow_consumer",
             "the engine closed the connection after {replays} replays of {TERMINALS}"
         );
-        replies += requests.iter().filter(|id| message["id"] == **id).count();
-        replays += usize::from(message["method"] == "stream.replay_done");
+        if requests.iter().any(|id| message["id"] == *id) {
+            assert!(
+                message["error"].is_null(),
+                "a subscribe was refused: {}",
+                message["error"]
+            );
+            replies += 1;
+        }
+        match message["method"].as_str() {
+            Some("stream.replay_start") => replay_bytes = 0,
+            Some("stream.replay_done") => {
+                assert!(
+                    replay_bytes >= LINE_BYTES,
+                    "replay {replays} of {TERMINALS} ended with {replay_bytes} bytes of output"
+                );
+                replays += 1;
+            }
+            _ => {}
+        }
     }
     reader.call("engine.status", json!({}));
 }
