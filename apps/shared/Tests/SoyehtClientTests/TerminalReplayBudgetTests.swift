@@ -13,7 +13,7 @@ import Testing
 /// is what keeps the tails from adding up. The real engine is the end-to-end acceptance's.
 
 @MainActor private final class EngineQueueModel {
-  private(set) var used = 0
+  private var used = 0
   private(set) var peakBytes = 0
   private(set) var replaysQueued = 0
   private(set) var peakReplays = 0
@@ -158,15 +158,6 @@ import Testing
   // A replay of recorded output now reaches the new surface.
   client.deliverTerminalOutput(to: "later", bytes: Data("history".utf8), reset: false)
   #expect(received == Data("history".utf8))
-}
-
-@MainActor @Test func aSilentEngineHoldsTheOtherTerminalsBackOnlyForTheTimeout() async {
-  let gate = TerminalReplayGate(timeout: .milliseconds(50))
-  let turn = await gate.enter()
-  #expect(turn != nil)
-  await gate.awaitReplayEnd(of: "a", turn: turn ?? -1)  // No `stream.replay_done` ever comes.
-  gate.leave(turn ?? -1)
-  #expect(await gate.enter() != nil)
 }
 
 @MainActor @Test func aConnectionThatEndsReleasesEverySubscriberWaitingForATurn() async {

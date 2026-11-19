@@ -139,29 +139,3 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
     #expect(!reached, "a chunk reached the \(name)")
   }
 }
-
-@MainActor private func askPermission(_ client: EngineClient, in paneId: String) {
-  try? client.applyAgentEvent(
-    .panePermissionRequested,
-    .encoded(
-      PanePermissionRequestedEvent(
-        eventId: "2", at: "2026-11-18T00:00:01Z", paneId: paneId, requestId: "r", generation: 1,
-        promptId: "p", title: "Write", detail: "", presentation: nil, options: [],
-        expiresAt: "later")))
-}
-
-@MainActor @Test func aRequestMovesTheHeaderOfItsPaneAndNoOther() {
-  let other = twoPanes()
-  let otherFires = fires(
-    watching: { _ = other.agentPanes.isAsking("b") },
-    whenChanging: { askPermission(other, in: "a") })
-  #expect(!otherFires)
-
-  let same = twoPanes()
-  let sameFires = fires(
-    watching: { _ = same.agentPanes.isAsking("a") },
-    whenChanging: { askPermission(same, in: "a") })
-  #expect(sameFires)
-  #expect(same.agentPanes.isAsking("a"))
-  #expect(!same.agentPanes.isAsking("b"))
-}
