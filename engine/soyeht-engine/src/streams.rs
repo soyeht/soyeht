@@ -262,7 +262,7 @@ impl Core {
     }
 
     /// Starts the job that reads a slice from the disk. Its result is applied by
-    /// `apply_disk_slice`, and the pump that follows sends the next one.
+    /// `send_disk_slice`, and the pump that follows sends the next one.
     fn read_from_disk(
         &mut self,
         connection: &str,
@@ -284,7 +284,10 @@ impl Core {
         let started = self.spawn_prompt_background(
             key,
             move || reader.read().map_err(errors::storage),
-            move |core, read| core.apply_disk_slice(&owner, &pane, binary_ref, from, read),
+            move |core, read| {
+                let applied = core.send_disk_slice(&owner, &pane, binary_ref, from, read);
+                core.closing_on_failure(&owner, applied)
+            },
             |_| true,
         );
         if started.is_err()
@@ -296,18 +299,6 @@ impl Core {
     }
 
     /// Sends what the job read, if its subscription is still waiting for exactly that.
-    fn apply_disk_slice(
-        &mut self,
-        connection: &str,
-        pane_id: &str,
-        binary_ref: u32,
-        from: u64,
-        read: Result<Vec<Record>>,
-    ) -> Result<()> {
-        let applied = self.send_disk_slice(connection, pane_id, binary_ref, from, read);
-        self.closing_on_failure(connection, applied)
-    }
-
     fn send_disk_slice(
         &mut self,
         connection: &str,

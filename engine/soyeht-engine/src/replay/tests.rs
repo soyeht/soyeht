@@ -99,6 +99,22 @@ impl Rig {
         self.core.pump_streams().unwrap();
     }
 
+    /// Ticks and reads what the engine queues until `handle`, which gets each frame, says the
+    /// replays have ended. The queue never holds more than the replay's share.
+    async fn read_until(&mut self, mut handle: impl FnMut(Frame) -> bool) {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            assert!(Instant::now() < deadline, "the replays never ended");
+            self.tick();
+            for frame in self.read(usize::MAX).await {
+                if handle(frame) {
+                    return;
+                }
+            }
+            assert!(self.queued() <= QUEUE_BYTES + 1024);
+        }
+    }
+
     /// Ticks for `time`, as the engine does while the client is busy.
     fn tick_for(&mut self, time: Duration) {
         let deadline = Instant::now() + time;
@@ -145,30 +161,23 @@ async fn a_replay_waits_in_slices_for_a_client_that_reads_nothing_and_arrives_wh
 
     // Then it reads, and every byte arrives in its place, the replay's end last.
     let mut next = 0;
-    let deadline = Instant::now() + Duration::from_secs(30);
-    let mut done = false;
-    while !done {
-        assert!(Instant::now() < deadline, "the replay never ended");
-        rig.tick();
-        for frame in rig.read(usize::MAX).await {
-            assert!(!done, "something followed the end of the replay");
-            match &frame {
-                Frame::Terminal { offset, bytes, .. } => {
-                    assert_eq!(*offset, next as u64);
-                    assert!(
-                        bytes
-                            .iter()
-                            .enumerate()
-                            .all(|(i, b)| *b == pattern(next + i))
-                    );
-                    next += bytes.len();
-                }
-                other => done = is_done(other),
-            }
+    rig.read_until(|frame| {
+        if let Frame::Terminal { offset, bytes, .. } = &frame {
+            assert_eq!(*offset, next as u64);
+            assert!(
+                bytes
+                    .iter()
+                    .enumerate()
+                    .all(|(i, b)| *b == pattern(next + i))
+            );
+            next += bytes.len();
         }
-        assert!(rig.queued() <= QUEUE_BYTES + 1024);
-    }
+        is_done(&frame)
+    })
+    .await;
     assert_eq!(next, PANE_BYTES);
+    rig.tick_for(Duration::from_millis(100));
+    assert!(rig.read(usize::MAX).await.is_empty());
     remove_after(rig.core, rig.root);
 }
 
@@ -179,27 +188,20 @@ async fn the_first_subscribed_is_served_to_its_end_before_the_next() {
         rig.subscribe_from_start(&pane);
     }
     // Binary references are given in the order of the subscribes.
-    let (mut finished, mut bytes) = (Vec::new(), [0usize; 4]);
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while finished.len() < 3 {
-        assert!(Instant::now() < deadline, "the replays never ended");
-        rig.tick();
-        for frame in rig.read(usize::MAX).await {
-            match frame {
-                Frame::Terminal {
-                    pane_ref, bytes: b, ..
-                } => {
-                    // Nothing of a replay is sent before the one ahead of it is done.
-                    assert_eq!(finished.len() as u32 + 1, pane_ref, "{finished:?}");
-                    bytes[pane_ref as usize] += b.len();
-                }
-                other if is_done(&other) => {
-                    finished.push(finished.len() as u32 + 1);
-                }
-                _ => {}
-            }
+    let (mut finished, mut bytes) = (0, [0usize; 4]);
+    rig.read_until(|frame| {
+        if let Frame::Terminal {
+            pane_ref, bytes: b, ..
+        } = &frame
+        {
+            // Nothing of a replay is sent before the one ahead of it is done.
+            assert_eq!(finished + 1, *pane_ref);
+            bytes[*pane_ref as usize] += b.len();
         }
-    }
+        finished += u32::from(is_done(&frame));
+        finished == 3
+    })
+    .await;
     assert_eq!(bytes[1..], [PANE_BYTES; 3]);
     remove_after(rig.core, rig.root);
 }
@@ -212,27 +214,22 @@ async fn a_subscription_made_again_while_its_slice_is_read_is_replayed_once_whol
     rig.tick();
     // The disk read of the first is on its way when the client subscribes the terminal again.
     rig.subscribe_from_start(&pane);
-    let (mut next, mut done) = (0, 0);
-    let deadline = Instant::now() + Duration::from_secs(30);
-    while done == 0 {
-        assert!(Instant::now() < deadline, "the replay never ended");
-        rig.tick();
-        for frame in rig.read(usize::MAX).await {
-            match frame {
-                Frame::Terminal {
-                    pane_ref,
-                    offset,
-                    bytes,
-                    ..
-                } => {
-                    assert_eq!(pane_ref, 2, "bytes of the first subscription were sent");
-                    assert_eq!(offset, next);
-                    next += bytes.len() as u64;
-                }
-                other => done += usize::from(is_done(&other)),
-            }
+    let mut next = 0;
+    rig.read_until(|frame| {
+        if let Frame::Terminal {
+            pane_ref,
+            offset,
+            bytes,
+            ..
+        } = &frame
+        {
+            assert_eq!(*pane_ref, 2, "bytes of the first subscription were sent");
+            assert_eq!(*offset, next);
+            next += bytes.len() as u64;
         }
-    }
+        is_done(&frame)
+    })
+    .await;
     assert_eq!(next, PANE_BYTES as u64);
     rig.tick_for(Duration::from_millis(100));
     assert!(rig.read(usize::MAX).await.is_empty());
