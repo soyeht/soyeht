@@ -29,6 +29,9 @@ import SoyehtProtocol
     self.timeout = timeout
   }
 
+  /// Whether no subscribe holds the turn or waits for it.
+  var isIdle: Bool { !busy && turns.isEmpty }
+
   /// Waits for the turn. `nil` when the connection ended while waiting: the caller stops.
   func enter() async -> Int? {
     guard busy else {

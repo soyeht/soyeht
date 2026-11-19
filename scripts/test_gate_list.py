@@ -248,7 +248,7 @@ class StepListTests(unittest.TestCase):
         self.assertNotRegex(commands, r"step \w+ (?:both|fast) \S+ .*swift test")
         # Only two scripts run `swift test` in the fast tier, and both give it a filter.
         self.assertNotRegex(re.search(r"swift_vector_tests\(\) {.*?\n}", commands, re.S)[0], r"swift test")
-        for command in (e2e_swift_client.swift_command(), gate_vectors.swift_command()):
+        for command in (e2e_swift_client.swift_command(e2e_swift_client.TEST_NAMES[0]), gate_vectors.swift_command()):
             self.assertIn("--filter", command)
 
     def test_the_end_to_end_set_runs_in_both_tiers(self):
@@ -355,11 +355,21 @@ class StepListTests(unittest.TestCase):
         text = (ROOT / "scripts/check_all.sh").read_text()
         self.assertRegex(text, r"(?m)^step swift fast swift:test-shared-fast swift_client_fast$")
         self.assertRegex(
-            text, r"(?m)^swift_client_fast\(\) {\n    build_product_programs && uv run python scripts/e2e_swift_client\.py\n}$")
-        self.assertIn(r"nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
-                      (ROOT / "scripts/e2e_swift_client.py").read_text())
-        self.assertIn("nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
-                      (ROOT / "apps/shared/Tests/SoyehtClientTests/EngineConnectionTests.swift").read_text())
+            text, r"(?m)^swift_client_fast\(\) {\n    build_engine_programs && uv run python scripts/e2e_swift_client\.py\n}$")
+        # The step runs the client's whole surface, the paired device's pairing and the many-terminals test.
+        script = (ROOT / "scripts/e2e_swift_client.py").read_text()
+        for name in ("nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
+                     "phonePairsByConsentReadsFreshStateAndLosesRevokedAccess",
+                     "manyLongTerminalsConnectOnceAndKeepTheirHistory"):
+            self.assertIn(name, script)
+            self.assertIn(name, e2e_swift_client.TEST_NAMES)
+        # The paired device's test starts the engine with the test hooks and the fake agent.
+        self.assertIn(e2e_swift_client.e2e.TEST_ENGINE, e2e_swift_client.PROGRAMS)
+        self.assertIn("soyeht-fake-acp", e2e_swift_client.PROGRAMS)
+        for name in e2e_swift_client.TEST_NAMES:
+            with self.subTest(test=name):
+                self.assertIn(f"func {name}()", "".join(
+                    path.read_text() for path in (ROOT / "apps/shared/Tests/SoyehtClientTests").glob("*.swift")))
 
     def test_an_engine_change_runs_the_swift_client_test_between_the_tcc_snapshot_and_its_check(self):
         for files in (ENGINE_CORE, EDITOR_CRATE):
@@ -371,6 +381,16 @@ class StepListTests(unittest.TestCase):
         for files in (DESKTOP_ONLY, DOCS_ONLY):
             with self.subTest(files=files):
                 self.assertNotIn("swift:test-shared-fast", listed_steps("fast", files))
+
+    def test_a_change_to_the_clients_terminal_or_connection_code_or_the_engines_stream_code_runs_it(self):
+        # The acceptance of many long terminals (`manyLongTerminalsConnectOnceAndKeepTheirHistory`)
+        # is in this step: it must run for the code that can break it, the client's or the engine's.
+        for files in (["apps/shared/Sources/SoyehtClient/TerminalReplayGate.swift"],
+                      ["apps/shared/Sources/SoyehtClient/EngineClient.swift"],
+                      ["engine/soyeht-engine/src/streams.rs"], ["engine/soyeht-engine/src/screen.rs"],
+                      ["engine/soyeht-engine/src/outbox.rs"]):
+            with self.subTest(files=files):
+                self.assertIn("swift:test-shared-fast", listed_steps("fast", files))
         self.assertNotIn("swift:test-shared-fast", listed_steps("full", ENGINE_CORE))
 
     def test_every_area_of_the_plan_has_a_step(self):

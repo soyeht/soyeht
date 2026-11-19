@@ -3,42 +3,81 @@ from unittest import mock
 
 import e2e_swift_client as client
 
-PASSED = """Test run started.
-◇ Test nativeClientReconnectsAndDrivesItsOwnShellAndEditor() started.
-✔ Test nativeClientReconnectsAndDrivesItsOwnShellAndEditor() passed after 4.2 seconds.
+NAME = client.TEST_NAMES[0]
+PASSED = f"""Test run started.
+◇ Test {NAME}() started.
+✔ Test {NAME}() passed after 4.2 seconds.
 ✔ Test run with 1 test in 0 suites passed after 4.2 seconds.
 """
 
 
 class OutputTests(unittest.TestCase):
     def test_the_named_test_passing_once_is_a_pass(self):
-        self.assertTrue(client.passed_once(PASSED))
+        self.assertTrue(client.passed_once(PASSED, NAME))
 
     def test_a_filter_that_matched_nothing_is_not_a_pass(self):
-        self.assertFalse(client.passed_once("Test run with 0 tests in 0 suites passed after 0.001 seconds.\n"))
-        self.assertFalse(client.passed_once(""))
+        self.assertFalse(client.passed_once("Test run with 0 tests in 0 suites passed after 0.001 seconds.\n", NAME))
+        self.assertFalse(client.passed_once("", NAME))
 
     def test_another_test_passing_is_not_a_pass(self):
-        self.assertFalse(client.passed_once(PASSED.replace("nativeClient", "otherClient")))
+        self.assertFalse(client.passed_once(PASSED.replace("nativeClient", "otherClient"), NAME))
 
     def test_a_test_that_ran_twice_is_not_a_pass(self):
-        self.assertFalse(client.passed_once(PASSED + PASSED))
+        self.assertFalse(client.passed_once(PASSED + PASSED, NAME))
 
     def test_a_failing_test_is_not_a_pass(self):
-        self.assertFalse(client.passed_once(PASSED + "✘ Test other() failed after 1 seconds.\n"))
+        self.assertFalse(client.passed_once(PASSED + "✘ Test other() failed after 1 seconds.\n", NAME))
 
 
 class CommandTests(unittest.TestCase):
     def test_it_runs_only_the_named_test_of_the_shared_package(self):
-        command = client.swift_command()
+        command = client.swift_command(NAME)
         self.assertEqual(command[:2], ["swift", "test"])
-        self.assertEqual(command[-2:], ["--filter", client.TEST_NAME])
+        self.assertEqual(command[-2:], ["--filter", NAME])
         self.assertTrue(command[command.index("--package-path") + 1].endswith("apps/shared"))
+
+    def test_each_test_runs_in_its_own_swift_run_and_a_failure_does_not_hide_the_next(self):
+        with mock.patch.object(client, "run_test", side_effect=[1] + [0] * (len(client.TEST_NAMES) - 1)) as run, \
+                mock.patch.object(client.e2e, "stage_programs", return_value="/staged"), \
+                mock.patch.object(client.e2e, "require_binaries"), \
+                mock.patch("sys.argv", ["e2e_swift_client.py"]):
+            self.assertEqual(client.main(), 1)
+        self.assertEqual([call.args[0] for call in run.call_args_list], list(client.TEST_NAMES))
+
+    def test_a_test_killed_by_a_signal_fails_the_step(self):
+        # A signal-killed `swift test` returns a negative code, which `max(-9, 0)` would read as a pass.
+        for codes in ([-9, 0], [0, -9], [0, 0, -9]):
+            with self.subTest(codes=codes), \
+                    mock.patch.object(client, "run_test", side_effect=codes), \
+                    mock.patch.object(client, "TEST_NAMES", tuple(f"test{n}" for n in range(len(codes)))), \
+                    mock.patch.object(client.e2e, "stage_programs", return_value="/staged"), \
+                    mock.patch.object(client.e2e, "require_binaries"), \
+                    mock.patch("sys.argv", ["e2e_swift_client.py"]):
+                self.assertNotEqual(client.main(), 0)
+
+    def test_every_test_passing_passes_the_step(self):
+        with mock.patch.object(client, "run_test", return_value=0), \
+                mock.patch.object(client.e2e, "stage_programs", return_value="/staged"), \
+                mock.patch.object(client.e2e, "require_binaries"), \
+                mock.patch("sys.argv", ["e2e_swift_client.py"]):
+            self.assertEqual(client.main(), 0)
+
+    def test_it_stages_the_programs_the_tests_start_including_the_test_engine_and_the_fake_agent(self):
+        with mock.patch.object(client.e2e, "stage_programs", return_value="/staged") as stage, \
+                mock.patch.object(client.e2e, "require_binaries") as require, \
+                mock.patch.object(client.e2e, "MACOS", True), \
+                mock.patch.object(client, "run_test", return_value=0), \
+                mock.patch("sys.argv", ["e2e_swift_client.py"]):
+            self.assertEqual(client.main(), 0)
+        wanted = {client.e2e.executable(name) for name in ("soyeht-engine-test", "soyeht-fake-acp", "soyeht-mcp")}
+        self.assertTrue(wanted <= set(stage.call_args.args[1]))
+        self.assertTrue(set(require.call_args.args[1]) >= {"soyeht-engine-test", "soyeht-fake-acp", "soyeht-mcp"})
 
     def test_it_starts_the_staged_programs_the_suites_start(self):
         with mock.patch.object(client.e2e, "stage_programs", return_value="/staged") as stage, \
                 mock.patch.object(client.e2e, "require_binaries"), \
                 mock.patch.object(client.e2e, "MACOS", True), \
+                mock.patch.object(client, "TEST_NAMES", (NAME,)), \
                 mock.patch.object(client.subprocess, "Popen") as popen, \
                 mock.patch("sys.argv", ["e2e_swift_client.py"]):
             process = popen.return_value.__enter__.return_value
