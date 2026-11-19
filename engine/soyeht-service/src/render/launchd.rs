@@ -4,8 +4,6 @@
 //! (`PathState`): an app dragged to the Trash must not leave an agent that fails to start every
 //! second for ever. `RunAtLoad` starts it when the agent loads, which is at login. `ProcessType`
 //! `Interactive` keeps the system from throttling a program a person is waiting on.
-//! `SoftResourceLimits` and `HardResourceLimits` give the program the number of open files the
-//! supervisor needs for a person's panes (a service starts with 256), before its own code runs.
 
 use super::xml_escape;
 use crate::{definition::Definition, policy};
@@ -52,21 +50,10 @@ pub(super) fn render(definition: &Definition) -> String {
   <integer>{}</integer>
   <key>ProcessType</key>
   <string>{}</string>
-  <key>SoftResourceLimits</key>
-  <dict>
-    <key>NumberOfFiles</key>
-    <integer>{files}</integer>
-  </dict>
-  <key>HardResourceLimits</key>
-  <dict>
-    <key>NumberOfFiles</key>
-    <integer>{files}</integer>
-  </dict>
 "#,
         xml_escape(&definition.program),
         policy::RESTART_DELAY_SECONDS,
-        policy::LAUNCHD_PROCESS_TYPE,
-        files = soyeht_platform::descriptors::WANTED
+        policy::LAUNCHD_PROCESS_TYPE
     ));
     if let Some(log) = &definition.log {
         let log = xml_escape(log);
@@ -123,16 +110,6 @@ mod tests {
   <integer>1</integer>
   <key>ProcessType</key>
   <string>Interactive</string>
-  <key>SoftResourceLimits</key>
-  <dict>
-    <key>NumberOfFiles</key>
-    <integer>65536</integer>
-  </dict>
-  <key>HardResourceLimits</key>
-  <dict>
-    <key>NumberOfFiles</key>
-    <integer>65536</integer>
-  </dict>
   <key>StandardOutPath</key>
   <string>/data/next/logs/engine.log</string>
   <key>StandardErrorPath</key>

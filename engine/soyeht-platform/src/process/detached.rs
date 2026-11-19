@@ -119,8 +119,6 @@ fn command_with_log(program: &Path, arguments: &[&OsStr], log: &Path) -> io::Res
         .stdin(Stdio::null())
         .stderr(Stdio::from(output.try_clone()?))
         .stdout(Stdio::from(output));
-    // The program raises its own limit of open files; it starts from the one this process had.
-    crate::descriptors::restore_in_child(&mut command);
     Ok(command)
 }
 

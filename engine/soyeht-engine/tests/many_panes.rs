@@ -1,6 +1,7 @@
-//! More panes than the 256 descriptors a service starts with: the supervisor and the engine raise
-//! their own limit, so every terminal starts and answers. A supervisor that kept the limit it
-//! started with fails to start the pane after about seventy.
+//! More panes than the 256 descriptors a service starts with: the supervisor raises its own limit,
+//! so every terminal starts and answers. A supervisor that kept the limit it started with fails to
+//! start the pane after about seventy. The engine keeps the limit it started with: it holds a few
+//! dozen descriptors however many panes there are.
 #![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 

@@ -3,16 +3,17 @@
 //! The supervisor holds about three descriptors for every terminal and agent it runs (the master
 //! side of the terminal, the readers made from it, the diagnostic log), and a person runs
 //! hundreds of them. A service the system starts has a soft limit of 256 on macOS and 1024 on
-//! Linux, so without this the supervisor fails to start the 80th pane and the engine reports the
-//! pane as one whose process could not be started. A program that holds one descriptor per pane
-//! calls [`raise_and_log`] when it starts, and the service files ask for the same number
-//! ([`WANTED`]), so a start has it before any code runs.
+//! Linux, so without this the supervisor fails to start the 80th pane (at 256) and the engine
+//! reports the pane as one whose process could not be started. The supervisor calls
+//! [`raise_and_log`] when it starts. The engine does not: it holds a few dozen descriptors however
+//! many panes there are, and a limit it did not change keeps every command it runs on the fast
+//! `posix_spawn` path.
 //!
 //! A raised limit is inherited by everything the program starts. A program that closes every
 //! descriptor up to the limit before it runs (a runtime that starts a child, a shell) would then
 //! walk tens of thousands of numbers, and a program that uses `select` breaks above 1024. So
-//! whoever starts a person's program restores the limit the program was started with
-//! ([`restore_in_child`]).
+//! the supervisor, which forks the terminals and the guardian of an agent anyway, restores the
+//! limit it started with in each of them ([`restore_in_child`]).
 //!
 //! Windows has no such limit to raise: a process may hold millions of handles, and the limit of
 //! the C runtime's `FILE` streams (`_setmaxstdio`) does not apply to the handles Rust opens. There
@@ -23,7 +24,7 @@ use std::{io, process::Command};
 
 /// The most descriptors a program asks for. Many times the few hundred panes a person has, and
 /// small enough that a program which walks every descriptor up to its limit still finishes at
-/// once. The launchd agent and the systemd unit that start the programs carry the same number.
+/// once.
 pub const WANTED: u64 = 65_536;
 
 /// What a program asks for when the system refuses [`WANTED`]. It is the most any macOS accepted
@@ -198,8 +199,8 @@ mod system {
                 }
                 Err(error) => {
                     // The system has a ceiling this does not read: try the number that every system
-                    // took, once.
-                    if asked <= FALLBACK.max(before.rlim_cur) {
+                    // took, once, unless that would lower the limit.
+                    if asked <= FALLBACK || before.rlim_cur >= FALLBACK {
                         return Err(error);
                     }
                     asked = FALLBACK;
@@ -210,7 +211,8 @@ mod system {
 
     pub(super) fn restore_in_child(command: &mut Command) {
         // SAFETY: the closure runs in the forked child before the exec and calls only `setrlimit`,
-        // which is async-signal-safe, and reads a `OnceLock` (an atomic load); it allocates
+        // a plain system call on Darwin, glibc and bionic (POSIX does not list it among the
+        // async-signal-safe functions), and reads a `OnceLock` (an atomic load); it allocates
         // nothing and takes no lock.
         unsafe {
             command.pre_exec(|| {

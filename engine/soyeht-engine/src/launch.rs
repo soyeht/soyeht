@@ -26,9 +26,6 @@ pub async fn run(hooks: impl FnOnce(&Path) -> Arc<dyn Hooks>) -> Result<()> {
             None
         }
     };
-    // The engine keeps a socket and a few files for every pane, and the person's clients; the limit
-    // a service starts with is a few hundred.
-    soyeht_platform::descriptors::raise_and_log();
     // Captures record the engine build; hashing the executable overlaps the rest of startup.
     crate::engine_build::prefetch_engine_build();
     let Arguments {

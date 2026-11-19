@@ -18,7 +18,9 @@ use support::*;
 /// socket, lock and log.
 const LIMIT: libc::rlim_t = 40;
 
-fn start_with_a_ceiling() -> (Daemon, soyeht_ptyd::client::Client) {
+/// A supervisor that starts with the soft limit `soft` and, when `ceiling`, that as its hard limit
+/// too, so it cannot raise its way out of it.
+fn start_with(soft: libc::rlim_t, ceiling: bool) -> (Daemon, soyeht_ptyd::client::Client) {
     let directory =
         std::path::PathBuf::from("/tmp").join(format!("soyeht-next-test-{}", Uuid::new_v4()));
     fs::create_dir_all(&directory).unwrap();
@@ -28,15 +30,22 @@ fn start_with_a_ceiling() -> (Daemon, soyeht_ptyd::client::Client) {
         .arg(&directory)
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());
-    // SAFETY: the closure runs in the forked child before the exec and calls only `setrlimit`,
-    // which is async-signal-safe.
+    // SAFETY: the closure runs in the forked child before the exec and calls only `getrlimit` and
+    // `setrlimit`, plain system calls that allocate nothing.
     unsafe {
-        command.pre_exec(|| {
-            // The ceiling too, so the supervisor cannot raise its way out of it.
-            let limit = libc::rlimit {
-                rlim_cur: LIMIT,
-                rlim_max: LIMIT,
+        command.pre_exec(move || {
+            let mut limit = libc::rlimit {
+                rlim_cur: 0,
+                rlim_max: 0,
             };
+            // SAFETY: `limit` is valid and writable for the call, which only fills it in.
+            if libc::getrlimit(libc::RLIMIT_NOFILE, &mut limit) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            limit.rlim_cur = soft;
+            if ceiling {
+                limit.rlim_max = soft;
+            }
             // SAFETY: `limit` is valid for the call, which only reads it.
             if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
                 return Err(std::io::Error::last_os_error());
@@ -52,9 +61,17 @@ fn start_with_a_ceiling() -> (Daemon, soyeht_ptyd::client::Client) {
     (daemon, client)
 }
 
+fn shell_limits(flag: &str) -> String {
+    let output = Command::new("sh")
+        .args(["-c", &format!("ulimit {flag}")])
+        .output()
+        .unwrap();
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
 #[test]
 fn a_spawn_with_no_descriptor_left_says_so_and_the_next_one_works_after_a_close() {
-    let (daemon, mut client) = start_with_a_ceiling();
+    let (daemon, mut client) = start_with(LIMIT, true);
     let mut started = Vec::new();
     let refusal = loop {
         match client.request(Request::Spawn(daemon.shell())).unwrap() {
@@ -80,4 +97,25 @@ fn a_spawn_with_no_descriptor_left_says_so_and_the_next_one_works_after_a_close(
     ));
     let again = spawn(&mut client, daemon.shell());
     assert!(!again.instance_id.is_empty());
+}
+
+#[test]
+fn a_shell_under_the_supervisor_gets_the_limit_the_supervisor_started_with() {
+    let (daemon, mut client) = start_with(256, false);
+    let hard = shell_limits("-Hn");
+    let terminal = spawn(&mut client, daemon.shell());
+    input(
+        &mut client,
+        &terminal.instance_id,
+        "echo LIMITS-$(ulimit -n)-$(ulimit -Hn)-END\n",
+    );
+    // The supervisor raised its own limit, which the terminal does not inherit; the ceiling is
+    // untouched.
+    let mut from = 0;
+    wait_text(
+        &mut client,
+        &terminal.instance_id,
+        &mut from,
+        &format!("LIMITS-256-{hard}-END"),
+    );
 }

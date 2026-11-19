@@ -627,7 +627,7 @@ and a later request succeeds once Git is installed),
 (ADR 0094),
 `too_many_open_files` (the supervisor had no descriptor left to start a pane's process with: the
 person's panes need more open files than the limit of the supervisor allows; the pane that could
-not start says so, and a start may pass when another pane closes, ADR 0168),
+not start says so, and a start may pass when another pane closes, ADR 0169),
 `push_unavailable` (`push.register` while the engine cannot send alerts, §2.3; nothing is stored),
 `pairing_code_invalid` (`device.pair.decide` with a missing or wrong `approvalCode` on an engine that offers `pairing-code`, §2.2; nothing is approved, the third wrong code denies the request, and the message says how many tries are left),
 `adapter_not_acknowledged` (a built-in agent that its package runner downloads unchecked,

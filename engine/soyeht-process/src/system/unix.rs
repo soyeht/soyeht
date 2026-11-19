@@ -20,8 +20,6 @@ impl Running {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);
-        // A tool the engine runs does not inherit the raised limit of open files.
-        soyeht_platform::descriptors::restore_in_child(&mut command);
         command.spawn().map(Self)
     }
 

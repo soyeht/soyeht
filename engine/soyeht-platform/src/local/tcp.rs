@@ -293,9 +293,9 @@ mod tests {
             }
             #[cfg(unix)]
             let code = libc::EMFILE;
-            // ERROR_TOO_MANY_OPEN_FILES.
+            // `WSAEMFILE`.
             #[cfg(windows)]
-            let code = 4;
+            let code = 10024;
             Some(Err(io::Error::from_raw_os_error(code)))
         });
         // The limit of a run of connection errors is far under the 500 ms the errors go on.

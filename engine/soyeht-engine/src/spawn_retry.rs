@@ -33,8 +33,7 @@ const SPAWN_FAILED_EVENT: &str = "engine.pane_spawn_failed";
 const NOT_STARTED: &str = "The pane's process could not be started";
 /// The same, when the supervisor had no descriptor left to start it with: the person is told the
 /// cause, which closing a pane may cure.
-const NOT_STARTED_OPEN_FILES: &str =
-    "The pane's process could not be started because too many files are open";
+const NOT_STARTED_OPEN_FILES: &str = "The pane's process could not be started: Soyeht reached the system's limit of open files. Close a pane and open this one again.";
 
 struct Pending {
     streak: Streak,
