@@ -536,6 +536,9 @@ impl Core {
 }
 
 #[cfg(test)]
+mod user_update_tests;
+
+#[cfg(test)]
 mod readiness_tests {
     use super::{
         Changes, readiness_after_changes,

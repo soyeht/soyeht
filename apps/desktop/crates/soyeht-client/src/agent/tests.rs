@@ -33,7 +33,8 @@ fn the_tail_leaves_out_the_oldest_messages() {
 #[test]
 fn a_message_update_becomes_a_transcript_message() {
     let update: PaneUpdateEvent = serde_json::from_value(json!({
-        "eventId": "9", "at": "now", "paneId": "p", "kind": "agent_message_chunk",
+        "eventId": "9", "at": "now", "actor": {"role": "human_local", "client": "mac"},
+        "paneId": "p", "kind": "agent_message_chunk",
         "generation": 1, "seq": "3", "localId": "m", "text": "Hello", "complete": false
     }))
     .unwrap();

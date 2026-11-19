@@ -237,8 +237,8 @@ def linux_host(options, environment, architecture):
 
 
 def build_linux(runner, host, version, sha, destination, environment, architecture):
-    if not HOST_NAME.match(host):
-        raise Refused(f"{host!r} is not a host name")
+    """Push the commit to `host` and build there; `host` comes from `linux_host`, which has checked
+    that it is a name (before anything is built)."""
     push = ["git", "push"]
     receive_pack = LINUX_BUILDERS[architecture][1]
     if environment.get(receive_pack):
