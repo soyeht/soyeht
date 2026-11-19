@@ -42,9 +42,6 @@ extension JsonValue {
   var int: Int? { if case .integer(let value) = self { Int(exactly: value) } else { nil } }
   /// The notification a `method` field names, when it is one of the contract's events.
   var eventName: EventName? { string.flatMap(EventName.init(rawValue:)) }
-  func decoded<T: Decodable>(_ type: T.Type) throws -> T {
-    try JSONDecoder().decode(type, from: JSONEncoder().encode(self))
-  }
   static func encoded<T: Encodable>(_ value: T) throws -> JsonValue {
     try JSONDecoder().decode(JsonValue.self, from: JSONEncoder().encode(value))
   }
@@ -327,5 +324,19 @@ struct WebHostResponse: Sendable {
 
   func frames() throws -> [Frame] {
     try WirePayload(message: message, attachments: attachments).frames(maxAttachments: 1)
+  }
+}
+
+/// A frame the reader has taken in. A JSON frame is parsed to a tree once, here, away from the
+/// main actor; the reader waits for the parse before it reads the next frame, so frames are
+/// applied in the order they arrived. What the tree holds is read into types on the main actor,
+/// without writing it out as text again (`JsonValue.decoded`).
+enum IncomingFrame: Sendable {
+  case message(JsonValue)
+  case other(Frame)
+
+  /// The tree of a JSON frame, parsed on a background executor.
+  @concurrent static func parse(_ frame: Frame) async throws -> IncomingFrame {
+    .message(try JSONDecoder().decode(JsonValue.self, from: frame.payload))
   }
 }

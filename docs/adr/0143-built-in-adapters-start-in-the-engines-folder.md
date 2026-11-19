@@ -39,7 +39,8 @@ started in, read from the public source of the pinned version, with nothing inst
   `apiKeyHelper` set by the project is not seen before the first session. That is the one
   behaviour that changes, and it is the intended one: a project must not choose a program the
   adapter runs before the person has opened its session.
-- **codex-acp 1.11.0**: every thread call passes the request's `cwd`.
+- **codex-acp 1.11.0 and 2.6.0**: every thread call passes the request's `cwd`. In 2.6.0 the
+  process folder is read only to explain a configuration error for a deleted working directory.
 - **gemini-cli 0.59.0**: loads its settings by the session's `cwd`.
 - **pi-acp 0.0.33**: `session/new` and `session/load` require an absolute `cwd`, load the project's
   prompts, skills and settings from it and start the agent process in it; no `process.cwd()`.
@@ -195,3 +196,52 @@ engine does not offer it to a person.
   acknowledgement. The tests keep the two apart: `adapter_acknowledgement.rs` reaches the unchecked
   package by explicit id and asserts that `harness.list` does not list it before or after it is
   acknowledged, and `agents::catalog` tests the notice and the listing on their own.
+
+## Amendment (2026-11-17): a pin moves, and what moves with it
+
+### Context
+
+The second supported adapter was pinned at 1.11.0, whose bundled command line (0.153.4) the provider
+rejects for the current default model (`model_not_found`), so a new pane could not answer with the
+person's own default. The pin moved to 2.6.0 (command line 0.166.0). Three things followed from it.
+
+### Decision
+
+- **A pane saved under an older pin starts the catalogue's adapter.** A built-in pane stores its launch in
+  its checkpoint. When it is restored, a launch of a locked adapter that differs from the catalogue's
+  (the arguments and the version) is replaced by the catalogue's and saved
+  (`agents::launch_refresh::refreshed_launch`, called by `Core::restore_agent`). The catalogue's entry is
+  read as written, so a missing `npx` at start does not skip it. An adapter that is not locked keeps the
+  launch the person acknowledged.
+  As a second guard, the start of a built-in pane whose launch is `npx --yes <locked package>@<another
+  version>` is refused (`adapter_install::refuse_stale_builtin`, called where the spawn is built): the lock
+  is the only way the engine starts a built-in adapter, so a launch saved under an older pin never runs
+  unlocked through `npx`. The refusal does not repeat: the pane stops at once and says to restart Soyeht or
+  switch its harness. A custom entry that names another version is its author's and starts as written.
+- **The Codex adapter is given one fixed variable.** From 2.x on, a client that declares the AIR extension (the
+  engine does, for subagents) makes the adapter ask the model for a suggested next message after every
+  completed turn, at high effort, with the whole conversation, and publish it as
+  `session_info_update` with `_meta.promptSuggestions`, which no client of ours shows. Measured on one tiny
+  turn (the adapter's own log of its traffic with the command line): with the default environment the
+  adapter sent `thread/sample` after the turn, which took about 13 s and read 19,800 input tokens (18,304 cached) for 42
+  output tokens, and answered no suggestion; with `CODEX_ACP_PROMPT_SUGGESTIONS=false` it sent none. The
+  engine sets that variable to `false` for the adapter. The table of locked adapters carries the variables of
+  each (`Locked.environment`), so the pane, the person and a custom entry choose none.
+- **What the supervisor admits.** `soyeht-ptyd` still takes from the engine, for a process, only a short
+  list of names. The list now also holds the exact pair `CODEX_ACP_PROMPT_SUGGESTIONS=false`
+  (`soyeht_ptyd::CODEX_PROMPT_SUGGESTIONS_OFF`) for an adapter process (`PipesAcp`): the name with any other
+  value, and the pair for a terminal or a language server, are refused as `environment variable is not
+  allowed`, like every other name. Nothing else changed in what is admitted: `PATH`, `LANG`, `LC_ALL`,
+  `TERM`, `COLORTERM`, `SHELL` and `PS1` for any process, `CLAUDE_CODE_EXECUTABLE` for an adapter (ADR 0137),
+  the pane binding for a terminal (ADR 0165).
+- **An older supervisor.** One that outlived an update does not know the pair and refuses the spawn
+  with `environment variable is not allowed`; the engine then starts the adapter without the fixed variables and without
+  the person's CLI (the existing fallback, `engine.agent_cli_refused`), so the pane works and the suggestion
+  request stays until the supervisor is restarted.
+
+### Consequences
+
+- A pin move is the manifest, the lock, the snapshot with its digest, the install table and the notes that
+  name the version, and now also reads what the new adapter changed for the engine: where it announces
+  mode kinds and permission titles (under `_meta.jetbrains.air` for a client that declares it), how it
+  reports a wait on subagents, and the requests it makes on its own.

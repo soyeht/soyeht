@@ -253,7 +253,6 @@ mod tests {
     use crate::test_panes::replay_rows;
     use crate::{
         engine_build::EngineBuildCell,
-        outbox,
         ports::{
             SupervisorPort,
             testing::{EmptyPortScan, FixedClock},
@@ -349,17 +348,7 @@ mod tests {
     }
 
     fn signed_connection(core: &mut Core) -> String {
-        let (sender, _receiver) = outbox::channel();
-        let connection = core.connect(true, true, sender).unwrap();
-        let hello = json!({
-            "jsonrpc":"2.0","id":"hello","method":"hello",
-            "params":{"client":"capture-test","clientVersion":"1","protocolVersion":1}
-        });
-        assert!(matches!(
-            core.dispatch(&connection, hello).unwrap(),
-            Outcome::Reply(_)
-        ));
-        connection
+        crate::test_panes::handshaken_connection(core).0
     }
 
     /// Takes the engine back from `shared`, once no lock is held on it, and removes its

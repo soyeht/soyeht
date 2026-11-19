@@ -335,7 +335,7 @@ impl Core {
     /// (see [`Core::refused_by_supervisor`]), the pane is stopped and the other panes are
     /// recovered; any other failure still fails the whole reconciliation, which is retried.
     pub(crate) fn stop_unrestartable_pane(&mut self, id: &str, error: Error) -> Result<()> {
-        if let Some(reason) = error.unacknowledged_reason().map(str::to_owned) {
+        if let Some(reason) = error.unstartable_reason().map(str::to_owned) {
             log::failure("engine.pane_not_restarted", &error);
             return self.stop_pane(id, &reason);
         }

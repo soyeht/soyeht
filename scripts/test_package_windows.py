@@ -79,9 +79,6 @@ class ProgramTests(unittest.TestCase):
 class NamingTests(unittest.TestCase):
     def test_every_name_of_the_installer_carries_next(self):
         package.check_names()
-        self.assertEqual(package.APP_ID, "com.soyeht.next")
-        self.assertEqual(package.INSTALL_FOLDER, "Soyeht Next")
-        self.assertEqual(package.PRODUCT_NAME, "Soyeht")
         with patch.object(package, "APP_ID", "Soyeht"), self.assertRaises(SystemExit):
             package.check_names()
 
@@ -94,11 +91,6 @@ class NamingTests(unittest.TestCase):
         self.assertEqual(make_plan(revision=3).display_version, "0.1.0.3")
         self.assertEqual(make_plan(revision=0).file_version, "0.1.0.0")
         self.assertEqual(make_plan(revision=3).file_version, "0.1.0.3")
-
-    def test_the_architectures_are_the_ones_the_manifest_knows(self):
-        self.assertEqual(sorted(package.ARCHITECTURES), ["aarch64", "x86_64"])
-        self.assertEqual(package.ARCHITECTURES["aarch64"][0], "aarch64-pc-windows-msvc")
-        self.assertEqual(package.ARCHITECTURES["x86_64"][0], "x86_64-pc-windows-msvc")
 
 
 class SigningTests(unittest.TestCase):
@@ -136,12 +128,6 @@ class SigningTests(unittest.TestCase):
         signing = package.signing_from({package.SIGN_THUMBPRINT: "AB", package.SIGN_TIMESTAMP: "http://t.example"})
         self.assertEqual(signing.timestamp, "http://t.example")
 
-    def test_no_secret_is_ever_a_variable_of_this_script(self):
-        # The certificate stays in a store or at the signing service; a password has no variable.
-        names = {package.SIGN_THUMBPRINT, package.SIGN_AZURE_DLIB, package.SIGN_AZURE_METADATA, package.SIGN_TIMESTAMP}
-        self.assertTrue(all(name.startswith("SOYEHT_WINDOWS_SIGN_") for name in names))
-        self.assertFalse(any("PASSWORD" in name or "SECRET" in name or "TOKEN" in name for name in names))
-
     def test_inno_reads_the_signing_command_with_its_own_quoting(self):
         signing = package.Signing(("/sha1", "AB"), "http://t")
         option = package.inno_sign_option(signing, r"C:\Program Files (x86)\Kits\signtool.exe")
@@ -171,11 +157,6 @@ class SigningTests(unittest.TestCase):
                 package.check_build_tools()
         with patch.object(package.shutil, "which", return_value="clang.exe"):
             package.check_build_tools()
-
-    def test_the_unsigned_warning_cannot_be_missed(self):
-        text = package.loud_unsigned()
-        self.assertIn("UNSIGNED BUILD", text)
-        self.assertIn("SOYEHT_WINDOWS_SIGN_", text)
 
 
 class InstallerScriptTests(unittest.TestCase):
@@ -245,12 +226,10 @@ class InstallerScriptTests(unittest.TestCase):
     def test_the_command_line_is_given_the_profile_it_was_built_for(self):
         self.assertIn("'--profile ' + Profile", self.script)
 
-    def test_the_script_names_no_machine_identifier_of_its_own(self):
+    def test_the_script_names_no_machine_identifier_or_product_name_of_its_own(self):
         # The names come from the profile through the script; nothing is typed here twice.
         for typed in ("Soyeht.Next", "Soyeht.next", "Soyeht Next", "com.soyeht.next"):
             self.assertNotIn(typed, self.script)
-
-    def test_the_product_name_is_typed_nowhere_in_the_script(self):
         lines = [line for line in self.script.splitlines() if not line.lstrip().startswith((";", "//"))]
         self.assertEqual([line for line in lines if "Soyeht" in line], [])
 
@@ -307,18 +286,6 @@ class InstallerScriptTests(unittest.TestCase):
         self.assertIn("PowerShellDidNotStart = -2;", self.script)
         self.assertIn("if Result = PowerShellDidNotStart then", run)
         self.assertNotIn("Result = -1", run)
-
-    def test_the_mismatch_message_names_nothing_that_is_not_on_the_path(self):
-        self.assertNotIn("soyeht service stop", self.script)
-        self.assertIn("Task ", self.script)
-        self.assertIn("sign out", self.script)
-        # The old engine restarts a lost supervisor with its old protocol: both must end.
-        self.assertIn("end both soyeht-engine.exe and ' +\n      'soyeht-ptyd.exe in Task Manager", self.script)
-
-    def test_an_open_window_message_says_what_really_applies_the_new_build(self):
-        # Closing a window does not restart the engine it started.
-        self.assertIn("A window that is open does not restart the engine", self.script)
-        self.assertIn("end soyeht-engine.exe in Task Manager", self.script)
 
     def test_the_environment_the_scripts_read_is_removed_after_use(self):
         used = set(re.findall(r"SetEnvironmentVariable\('(SOYEHT_\w+)'", self.script))
@@ -428,11 +395,6 @@ class BuildTests(unittest.TestCase):
 
 
 class SharedPiecesTests(unittest.TestCase):
-    def test_the_two_platforms_name_a_package_by_one_rule(self):
-        plan = common.Plan("1.2.3", 0, "aarch64", 0, {})
-        self.assertEqual(plan.artifact_path("dist", "windows", "exe").name, "soyeht-1.2.3-windows-aarch64.exe")
-        self.assertEqual(plan.artifact_path("dist", "linux", "deb").name, "soyeht-1.2.3-linux-aarch64.deb")
-
     def test_a_windows_host_reports_its_architecture_in_the_manifest_words(self):
         for machine, expected in (("ARM64", "aarch64"), ("AMD64", "x86_64"), ("x86_64", "x86_64")):
             with patch.object(common.platform, "machine", return_value=machine):

@@ -13,7 +13,10 @@ No build, no restricted vocabulary needed. When there is one (FORBIDDEN_TERMS, e
    and a new `always` check joins the precheck by being added to the gate. A `:unit` step (the
    tests of a gate script) runs only when the script it tests, or the test, changed.
 3. The commit messages of `BASE..HEAD` (and `--pr-text FILE`, the title and body you are about
-   to give `gh pr create`) for AI attribution; with the vocabulary, the full scan too.
+   to give `gh pr create`) for AI attribution; with the vocabulary, the full scan too. The same
+   text is the event of the gate steps, so its `Verification change:` and `Test growth
+   allowance:` lines count. The step `hardening:test-growth` prints the net test code lines of
+   the change against the limit of 400.
 4. `swift format lint --strict` on the changed `.swift` files (line length is 100).
 5. `contracts/generate.py --check` and the contracts unit tests, which prove every design
    token against the commit generated before the Mac used them (a new Mac token goes in
@@ -28,13 +31,16 @@ substitute for it, only what to run first.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +70,12 @@ FETCH_TIMEOUT_SECONDS = 60
 # The checks that are not run as cheap steps: the precheck does them itself, or last.
 OWN_STEPS = ("forbidden-terms:scan",)
 QUALITY_STEP = "quality:check"
+# What a passing step says that an author wants to see before the push: the test code the change
+# adds against the limit of `growth_gate.py` and the allowance that covers it, the tests the change
+# removes, the steps it changes and the weakening a `Verification change:` line waives.
+SHOWN_WHEN_OK = ("check-test-growth: test code lines", "check-test-growth: allowance",
+                 "check-verification-not-weakened: removed test")
+SHOWN_ENDINGS = ("(waived)", "changed its command")
 TIMINGS = ROOT / ".cache" / "agent-precheck-timings.json"
 FAILURE_TAIL_LINES = 40
 
@@ -186,7 +198,21 @@ def timed(name: str, arguments: list[str], env: dict | None = None, rerun: str =
                   result.stdout + result.stderr, rerun or " ".join(arguments))
 
 
-def gate_step(step_id: str) -> Result:
+@contextmanager
+def pull_request_event(texts: list[Path]):
+    """The text you will give `gh pr create` as an event file, which the gate's steps read for the
+    lines of a body (a `Verification change:` or a `Test growth allowance:`); None without text."""
+    if not texts:
+        yield None
+        return
+    with tempfile.TemporaryDirectory() as directory:
+        event = Path(directory) / "event.json"
+        body = "\n".join(path.read_text() for path in texts)
+        event.write_text(json.dumps({"pull_request": {"body": body}}))
+        yield event
+
+
+def gate_step(step_id: str, event: Path | None = None) -> Result:
     # check_all.sh asks for the vocabulary on any run; the steps chosen here never read it.
     env = {"SOYEHT_GATE_TIMINGS": str(TIMINGS)}
     # With a vocabulary from the file too, the run is a real one: only no list at all skips.
@@ -197,7 +223,8 @@ def gate_step(step_id: str) -> Result:
         listed = True
     if not listed:
         env["SOYEHT_SKIP_FORBIDDEN_TERMS"] = "1"
-    return timed(step_id, ["bash", str(CHECK_ALL), "--only", step_id], env,
+    event_arguments = ["--event-file", str(event)] if event else []
+    return timed(step_id, ["bash", str(CHECK_ALL), "--only", step_id, *event_arguments], env,
                  rerun=f"bash scripts/check_all.sh --only {step_id}")
 
 
@@ -247,19 +274,24 @@ def report(result: Result) -> None:
             print(f"    rerun: {result.rerun}")
     elif result.output.startswith("skipped"):
         print(f"    {result.output}")
+    else:
+        for line in result.output.splitlines():
+            if line.startswith(SHOWN_WHEN_OK) or line.endswith(SHOWN_ENDINGS):
+                print(f"    {line}")
 
 
 def checks(cheap: list[str], contracts: list[str], with_quality: bool, base: str,
            changed: list[str], pr_text: list[Path], roots: list[str]) -> Iterator[Result]:
     """The checks in order, each run when the caller asks for it, so its report comes at once."""
-    for step_id in cheap:
-        yield gate_step(step_id)
-    yield from message_checks(base, pr_text)
-    yield from swift_format(changed, roots)
-    for step_id in contracts:
-        yield gate_step(step_id)
-    if with_quality:
-        yield gate_step(QUALITY_STEP)
+    with pull_request_event(pr_text) as event:
+        for step_id in cheap:
+            yield gate_step(step_id, event)
+        yield from message_checks(base, pr_text)
+        yield from swift_format(changed, roots)
+        for step_id in contracts:
+            yield gate_step(step_id, event)
+        if with_quality:
+            yield gate_step(QUALITY_STEP, event)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -278,7 +310,8 @@ def run_precheck(argv: list[str] | None) -> int:
     parser.add_argument("--quick", action="store_true",
                         help="leave out check_quality.py (its duplication scan takes minutes)")
     parser.add_argument("--pr-text", type=Path, action="append", default=[], metavar="FILE",
-                        help="the title and body you will give `gh pr create`, scanned for attribution")
+                        help="the title and body you will give `gh pr create`: scanned for attribution, and read for\n"
+                             "the `Verification change:` and `Test growth allowance:` lines")
     arguments = parser.parse_args(argv)
     warning = fetch_main()
     base = resolve_base(ROOT)

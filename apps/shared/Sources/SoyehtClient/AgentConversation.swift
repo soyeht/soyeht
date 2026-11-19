@@ -123,6 +123,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
   }
   private var promptBinding: Binding<String> { Binding(get: { prompt }, set: { prompt = $0 }) }
   private var view: AgentPaneView { client.agentPanes[paneId] ?? AgentPaneView() }
+  /// The transcript grouped once per change of the pane, not once per evaluation of this view.
+  private var groupedEntries: [AgentTranscriptEntry] {
+    client.agentPanes.model(paneId)?.entries ?? []
+  }
   private var signIn: AgentSignInState {
     AgentSignInState(
       agent: pane?.agent, authMethods: view.authMethods, failure: view.signInFailure)
@@ -196,7 +200,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
               .font(style.captionFont).foregroundStyle(style.warning)
               .frame(maxWidth: .infinity, alignment: .leading)
           }
-          let entries = AgentTranscriptGrouping.entries(view.messages)
+          let entries = groupedEntries
           ForEach(entries) { entry in transcriptEntry(entry).id(entry.id) }
           AgentSubagentWaitingStatus(entries: entries, style: style)
           Color.clear.frame(height: 1).id(AgentConversationFollow.bottomAnchor)
@@ -238,7 +242,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
       do { try await Task.sleep(for: .milliseconds(AgentTranscriptScroll.restorePassMs)) } catch {
         return
       }
-      let rows = AgentTranscriptGrouping.entries(view.messages).map(\.id)
+      let rows = groupedEntries.map(\.id)
       switch view.scroll.restoration(rowIds: rows) {
       case .bottom: proxy.scrollTo(AgentConversationFollow.bottomAnchor, anchor: .bottom)
       case .row(let id): proxy.scrollTo(id, anchor: .bottom)

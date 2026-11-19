@@ -103,6 +103,20 @@ import Testing
         isVisible: false, permissionId: "permission", elicitationId: "question-2")))
 }
 
+@MainActor @Test func agentReplicaAppliesAnUpdateThatNamesWhoCausedIt() throws {
+  let client = EngineClient(socket: "/tmp/sn-agent-replica-actor/engine.sock")
+  let closer = Actor(role: .human_local, client: "mac")
+  let update = PaneUpdateEvent.v0(
+    AgentMessageUpdate(
+      eventId: "1", at: "2026-09-11T00:00:00Z", actor: closer, paneId: "pane-agent",
+      kind: .agent_message_chunk, generation: 1, seq: "7", localId: "message-1",
+      text: "last words", complete: true))
+  let wire = try JSONDecoder().decode(JsonValue.self, from: JSONEncoder().encode(update))
+  #expect(wire["actor"]["role"].string == "human_local")
+  try client.applyAgentEvent(.paneUpdate, wire)
+  #expect(client.agentPanes["pane-agent"]?.messages.first?.text == "last words")
+}
+
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"

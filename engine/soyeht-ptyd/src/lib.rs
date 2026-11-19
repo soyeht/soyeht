@@ -8,9 +8,9 @@ pub mod io;
 mod pending;
 pub mod pipe_guard;
 mod process;
-pub use process::CLAUDE_CODE_EXECUTABLE;
 #[cfg(windows)]
 pub use process::SYSTEM_ENVIRONMENT;
+pub use process::{CLAUDE_CODE_EXECUTABLE, CODEX_PROMPT_SUGGESTIONS_OFF};
 pub mod pty;
 mod registry;
 pub mod retention;

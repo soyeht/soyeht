@@ -21,6 +21,7 @@ mod harness_sign_in;
 mod held_updates;
 pub mod hooks;
 pub mod idle;
+pub(crate) mod launch_refresh;
 pub mod lifecycle;
 pub mod mcp;
 pub mod methods;
@@ -533,6 +534,9 @@ impl Core {
         Ok(mutation)
     }
 }
+
+#[cfg(test)]
+mod user_update_tests;
 
 #[cfg(test)]
 mod readiness_tests {

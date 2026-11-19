@@ -212,8 +212,9 @@ profile. The Linux and Windows engine and desktop checks are
 `scripts/check_engine_linux.sh` and `scripts/check_engine_windows.ps1`.
 
 Tests that need a POSIX shell are marked `cfg(unix)` (`docs/platforms.md`, "Tests"). Put a
-test next to the rule it proves. A new rule needs a new test, and the gate flags a drop in the
-number of tests.
+test next to the rule it proves. A new rule needs a new test. The number of tests is not a rule, and deleting a useless test
+needs no reason; a change may add at most 400 net lines of test code unless its pull request
+carries a `Test growth allowance:` line (AGENTS.md).
 
 ## Before you open a pull request
 

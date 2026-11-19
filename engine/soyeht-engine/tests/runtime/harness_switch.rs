@@ -461,6 +461,22 @@ fn codex_subagent_activity_and_usage_stay_out_of_the_parent() {
 }
 
 #[test]
+fn codex_2_waits_fold_into_the_subagent_row_too() {
+    let (_rig, _client, _pane, items) = subagent_turn("subagents-codex-2");
+    let rows = subagent_rows(&items);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["subagent"]["status"], "completed");
+    // The wait names no subagent and is reported again with only its status: neither report is
+    // a tool row of the parent.
+    assert!(
+        !items
+            .iter()
+            .any(|item| item["kind"] == "tool" && item["subagentId"].is_null()),
+        "{items:?}"
+    );
+}
+
+#[test]
 fn parallel_subagents_each_keep_their_own_activity() {
     let (_rig, _client, _pane, items) = subagent_turn("subagents-parallel");
     let rows = subagent_rows(&items);

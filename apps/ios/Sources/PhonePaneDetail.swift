@@ -124,7 +124,7 @@ struct PhoneAgentTicker: View {
 
   var body: some View {
     let needsYou = AgentHeaderStatus.needsYou(
-      state: pane.state, view: client.agentPanes[pane.paneId] ?? AgentPaneView())
+      state: pane.state, asking: client.agentPanes.isAsking(pane.paneId))
     HStack(spacing: PaneInteriorMetrics.compactSpacing) {
       AgentPaneTickerView(
         client: client, paneId: pane.paneId, font: .caption.weight(.medium),

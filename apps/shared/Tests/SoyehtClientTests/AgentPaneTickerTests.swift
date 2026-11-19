@@ -95,6 +95,7 @@ private struct RecapSource: AgentTickerSource {
 }
 
 @Test func headerAsksForThePersonOnPermissionsAndWaitingStates() {
-  #expect(AgentHeaderStatus.needsYou(state: .waiting_for_you, view: AgentPaneView()))
-  #expect(!AgentHeaderStatus.needsYou(state: .working, view: AgentPaneView()))
+  #expect(AgentHeaderStatus.needsYou(state: .waiting_for_you, asking: false))
+  #expect(AgentHeaderStatus.needsYou(state: .working, asking: true))
+  #expect(!AgentHeaderStatus.needsYou(state: .working, asking: false))
 }

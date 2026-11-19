@@ -32,6 +32,13 @@ Security.
   root exposes the whole project to it). It runs sandboxed, with no cookies and no storage, can fetch nothing but
   those files (WebRTC and DNS lookups are not covered), and the pane cannot navigate away from it. The page is served again when the engine restarts.
 
+### Fixed
+
+- A Codex pane answers with the default model of your own Codex configuration. The adapter it runs carried a Codex
+  command line too old for the current models, so the first reply was a "model not supported" error. The adapter
+  is now version 2.6.0, installed from the same kind of lockfile; a pane opened before the update moves to it
+  the next time Soyeht starts it. The adapter no longer asks the model for a suggested next message after every turn.
+
 ### Removed
 
 - `soyeht device pair-start` is gone. A pairing is started and approved only in the Soyeht app.
