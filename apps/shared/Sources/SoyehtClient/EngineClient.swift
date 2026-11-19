@@ -79,7 +79,7 @@ public final class EngineClient {
   var terminalGapTexts: [String: String] = [:]
   @ObservationIgnored private var terminalSubscriptionsInFlight: Set<String> = []
   /// One terminal replay at a time on the connection (`TerminalReplayGate`).
-  @ObservationIgnored private let replayGate = TerminalReplayGate()
+  @ObservationIgnored var replayGate = TerminalReplayGate()
   /// Terminals whose output reached no surface, so the surface that claims the pane next starts
   /// without it and must ask for the screen again.
   @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
@@ -339,6 +339,7 @@ public final class EngineClient {
       try responseAttachments.accept(frame)
     case .other(let frame) where frame.kind == FrameKind.terminal:
       if let delivery = try terminalStreams.accept(frame) {
+        if terminalStreams.isReplaying(delivery.paneId) { replayGate.progress(delivery.paneId) }
         deliverTerminalOutput(to: delivery.paneId, bytes: delivery.bytes, reset: false)
       }
     case .other: break
@@ -414,13 +415,14 @@ public final class EngineClient {
       synchronizePaneLayout(workspace)
     case .workspaceClosed: applyWorkspaceClosed(params)
     case .streamReplayStart:
-      if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)),
-        replay.reset
-      {
-        deliverTerminalOutput(to: replay.paneId, bytes: Data(), reset: true)
+      if let replay = try terminalStreams.start(params.decoded(StreamReplayStartEvent.self)) {
+        replayGate.progress(replay.paneId)
+        if replay.reset { deliverTerminalOutput(to: replay.paneId, bytes: Data(), reset: true) }
       }
     case .streamGap:
-      _ = try terminalStreams.gap(params.decoded(StreamGapEvent.self))
+      if let paneId = try terminalStreams.gap(params.decoded(StreamGapEvent.self)) {
+        replayGate.progress(paneId)
+      }
     case .streamReplayDone:
       if let paneId = try terminalStreams.finish(params.decoded(StreamReplayDoneEvent.self)) {
         replayGate.replayEnded(paneId)

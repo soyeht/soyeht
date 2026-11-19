@@ -92,6 +92,8 @@ import Testing
 @MainActor @Test func theTailsOfManyTerminalsAreNeverQueuedTogether() async throws {
   let count = 12
   let (client, model) = try terminals(count)
+  // A busy host must not look like a silent engine: the wait is as long as the test needs.
+  client.replayGate = TerminalReplayGate(timeout: .seconds(600))
   // The views of a grid mount while the connection settles and each asks for its screen.
   client.connected = true
   for index in 0..<count { client.refreshTerminal("t\(index)") }
@@ -157,4 +159,39 @@ import Testing
   gate.replayEnded("b")
   await waiting.value
   #expect(newEnded)
+}
+
+@MainActor @Test func aSilentEngineHoldsTheOtherTerminalsBackOnlyForTheTimeout() async {
+  let gate = TerminalReplayGate(timeout: .milliseconds(50))
+  let turn = await gate.enter()
+  await gate.awaitReplayEnd(of: "a", turn: turn ?? -1)  // No `stream.replay_done` ever comes.
+  gate.leave(turn ?? -1)
+  #expect(await gate.enter() != nil)
+}
+
+@MainActor @Test func aReplayThatKeepsArrivingIsNotGivenUpOnWhateverTheTotalTime() async {
+  let gate = TerminalReplayGate(timeout: .milliseconds(400))
+  let turn = await gate.enter()
+  var given = false
+  let waiting = Task { @MainActor in
+    await gate.awaitReplayEnd(of: "a", turn: turn ?? -1)
+    given = true
+  }
+  // Far longer than the timeout in all, but never silent for the timeout.
+  for _ in 0..<10 {
+    try? await Task.sleep(for: .milliseconds(100))
+    gate.progress("a")
+  }
+  #expect(!given)
+  await waiting.value  // Silent now: the wait ends after the timeout.
+  #expect(given)
+}
+
+@MainActor @Test func aConnectionThatEndsReleasesEverySubscriberWaitingForATurn() async {
+  let gate = TerminalReplayGate()
+  _ = await gate.enter()
+  let waiting = Task { @MainActor in await gate.enter() }
+  await Task.yield()
+  gate.reset()
+  #expect(await waiting.value == nil)
 }

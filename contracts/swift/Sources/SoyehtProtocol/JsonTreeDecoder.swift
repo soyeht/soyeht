@@ -1,5 +1,4 @@
 import Foundation
-import SoyehtProtocol
 
 extension JsonValue {
   /// A typed value read straight from this tree. A frame is parsed to a tree once; a handler

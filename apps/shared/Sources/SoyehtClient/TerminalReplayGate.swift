@@ -19,6 +19,8 @@ import SoyehtProtocol
   private var turns: [CheckedContinuation<Int?, Never>] = []
   private var waiting: (paneId: String, token: UInt64, resume: CheckedContinuation<Void, Never>)?
   private var nextToken: UInt64 = 0
+  /// When the engine last sent anything of the replay being waited for.
+  private var lastProgress = ContinuousClock.now
   /// Replays that ended before the subscriber began to wait for them.
   private var ended: Set<String> = []
   private let timeout: Duration
@@ -48,10 +50,11 @@ import SoyehtProtocol
   /// Called before the subscribe request goes out.
   func expectReplay(of paneId: String) { ended.remove(paneId) }
 
-  /// Waits until the replay of `paneId` has been read, or the engine has been silent for the
-  /// request timeout, which must not hold the other terminals back for ever. After it, the next
-  /// subscribe may queue a second tail (about 4 MiB in all, within the connection's budget).
-  /// A holder of a connection that has ended returns at once.
+  /// Waits until the replay of `paneId` has been read, or the engine has sent nothing of it for
+  /// the timeout, which must not hold the other terminals back for ever. The timeout is one of no
+  /// progress (`progress`), not of total time: a replay that takes long to read because the main
+  /// actor is busy is still being read, and sending the next subscribe then would queue a second
+  /// tail behind it. A holder of a connection that has ended returns at once.
   func awaitReplayEnd(of paneId: String, turn: Int) async {
     guard turn == epoch else { return }
     if ended.remove(paneId) != nil { return }
@@ -61,12 +64,28 @@ import SoyehtProtocol
     }
     nextToken &+= 1
     let token = nextToken
-    let timer = Task { [weak self, timeout] in
-      do { try await Task.sleep(for: timeout) } catch { return }  // Cancelled: the replay ended.
-      self?.stopWaiting(token)
+    lastProgress = .now
+    let timer = Task { [weak self] in
+      while let remaining = self?.timeLeft(token) {
+        guard remaining > .zero else {
+          self?.stopWaiting(token)
+          return
+        }
+        do { try await Task.sleep(for: remaining) } catch { return }  // Cancelled: it ended.
+      }
     }
     await withCheckedContinuation { waiting = (paneId, token, $0) }
     timer.cancel()
+  }
+
+  /// A frame of the replay of `paneId` was read: the engine is still sending it.
+  func progress(_ paneId: String) {
+    if waiting?.paneId == paneId { lastProgress = .now }
+  }
+
+  private func timeLeft(_ token: UInt64) -> Duration? {
+    guard let current = waiting, current.token == token else { return nil }
+    return lastProgress + timeout - .now
   }
 
   func replayEnded(_ paneId: String) {
