@@ -411,10 +411,10 @@ impl State {
         items: Vec<soyeht_protocol::TranscriptMessage>,
         next_cursor: Option<String>,
     ) -> Vec<Effect> {
-        if let Some(view) = self.agents.get_mut(pane_id) {
-            if let Err(error) = view.merge_transcript(items, next_cursor) {
-                self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
-            }
+        if let Some(view) = self.agents.get_mut(pane_id)
+            && let Err(error) = view.merge_transcript(items, next_cursor)
+        {
+            self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
         }
         Vec::new()
     }
