@@ -645,7 +645,11 @@ public final class EngineClient {
     terminalStreams.remove(paneId)
     replayGate.replayEnded(paneId)
   }
-  func hasTerminalSurface(_ paneId: String) -> Bool { terminalSinks.hasSink(paneId) }
+  /// Whether something shows the pane's output: a surface that claimed it, or the one sink that
+  /// follows the selection (a paired device's screen, which a Mac build of the client also has).
+  func hasTerminalSurface(_ paneId: String) -> Bool {
+    terminalSinks.hasSink(paneId) || (paneId == selectedPaneId && terminalOutput != nil)
+  }
 
   func discardTerminalPane(_ paneId: String) {
     terminalStreams.remove(paneId)
