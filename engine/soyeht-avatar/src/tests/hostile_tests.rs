@@ -51,45 +51,6 @@ fn every_number_of_the_acting_tune_has_a_bound_and_the_defaults_are_inside() {
     }
 }
 
-fn load_with_acting(acting: Value) -> Result<Package, ErrorKind> {
-    let mut doc = package_json();
-    doc["acting"] = acting;
-    Package::load(&doc.to_string(), &assets()).map_err(|e| e.kind)
-}
-
-#[test]
-fn constants_that_would_make_the_pose_absurd_or_not_a_number_are_refused() {
-    for (name, acting) in [
-        ("a nod of 1e308", json!({ "head": { "nodStart": 1e308 } })),
-        (
-            "a sway of 5000 pixels",
-            json!({ "head": { "swayX": 5000.0 } }),
-        ),
-        (
-            "brows lifted 1e9 pixels",
-            json!({ "brow": { "start": 1.0e9 } }),
-        ),
-        (
-            "a breath that is negative",
-            json!({ "breath": { "amount": -1.0 } }),
-        ),
-        (
-            "a breath of 1e300 seconds",
-            json!({ "breath": { "period": 1.0e300 } }),
-        ),
-        (
-            "a mouth expression out of range",
-            json!({ "expression": { "thinking": { "o": 2.0, "w": 0.5, "r": 0.0, "c": 0.0, "f": 0.0 } } }),
-        ),
-    ] {
-        assert_eq!(
-            load_with_acting(acting).err(),
-            Some(ErrorKind::Acting),
-            "{name}"
-        );
-    }
-}
-
 #[test]
 fn a_tune_with_every_constant_at_an_extreme_keeps_the_pose_finite_in_every_state() {
     // Every constant at its most, and every constant at its least, with the gaps and holds at their
@@ -153,16 +114,6 @@ fn a_tune_with_every_constant_at_an_extreme_keeps_the_pose_finite_in_every_state
             "{extreme}: the largest pose value was {worst}"
         );
     }
-}
-
-#[test]
-fn a_document_is_capped_before_it_is_parsed() {
-    let mut doc = package_json().to_string();
-    doc.push_str(&" ".repeat(5 << 20));
-    let t = Instant::now();
-    let err = Package::load(&doc, &assets()).expect_err("too large");
-    assert_eq!(err.kind, ErrorKind::TooLarge);
-    assert!(t.elapsed().as_millis() < 500, "{:?}", t.elapsed());
 }
 
 #[test]

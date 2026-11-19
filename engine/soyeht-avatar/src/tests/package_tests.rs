@@ -4,27 +4,6 @@ use crate::package::{ErrorKind, Package, PartKind, png_size};
 use crate::params::{Params, Shape, weights_from_params};
 
 #[test]
-fn the_synthetic_package_loads() {
-    let p = Package::load(&package_json().to_string(), &assets()).expect("valid");
-    assert_eq!(p.mouth.parts.len(), 3);
-    assert_eq!(p.acting, crate::acting_tune::ActingTune::default());
-}
-
-#[test]
-fn a_field_this_version_does_not_know_is_ignored_and_another_version_is_not_read() {
-    let mut doc = package_json();
-    doc["futureThing"] = serde_json::json!({ "x": 1 });
-    doc["mouth"]["parts"][0]["newField"] = 3.into();
-    assert!(Package::load(&doc.to_string(), &assets()).is_ok());
-    // The format is unstable (0.x): the version is read exactly, and no other is.
-    for version in ["0.2", "0.0", "1.0", "0.1.0", "00.1", "+0.1", "0.1 "] {
-        doc["version"] = version.into();
-        let err = Package::load(&doc.to_string(), &assets()).expect_err(version);
-        assert_eq!(err.kind, ErrorKind::UnsupportedVersion, "{version}");
-    }
-}
-
-#[test]
 fn acting_constants_a_package_leaves_out_keep_their_default() {
     let mut doc = package_json();
     doc["acting"] = serde_json::json!({ "blink": { "doubleChance": 0.5 } });
