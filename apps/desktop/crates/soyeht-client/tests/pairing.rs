@@ -529,6 +529,22 @@ fn an_engine_older_than_the_notice_is_not_blamed_and_another_failure_is_said() {
     rig.finish();
 }
 
+/// The person confirms the change: the call that asks for a new window with the confirmation.
+fn confirm_the_tailnet(rig: &mut Rig) -> Value {
+    let effects = rig.state.confirm_tailnet();
+    rig.dispatch(effects);
+    rig.remote.expect("device.pair.start")
+}
+
+/// The engine opens the new window, and nothing waits for the person any more.
+fn the_confirmed_window_opens(rig: &mut Rig, confirm: &Value) {
+    rig.remote.reply(
+        confirm,
+        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
+    );
+    rig.settle(|state| !state.pairing.tailnet_changed());
+}
+
 #[test]
 fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent_only_then() {
     let mut rig = Rig::connected("pair-tailnet", &["pairing-code"], json!([]));
@@ -544,18 +560,12 @@ fn a_changed_tailnet_is_confirmed_with_a_new_window_and_the_confirmation_is_sent
     );
     rig.settle(|state| state.pairing.tailnet_changed());
     // The person confirms: a new window is asked for with `confirmTailnet`.
-    let effects = rig.state.confirm_tailnet();
-    rig.dispatch(effects);
-    let confirm = rig.remote.expect("device.pair.start");
+    let confirm = confirm_the_tailnet(&mut rig);
     assert_eq!(confirm["params"]["confirmTailnet"], true);
     // It names the change the person was shown, and a second press while it is awaited sends nothing.
     assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-1");
     assert!(rig.state.confirm_tailnet().is_empty());
-    rig.remote.reply(
-        &confirm,
-        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
-    );
-    rig.settle(|state| !state.pairing.tailnet_changed());
+    the_confirmed_window_opens(&mut rig, &confirm);
     assert!(matches!(rig.state.pairing.phase(), Phase::Showing(_)));
     // Nothing waits any more, so a second press sends nothing.
     assert!(rig.state.confirm_tailnet().is_empty());
@@ -579,15 +589,9 @@ fn an_open_sheet_hears_of_a_changed_tailnet_from_the_engine() {
             .and_then(|change| change.name.as_deref()),
         Some("moved.example")
     );
-    let effects = rig.state.confirm_tailnet();
-    rig.dispatch(effects);
-    let confirm = rig.remote.expect("device.pair.start");
+    let confirm = confirm_the_tailnet(&mut rig);
     assert_eq!(confirm["params"]["confirmTailnetPin"], "pin-7", "{confirm}");
-    rig.remote.reply(
-        &confirm,
-        json!({"code": "NEW", "expiresAt": "2999-01-01T00:00:00Z", "uri": LINK}),
-    );
-    rig.settle(|state| !state.pairing.tailnet_changed());
+    the_confirmed_window_opens(&mut rig, &confirm);
     rig.finish();
 }
 
