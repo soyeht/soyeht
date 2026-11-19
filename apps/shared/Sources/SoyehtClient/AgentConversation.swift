@@ -184,6 +184,10 @@ extension AgentConversationView where HarnessControl == EmptyView {
     .onChange(of: isVisible, initial: true) { _, shown in
       client.agentPaneShown(viewer, paneId, shown)
     }
+    .onChange(of: paneId) { old, new in
+      client.agentPaneShown(viewer, old, false)
+      client.agentPaneShown(viewer, new, isVisible)
+    }
     .onDisappear {
       client.agentPaneShown(viewer, paneId, false)
       if !prompt.isEmpty { client.setDraft(paneId, active: false) }

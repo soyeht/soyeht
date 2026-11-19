@@ -187,6 +187,10 @@ fn the_cursor_after_a_page_is_the_older_of_the_one_held_and_the_pages() {
     for case in cases("agent-transcript", "cursor") {
         let mut view = AgentView::default();
         view.cards.older = case["held"].as_str().map(str::to_owned);
+        if let Some(newest) = case["newestHeld"].as_u64() {
+            view.merge(window_message(&json!("m"), newest as usize))
+                .unwrap();
+        }
         view.merge_transcript(Vec::new(), case["page"].as_str().map(str::to_owned))
             .unwrap();
         assert_eq!(
@@ -195,5 +199,22 @@ fn the_cursor_after_a_page_is_the_older_of_the_one_held_and_the_pages() {
             "{}",
             case["name"]
         );
+    }
+}
+
+#[test]
+fn a_pane_reads_the_newest_page_when_the_vector_says_it_does() {
+    let slack = crate::testing::vector("agent-transcript")["windowLimits"]["slack"]
+        .as_u64()
+        .unwrap() as usize;
+    for case in cases("agent-transcript", "refill") {
+        let wants = held::wants_newest_page(
+            case["shown"] == true,
+            case["stale"] == true,
+            case["held"].as_u64().unwrap() as usize,
+            case["older"] == true,
+            slack,
+        );
+        assert_eq!(wants, case["expect"] == true, "{}", case["name"]);
     }
 }

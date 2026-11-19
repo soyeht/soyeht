@@ -1,6 +1,8 @@
 use super::*;
+use crate::Effect;
 use crate::testing::{cases, pane_json};
 use serde_json::{Value, json};
+use soyeht_protocol::EventName;
 
 fn message_json(id: &str, seq: &str, kind: &str, text: &str) -> Value {
     json!({"localId": id, "generation": 1, "seq": seq, "role": "assistant", "kind": kind,
@@ -313,4 +315,38 @@ fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
         held(&state, "p"),
         soyeht_protocol::client_policy::CAPS_OFFSCREEN_MESSAGES
     );
+}
+
+#[test]
+fn a_turn_that_ends_while_a_pane_is_not_shown_is_read_when_it_is_shown() {
+    let mut state = crate::State::default();
+    state.apply(crate::Event::Connected(crate::Snapshot {
+        workspaces: vec![
+            crate::testing::workspace("a"),
+            crate::testing::workspace("b"),
+        ],
+        panes: vec![crate::testing::pane("q", "b", "agent")],
+        ..crate::Snapshot::default()
+    }));
+    let ended = |state: &mut crate::State| {
+        state
+            .agent_notification(EventName::PaneTurnEnded, json!({"paneId": "q"}))
+            .unwrap()
+    };
+    assert!(
+        ended(&mut state).is_empty(),
+        "a pane not shown skips the reload"
+    );
+    assert_eq!(state.refill_transcript("q"), None);
+    state.select_workspace("b");
+    assert!(
+        state.refill_transcript("q").is_some(),
+        "short and complete, it is read all the same"
+    );
+    assert_eq!(
+        state.refill_transcript("q"),
+        None,
+        "once each time it is shown"
+    );
+    assert_eq!(ended(&mut state), [Effect::LoadTranscript("q".into())]);
 }

@@ -46,10 +46,18 @@ pub(super) fn light(mut message: TranscriptMessage) -> TranscriptMessage {
 /// The index before which a message is let go of, unless it is still needed: the newest `limit`
 /// messages are kept, and a person who scrolled back also keeps the half of a window before the
 /// message where they were, in view or left behind. A message that is not held counts as the
-/// newest.
-fn start(messages: &[TranscriptMessage], limit: usize, viewing: Option<&str>) -> usize {
+/// newest, and so does one further than `forget_beyond` messages from it: a pane that is not shown
+/// forgets such a place, so an agent working in a hidden tab does not grow it.
+fn start(
+    messages: &[TranscriptMessage],
+    limit: usize,
+    viewing: Option<&str>,
+    forget_beyond: Option<usize>,
+) -> usize {
     let newest = messages.len().saturating_sub(limit);
-    let at = viewing.and_then(|id| messages.iter().position(|held| held.local_id == id));
+    let at = viewing
+        .and_then(|id| messages.iter().position(|held| held.local_id == id))
+        .filter(|index| forget_beyond.is_none_or(|far| messages.len() - index <= far));
     at.map_or(newest, |index| newest.min(index.saturating_sub(limit / 2)))
 }
 
@@ -70,17 +78,39 @@ fn is_needed(message: &TranscriptMessage, newest_usage: bool, in_latest_turn: bo
     !message.complete && message.kind != TranscriptKind::Terminal
 }
 
-/// The cursor of "Load earlier" after a page: the older of the one held and the page's, so a
-/// reload of the newest page does not move it past messages the replica does not hold.
-fn older(held: Option<&str>, page: Option<String>) -> Option<String> {
-    let (page, held) = (page?, held);
-    match (
+/// The cursor of "Load earlier" after a page: the older of the one held and the page's when the
+/// page reaches the newest message held, so a reload of the newest page does not move it past
+/// messages the replica does not hold. A page that does not reach it (a long disconnect missed more
+/// than a page) takes the page's cursor: the messages between are fetched as earlier ones.
+fn older(held: Option<&str>, page: Option<String>, newest_held: Option<u64>) -> Option<String> {
+    let page = page?;
+    let seqs = (
         held.and_then(|held| held.parse::<u64>().ok()),
         page.parse::<u64>(),
-    ) {
-        (Some(held_seq), Ok(page_seq)) if held_seq <= page_seq => held.map(str::to_owned),
+    );
+    match (seqs, newest_held) {
+        ((Some(held_seq), Ok(page_seq)), Some(newest)) if page_seq <= newest + 1 => {
+            if held_seq <= page_seq {
+                held.map(str::to_owned)
+            } else {
+                Some(page)
+            }
+        }
         _ => Some(page),
     }
+}
+
+/// Whether a pane reads the newest page: one that is shown and missed a turn while it was not (the
+/// person's prompts and the messages of other agents reach a client with that reload), or holds
+/// less than a page with more at the engine.
+pub(super) fn wants_newest_page(
+    shown: bool,
+    stale: bool,
+    held: usize,
+    has_older: bool,
+    page: usize,
+) -> bool {
+    shown && (stale || (has_older && held < page))
 }
 
 impl AgentView {
@@ -106,14 +136,24 @@ impl AgentView {
         }
     }
 
-    /// Whether a pane that is shown holds less than a page while the engine has more: it reads the
-    /// newest page, once each time it is shown.
+    /// A turn ended while the pane was not shown: it reads the newest page when it is shown.
+    pub(crate) fn mark_stale(&mut self) {
+        self.stale = true;
+    }
+
+    /// Whether the pane reads the newest page, once each time it is shown.
     pub(crate) fn take_refill(&mut self) -> bool {
-        let wanted = self.shown
-            && !self.refilled
-            && self.cards.older.is_some()
-            && self.messages.len() < PAGE_SIZE_TRANSCRIPT as usize;
+        let page = PAGE_SIZE_TRANSCRIPT as usize;
+        let wanted = !self.refilled
+            && wants_newest_page(
+                self.shown,
+                self.stale,
+                self.messages.len(),
+                self.cards.older.is_some(),
+                page,
+            );
         self.refilled |= wanted;
+        self.stale &= !wanted;
         wanted
     }
 
@@ -123,7 +163,8 @@ impl AgentView {
         page: Vec<TranscriptMessage>,
         next: Option<String>,
     ) -> Result<()> {
-        self.cards.older = older(self.cards.older.as_deref(), next);
+        let newest = self.messages.last().and_then(|last| last.seq.parse().ok());
+        self.cards.older = older(self.cards.older.as_deref(), next, newest);
         self.merge_page(page)
     }
 
@@ -139,7 +180,13 @@ impl AgentView {
         if self.messages.len() <= limit + if force { 0 } else { limits.slack } {
             return;
         }
-        let start = start(&self.messages, limit, self.viewing.as_deref());
+        let forget_beyond = (!self.shown).then_some(limits.held);
+        let start = start(
+            &self.messages,
+            limit,
+            self.viewing.as_deref(),
+            forget_beyond,
+        );
         if start == 0 {
             return;
         }
@@ -154,12 +201,21 @@ impl AgentView {
                 message.role == TranscriptRole::User && message.kind == TranscriptKind::Message
             })
             .unwrap_or(0);
+        let needed = |index: usize, message: &TranscriptMessage| {
+            is_needed(message, newest_usage == Some(index), index >= turn_start)
+        };
+        // Nothing to rebuild when everything before the start is still needed.
+        if self.messages[..start]
+            .iter()
+            .enumerate()
+            .all(|(index, message)| needed(index, message))
+        {
+            return;
+        }
         let mut after_let_go = false;
         let mut cursor = None;
         for (index, message) in std::mem::take(&mut self.messages).into_iter().enumerate() {
-            if index < start
-                && !is_needed(&message, newest_usage == Some(index), index >= turn_start)
-            {
+            if index < start && !needed(index, &message) {
                 self.revisions.remove(&message.local_id);
                 after_let_go = true;
                 continue;

@@ -110,7 +110,8 @@ public struct AgentPaneView: Sendable {
       revisions = [:]
       nextTranscriptCursor = page.nextCursor
     } else {
-      nextTranscriptCursor = AgentTranscriptWindow.older(nextTranscriptCursor, page.nextCursor)
+      nextTranscriptCursor = AgentTranscriptWindow.older(
+        nextTranscriptCursor, page.nextCursor, newestHeld: messages.last.flatMap { UInt64($0.seq) })
     }
     merge(page.items)
     trimToWindow()

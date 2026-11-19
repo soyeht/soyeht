@@ -66,7 +66,14 @@ public final class AgentPaneStore {
   /// reconnect drops the models while the views stay mounted and never report again.
   @ObservationIgnored private var viewers: [String: Set<ObjectIdentifier>] = [:]
 
+  /// The panes a turn ended in while no view showed them: what the turn brought (the person's
+  /// prompt, the messages of other agents) comes with the reload that was skipped.
+  @ObservationIgnored private var stale: Set<String> = []
+
   public init() {}
+
+  func markStale(_ paneId: String) { stale.insert(paneId) }
+  func takeStale(_ paneId: String) -> Bool { stale.remove(paneId) != nil }
 
   /// Whether a view shows the pane, which sets how much of its conversation the replica holds.
   func isShown(_ paneId: String) -> Bool { viewers[paneId]?.isEmpty == false }

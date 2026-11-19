@@ -59,8 +59,21 @@ import Testing
 
 @Test func theCursorAfterAPageIsTheOlderOfTheOneHeldAndThePages() throws {
   for item in ContractVector.cases(try ContractVector.load("agent-transcript"), "cursor") {
-    let cursor = AgentTranscriptWindow.older(item["held"].string, item["page"].string)
+    let newest = item["newestHeld"].double.map { UInt64($0) }
+    let cursor = AgentTranscriptWindow.older(
+      item["held"].string, item["page"].string, newestHeld: newest)
     #expect(cursor == item["expect"].string, "\(item["name"].string ?? "")")
+  }
+}
+
+@Test func aPaneReadsTheNewestPageWhenTheVectorSaysItDoes() throws {
+  let vector = try ContractVector.load("agent-transcript")
+  for item in ContractVector.cases(vector, "refill") {
+    let wants = AgentTranscriptWindow.wantsNewestPage(
+      shown: item["shown"].bool == true, stale: item["stale"].bool == true,
+      held: Int(item["held"].double ?? 0), hasOlder: item["older"].bool == true,
+      page: Int(vector["windowLimits"]["slack"].double ?? 0))
+    #expect(wants == item["expect"].bool, "\(item["name"].string ?? "")")
   }
 }
 

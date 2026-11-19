@@ -32,7 +32,9 @@ not looking at.
     nothing they can see is let go of and the window follows them. That holds for a pane that is not shown
     too: the place a person left a pane (`AgentTranscriptScroll.place`, the oldest message the desktop view
     draws) is where they come back to, so it is kept with the smaller window around it. What is read back
-    to stays held until the person returns to the newest message.
+    to stays held until the person returns to the newest message. A pane that is not shown forgets a place
+    further from the newest than `heldMessages`, so an agent that works all day in a hidden tab does not
+    grow it for ever: the person comes back at the newest.
   - Never let go of, in the latest turn (after the person's last message): a reply still streaming, a
     subagent that has not finished and a tool call that has not (the permission or question that waits on a
     tool call is read from the request the replica keeps apart, and what it points at in the transcript is
@@ -47,10 +49,15 @@ not looking at.
     kept after the last one let go of, so the engine's next page starts where the replica stops and
     anything let go of, a pinned message included, comes back through the same paging. A page of the newest
     messages (a turn ended, a pane shown again) does not move the cursor past what the replica does not
-    hold: the cursor is the older of the one held and the page's.
-  - A pane that is shown again holding less than a page, with more at the engine, reads the newest page
-    once. A pane that is not shown does not read the transcript when a turn ends; the events it keeps
-    receiving keep it current.
+    hold: the cursor is the older of the one held and the page's when the page reaches the newest message
+    held (its oldest message is no newer than the one after it). A page that does not reach it, because a
+    long disconnect missed more than a page, takes the page's cursor, so the messages between are fetched
+    as earlier ones and no gap is left.
+  - A pane that is not shown does not read the transcript when a turn ends, but it is marked stale: the
+    person's prompts, queued prompts and other agents' messages reach a client only with that reload. A
+    pane that is shown again reads the newest page once if it is stale, whatever it holds, or if it holds
+    less than a page with more at the engine (`refill` in the vector). The events it receives meanwhile
+    keep the rest current.
 - **Payload is dropped on ingest.** A tool call keeps its title, kind, status and locations, which the
   views and the ticker read. `content`, `rawInput` and `rawOutput` are dropped when a message is merged,
   from an update or from a page, on every client. No view and no copy action reads them (Swift

@@ -219,13 +219,13 @@ extension EngineClient {
   /// again with less than a page, and more at the engine, reads the newest page.
   func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
     guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
+    let stale = shown && agentPanes.takeStale(paneId)
     guard let view = agentPanes[paneId] else { return }
     if shown {
-      if view.messages.count < Int(ClientPolicy.pageSizeTranscript), view.hasOlderMessages,
-        agentTranscriptLoadsInFlight[paneId] == nil
-      {
-        refreshAgent(paneId)
-      }
+      let wants = AgentTranscriptWindow.wantsNewestPage(
+        shown: true, stale: stale, held: view.messages.count, hasOlder: view.hasOlderMessages,
+        page: Int(ClientPolicy.pageSizeTranscript))
+      if wants, stale || agentTranscriptLoadsInFlight[paneId] == nil { refreshAgent(paneId) }
     } else if view.messages.count > ClientPolicy.capsOffscreenMessages {
       agentPanes.update(paneId) { $0.trimToWindow(force: true) }
     }
@@ -338,6 +338,8 @@ extension EngineClient {
       // A pane that is not shown is read again when it is shown.
       if agentPanes.isShown(event.paneId) {
         refreshAgent(event.paneId, replacing: false)
+      } else {
+        agentPanes.markStale(event.paneId)
       }
     case .paneSessionLost:
       let event = try params.decoded(PaneSessionLostEvent.self)

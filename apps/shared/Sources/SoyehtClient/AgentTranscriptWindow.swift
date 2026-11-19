@@ -21,11 +21,15 @@ enum AgentTranscriptWindow {
   /// The index before which a message is let go of, unless it is still needed: the newest
   /// `limit` messages are kept, and a person who scrolled back also keeps the half of a window
   /// before the message where they were, in view or left behind. A message that is not held
-  /// counts as the newest.
-  static func start(_ messages: [TranscriptMessage], limit: Int, viewing: String?) -> Int {
+  /// counts as the newest, and so does one further than `forgetBeyond` messages from it: a pane
+  /// that is not shown forgets such a place, so an agent working in a hidden tab does not grow it.
+  static func start(
+    _ messages: [TranscriptMessage], limit: Int, viewing: String?, forgetBeyond: Int? = nil
+  ) -> Int {
     let newest = max(0, messages.count - limit)
     guard let viewing, let index = messages.firstIndex(where: { place($0) == viewing })
     else { return newest }
+    if let forgetBeyond, messages.count - index > forgetBeyond { return newest }
     return min(newest, max(0, index - limit / 2))
   }
 
@@ -47,12 +51,25 @@ enum AgentTranscriptWindow {
     return !message.complete && message.kind != .terminal
   }
 
-  /// The cursor of "Load earlier" after a page: the older of the one held and the page's, so a
-  /// reload of the newest page does not move it past messages the replica does not hold.
-  static func older(_ held: String?, _ page: String?) -> String? {
+  /// The cursor of "Load earlier" after a page: the older of the one held and the page's when the
+  /// page reaches the newest message held, so a reload of the newest page does not move it past
+  /// messages the replica does not hold. A page that does not reach it (a long disconnect missed
+  /// more than a page) takes the page's cursor: the messages between are fetched as earlier ones.
+  static func older(_ held: String?, _ page: String?, newestHeld: UInt64?) -> String? {
     guard let page else { return nil }
-    guard let held, let heldSeq = UInt64(held), let pageSeq = UInt64(page) else { return page }
+    guard let held, let heldSeq = UInt64(held), let pageSeq = UInt64(page),
+      let newestHeld, pageSeq <= newestHeld + 1
+    else { return page }
     return heldSeq <= pageSeq ? held : page
+  }
+
+  /// Whether a pane reads the newest page: a pane that is shown and missed a turn while it was not
+  /// (the person's prompts and the messages of other agents reach a client with that reload), or
+  /// holds less than a page with more at the engine.
+  static func wantsNewestPage(shown: Bool, stale: Bool, held: Int, hasOlder: Bool, page: Int)
+    -> Bool
+  {
+    shown && (stale || (hasOlder && held < page))
   }
 }
 
@@ -87,16 +104,20 @@ extension AgentPaneView {
   ) {
     let limit = shown ? limits.held : limits.offscreen
     guard messages.count > (force ? limit : limit + limits.slack) else { return }
-    let start = AgentTranscriptWindow.start(messages, limit: limit, viewing: viewing)
+    let start = AgentTranscriptWindow.start(
+      messages, limit: limit, viewing: viewing, forgetBeyond: shown ? nil : limits.held)
     let newestUsage = messages.lastIndex { $0.kind == .usage }
     let turnStart = messages.lastIndex { $0.role == .user && $0.kind == .message } ?? 0
+    func needed(_ index: Int) -> Bool {
+      AgentTranscriptWindow.isNeeded(
+        messages[index], at: index, newestUsage: newestUsage, turnStart: turnStart)
+    }
+    // Nothing to rebuild when everything before the start is still needed.
+    guard (0..<start).contains(where: { !needed($0) }) else { return }
     var kept: [TranscriptMessage] = []
     var lastLetGo: Int?
     for (index, message) in messages.enumerated() {
-      if index < start,
-        !AgentTranscriptWindow.isNeeded(
-          message, at: index, newestUsage: newestUsage, turnStart: turnStart)
-      {
+      if index < start, !needed(index) {
         lastLetGo = index
         revisions[message.localId] = nil
       } else {

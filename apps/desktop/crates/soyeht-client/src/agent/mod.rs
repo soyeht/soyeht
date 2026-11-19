@@ -71,6 +71,8 @@ pub struct AgentView {
     viewing: Option<String>,
     /// Whether the newest page was read again since the pane was shown.
     refilled: bool,
+    /// A turn ended while the pane was not shown.
+    stale: bool,
     /// How long the running turn has been going.
     pub turn: TurnClock,
     /// The request the agent is waiting on, if any.

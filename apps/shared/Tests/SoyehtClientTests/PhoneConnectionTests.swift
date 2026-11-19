@@ -136,6 +136,11 @@
       reader.panes.contains { $0.paneId == agent }
     }
     reader.select(agent)
+    // Neither client has a view, which is what shows a pane: the prompt a client did not send comes
+    // with the reload at the end of a turn, which a pane that is not shown skips.
+    let viewers = (local: AgentPaneViewer(), reader: AgentPaneViewer())
+    local.agentPaneShown(viewers.local, agent, true)
+    reader.agentPaneShown(viewers.reader, agent, true)
     reader.setAgentConfig(agent, configId: "model", value: .v0("model-b"))
     try await phoneWait("remote model selection did not converge") {
       [local, reader].allSatisfy {

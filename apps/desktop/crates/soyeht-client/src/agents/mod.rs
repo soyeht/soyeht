@@ -533,16 +533,18 @@ impl State {
         Ok(Vec::new())
     }
 
-    fn reload_shown_transcript(&self, params: &Value) -> Vec<Effect> {
-        let shown = params
+    /// The turn that ended is read now when the pane is shown, and when it is shown otherwise.
+    fn reload_shown_transcript(&mut self, params: &Value) -> Vec<Effect> {
+        let view = params
             .get("paneId")
             .and_then(Value::as_str)
-            .and_then(|id| self.agents.get(id))
-            .is_some_and(AgentView::is_shown);
-        if shown {
-            self.reload_transcript(params)
-        } else {
-            Vec::new()
+            .and_then(|id| self.agents.get_mut(id));
+        match view {
+            Some(view) if !view.is_shown() => {
+                view.mark_stale();
+                Vec::new()
+            }
+            _ => self.reload_transcript(params),
         }
     }
 
