@@ -118,7 +118,7 @@ impl Rig {
             engine
                 .args(["--listen", "127.0.0.1:0", "--data-dir"])
                 .arg(&self.path)
-                .env("PATH", test_path(&self.path))
+                .env("PATH", self.engine_path())
                 .env("ZDOTDIR", &self.path)
                 // Usage sources read only the rig's fakes, never the machine's.
                 .env("SOYEHT_TEST_USAGE_READER_DIR", self.usage_readers())

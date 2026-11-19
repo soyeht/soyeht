@@ -442,7 +442,8 @@ fn persistent_per_pane_poll_failure_does_not_starve_the_next_agent() {
         thread::sleep(Duration::from_millis(20));
     }
     fs::remove_file(marker).unwrap();
-    assert_eq!(process_instances(&rig).len(), 1);
+    // The stopped agent's process is closed on a tick after the pane reads dead.
+    assert_open_processes(&rig, 1);
     assert!(
         client.call("pane.transcript", json!({"paneId":faulted}))["items"]
             .as_array()
