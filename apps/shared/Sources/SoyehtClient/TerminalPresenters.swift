@@ -88,7 +88,19 @@ extension EngineClient: TerminalStreamControl {
   }
   func hasStream(_ paneId: String) -> Bool { terminalStreams.contains(paneId) }
   func isShownAlone(_ paneId: String) -> Bool { terminalOutput != nil && selectedPaneId == paneId }
-  func subscribeStream(_ paneId: String) async throws { try await subscribe(paneId) }
+  func subscribeStream(_ paneId: String) async throws {
+    try await subscribeWithoutFailingTheSession(paneId)
+  }
+
+  /// A terminal the engine refuses, because it closed since the pane list was read, does not end
+  /// the session: the failure is logged by its kind and the next terminal is subscribed.
+  func subscribeWithoutFailingTheSession(_ paneId: String) async throws {
+    do {
+      try await subscribe(paneId)
+    } catch ClientFailure.remote(let kind, _, _) {
+      clientLogger.error("Terminal subscribe refused: \(kind, privacy: .public)")
+    }
+  }
   func unsubscribeStream(_ paneId: String) async throws {
     _ = try await request(.paneStreamUnsubscribe, .object(["paneId": .string(paneId)]))
   }
@@ -118,20 +130,39 @@ extension EngineClient: TerminalStreamControl {
 
   /// The step of a session after its snapshot, handshake and subscriptions: the connection is
   /// declared up and every surface that shows a pane gets its content. Both platforms take it,
-  /// the Mac for every terminal and a paired device for those on screen.
+  /// the Mac for the terminals it has a surface for and a paired device for those on screen.
+  ///
+  /// The selected pane comes first, then the other terminals of the workspace on screen, then the
+  /// surfaces of other workspaces. Every subscribe waits for the previous replay to be read
+  /// (`TerminalReplayGate`), so the engine never queues more than one tail for the connection, and
+  /// no replay of up to 2 MiB parsed on the main actor waits behind fifty of them. A terminal with
+  /// no surface yet is not subscribed: its output would go nowhere. It asks for its screen when
+  /// its surface appears.
   func settleConnection(followsEveryTerminal: Bool = EngineClient.followsEveryTerminal) async throws
   {
     connectionRevision &+= 1
     connected = true
     connectionText = ActiveProfile.values.connectedText
     if selectedPaneId == nil { selectedPaneId = panes.first?.paneId }
-    if followsEveryTerminal {
-      // The tmux-style Mac surface keeps every terminal current, including hidden workspaces.
-      for pane in panes where pane.mode == .terminal { try await subscribe(pane.paneId) }
-    } else {
+    guard followsEveryTerminal else {
       // A paired device follows its selected terminal and the terminals its views show.
       try await subscribeShownTerminals()
+      try await loadSelectedPane()
+      return
     }
+    // The tmux-style Mac surface keeps every terminal it has current, including hidden ones.
+    let (shown, others) = macTerminalsToFollow()
+    // `macTerminalsToFollow` puts the selected terminal first when it has a surface.
+    let selected = shown.first { $0 == selectedPaneId }
+    if let selected { try await subscribeWithoutFailingTheSession(selected) }
+    try await loadSelectedPane()
+    // A pane that was subscribed meanwhile (the person clicked it) is not replayed again.
+    for paneId in shown.filter({ $0 != selected }) + others where connected && !hasStream(paneId) {
+      try await subscribeWithoutFailingTheSession(paneId)
+    }
+  }
+
+  private func loadSelectedPane() async throws {
     guard let pane = selectedPane else { return }
     switch pane.mode {
     case .agent:
@@ -142,12 +173,25 @@ extension EngineClient: TerminalStreamControl {
     }
   }
 
+  /// The terminals the Mac has a surface for: those of the selected workspace, the selected pane
+  /// first, and the others.
+  private func macTerminalsToFollow() -> (shown: [String], others: [String]) {
+    let workspaceId = selectedPane?.workspaceId
+    let surfaces = panes.filter { $0.mode == .terminal && hasTerminalSurface($0.paneId) }
+    var shown = surfaces.filter { $0.workspaceId == workspaceId }.map(\.paneId)
+    let others = surfaces.filter { $0.workspaceId != workspaceId }.map(\.paneId)
+    if let selected = selectedPaneId, let index = shown.firstIndex(of: selected) {
+      shown.insert(shown.remove(at: index), at: 0)
+    }
+    return (shown, others)
+  }
+
   /// After the snapshot of a connection: the selected terminal and every terminal a view
   /// presents get their streams. The device subscribes by what is on screen, since the views of
   /// panes that the reconnect did not remove stay where they are and never mount again.
   func subscribeShownTerminals() async throws {
     if let selected = selectedPaneId, isTerminal(selected), !hasStream(selected) {
-      try await subscribe(selected)
+      try await subscribeWithoutFailingTheSession(selected)
     }
     try await terminalPresenters.resubscribe()
   }
@@ -156,7 +200,7 @@ extension EngineClient: TerminalStreamControl {
   func unsubscribeAfterSelecting(from old: String) async throws {
     guard isTerminal(old), !terminalPresenters.isPresented(old) else { return }
     try await unsubscribeStream(old)
-    terminalStreams.remove(old)
+    forgetTerminalStream(old)
   }
 
   /// The agent panes among `paneIds`, as the surfaces `hydratePresentedAgentPanes` loads: every
