@@ -26,11 +26,7 @@ impl Rig {
     fn new() -> Self {
         let (mut core, directory) = test_panes::core_with_workspace("workspace");
         test_panes::insert_agent_pane(&mut core, &directory, PANE, "workspace");
-        let (sender, receiver) = outbox::channel();
-        let connection = core.connect(true, true, sender).unwrap();
-        let hello = json!({"jsonrpc":"2.0","id":"hello","method":"hello",
-            "params":{"client":"update-test","clientVersion":"1","protocolVersion":1}});
-        core.dispatch(&connection, hello).unwrap();
+        let (connection, receiver) = test_panes::handshaken_connection(&mut core);
         Self {
             core,
             directory,
@@ -123,34 +119,32 @@ fn assert_each_names_the_person(updates: &[Value], kinds: &[&str]) {
     }
 }
 
-#[test]
-fn closing_a_pane_while_a_message_is_streaming_completes_it_under_the_closers_name() {
+/// Stages `open` (what the pane had under way), closes the pane as the person, and returns the
+/// `pane.update` events of the close, checked to name the closer and to come with `pane.closed`.
+fn close_with(open: fn(&Core, &mut State, &mut Changes), kinds: &[&str]) -> Vec<Value> {
     let mut rig = Rig::new();
-    rig.stage(stream_a_message);
+    rig.stage(open);
     let cursor = rig.cursor();
 
     rig.call("pane.close", json!({})).unwrap();
 
     let (updates, methods) = rig.after(cursor);
-    assert_each_names_the_person(&updates, &["agent_message_chunk"]);
-    assert_eq!(updates[0]["complete"], true);
+    assert_each_names_the_person(&updates, kinds);
     assert!(methods.contains(&"pane.closed".to_owned()), "{methods:?}");
     rig.finish();
+    updates
+}
+
+#[test]
+fn closing_a_pane_while_a_message_is_streaming_completes_it_under_the_closers_name() {
+    let updates = close_with(stream_a_message, &["agent_message_chunk"]);
+    assert_eq!(updates[0]["complete"], true);
 }
 
 #[test]
 fn closing_a_pane_while_a_subagent_runs_disconnects_it_under_the_closers_name() {
-    let mut rig = Rig::new();
-    rig.stage(start_a_subagent);
-    let cursor = rig.cursor();
-
-    rig.call("pane.close", json!({})).unwrap();
-
-    let (updates, methods) = rig.after(cursor);
-    assert_each_names_the_person(&updates, &["subagent"]);
+    let updates = close_with(start_a_subagent, &["subagent"]);
     assert_eq!(updates[0]["subagent"]["status"], "disconnected");
-    assert!(methods.contains(&"pane.closed".to_owned()), "{methods:?}");
-    rig.finish();
 }
 
 #[test]
