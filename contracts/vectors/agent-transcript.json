@@ -1,5 +1,5 @@
 {
-  "description": "The agent transcript replica and the pane header's ticker, shared by the Mac (AgentPaneView, AgentACPTickerSource) and the desktop client (soyeht_client::agent::AgentView). Messages are transcript messages as the wire sends them. `merge` folds the steps in order (`update`: a message the engine pushed, which carries the whole message and replaces the known one; `page`: a fetched page, which may be older than what is held and never undoes a message that is further along) and lists what is held, in order. `ticker` lists the entries newest first for the transcript and the session title; the desktop joins them with its separator. How many earlier tool calls follow the current one is `capsTickerHistory` of x-clientPolicy. `window` is the rule for how much of a long conversation a replica holds (ADR 0167): `windowLimits` stand in for `capsHeldMessages` (a pane that is shown) and `capsOffscreenMessages` (one that is not), and each case lists the messages held in order (a name is a finished reply, with the sequence of its place; an object adds a `streaming` reply, a `tool` call with that status, a `usage` report or an unfinished `terminal` output), whether the pane is `shown`, the message the person is `viewing` (null at the newest), the cursor `older` before and, after the replica lets go of what it does not need, the `kept` messages and the cursor.",
+  "description": "The agent transcript replica and the pane header's ticker, shared by the Mac (AgentPaneView, AgentACPTickerSource) and the desktop client (soyeht_client::agent::AgentView). Messages are transcript messages as the wire sends them. `merge` folds the steps in order (`update`: a message the engine pushed, which carries the whole message and replaces the known one; `page`: a fetched page, which may be older than what is held and never undoes a message that is further along) and lists what is held, in order. `ticker` lists the entries newest first for the transcript and the session title; the desktop joins them with its separator. How many earlier tool calls follow the current one is `capsTickerHistory` of x-clientPolicy. `window` is the rule for how much of a long conversation a replica holds (ADR 0167): `windowLimits` stand in for `capsHeldMessages` (a pane that is shown), `capsOffscreenMessages` (one that is not) and `pageSizeTranscript` (the `slack` a merge lets a pane grow by before it trims back to its limit; a case without `merged` is a pane that leaves the screen, which trims at once), and each case lists the messages held in order (a name is a finished reply, with the sequence of its place; an object adds a `streaming` reply, a `tool` call with that status, a `usage` report, a `user` message of the person or an unfinished `terminal` output), whether the pane is `shown`, the message the person is `viewing` (null at the newest), the cursor `older` before and, after the replica lets go of what it does not need, the `kept` messages and the cursor. `cursor` lists what \"Load earlier\" points at after a page of the newest messages is merged: the older of the cursor held and the page's.",
   "merge": [
     {
       "name": "a known message is replaced where it stands and the rest keep their sequence order",
@@ -945,7 +945,7 @@
       "items": ["The title"]
     }
   ],
-  "windowLimits": {"held": 4, "offscreen": 2},
+  "windowLimits": {"held": 4, "offscreen": 2, "slack": 2},
   "window": [
     {
       "name": "a pane at the newest message keeps the last messages of its window and points the cursor at the oldest kept",
@@ -1011,13 +1011,13 @@
       "keptOlder": "3"
     },
     {
-      "name": "a pane that is not shown ignores where the person was",
+      "name": "a pane that is not shown keeps half its window around where the person was",
       "shown": false,
       "viewing": "m7",
       "older": null,
       "messages": ["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9", "m10"],
-      "kept": ["m9", "m10"],
-      "keptOlder": "9"
+      "kept": ["m6", "m7", "m8", "m9", "m10"],
+      "keptOlder": "6"
     },
     {
       "name": "a reply still streaming is never let go of, and the cursor stays below the messages dropped",
@@ -1063,6 +1063,50 @@
       "messages": [{"id": "m1", "terminal": true}, "m2", "m3", "m4", "m5", "m6", "m7"],
       "kept": ["m4", "m5", "m6", "m7"],
       "keptOlder": "4"
+    },
+    {
+      "name": "a pane that is not shown and was read at the newest keeps the smaller window",
+      "shown": false,
+      "viewing": null,
+      "older": null,
+      "messages": ["m1", "m2", "m3", "m4", "m5"],
+      "kept": ["m4", "m5"],
+      "keptOlder": "4"
+    },
+    {
+      "name": "what an earlier turn left unfinished is let go of with the rest",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "messages": [{"id": "m1", "streaming": true}, {"id": "u2", "user": true}, "m3", "m4", "m5", "m6", "m7", "m8"],
+      "kept": ["m5", "m6", "m7", "m8"],
+      "keptOlder": "5"
+    },
+    {
+      "name": "a merge does not trim a pane that has not grown past its window and a page more",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "merged": true,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6"],
+      "kept": ["m1", "m2", "m3", "m4", "m5", "m6"],
+      "keptOlder": null
+    },
+    {
+      "name": "a merge trims a pane that grew past its window and a page more back to the window",
+      "shown": true,
+      "viewing": null,
+      "older": null,
+      "merged": true,
+      "messages": ["m1", "m2", "m3", "m4", "m5", "m6", "m7"],
+      "kept": ["m4", "m5", "m6", "m7"],
+      "keptOlder": "4"
     }
+  ],
+  "cursor": [
+    {"name": "a first load takes the page's cursor", "held": null, "page": "60", "expect": "60"},
+    {"name": "a page that reaches the start leaves nothing earlier", "held": "40", "page": null, "expect": null},
+    {"name": "a reload of the newest page does not move the cursor past messages not held", "held": "40", "page": "60", "expect": "40"},
+    {"name": "a page that goes further back moves the cursor back", "held": "60", "page": "40", "expect": "40"}
   ]
 }

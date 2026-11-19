@@ -303,9 +303,9 @@ fn only_the_panes_of_the_selected_workspace_hold_the_large_window() {
     let held = |state: &crate::State, pane: &str| state.agent(pane).unwrap().messages().len();
     state.select_workspace("a");
     assert_eq!(held(&state, "p"), count);
-    assert_eq!(
-        held(&state, "q"),
-        soyeht_protocol::client_policy::CAPS_OFFSCREEN_MESSAGES
+    assert!(
+        held(&state, "q") < count,
+        "a pane not shown trims as it grows"
     );
     state.select_workspace("b");
     assert_eq!(

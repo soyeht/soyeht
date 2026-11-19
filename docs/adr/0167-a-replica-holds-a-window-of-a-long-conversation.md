@@ -24,20 +24,33 @@ not looking at.
   more page to read back into without asking the engine. 50 is half a page: a pane that is not shown draws
   nothing, and the header's ticker (the latest turn's tool calls and plan) and the first screen of the pane
   when it is shown again fit in it; the rest is one "Load earlier" away.
-- **The rule is one function of the replica**, in `contracts/vectors/agent-transcript.json` (`window`),
-  which both clients pass:
+- **The rule is one function of the replica**, in `contracts/vectors/agent-transcript.json` (`window` and
+  `cursor`), which both clients pass:
   - The newest `limit` messages are held, `limit` being one of the two numbers. When the person is at the
-    newest message, or the pane is not shown, the older ones are let go of.
-  - A person who has scrolled back (they look at a message that is held) also keeps the half of a window
-    before that message, so nothing they can see is let go of and the window follows them. A pane that is
-    not shown has nobody looking.
-  - Never let go of: a reply still streaming, a subagent that has not finished, a tool call that has not
-    finished (the permission or question that waits on a tool call is read from the request the replica
-    keeps apart, and what it points at in the transcript is that call), and the newest usage report (the
-    context ring reads it). A command's output is never final in a live update, so it holds nothing.
+    newest message the older ones are let go of.
+  - A person who has scrolled back keeps the half of a window before the message where they were, so
+    nothing they can see is let go of and the window follows them. That holds for a pane that is not shown
+    too: the place a person left a pane (`AgentTranscriptScroll.place`, the oldest message the desktop view
+    draws) is where they come back to, so it is kept with the smaller window around it. What is read back
+    to stays held until the person returns to the newest message.
+  - Never let go of, in the latest turn (after the person's last message): a reply still streaming, a
+    subagent that has not finished and a tool call that has not (the permission or question that waits on a
+    tool call is read from the request the replica keeps apart, and what it points at in the transcript is
+    that call). Anywhere: the newest usage report (the context ring reads it). What an earlier turn left
+    unfinished is stale and goes with the rest, so a crash does not leave messages held for ever. A command's
+    output is never final in a live update, so it holds nothing. A kept message older than the ones let go
+    of is drawn with a gap below it; it is the accepted cost and a case of the vector.
+  - A merge trims only a pane that grew past its limit and a page (`pageSizeTranscript`) more, back down to
+    the limit, so a streaming pane does not rebuild its transcript for each message. A pane that leaves the
+    screen is trimmed at once. Replacing a message already held trims nothing.
   - When messages are let go of, the cursor of "Load earlier" becomes the sequence of the first message
     kept after the last one let go of, so the engine's next page starts where the replica stops and
-    anything let go of, a pinned message included, comes back through the same paging.
+    anything let go of, a pinned message included, comes back through the same paging. A page of the newest
+    messages (a turn ended, a pane shown again) does not move the cursor past what the replica does not
+    hold: the cursor is the older of the one held and the page's.
+  - A pane that is shown again holding less than a page, with more at the engine, reads the newest page
+    once. A pane that is not shown does not read the transcript when a turn ends; the events it keeps
+    receiving keep it current.
 - **Payload is dropped on ingest.** A tool call keeps its title, kind, status and locations, which the
   views and the ticker read. `content`, `rawInput` and `rawOutput` are dropped when a message is merged,
   from an update or from a page, on every client. No view and no copy action reads them (Swift
@@ -47,17 +60,17 @@ not looking at.
   not), and where the person was (`AgentTranscriptScroll.place`). The Windows and Linux client takes a pane
   as shown when it is in the selected workspace, and as read back when its view is not at the newest; the
   view reports the oldest message it draws, so nothing drawn is let go of.
-- **Not done here.** The wire is unchanged. A client that lets go of the newest end cannot get it back
+- **Not done here.** The window counts messages, not bytes: 300 messages of up to `transcriptMessageBytes`
+  (256 KiB) are still up to 75 MiB for a pane that is shown. A bound in bytes is the next one. The wire is
+  unchanged. A client that lets go of the newest end cannot get it back
   except through the newest page, so the window slides at the oldest end only; an `after` cursor on
   `pane.transcript` would let it slide both ways, and would let "Load earlier" become a fetch on scroll.
-  A page that reloads the newest messages (a turn ended) still moves the cursor to its own oldest message;
-  the next page overlaps what is held, and nothing is missed.
 
 ## Consequences
 
-- What a pane holds is at most its window, plus what is pinned and what the person has read back to. The
+- What a pane holds is at most its window and a page, plus what is pinned and what the person has read back to. The
   walks over a transcript are bounded by it.
-- A pane that is shown again after it was let go of shows its newest 50 messages and a "Load earlier" button
-  until the person reads back. A pane shown at the newest holds up to 300 again as messages arrive.
+- A pane that is shown again after it was let go of reads the newest page and holds up to 300 again as
+  messages arrive; the person who left it scrolled back finds the place they left.
 - A replica built only from events (never loaded) is trimmed too; loading the pane replaces it with the
   newest page, and the cursor comes from that page.

@@ -215,13 +215,19 @@ extension EngineClient {
   }
 
   /// The conversation of `paneId` is on screen or no longer is. A pane that is not shown keeps the
-  /// small window, and what it holds beyond it goes at once.
+  /// small window, and what it holds beyond it goes at once. One that is shown again with less
+  /// than a page, and more at the engine, reads the newest page.
   func agentPaneShown(_ paneId: String, _ shown: Bool) {
     guard var view = agentPanes[paneId], view.scroll.isShown != shown else { return }
     view.scroll.isShown = shown
     let held = view.messages.count
-    view.trimToWindow()
+    view.trimToWindow(force: true)
     if view.messages.count != held { agentPanes[paneId] = view }
+    if shown, view.messages.count < Int(ClientPolicy.pageSizeTranscript), view.hasOlderMessages,
+      agentTranscriptLoadsInFlight[paneId] == nil
+    {
+      refreshAgent(paneId)
+    }
   }
 
   public func hydratePresentedAgentPanes(_ presented: [PresentedPane]) async {
@@ -328,7 +334,10 @@ extension EngineClient {
       refreshHarnesses()
     case .paneTurnEnded:
       let event = try params.decoded(PaneTurnEndedEvent.self)
-      refreshAgent(event.paneId, replacing: false)
+      // A pane that is not shown is read again when it is shown.
+      if agentPanes[event.paneId]?.scroll.isShown == true {
+        refreshAgent(event.paneId, replacing: false)
+      }
     case .paneSessionLost:
       let event = try params.decoded(PaneSessionLostEvent.self)
       agentPanes[event.paneId, default: AgentPaneView()].notice = event.reason
@@ -399,8 +408,9 @@ extension EngineClient {
         value.paneId,
         TranscriptMessage(
           localId: value.localId, generation: value.generation, seq: value.seq,
-          role: .assistant, kind: .tool, text: "", complete: value.tool.status == .completed,
-          tool: value.tool, subagentId: value.subagentId)
+          role: .assistant, kind: .tool, text: "",
+          complete: [.completed, .failed].contains(value.tool.status), tool: value.tool,
+          subagentId: value.subagentId)
       )
     case .v3(let value):
       return (

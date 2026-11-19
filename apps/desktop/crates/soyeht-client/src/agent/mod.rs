@@ -69,6 +69,8 @@ pub struct AgentView {
     shown: bool,
     /// The message the person is looking at while they read back; none at the newest.
     viewing: Option<String>,
+    /// Whether the newest page was read again since the pane was shown.
+    refilled: bool,
     /// How long the running turn has been going.
     pub turn: TurnClock,
     /// The request the agent is waiting on, if any.
@@ -95,8 +97,12 @@ impl AgentView {
     /// Folds an update in: a new message is inserted at its place and a known one is replaced,
     /// as the update carries the whole message.
     pub fn merge(&mut self, message: TranscriptMessage) -> Result<()> {
+        let held = self.messages.len();
         self.fold(message, |_, _| true)?;
-        self.trim(held::Limits::default());
+        // A replaced message adds nothing to trim.
+        if self.messages.len() > held {
+            self.trim(held::Limits::default(), false);
+        }
         Ok(())
     }
 
@@ -106,7 +112,7 @@ impl AgentView {
     pub fn merge_page(&mut self, page: Vec<TranscriptMessage>) -> Result<()> {
         page.into_iter()
             .try_for_each(|message| self.fold(message, supersedes))?;
-        self.trim(held::Limits::default());
+        self.trim(held::Limits::default(), false);
         Ok(())
     }
 
@@ -365,7 +371,10 @@ pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)
             (value.pane_id, built)
         }
         PaneUpdateEvent::V2(value) => {
-            let complete = value.tool.status == ToolStatus::Completed;
+            let complete = matches!(
+                value.tool.status,
+                ToolStatus::Completed | ToolStatus::Failed
+            );
             tool_entry(
                 value.pane_id,
                 value.local_id,

@@ -108,9 +108,11 @@ public struct AgentPaneView: Sendable {
     if replacing {
       messages = []
       revisions = [:]
+      nextTranscriptCursor = page.nextCursor
+    } else {
+      nextTranscriptCursor = AgentTranscriptWindow.older(nextTranscriptCursor, page.nextCursor)
     }
     merge(page.items)
-    nextTranscriptCursor = page.nextCursor
     trimToWindow()
   }
 }

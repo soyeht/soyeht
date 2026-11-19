@@ -423,7 +423,8 @@ impl State {
                 }
                 Vec::new()
             }
-            EventName::PaneTurnEnded => self.reload_transcript(&params),
+            // A pane that is not shown is read again when it is shown.
+            EventName::PaneTurnEnded => self.reload_shown_transcript(&params),
             EventName::PaneHarnessSwitchDone => {
                 let event = serde_json::from_value::<PaneHarnessSwitchDoneEvent>(params.clone())?;
                 self.record_switch(
@@ -530,6 +531,30 @@ impl State {
             self.web_permissions.remove(&event.pane_id);
         }
         Ok(Vec::new())
+    }
+
+    fn reload_shown_transcript(&self, params: &Value) -> Vec<Effect> {
+        let shown = params
+            .get("paneId")
+            .and_then(Value::as_str)
+            .and_then(|id| self.agents.get(id))
+            .is_some_and(AgentView::is_shown);
+        if shown {
+            self.reload_transcript(params)
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// The command that reads the newest page of a pane that is shown again with less than a page
+    /// held, once each time it is shown.
+    pub fn refill_transcript(&mut self, pane_id: &str) -> Option<Command> {
+        self.agents
+            .get_mut(pane_id)?
+            .take_refill()
+            .then(|| Command::LoadTranscript {
+                pane_id: pane_id.to_owned(),
+            })
     }
 
     pub(crate) fn reload_transcript(&self, params: &Value) -> Vec<Effect> {

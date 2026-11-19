@@ -412,8 +412,7 @@ impl State {
         next_cursor: Option<String>,
     ) -> Vec<Effect> {
         if let Some(view) = self.agents.get_mut(pane_id) {
-            view.cards.older = next_cursor;
-            if let Err(error) = view.merge_page(items) {
+            if let Err(error) = view.merge_transcript(items, next_cursor) {
                 self.report(problem::kind::TRANSCRIPT_UNREADABLE, error.to_string());
             }
         }

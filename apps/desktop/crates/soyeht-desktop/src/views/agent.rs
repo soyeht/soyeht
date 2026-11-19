@@ -44,7 +44,8 @@ const PINNED: f32 = 2.0;
 
 impl Workbench {
     /// Tells the replica where the person is: while they read back it keeps what is drawn, and
-    /// lets go of older messages only while the transcript is at its newest.
+    /// lets go of older messages only while the transcript is at its newest. A pane shown again
+    /// with less than a page held reads the newest page.
     fn report_reading_back(&mut self, pane_id: &str, limit: usize, reading_back: bool) {
         let oldest = self
             .state
@@ -53,6 +54,9 @@ impl Workbench {
             .filter(|_| reading_back)
             .map(|oldest| oldest.local_id.clone());
         self.state.view_agent_from(pane_id, oldest.as_deref());
+        if let Some(command) = self.state.refill_transcript(pane_id) {
+            self.send(command);
+        }
     }
 
     pub(super) fn agent_body(
