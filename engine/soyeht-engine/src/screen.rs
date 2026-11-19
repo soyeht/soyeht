@@ -1,6 +1,6 @@
 use crate::errors::{self, Result};
 use soyeht_protocol::limits;
-use soyeht_store::segments::{Log, Record, Unsynced};
+use soyeht_store::segments::{Log, Reader, Record, Unsynced};
 use std::{collections::VecDeque, path::Path, sync::Arc};
 
 /// A record kept in memory: the output bytes are shared with the supervisor, so a clone is cheap.
@@ -25,6 +25,13 @@ pub struct Screen {
     /// The supervisor's output position this screen has taken in and not yet told it to drop.
     unacknowledged: Option<u64>,
     pub recording: bool,
+}
+
+/// What one slice of a replay is read from: the memory of the screen, read already, or the
+/// disk, read by whoever holds the [`Reader`] with no lock.
+pub enum ReplayRead {
+    Ready(Vec<Record>),
+    Disk(Reader),
 }
 
 /// Output a screen holds that the supervisor may drop once its flush to the disk is done.
@@ -285,6 +292,24 @@ impl Screen {
                 .find(|record| record.from() >= desired)
                 .map(Record::from)
                 .unwrap_or(self.next)
+        }
+    }
+
+    /// The next slice of at most `maximum` bytes of a replay from `from` up to `to`. Output that
+    /// is only on the disk is not read here, which would wait for the disk under the Core lock.
+    pub fn replay_read(&self, from: u64, to: u64, maximum: usize) -> Result<ReplayRead> {
+        let live_first = self.live.front().map(Record::from).unwrap_or(self.next);
+        let on_disk = self.disk.as_ref().map_or(0, Log::next_offset);
+        match self
+            .disk
+            .as_ref()
+            .filter(|_| from < live_first && from < on_disk)
+        {
+            Some(disk) => disk
+                .reader(from, to.min(live_first).min(on_disk), maximum)
+                .map(ReplayRead::Disk)
+                .map_err(errors::storage),
+            None => self.read(from, to, maximum).map(ReplayRead::Ready),
         }
     }
 
@@ -576,8 +601,8 @@ mod tests {
         fs::remove_dir_all(path).unwrap();
     }
 
-    /// A hole the memory does not hold is announced as a gap, once, and only for what is missing:
-    /// the tail starts where the contiguous output starts.
+    /// A hole the disk does not fill (recording was switched off) is not part of the tail: the tail
+    /// starts where memory holds the output whole, and announces no gap for it.
     #[test]
     fn a_tail_never_starts_before_a_hole_the_disk_does_not_fill() {
         let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
@@ -587,9 +612,71 @@ mod tests {
         let many = (limits::TAIL_BYTES * 3) as u64;
         feed_short_writes(&mut screen, 1024, many);
         let start = screen.tail_start();
-        assert!(start > 1024);
+        assert!(
+            many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64
+                && start > 1024,
+            "the tail starts at {start} of {many}"
+        );
         let expected: Vec<u8> = (start..many).map(pattern).collect();
         assert_eq!(replayed(&screen, start, many), expected);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// Recording switched off and on again, and output a capture shares with the screen: the bytes
+    /// a replay reads are the bytes that were written, and what the capture holds does not change.
+    #[test]
+    fn switching_recording_and_sharing_bytes_do_not_change_what_a_replay_reads() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, true).unwrap();
+        let third = limits::TAIL_BYTES as u64;
+        feed_short_writes(&mut screen, 0, third);
+        screen.recording = false;
+        feed_short_writes(&mut screen, third, 2 * third);
+        let shared = Arc::new(
+            (2 * third..2 * third + 100)
+                .map(pattern)
+                .collect::<Vec<u8>>(),
+        );
+        screen
+            .append_shared_data_deferred(2 * third, Arc::clone(&shared))
+            .unwrap();
+        feed_short_writes(&mut screen, 2 * third + 100, 2 * third + 200);
+        screen.recording = true;
+        let many = 3 * third;
+        feed_short_writes(&mut screen, 2 * third + 200, many);
+        assert_eq!(shared.len(), 100, "joining records changed a shared one");
+        let start = screen.tail_start();
+        assert!(many - start >= (limits::TAIL_BYTES - limits::TERMINAL_PAYLOAD_BYTES) as u64);
+        let expected: Vec<u8> = (start..many).map(pattern).collect();
+        assert_eq!(replayed(&screen, start, many), expected);
+        fs::remove_dir_all(path).unwrap();
+    }
+
+    /// A record that is a gap is never joined to the data around it.
+    #[test]
+    fn a_gap_between_short_records_stays_a_gap() {
+        let path = std::env::temp_dir().join(format!("soyeht-next-screen-{}", Uuid::new_v4()));
+        let mut screen = Screen::open(&path, false).unwrap();
+        feed_short_writes(&mut screen, 0, 300);
+        screen
+            .append_deferred(Record::Gap { from: 300, to: 500 })
+            .unwrap();
+        feed_short_writes(&mut screen, 500, 800);
+        let records = screen.read(0, 800, limits::TERMINAL_PAYLOAD_BYTES).unwrap();
+        let shape: Vec<(bool, u64, u64)> = records
+            .iter()
+            .map(|record| {
+                (
+                    matches!(record, Record::Gap { .. }),
+                    record.from(),
+                    record.end(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            [(false, 0, 300), (true, 300, 500), (false, 500, 800)]
+        );
         fs::remove_dir_all(path).unwrap();
     }
 

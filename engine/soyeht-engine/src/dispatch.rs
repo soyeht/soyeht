@@ -101,6 +101,7 @@ impl Core {
                 nonce,
                 events: false,
                 streams: BTreeMap::new(),
+                replays: Default::default(),
                 next_binary_ref: 1,
                 pair_request: None,
                 web_host: false,
