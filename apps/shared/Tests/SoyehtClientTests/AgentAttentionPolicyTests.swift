@@ -50,20 +50,20 @@ private func summaryOf(_ panes: [Pane], _ views: [String: AgentPaneView]) -> Age
   view.permission = PermissionRequest(
     requestId: "permission", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let first = summary([pane], ["one": view])
+  let first = summaryOf([pane], ["one": view])
   #expect(first.waitingCount(in: "left") == 1)
   #expect(first.requests.map(\.identity) == ["one:1:permission"])
 
   view.elicitation = ElicitationRequest(
     requestId: "question", paneId: "one", generation: 1, promptId: "prompt",
     title: "Question", schema: .object([:]), expiresAt: "later")
-  let second = summary([pane], ["one": view])
+  let second = summaryOf([pane], ["one": view])
   #expect(second.waitingCount(in: "left") == 2)
   #expect(second.requests.map(\.requestId) == ["permission", "question"])
 
   view.permission = nil
   view.elicitation = nil
-  let cleared = summary([pane], ["one": view])
+  let cleared = summaryOf([pane], ["one": view])
   #expect(cleared.totalWaitingCount == 0)
   #expect(cleared.requests.isEmpty)
 }
@@ -79,8 +79,8 @@ private func summaryOf(_ panes: [Pane], _ views: [String: AgentPaneView]) -> Age
   view.permission = PermissionRequest(
     requestId: "permission", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let before = summary([pane], ["one": view])
-  let after = summary([pane], ["one": view])
+  let before = summaryOf([pane], ["one": view])
+  let after = summaryOf([pane], ["one": view])
   var cursor = AgentAttentionNotificationCursor()
   #expect(cursor.newRequests(in: before, connected: false).isEmpty)
   #expect(cursor.newRequests(in: before, connected: true).isEmpty)
@@ -91,7 +91,7 @@ private func summaryOf(_ panes: [Pane], _ views: [String: AgentPaneView]) -> Age
   view.permission = PermissionRequest(
     requestId: "next", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
-  let next = summary([pane], ["one": view])
+  let next = summaryOf([pane], ["one": view])
   #expect(cursor.newRequests(in: next, connected: true).map(\.requestId) == ["next"])
   #expect(cursor.newRequests(in: next, connected: true).isEmpty)
 }

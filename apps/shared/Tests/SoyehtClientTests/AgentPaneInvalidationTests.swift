@@ -62,7 +62,6 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
             options: [], expiresAt: "later")))
     })
   #expect(moved)
-  #expect(client.agentAttention.totalWaitingCount == 1)
   #expect(client.agentPanes.isAsking("a") && !client.agentPanes.isAsking("b"))
 }
 

@@ -99,8 +99,7 @@ import Testing
   try await client.settleConnection(followsEveryTerminal: true)
   await finish(model, count)
 
-  #expect(Set(model.subscribed) == Set((0..<count).map { "t\($0)" }))
-  #expect(model.subscribed.count == count)
+  #expect(model.subscribed.sorted() == (0..<count).map { "t\($0)" }.sorted())
   #expect(model.peakReplays == 1)
   #expect(model.peakBytes == ProtocolLimits.tailBytes)
   #expect(model.peakBytes < ProtocolLimits.connectionQueueBytes)
