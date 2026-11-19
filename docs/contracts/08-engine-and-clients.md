@@ -411,7 +411,10 @@ no secret file beside it is a supervisor from before the proof, not an absent on
 - **Slow client (R20)**: output queue per connection limited to 8 MiB;
   control events take priority over terminal bytes; on overflow, the engine
   closes with `slow_consumer` and the client resynchronizes. Never silently
-  discard an event; never block persistence.
+  discard an event; never block persistence. A replay (section 6) is never what
+  overflows it: the engine sends a replay in slices, only as the queue drains
+  (ADR 0168), so the connection is closed for a client that does not read,
+  not for one that subscribed many terminals.
 
 ## 4. Requests (methods)
 Each method has its own `params` and `result` schema (never only `{ok}`
@@ -592,6 +595,16 @@ sends against them (ADR 0090).
   at H. Barrier: no live byte before `replay_done`; no skip between replay
   end and live output. The client resets the terminal before applying
   replay with `reset: true`.
+- Replays are paced by the engine (ADR 0168). The `pane.stream.subscribe` reply
+  and `stream.replay_start` are sent at once, but the bytes of a replay follow in
+  slices, each sent only while the connection's queue holds little, so a client
+  may subscribe any number of terminals without waiting for `stream.replay_done`
+  and is never closed for it. Replays are served in the order of the subscribes,
+  each to its end (`replay_done`) before the next one starts, so the terminal
+  subscribed first is the first ready; a client subscribes the terminals it
+  shows first. The order within one terminal (`replay_start`, bytes in offset
+  order, `replay_done`, then live bytes) is as above, and a terminal whose
+  replay is done receives its live output while the others still replay.
 - Valid retained `from: {streamId, offset}` → `stream.replay_start
   {reset: false}` and deliver EVERYTHING from there, paginated in frames,
   without a gap and WITHOUT resetting the screen (a delta). Outside retention

@@ -94,6 +94,7 @@ where
     }
 }
 
+#[derive(Clone)]
 struct Entry {
     file: u64,
     position: u64,
@@ -141,6 +142,9 @@ impl Unsynced {
         Ok(())
     }
 }
+
+/// The most records one read returns: it opens a file for each.
+const READ_RECORDS: usize = 256;
 
 fn filename(number: u64) -> String {
     format!("{number:016x}.pty")
@@ -396,17 +400,49 @@ impl Log {
     }
 
     pub fn read(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
-        hold_cost::timed(Cost::Segment, || self.read_records(from, to, maximum))
+        hold_cost::timed(Cost::Segment, || self.reader(from, to, maximum)?.read())
     }
 
-    fn read_records(&self, from: u64, to: u64, maximum: usize) -> Result<Vec<Record>> {
+    /// What a read of `maximum` bytes of the persisted records from `from` up to `to` needs,
+    /// copied out of the log: the read is then done with no lock held, since it opens a file for
+    /// each record and the disk may take as long as it takes.
+    pub fn reader(&self, from: u64, to: u64, maximum: usize) -> Result<Reader> {
         if from < self.first_offset() || from > to || to > self.next {
             return Err(Error::CursorOutOfRange);
         }
+        Ok(Reader {
+            directory: self.directory.clone(),
+            entries: self
+                .index
+                .iter()
+                .filter(|e| e.end > from && e.from < to)
+                .take(READ_RECORDS)
+                .cloned()
+                .collect(),
+            from,
+            to,
+            maximum,
+        })
+    }
+}
+
+/// The records of one read of a [`Log`], taken with [`Log::reader`].
+pub struct Reader {
+    directory: PathBuf,
+    entries: Vec<Entry>,
+    from: u64,
+    to: u64,
+    maximum: usize,
+}
+
+impl Reader {
+    /// Reads the records. A segment that retention removed meanwhile is an error.
+    pub fn read(self) -> Result<Vec<Record>> {
+        let (from, to) = (self.from, self.to);
         let mut output = Vec::new();
-        let mut remaining = maximum;
-        for entry in self.index.iter().filter(|e| e.end > from && e.from < to) {
-            if remaining == 0 || output.len() == 256 {
+        let mut remaining = self.maximum;
+        for entry in &self.entries {
+            if remaining == 0 {
                 break;
             }
             let mut file = File::open(self.directory.join(filename(entry.file)))?;
