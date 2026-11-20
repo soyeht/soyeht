@@ -26,29 +26,48 @@ struct EngineResponse: Sendable {
   var attachment: WebHostAttachment?
 }
 
+/// Where the answer to a request is delivered from. An `ordered` answer is applied by the main
+/// actor in the order the frames arrived, after the events that came before it, because the caller
+/// reads state those events changed. An `immediate` answer resumes its request from the reader,
+/// without waiting for the main actor: the request reads nothing the main actor holds (terminal
+/// input, which is acknowledged byte for byte and nothing else).
+enum ReplyDelivery: Sendable { case ordered, immediate }
+
 /// The requests sent and not yet answered: one continuation per request id, and the deadline
 /// that fails it. `EngineClient` owns the wire; this owns what waits on it.
-@MainActor
-final class PendingRequests {
-  struct Entry {
+///
+/// It runs on no actor. The reader takes a request out of it the moment its answer is read, which
+/// also cancels its deadline, so a deadline can never fire for an answer the app already holds,
+/// however long the main actor takes to apply it (ADR 0171).
+final class PendingRequests: Sendable {
+  struct Entry: Sendable {
     var method: RequestMethod
     var params: JsonValue
     var startedAtNs: UInt64
     var continuation: CheckedContinuation<EngineResponse, Error>
-    var timeout: Task<Void, Never>
+    var timeout: Task<Void, Never>?
+    var delivery: ReplyDelivery
   }
 
-  private var entries: [String: Entry] = [:]
+  private let entries = OSAllocatedUnfairLock<[String: Entry]>(initialState: [:])
 
-  /// The waiting request answered by `id`, now no longer waiting.
-  func take(_ id: String) -> Entry? { entries.removeValue(forKey: id) }
+  /// The waiting request answered by `id`, now no longer waiting and with its deadline cancelled.
+  func take(_ id: String) -> Entry? {
+    let entry = entries.withLock { $0.removeValue(forKey: id) }
+    entry?.timeout?.cancel()
+    return entry
+  }
+
+  var count: Int { entries.withLock { $0.count } }
 
   /// Fails every waiting request, as a disconnect does.
   func failAll(_ error: Error) {
-    let requests = entries
-    entries.removeAll()
+    let requests = entries.withLock { entries in
+      defer { entries.removeAll() }
+      return entries
+    }
     for request in requests.values {
-      request.timeout.cancel()
+      request.timeout?.cancel()
       request.continuation.resume(throwing: error)
     }
   }
@@ -56,7 +75,7 @@ final class PendingRequests {
   static func deadline(
     method: RequestMethod, timeoutSeconds: Double,
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
-    onTimeout: @escaping @MainActor @Sendable (ClientFailure) -> Void
+    onTimeout: @escaping @Sendable (ClientFailure) -> Void
   ) -> Task<Void, Never> {
     Task {
       do { try await waitForTimeout(method, timeoutSeconds) } catch { return }
@@ -72,16 +91,23 @@ final class PendingRequests {
   /// that outlives its deadline fails, is logged, and runs `onTimeout` (the caller closes the wire).
   func response(
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double,
+    delivery: ReplyDelivery = .ordered,
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
-    onTimeout: @escaping @MainActor () -> Void,
-    send: @escaping @MainActor (String) async throws -> Void
+    onTimeout: @escaping @Sendable () -> Void,
+    send: @escaping @Sendable (String) async throws -> Void
   ) async throws -> EngineResponse {
     let id = UUID().uuidString
     return try await withCheckedThrowingContinuation { continuation in
+      entries.withLock {
+        $0[id] = Entry(
+          method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
+          continuation: continuation, timeout: nil, delivery: delivery)
+      }
+      // The deadline starts once the request is registered, so one that fires at once finds it.
       let timeout = Self.deadline(
         method: method, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout
       ) { [weak self] failure in
-        guard let request = self?.entries.removeValue(forKey: id) else { return }
+        guard let request = self?.take(id) else { return }
         let elapsedNs = DispatchTime.now().uptimeNanoseconds - request.startedAtNs
         let diagnostic = EngineTimeoutDiagnostic(
           method: request.method, params: request.params, durationMs: elapsedNs / 1_000_000
@@ -90,17 +116,20 @@ final class PendingRequests {
         request.continuation.resume(throwing: failure)
         onTimeout()
       }
-      entries[id] = Entry(
-        method: method, params: params, startedAtNs: DispatchTime.now().uptimeNanoseconds,
-        continuation: continuation, timeout: timeout)
+      let answered = entries.withLock { entries -> Bool in
+        guard entries[id] != nil else { return true }
+        entries[id]?.timeout = timeout
+        return false
+      }
+      if answered {
+        timeout.cancel()
+        return
+      }
       Task {
         do {
           try await send(id)
         } catch {
-          if let request = self.entries.removeValue(forKey: id) {
-            request.timeout.cancel()
-            request.continuation.resume(throwing: error)
-          }
+          if let request = self.take(id) { request.continuation.resume(throwing: error) }
         }
       }
     }
