@@ -96,16 +96,16 @@ public struct AgentAttentionNotificationCursor: Sendable {
   public init() {}
 
   public mutating func newRequests(
-    in summary: AgentAttentionSummary, connected: Bool
+    in requests: [AgentAttentionRequest], connected: Bool
   ) -> [AgentAttentionRequest] {
     guard connected else { return [] }
-    let currentIds = Set(summary.requests.map(\.identity))
+    let currentIds = Set(requests.map(\.identity))
     guard seeded else {
       observedRequestIds.formUnion(currentIds)
       seeded = true
       return []
     }
-    let new = summary.requests.filter { !observedRequestIds.contains($0.identity) }
+    let new = requests.filter { !observedRequestIds.contains($0.identity) }
     observedRequestIds.formUnion(currentIds)
     return new
   }
@@ -167,28 +167,101 @@ public final class AgentAttentionNotificationSettings {
   }
 }
 
-/// The attention summary as a value of its own, which changes when what it says changes. The
-/// panes and their requests change at every turn of every agent; the tab strip and the rail that
-/// read the summary are run only when the summary is not what it was.
+/// What the tab of one workspace shows of its agents: how many wait for the person and whether one
+/// works.
+public struct WorkspaceAttention: Equatable, Sendable {
+  public static let none = WorkspaceAttention(waiting: 0, working: false)
+
+  public let waiting: Int
+  public let working: Bool
+}
+
+/// One workspace's `WorkspaceAttention`, observed on its own: the tab of a workspace follows this
+/// box and no other, so an agent that starts or stops in another workspace does not run it.
+@MainActor @Observable
+final class WorkspaceAttentionBox {
+  fileprivate(set) var value = WorkspaceAttention.none
+}
+
+/// The attention summary as values of their own, each changing only when what it says changes. The
+/// panes and their requests change at every turn of every agent; what the window shows of them is
+/// the requests (the dock badge, the notifications), the total and whether any agent works (the
+/// rail) and, for each workspace, its waiting count and whether one of its agents works (its tab).
+/// Each reader follows the one value it shows, so a turn in one workspace runs the views of that
+/// workspace's tab and nothing else.
 @MainActor @Observable
 final class AgentAttentionTracker {
-  private(set) var summary = AgentAttentionSummary.empty
+  private(set) var requests: [AgentAttentionRequest] = []
+  private(set) var totalWaiting = 0
+  private(set) var anyWorking = false
+  @ObservationIgnored private(set) var summary = AgentAttentionSummary.empty
+  @ObservationIgnored private var boxes: [String: WorkspaceAttentionBox] = [:]
   @ObservationIgnored private let compute: () -> AgentAttentionSummary
 
   init(compute: @escaping () -> AgentAttentionSummary) {
     self.compute = compute
   }
 
-  /// Makes the summary again, after what it reads changed; readers hear only of a different one.
+  /// The attention of one workspace; a workspace nobody asked about is made when it is first read.
+  func workspace(_ workspaceId: String) -> WorkspaceAttention { box(workspaceId).value }
+
+  /// Makes the summary again, after what it reads changed; readers hear only of a value that
+  /// is different.
   func refresh() {
     let next = compute()
-    if next != summary { summary = next }
+    guard next != summary else { return }
+    summary = next
+    if next.requests != requests { requests = next.requests }
+    if next.totalWaitingCount != totalWaiting { totalWaiting = next.totalWaitingCount }
+    if next.hasWorkingAgent != anyWorking { anyWorking = next.hasWorkingAgent }
+    let workspaceIds = Set(boxes.keys).union(next.workingPaneIdsByWorkspace.keys).union(
+      next.requests.map(\.workspaceId))
+    for workspaceId in workspaceIds {
+      let value = attention(of: workspaceId)
+      let box = box(workspaceId)
+      if box.value != value { box.value = value }
+    }
+  }
+
+  private func box(_ workspaceId: String) -> WorkspaceAttentionBox {
+    if let box = boxes[workspaceId] { return box }
+    let box = WorkspaceAttentionBox()
+    box.value = attention(of: workspaceId)
+    boxes[workspaceId] = box
+    return box
+  }
+
+  private func attention(of workspaceId: String) -> WorkspaceAttention {
+    WorkspaceAttention(
+      waiting: summary.waitingCount(in: workspaceId),
+      working: summary.hasWorkingAgent(in: workspaceId))
   }
 }
 
 extension EngineClient {
-  public var agentAttention: AgentAttentionSummary {
-    connected ? attentionTracker.summary : .empty
+  /// The requests the agents have open, which the dock badge and the notifications follow.
+  public var agentAttentionRequests: [AgentAttentionRequest] {
+    connected ? attentionTracker.requests : []
+  }
+
+  /// How many requests wait for the person, in every workspace.
+  public var agentWaitingTotal: Int { connected ? attentionTracker.totalWaiting : 0 }
+
+  /// Whether any agent works.
+  public var agentWorking: Bool { connected && attentionTracker.anyWorking }
+
+  /// What the tab of `workspaceId` shows of its agents.
+  public func agentAttention(in workspaceId: String) -> WorkspaceAttention {
+    connected ? attentionTracker.workspace(workspaceId) : .none
+  }
+
+  /// Whether a notification's target still exists. For a handler to ask, not for a view to read:
+  /// it follows nothing.
+  public func agentAttentionContains(workspaceId: String, paneId: String, identity: String) -> Bool
+  {
+    connected
+      && attentionTracker.summary.contains(
+        workspaceId: workspaceId, paneId: paneId, identity: identity)
   }
 
   /// The summary follows the panes and their requests: it is made again when either changes.

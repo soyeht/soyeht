@@ -2,6 +2,13 @@ import Foundation
 import SoyehtProtocol
 import os
 
+extension AuthMethod: @retroactive Equatable {
+  public static func == (left: AuthMethod, right: AuthMethod) -> Bool {
+    left.id == right.id && left.name == right.name && left.description == right.description
+      && left.terminal == right.terminal
+  }
+}
+
 public struct AgentPaneView: Sendable {
   public var messages: [TranscriptMessage] = []
   /// The revision each message was last written at. A transcript row is redrawn only when its

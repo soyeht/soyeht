@@ -87,7 +87,7 @@ struct PaneGrid: View {
 
   private var workspacePanes: [Pane] {
     guard let workspaceId else { return [] }
-    return client.panes(in: workspaceId)
+    return client.outlinedPanes(in: workspaceId)
   }
 
   private var panes: [Pane] {
@@ -450,17 +450,28 @@ struct PaneLayoutNodeSurface: View {
     visible: Bool = true
   ) -> some View {
     let cardWidth = max(0, contentWidth - 2 * halo)
-    return PaneCard(
-      client: client, webHost: webHost, pane: pane,
-      tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
-      onTasks: onTasks, onSplit: onSplit,
-      interaction: interactionsEnabled ? interaction : nil,
-      companionLinked: companionLinked, isVisible: isVisible && visible, cardWidth: cardWidth,
-      dropTargetSize: CGSize(
-        width: cardWidth,
-        height: max(0, contentHeight - 2 * halo)),
-      onPaneDrop: onPaneDrop
-    )
+    return Group {
+      // An agent in a tab nobody has open is not drawn: its conversation, header and composer
+      // would run again for every event of its turns. Its state lives in the client (the
+      // transcript, the scroll, the draft), so the tab shows it as it was when opened. The other
+      // panes stay mounted: a terminal keeps its screen.
+      if isVisible && visible || pane.mode != .agent {
+        PaneCard(
+          client: client, webHost: webHost, outline: pane,
+          tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
+          onTasks: onTasks, onSplit: onSplit,
+          interaction: interactionsEnabled ? interaction : nil,
+          companionLinked: companionLinked, isVisible: isVisible && visible,
+          cardWidth: cardWidth,
+          dropTargetSize: CGSize(
+            width: cardWidth,
+            height: max(0, contentHeight - 2 * halo)),
+          onPaneDrop: onPaneDrop
+        )
+      } else {
+        Color.clear
+      }
+    }
     .frame(
       width: cardWidth,
       height: max(0, contentHeight - 2 * halo)

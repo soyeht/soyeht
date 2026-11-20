@@ -146,6 +146,17 @@ public final class EngineClient {
   /// not run the reader.
   public func panes(in workspaceId: String) -> [Pane] { paneStore.panes(in: workspaceId) }
 
+  /// The panes of a workspace as its grid lays them out: the reader runs when a pane comes, goes,
+  /// moves or is renamed, not at every turn of an agent. The values are as of that change; a view
+  /// that draws a pane reads `pane(_:)`.
+  public func outlinedPanes(in workspaceId: String) -> [Pane] {
+    paneStore.outlinedPanes(in: workspaceId)
+  }
+
+  /// Where the pane `paneId` is: its workspace, mode and what its tab says. The reader runs when
+  /// that changes, not at every turn of an agent.
+  public func paneOutline(of paneId: String?) -> PaneOutline? { paneStore.outline(of: paneId) }
+
   /// The panes of one mode, followed on their own.
   public func panes(mode: PaneMode) -> [Pane] { paneStore.panes(mode: mode) }
 
@@ -495,11 +506,17 @@ public final class EngineClient {
     case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
       if let pane = pane(event.paneId) {
-        paneStore.update(event.paneId) {
-          $0.state = event.state
-          $0.source = event.source
-          $0.confidence = event.confidence
-          $0.phrase = event.phrase
+        // The engine sends the pane and then its state: a state the pane holds already is not a
+        // change for any view.
+        if pane.state != event.state || pane.source != event.source
+          || pane.confidence != event.confidence || pane.phrase != event.phrase
+        {
+          paneStore.update(event.paneId) {
+            $0.state = event.state
+            $0.source = event.source
+            $0.confidence = event.confidence
+            $0.phrase = event.phrase
+          }
         }
         if pane.mode == .agent && event.state == .dead { refreshHarnesses() }
       }
@@ -515,9 +532,15 @@ public final class EngineClient {
       }
     #endif
     if pane.mode == .agent {
-      agentPanes.update(pane.paneId) {
-        $0.queuePaused = pane.agent?.queuePaused ?? false
-        $0.authMethods = pane.agent?.authMethods ?? []
+      // Written only when it changed: a write makes the pane's transcript be grouped again.
+      let paused = pane.agent?.queuePaused ?? false
+      let methods = pane.agent?.authMethods ?? []
+      let held = agentPanes[pane.paneId]
+      if held?.queuePaused ?? false != paused || held?.authMethods ?? [] != methods {
+        agentPanes.update(pane.paneId) {
+          $0.queuePaused = paused
+          $0.authMethods = methods
+        }
       }
     }
     upsertWebPane(pane)

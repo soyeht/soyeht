@@ -53,7 +53,7 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
 @MainActor @Test func aPermissionRequestMovesTheAttentionSummary() {
   let client = twoPanes()
   let moved = fires(
-    watching: { _ = client.agentAttention },
+    watching: { _ = client.agentAttentionRequests },
     whenChanging: {
       try? client.applyAgentEvent(
         .panePermissionRequested,
@@ -118,11 +118,10 @@ private func chunk(_ paneId: String, _ text: String) throws -> JsonValue {
     (
       "workspace tab and rail button",
       {
-        _ = client.agentAttention.waitingCount(in: "w")
-        _ = client.agentAttention.hasWorkingAgent(in: "w")
+        _ = client.agentAttention(in: "w")
         _ = client.workspaces
-        _ = client.agentAttention.totalWaitingCount
-        _ = client.agentAttention.hasWorkingAgent
+        _ = client.agentWaitingTotal
+        _ = client.agentWorking
       }
     ),
     ("usage ring", { _ = client.usage.readings }),

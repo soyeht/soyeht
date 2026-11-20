@@ -19,8 +19,8 @@ struct AppRail: View {
               glyph: item.glyph,
               label: item.label,
               selected: destination == item.destination,
-              badgeCount: item.destination == .agents ? client.agentAttention.totalWaitingCount : 0,
-              isWorking: item.destination == .agents && client.agentAttention.hasWorkingAgent,
+              badgeCount: item.destination == .agents ? client.agentWaitingTotal : 0,
+              isWorking: item.destination == .agents && client.agentWorking,
               action: { onSelect(item.destination) })
           }
           Rectangle()

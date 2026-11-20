@@ -290,12 +290,10 @@ final class AgentAttentionNotifications {
     settings.setEnabled(requested ? await requestAuthorization() : false)
   }
 
-  func observe(_ summary: AgentAttentionSummary, workspaces: [Workspace], connected: Bool) {
-    NSApp.dockTile.badgeLabel =
-      summary.totalWaitingCount == 0
-      ? nil : String(summary.totalWaitingCount)
+  func observe(_ requests: [AgentAttentionRequest], workspaces: [Workspace], connected: Bool) {
+    NSApp.dockTile.badgeLabel = requests.isEmpty ? nil : String(requests.count)
     NSApp.dockTile.display()
-    let newRequests = cursor.newRequests(in: summary, connected: connected)
+    let newRequests = cursor.newRequests(in: requests, connected: connected)
     guard settings.shouldPost(appIsActive: NSApp.isActive), !newRequests.isEmpty else { return }
     var notifications: [UNNotificationRequest] = []
     for request in newRequests {
