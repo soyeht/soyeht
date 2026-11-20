@@ -31,6 +31,9 @@ pub const FEATURE_WATCH: &str = "watch";
 /// The supervisor answers `Foreground` (ADR 0165). It is a feature and not a version, so a running
 /// supervisor of this protocol that does not list it keeps working after an engine update.
 pub const FEATURE_FOREGROUND: &str = "foreground";
+/// The supervisor answers `CloseMany` (ADR 0171). An engine that does not find it closes each process
+/// with a `Close` of its own.
+pub const FEATURE_CLOSE_MANY: &str = "close-many";
 
 /// A supervisor that lists this accepts `SOYEHT_PANE_BINDING` in the environment of a terminal
 /// (ADR 0165). An older one refuses the variable as one the engine may not set, so the engine
@@ -88,6 +91,11 @@ pub enum Request {
     Spawn(Spawn),
     Close {
         instance_id: String,
+    },
+    /// Closes these processes together (at most [`MAX_CLOSE_MANY`]): the answer comes when all of
+    /// them are gone.
+    CloseMany {
+        instance_ids: Vec<String>,
     },
     Kill {
         instance_id: String,
@@ -165,6 +173,9 @@ pub enum Response {
         message: String,
     },
 }
+
+/// How many processes one `CloseMany` may name.
+pub const MAX_CLOSE_MANY: usize = 256;
 
 /// How many terminals one `Foreground` may ask about.
 pub const MAX_FOREGROUND: usize = 256;

@@ -152,6 +152,9 @@ impl Core {
                 Ok((json!({"workspaceId":id}), events))
             })?
             .result;
+        // Their processes end together: ending them one after another is slow for a workspace of
+        // dozens of terminals.
+        let mut processes = Vec::with_capacity(closed.len());
         for pane in closed {
             errors::invariant(
                 self.panes.get_mut(&pane.pane.pane_id),
@@ -159,8 +162,9 @@ impl Core {
             )?
             .stored
             .closed = true;
-            self.finish_close(&pane.pane.pane_id)?;
+            processes.push(self.release_closed_pane(&pane.pane.pane_id)?);
         }
+        self.end_processes(processes);
         Ok(result)
     }
 

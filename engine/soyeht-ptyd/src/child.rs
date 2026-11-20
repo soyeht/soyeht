@@ -22,12 +22,18 @@ pub enum Reach {
 
 use soyeht_platform::log;
 use std::{
-    io, thread,
+    thread,
     time::{Duration, Instant},
 };
 
 /// How long ending a child waits for it to be gone while the caller holds its lock.
 const REAP_LIMIT: Duration = Duration::from_secs(2);
+
+/// The first pause between two looks at children that were killed and are not yet gone. A killed
+/// child is usually gone within a millisecond or two, so the pause starts short and doubles up to
+/// [`LAST_PAUSE`] for one that is slow to go.
+const FIRST_PAUSE: Duration = Duration::from_micros(500);
+const LAST_PAUSE: Duration = Duration::from_millis(5);
 
 impl Child {
     /// Ends the child as far as `reach` says and collects its exit; true when it was collected.
@@ -36,17 +42,41 @@ impl Child {
     /// which collects it when it does end: use this for a child that has a watcher, and
     /// [`Child::discard`] for one that has none.
     pub fn end(&mut self, reach: Reach) -> bool {
-        self.kill(reach);
-        match self.wait_within(REAP_LIMIT) {
-            Ok(Some(_)) => true,
-            Ok(None) => {
-                log::event("ptyd.child_still_running_after_kill", &[]);
-                false
+        Self::end_together(&mut [(self, reach)])
+    }
+
+    /// [`Child::end`] for several children at once: each is killed first and then all are waited
+    /// for under one limit, so the time is that of the slowest child and not the sum of them. True
+    /// when every one was collected.
+    pub fn end_together(children: &mut [(&mut Child, Reach)]) -> bool {
+        for (child, reach) in children.iter() {
+            child.kill(*reach);
+        }
+        let deadline = Instant::now() + REAP_LIMIT;
+        let mut pause = FIRST_PAUSE;
+        let mut collected = true;
+        let mut waiting: Vec<usize> = (0..children.len()).collect();
+        loop {
+            waiting.retain(|&at| match children[at].0.try_wait() {
+                Ok(None) => true,
+                Ok(Some(_)) => false,
+                Err(error) => {
+                    log::failure("ptyd.child_wait_failed", &error);
+                    collected = false;
+                    false
+                }
+            });
+            if waiting.is_empty() {
+                return collected;
             }
-            Err(error) => {
-                log::failure("ptyd.child_wait_failed", &error);
-                false
+            if Instant::now() >= deadline {
+                for _ in &waiting {
+                    log::event("ptyd.child_still_running_after_kill", &[]);
+                }
+                return false;
             }
+            thread::sleep(pause);
+            pause = (pause * 2).min(LAST_PAUSE);
         }
     }
 
@@ -66,21 +96,6 @@ impl Child {
             });
         if let Err(error) = reaper {
             log::failure("ptyd.reaper_spawn_failed", &error);
-        }
-    }
-
-    /// Waits for the child to end, for at most `limit`; `None` when it has not. Used after the
-    /// child was killed, by callers that hold a lock the rest of the supervisor needs.
-    pub fn wait_within(&mut self, limit: Duration) -> io::Result<Option<Exit>> {
-        let deadline = Instant::now() + limit;
-        loop {
-            if let Some(exit) = self.try_wait()? {
-                return Ok(Some(exit));
-            }
-            if Instant::now() >= deadline {
-                return Ok(None);
-            }
-            thread::sleep(Duration::from_millis(5));
         }
     }
 }

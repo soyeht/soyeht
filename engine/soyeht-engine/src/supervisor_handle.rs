@@ -27,7 +27,7 @@ use crate::{
 };
 use soyeht_ptyd::{
     client::{Client, IO_TIMEOUT},
-    wire::{FEATURE_FOREGROUND, FEATURE_PANE_BINDING, Request, Response},
+    wire::{FEATURE_CLOSE_MANY, FEATURE_FOREGROUND, FEATURE_PANE_BINDING, Request, Response},
 };
 use std::{
     sync::{
@@ -84,6 +84,8 @@ pub struct Supervisor {
     pane_binding: bool,
     /// Whether the supervisor answers `Foreground`, the programs a terminal runs (ADR 0165).
     foreground: bool,
+    /// Whether the supervisor closes several processes in one request (ADR 0171).
+    close_many: bool,
 }
 
 impl Supervisor {
@@ -93,6 +95,7 @@ impl Supervisor {
             generation: port.supervisor_generation(),
             pane_binding: port.supports(FEATURE_PANE_BINDING),
             foreground: port.supports(FEATURE_FOREGROUND),
+            close_many: port.supports(FEATURE_CLOSE_MANY),
             connection: Arc::new(Connection {
                 port: Mutex::new(port),
                 broken: AtomicBool::new(false),
@@ -116,6 +119,11 @@ impl Supervisor {
     /// Whether this link may ask what a terminal runs in its foreground (ADR 0165).
     pub(crate) fn reports_foreground(&self) -> bool {
         self.foreground
+    }
+
+    /// Whether this link may close several processes in one request (ADR 0171).
+    pub(crate) fn closes_together(&self) -> bool {
+        self.close_many
     }
 
     /// Whether a call left the stream in an unknown state. Such a handle only fails.
