@@ -259,16 +259,24 @@ impl State {
 
     /// Whether applying `event` can change what the window draws. Terminal output cannot while its
     /// pane is in a workspace that is not the selected one: the replica of its screen keeps up
-    /// with the output, and the pane draws that replica when its workspace is selected.
+    /// with the output, and the pane draws that replica when its workspace is selected. Nor can
+    /// the update of a message of an agent in such a workspace.
     pub fn changes_view(&self, event: &Event) -> bool {
-        let Event::Terminal(output) = event else {
-            return true;
-        };
-        let selected = self.selected_workspace.as_deref();
-        self.panes
-            .iter()
-            .find(|pane| pane.pane_id == output.pane_id())
-            .is_some_and(|pane| selected == Some(pane.workspace_id.as_str()))
+        match event {
+            Event::Terminal(output) => {
+                let selected = self.selected_workspace.as_deref();
+                self.panes
+                    .iter()
+                    .find(|pane| pane.pane_id == output.pane_id())
+                    .is_some_and(|pane| selected == Some(pane.workspace_id.as_str()))
+            }
+            // The messages of an agent in a workspace that is not shown are read when it is.
+            Event::Notification {
+                name: EventName::PaneUpdate,
+                params,
+            } => self.skipped_text(params).is_none(),
+            _ => true,
+        }
     }
 
     /// Fits a terminal's screen to the room its view has. Returns the new size when it changed,

@@ -424,7 +424,7 @@ struct WritingSlideShowSurface: View {
     }
   }
   private var slides: [WritingSlide] { writing?.structure?.slides ?? [] }
-  private var paneExists: Bool { client.panes.contains { $0.paneId == session.paneId } }
+  private var paneExists: Bool { client.pane(session.paneId) != nil }
   private var reconcileKey: String {
     "\(client.connected):\(paneExists):\(slides.count)"
   }
@@ -509,16 +509,16 @@ struct WritingSlideShowHostModifier: ViewModifier {
       )
       .environment(\.writingSlideShowViewportRegistry, coordinator.viewportRegistry)
       .modifier(WritingSlideShowWindowEventsModifier(coordinator: coordinator))
-      .onChange(of: client.panes.map(\.paneId)) { _, paneIds in
-        guard let session = coordinator.session else { return }
+      .onChange(of: coordinator.session.map { client.pane($0.paneId) != nil }) { _, exists in
+        guard coordinator.session != nil, let exists else { return }
         coordinator.reconcile(
-          paneExists: paneIds.contains(session.paneId), connected: client.connected,
+          paneExists: exists, connected: client.connected,
           slideCount: coordinator.navigation.slideCount)
       }
       .onChange(of: client.connected) { _, connected in
         guard let session = coordinator.session else { return }
         coordinator.reconcile(
-          paneExists: client.panes.contains { $0.paneId == session.paneId },
+          paneExists: client.pane(session.paneId) != nil,
           connected: connected, slideCount: coordinator.navigation.slideCount)
       }
   }

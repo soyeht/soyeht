@@ -16,7 +16,7 @@ fn connected(panes: &[(&str, &str)]) -> (State, Vec<Effect>) {
     (state, effects)
 }
 
-fn notification(name: EventName, params: Value) -> Event {
+pub(super) fn notification(name: EventName, params: Value) -> Event {
     Event::Notification { name, params }
 }
 

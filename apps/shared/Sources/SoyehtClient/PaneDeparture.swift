@@ -22,11 +22,7 @@ extension EngineClient {
   /// The one way a pane enters the replica: a pane closed since the last snapshot is refused.
   @discardableResult func upsertPane(_ pane: Pane) -> Bool {
     guard !closedPaneIds.contains(pane.paneId) else { return false }
-    if let index = panes.firstIndex(where: { $0.paneId == pane.paneId }) {
-      panes[index] = pane
-    } else {
-      panes.append(pane)
-    }
+    paneStore.upsert(pane)
     return true
   }
 
@@ -65,9 +61,9 @@ extension EngineClient {
   func removePane(_ paneId: String?) {
     guard let paneId else { return }
     closedPaneIds.insert(paneId)
-    let closing = panes.first { $0.paneId == paneId }
+    let closing = pane(paneId)
     let workspaceId = closing?.workspaceId
-    panes.removeAll { $0.paneId == paneId }
+    paneStore.remove(paneId)
     // The last tab closing leaves the empty editor place, which has no file to explain.
     if let closing, closing.mode == .editor,
       !panes.contains(where: { $0.mode == .editor && $0.workspaceId == closing.workspaceId })

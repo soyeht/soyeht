@@ -106,7 +106,7 @@ public final class TerminalSizeModeStore {
   }
 
   public func choose(_ mode: TerminalSizeMode, for paneId: String, client: EngineClient) {
-    let pane = client.panes.first { $0.paneId == paneId }
+    let pane = client.pane(paneId)
     let grid = pane.map { TerminalGrid(cols: Int($0.cols), rows: Int($0.rows)) }
     if let restore = choose(mode, for: paneId, paneGrid: grid) {
       client.resize(paneId: paneId, cols: restore.cols, rows: restore.rows)

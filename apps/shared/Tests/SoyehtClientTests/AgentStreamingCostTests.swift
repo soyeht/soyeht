@@ -132,6 +132,7 @@ private func counting(to count: Int) -> String {
 
 @MainActor @Test func twoThousandPartialUpdatesCostOneWritePerFrameAndOneParsePerWrite() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-streaming/engine.sock")
+  showPane(client, streamingPane)
   var view = AgentPaneView()
   view.merge(history(300))
   client.agentPanes[streamingPane] = view
@@ -163,6 +164,7 @@ private func counting(to count: Int) -> String {
 
 @MainActor @Test func aLaterEventSeesTheTranscriptAsTheEngineLeftIt() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-streaming/engine.sock")
+  showPane(client, streamingPane)
   try client.applyAgentEvent(.paneUpdate, try event("hel"))
   #expect(client.agentPanes[streamingPane] == nil)
   try client.applyAgentEvent(.paneUpdate, try event("hello"))
@@ -187,6 +189,7 @@ private func counting(to count: Int) -> String {
 
 @MainActor @Test func aPartialUpdateIsWrittenWithinAFrameWithoutAFlush() async throws {
   let client = EngineClient(socket: "/tmp/sn-agent-streaming/engine.sock")
+  showPane(client, streamingPane)
   try client.applyAgentEvent(.paneUpdate, try event("arriving"))
   #expect(client.agentPanes[streamingPane] == nil)
   for _ in 0..<200 where client.agentPanes[streamingPane] == nil {
@@ -197,6 +200,7 @@ private func counting(to count: Int) -> String {
 
 @MainActor @Test func aClosedPaneDoesNotComeBackFromItsPendingText() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-streaming/engine.sock")
+  showPane(client, streamingPane)
   client.agentPanes[streamingPane] = AgentPaneView()
   try client.applyAgentEvent(.paneUpdate, try event("last words"))
   client.discardAgentPane(streamingPane)
@@ -269,6 +273,7 @@ private func counting(to count: Int) -> String {
 
 @MainActor @Test func aDisconnectWritesTheWaitingTextBeforeItDropsAnything() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-streaming/engine.sock")
+  showPane(client, streamingPane)
   try client.applyAgentEvent(.paneUpdate, try event("last words"))
   #expect(client.agentPanes[streamingPane] == nil)
   client.resetAgentSession()

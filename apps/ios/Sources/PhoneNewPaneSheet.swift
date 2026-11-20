@@ -193,7 +193,7 @@ struct PhoneNewPaneSheet: View {
     form.keepOrChooseHarness(in: client.harnesses, preferredId: client.preferredHarnessId)
     guard form.directory.isEmpty else { return }
     let target =
-      workspaceId ?? client.panes.first { $0.paneId == client.selectedPaneId }?.workspaceId
+      workspaceId ?? client.selectedPane?.workspaceId
     form.directory =
       client.workspaces.first { $0.workspaceId == target }?.path
       ?? WorkspaceFolderPolicy.recent(workspaces: client.workspaces, panes: client.panes)

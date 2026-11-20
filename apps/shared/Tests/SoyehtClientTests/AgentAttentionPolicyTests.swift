@@ -3,7 +3,7 @@ import Testing
 
 @testable import SoyehtClient
 
-private func agentPane(
+func agentPane(
   _ id: String, workspaceId: String, state: PaneState = .idle
 ) -> Pane {
   Pane(
