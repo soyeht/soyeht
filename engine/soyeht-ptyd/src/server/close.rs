@@ -39,9 +39,12 @@ fn finish(stream: &mut Stream) {
             return;
         }
         // The end of the peer's input, a reset and the deadline all end the drain.
-        match stream.read(&mut buffer) {
-            Ok(0) | Err(_) => return,
-            Ok(read) => spent += read,
+        let Ok(read) = stream.read(&mut buffer) else {
+            return;
+        };
+        if read == 0 {
+            return;
         }
+        spent += read;
     }
 }
