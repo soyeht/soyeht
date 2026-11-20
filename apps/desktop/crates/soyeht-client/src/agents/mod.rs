@@ -411,6 +411,14 @@ impl State {
     ) -> serde_json::Result<Vec<Effect>> {
         Ok(match name {
             EventName::PaneUpdate => {
+                // A pane that is not shown is not followed message by message: what it receives
+                // comes back in the one reload made when it is shown. Its update is not read.
+                if let Some(id) = self.skipped_text(&params).map(str::to_owned) {
+                    if let Some(view) = self.agents.get_mut(&id) {
+                        view.mark_stale();
+                    }
+                    return Ok(Vec::new());
+                }
                 if let Some((pane_id, message)) =
                     agent::message_of(serde_json::from_value::<PaneUpdateEvent>(params)?)
                     && let Some(view) = self.agents.get_mut(&pane_id)
@@ -548,6 +556,19 @@ impl State {
         }
     }
 
+    /// The pane an update names, when the update is the growing text of a reply or a thought of
+    /// an agent that no workspace shows: the reload when it is shown brings that text.
+    pub(crate) fn skipped_text<'a>(&self, params: &'a Value) -> Option<&'a str> {
+        if !agent::is_growing_text(params) {
+            return None;
+        }
+        let id = params.get("paneId")?.as_str()?;
+        self.agents
+            .get(id)
+            .filter(|view| !view.is_shown())
+            .map(|_| id)
+    }
+
     /// The command that reads the newest page of a pane that is shown again with less than a page
     /// held, once each time it is shown.
     pub fn refill_transcript(&mut self, pane_id: &str) -> Option<Command> {
@@ -617,5 +638,7 @@ pub(crate) fn observe_turn(view: &mut AgentView, pane: &Pane) {
     view.turn.observe(prompt, std::time::Instant::now());
 }
 
+#[cfg(test)]
+mod hidden_tests;
 #[cfg(test)]
 mod tests;

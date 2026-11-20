@@ -112,7 +112,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
     self.harnessControl = harnessControl()
   }
 
-  private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
+  private var pane: Pane? { client.pane(paneId) }
   /// What is typed and not sent; it outlives this view (see `AgentPromptDrafts`).
   private var prompt: String {
     get { AgentPromptDrafts.shared.text(for: paneId) }

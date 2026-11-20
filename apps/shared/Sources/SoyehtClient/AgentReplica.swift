@@ -219,7 +219,8 @@ extension EngineClient {
   /// again with less than a page, and more at the engine, reads the newest page.
   func agentPaneShown(_ viewer: AgentPaneViewer, _ paneId: String, _ shown: Bool) {
     guard agentPanes.setViewer(viewer, paneId, shown: shown) else { return }
-    guard let view = agentPanes[paneId] else { return }
+    // A pane that received nothing while it was not shown has no view yet; it can still be stale.
+    let view = agentPanes[paneId] ?? AgentPaneView()
     if shown {
       let stale = agentPanes.isStale(paneId)
       let wants = AgentTranscriptWindow.wantsNewestPage(
@@ -292,6 +293,16 @@ extension EngineClient {
     if eventName != .paneUpdate { partials.flush() }
     switch eventName {
     case .paneUpdate:
+      // The growing text of a reply or a thought is not read for a pane no view shows: each
+      // update carries the whole text so far, and the reload when the pane is shown brings it.
+      // Everything else (a finished message, a tool call, a subagent, a plan, usage) is applied,
+      // so a row that is still open keeps its place and its end.
+      if AgentPartialUpdates.isPartial(wire: params), let paneId = params["paneId"].string,
+        !agentPanes.isShown(paneId)
+      {
+        agentPanes.markStale(paneId)
+        return
+      }
       let update = try params.decoded(PaneUpdateEvent.self)
       let (paneId, message) = transcriptMessage(update)
       if AgentPartialUpdates.isPartial(message) {
@@ -487,6 +498,7 @@ extension EngineClient {
   func discardAgentPane(_ paneId: String) {
     partials.flush()
     agentPanes[paneId] = nil
+    agentPanes.forget(paneId)
     agentWebDrafts.removeValue(forKey: paneId)
   }
 

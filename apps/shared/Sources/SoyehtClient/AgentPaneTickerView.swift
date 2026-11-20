@@ -39,7 +39,7 @@ public struct AgentPaneTickerView: View {
     self.color = color
   }
 
-  private var pane: Pane? { client.panes.first { $0.paneId == paneId } }
+  private var pane: Pane? { client.pane(paneId) }
 
   private func context(now: Date) -> AgentTickerContext {
     AgentTickerContext(

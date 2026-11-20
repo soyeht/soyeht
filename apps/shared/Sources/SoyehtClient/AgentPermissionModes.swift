@@ -74,7 +74,7 @@ public struct AgentPermissionModes: Equatable, Sendable {
 
 extension EngineClient {
   public func permissionModes(paneId: String) -> AgentPermissionModes? {
-    panes.first { $0.paneId == paneId }?.agent.flatMap(AgentPermissionModes.init(agent:))
+    pane(paneId)?.agent.flatMap(AgentPermissionModes.init(agent:))
   }
 
   /// The one path every surface uses to change a pane's mode: a native

@@ -407,7 +407,7 @@ private struct WebPickTray: View {
   let attach: (String) -> Void
 
   private var agents: [Pane] {
-    client.panes.filter { $0.workspaceId == pane.workspaceId && $0.mode == .agent }
+    client.panes(in: pane.workspaceId).filter { $0.mode == .agent }
   }
 
   private var preferred: Pane? {

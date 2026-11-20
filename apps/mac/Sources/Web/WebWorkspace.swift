@@ -14,7 +14,7 @@ struct WebWorkspace: View {
 
   private var panes: [Pane] {
     guard let workspaceId else { return [] }
-    return client.panes.filter { $0.workspaceId == workspaceId && $0.mode == .web }
+    return client.panes(in: workspaceId).filter { $0.mode == .web }
   }
 
   var body: some View {

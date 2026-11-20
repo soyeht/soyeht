@@ -132,7 +132,7 @@ public struct HarnessSwitchControl: Equatable, Sendable {
 extension EngineClient {
   public func canSwitchAgentHarness(_ paneId: String) -> Bool {
     HarnessSwitchModel.canSwitch(
-      connected: connected, agent: panes.first { $0.paneId == paneId }?.agent,
+      connected: connected, agent: pane(paneId)?.agent,
       switchState: agentPanes[paneId]?.harnessSwitch)
   }
 

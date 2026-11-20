@@ -7,9 +7,9 @@
 use crate::{Error, Result, cards::CardState, switch::HarnessSwitchView};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use soyeht_protocol::{
-    AgentMessageUpdateKind, ConfigOption, ConfigValue, Pane, PaneState, PaneUpdateEvent,
-    PermissionRequest, PlanStatus, TerminalOutput, ToolCall, ToolStatus, TranscriptKind,
-    TranscriptMessage, TranscriptRole, client_policy::CAPS_TICKER_HISTORY,
+    AgentMessageUpdateKind, AgentThoughtUpdateKind, ConfigOption, ConfigValue, Pane, PaneState,
+    PaneUpdateEvent, PermissionRequest, PlanStatus, TerminalOutput, ToolCall, ToolStatus,
+    TranscriptKind, TranscriptMessage, TranscriptRole, client_policy::CAPS_TICKER_HISTORY,
 };
 use std::{
     collections::HashMap,
@@ -363,6 +363,21 @@ macro_rules! tool_event {
 
 /// The pane an update belongs to and the message it leaves behind. Terminal output,
 /// configuration changes and subagent runs arrive with the transcript instead.
+/// Whether an update still on the wire is the growing text of a reply or a thought: it carries
+/// the whole text so far, so a client that does not show the pane can leave it for the reload.
+/// A finished message, a tool call, a subagent, a plan and usage are not.
+pub fn is_growing_text(params: &serde_json::Value) -> bool {
+    let kind = params.get("kind").cloned().unwrap_or_default();
+    params.get("complete") == Some(&serde_json::Value::Bool(false))
+        && (matches!(
+            serde_json::from_value(kind.clone()),
+            Ok(AgentMessageUpdateKind::AgentMessageChunk)
+        ) || matches!(
+            serde_json::from_value(kind),
+            Ok(AgentThoughtUpdateKind::AgentThoughtChunk)
+        ))
+}
+
 pub fn message_of(update: PaneUpdateEvent) -> Option<(String, TranscriptMessage)> {
     Some(match update {
         PaneUpdateEvent::V0(value) => {

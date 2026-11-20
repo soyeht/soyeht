@@ -282,7 +282,7 @@ struct WorkspaceWindow: View {
   private func selectWorkspace(_ workspaceId: String) {
     newPaneDraft = nil
     taskWorkspaceId = workspaceId
-    if let pane = client.panes.first(where: { $0.workspaceId == workspaceId }) {
+    if let pane = client.panes(in: workspaceId).first {
       client.select(pane.paneId)
     }
   }
@@ -433,7 +433,7 @@ struct WorkspaceWindow: View {
   private func layoutSnapshot(_ workspaceId: String) throws -> PaneLayoutReconciliation {
     try client.paneLayouts.reconciledPresentation(
       for: workspaceId,
-      livePanes: client.layoutPanes(client.panes.filter { $0.workspaceId == workspaceId }),
+      livePanes: client.layoutPanes(client.panes(in: workspaceId)),
       sizing: MacPaneLayoutMetrics.sizing)
   }
   private func newPanePlaceholderId() -> String {
@@ -441,20 +441,20 @@ struct WorkspaceWindow: View {
   }
   private var webPaneKeys: [WebPaneKey] {
     let needed = neededWebSessions
-    return client.panes.filter { $0.mode == .web }.map {
+    return client.panes(mode: .web).map {
       WebPaneKey($0, needsSession: needed.contains($0.paneId))
     }
   }
 
   private var neededWebSessions: Set<String> {
     WebSessionLifecycle.needed(
-      panes: client.panes, shownWorkspaceId: selectedTaskWorkspaceId,
+      panes: client.panes(mode: .web), shownWorkspaceId: selectedTaskWorkspaceId,
       destination: navigation.destination)
   }
 
   private func reconcileWebSessions() {
     webHost.reconcile(
-      client.panes, shownWorkspaceId: selectedTaskWorkspaceId,
+      client.panes(mode: .web), shownWorkspaceId: selectedTaskWorkspaceId,
       destination: navigation.destination)
   }
 

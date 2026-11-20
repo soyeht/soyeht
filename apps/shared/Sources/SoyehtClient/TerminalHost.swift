@@ -224,7 +224,7 @@ public final class TerminalHost: NSObject, @preconcurrency TerminalViewDelegate 
   }
 
   private var representedPane: Pane? {
-    if let paneId { return client.panes.first { $0.paneId == paneId } }
+    if let paneId { return client.pane(paneId) }
     return client.selectedPane
   }
 }

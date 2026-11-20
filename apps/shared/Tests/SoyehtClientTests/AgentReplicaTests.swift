@@ -120,6 +120,7 @@ import Testing
 @MainActor @Test func agentReplicaReplacesChunksTracksQuestionsAndResetsSnapshotState() throws {
   let client = EngineClient(socket: "/tmp/sn-agent-replica/engine.sock")
   let paneId = "pane-agent"
+  showPane(client, paneId)
   func update(text: String, complete: Bool) throws {
     try client.applyAgentEvent(
       .paneUpdate,
