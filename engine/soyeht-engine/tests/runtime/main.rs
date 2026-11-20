@@ -36,7 +36,10 @@ use support::*;
 mod fuzz_support;
 
 mod adapter_acknowledgement;
+// These two start the rig's `#!/bin/sh` runners, which Windows does not run.
+#[cfg(unix)]
 mod adapter_directory;
+#[cfg(unix)]
 mod agent_cli_choice;
 mod agent_message_names;
 mod attack_floods;

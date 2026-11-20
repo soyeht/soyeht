@@ -5,7 +5,6 @@ use super::*;
 /// The programs that write the folder they were started in to `seen`, then start the fake agent:
 /// the package runner of a custom entry, and the `node` that runs a locked adapter's installed
 /// script (the first start installs it with the rig's `npm`).
-#[cfg(unix)]
 fn install_recording_runner(rig: &Rig, seen: &Path) {
     rig.install_fake_locked_adapter_runner(&format!("pwd -P > '{}'", seen.display()));
     write_script(
@@ -19,7 +18,6 @@ fn install_recording_runner(rig: &Rig, seen: &Path) {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn a_package_runner_adapter_starts_in_the_engines_folder_and_works_in_the_workspace() {
     let rig = Rig::with_own_search_path();
@@ -75,7 +73,6 @@ fn a_package_runner_adapter_starts_in_the_engines_folder_and_works_in_the_worksp
     assert!(rig.path.join("adapters").is_dir());
 }
 
-#[cfg(unix)]
 #[test]
 fn a_custom_harness_that_runs_npx_keeps_the_panes_folder() {
     let rig = Rig::with_own_search_path();
