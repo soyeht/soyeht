@@ -35,8 +35,9 @@ use support::*;
 #[path = "../../../soyeht-protocol/tests/fuzz_support/mod.rs"]
 mod fuzz_support;
 
+// These three start the rig's `#!/bin/sh` runners, which Windows does not run.
+#[cfg(unix)]
 mod adapter_acknowledgement;
-// These two start the rig's `#!/bin/sh` runners, which Windows does not run.
 #[cfg(unix)]
 mod adapter_directory;
 #[cfg(unix)]
