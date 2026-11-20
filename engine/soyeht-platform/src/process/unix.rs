@@ -204,11 +204,9 @@ mod tests {
         false
     }
 
-    #[test]
-    fn kill_tree_ends_the_group_and_a_descendant_that_left_it() {
-        let _serial = crate::testing::serialize_processes();
-        let _forks = crate::spawning();
-        // The shell leads a group, starts one sleeper in it and one in a session of its own.
+    /// A shell that leads a group, with one sleeper in the group and one in a session of its own,
+    /// and the ids of the two sleepers.
+    fn tree_with_an_escaped_child() -> (std::process::Child, [u32; 2]) {
         let mut leader = Command::new("sh")
             .args([
                 "-c",
@@ -220,7 +218,15 @@ mod tests {
             .unwrap();
         let mut lines = BufReader::new(leader.stdout.take().unwrap()).lines();
         let mut next_pid = || lines.next().unwrap().unwrap().parse::<u32>().unwrap();
-        let (in_group, escaped) = (next_pid(), next_pid());
+        let sleepers = [next_pid(), next_pid()];
+        (leader, sleepers)
+    }
+
+    #[test]
+    fn kill_tree_ends_the_group_and_a_descendant_that_left_it() {
+        let _serial = crate::testing::serialize_processes();
+        let _forks = crate::spawning();
+        let (mut leader, [in_group, escaped]) = tree_with_an_escaped_child();
         // Give perl time to leave the group before the tree is read.
         thread::sleep(Duration::from_millis(500));
         assert!(alive(in_group) && alive(escaped));
@@ -239,41 +245,19 @@ mod tests {
     fn kill_trees_ends_every_tree_it_is_given_and_refuses_pid_zero_and_one() {
         let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
-        // Each shell leads a group, starts one sleeper in it and one in a session of its own.
-        let mut leaders: Vec<_> = (0..3)
-            .map(|_| {
-                Command::new("sh")
-                    .args([
-                        "-c",
-                        "sleep 60 & echo $!; perl -MPOSIX -e 'setsid(); exec q(sleep), q(60)' & echo $!; wait",
-                    ])
-                    .stdout(Stdio::piped())
-                    .process_group(0)
-                    .spawn()
-                    .unwrap()
-            })
-            .collect();
-        let sleepers: Vec<u32> = leaders
-            .iter_mut()
-            .flat_map(|leader| {
-                let mut lines = BufReader::new(leader.stdout.take().unwrap()).lines();
-                (0..2)
-                    .map(|_| lines.next().unwrap().unwrap().parse().unwrap())
-                    .collect::<Vec<u32>>()
-            })
-            .collect();
-        // Give perl time to leave the group before the trees are read.
+        let trees: Vec<_> = (0..3).map(|_| tree_with_an_escaped_child()).collect();
+        // Give perl time to leave the groups before the trees are read.
         thread::sleep(Duration::from_millis(500));
-        let mut ids: Vec<u32> = leaders.iter().map(std::process::Child::id).collect();
+        let mut ids: Vec<u32> = trees.iter().map(|(leader, _)| leader.id()).collect();
         ids.extend([0, 1]);
 
         kill_trees(&ids);
 
-        for leader in &mut leaders {
+        for (mut leader, sleepers) in trees {
             leader.wait().unwrap();
-        }
-        for sleeper in sleepers {
-            assert!(wait_gone(sleeper), "a process of a tree survived");
+            for sleeper in sleepers {
+                assert!(wait_gone(sleeper), "a process of a tree survived");
+            }
         }
     }
 
