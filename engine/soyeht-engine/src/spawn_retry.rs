@@ -19,7 +19,7 @@ use crate::{
 };
 use soyeht_platform::log::Line;
 use soyeht_protocol::{ErrorKind, PaneState};
-use soyeht_ptyd::wire::{Request, Response};
+use soyeht_ptyd::wire::{MAX_CLOSE_MANY, Request, Response};
 use std::collections::BTreeMap;
 
 /// The delay after the first failed attempt is twice this; the delay doubles up to the cap.
@@ -249,6 +249,73 @@ impl Core {
         );
         if let Err(error) = started {
             self.settle_close(instance_id, Err(error));
+        }
+    }
+
+    /// Closes the processes `instance_ids` of closed panes. A supervisor that closes several
+    /// processes in one request (ADR 0171) gets them in one job, which writes its registry once
+    /// and waits for all of them together; any other, or a batch that fails, gets one close for
+    /// each, which settles and retries each by itself.
+    pub(crate) fn close_processes(&mut self, instance_ids: Vec<String>) {
+        let supervisor = match self.supervisor() {
+            Ok(supervisor) if supervisor.closes_together() && instance_ids.len() > 1 => supervisor,
+            // One at a time: each close settles itself, on a lost link too.
+            _ => {
+                for instance_id in &instance_ids {
+                    self.close_process(instance_id);
+                }
+                return;
+            }
+        };
+        for instance_ids in instance_ids.chunks(MAX_CLOSE_MANY) {
+            let instance_ids = instance_ids.to_vec();
+            let refs: Vec<&str> = instance_ids.iter().map(String::as_str).collect();
+            // A size or an acknowledgement still queued for a process would find it gone.
+            for instance_id in &refs {
+                self.forget_later_for(instance_id);
+            }
+            let job = format!("close-many:{}", instance_ids.join(","));
+            if !self.background.accepts(&job) {
+                continue;
+            }
+            let turn = self.turn(&refs);
+            let (used, sending) = (supervisor.clone(), supervisor.clone());
+            let (asked, settling) = (instance_ids.clone(), instance_ids.clone());
+            let started = self.spawn_background(
+                job,
+                move || {
+                    turn.wait();
+                    sending
+                        .call(Request::CloseMany {
+                            instance_ids: asked,
+                        })
+                        .map(drop)
+                },
+                move |core, closed| {
+                    match core.settle_supervisor(&used, closed) {
+                        Ok(()) => {
+                            for instance_id in &settling {
+                                core.settle_close(instance_id, Ok(()));
+                            }
+                        }
+                        Err(error) => {
+                            core.settle_supervisor_call("engine.pane_close_failed", Err(error));
+                            for instance_id in &settling {
+                                core.close_process(instance_id);
+                            }
+                        }
+                    }
+                    Ok(())
+                },
+            );
+            if let Err(error) = started {
+                // The job never started: each process gets a close of its own, which settles and
+                // retries by itself.
+                self.settle_supervisor_call("engine.pane_close_failed", Err(error));
+                for instance_id in &instance_ids {
+                    self.close_process(instance_id);
+                }
+            }
         }
     }
 

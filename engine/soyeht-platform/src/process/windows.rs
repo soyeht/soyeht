@@ -214,14 +214,7 @@ impl Spawned {
     /// processes are already ending, or none is left) the process itself is ended, and one
     /// that already ended is the outcome that was wanted.
     pub fn kill_tree(&self, limit: Duration) -> io::Result<()> {
-        match self.job.terminate() {
-            Ok(()) => {}
-            Err(error) if is_access_denied(&error) => end_process(&self.process)?,
-            Err(error) => {
-                end_process(&self.process)?;
-                return Err(error);
-            }
-        }
+        self.terminate_tree()?;
         if self.job.wait_empty(limit)? {
             Ok(())
         } else {
@@ -230,6 +223,24 @@ impl Spawned {
                 "processes of the job were still running after being ended",
             ))
         }
+    }
+
+    /// The first half of [`Spawned::kill_tree`]: ends the job's processes without waiting for them,
+    /// for a caller that ends many and waits for all together ([`Spawned::tree_is_gone`]).
+    pub fn terminate_tree(&self) -> io::Result<()> {
+        match self.job.terminate() {
+            Ok(()) => Ok(()),
+            Err(error) if is_access_denied(&error) => end_process(&self.process),
+            Err(error) => {
+                end_process(&self.process)?;
+                Err(error)
+            }
+        }
+    }
+
+    /// Whether the job holds no process any more.
+    pub fn tree_is_gone(&self) -> io::Result<bool> {
+        self.job.wait_empty(Duration::ZERO)
     }
 
     /// Lets what is left in the job outlive the job's last handle. A bounded command that
