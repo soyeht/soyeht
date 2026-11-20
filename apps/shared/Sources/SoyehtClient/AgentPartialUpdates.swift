@@ -33,6 +33,13 @@ struct AgentPartialUpdates {
     return message.kind == .message || message.kind == .thought
   }
 
+  /// The same rule for an update still on the wire, read from its `kind` and `complete` alone.
+  static func isPartial(wire params: JsonValue) -> Bool {
+    guard params["complete"] == .bool(false), let kind = params["kind"].string else { return false }
+    return kind == AgentMessageUpdateKind.agent_message_chunk.rawValue
+      || kind == AgentThoughtUpdateKind.agent_thought_chunk.rawValue
+  }
+
   /// Keeps `message` for the next frame; returns whether it is the first one waiting, which is
   /// when the caller starts the frame timer.
   mutating func offer(paneId: String, _ message: TranscriptMessage) -> Bool {

@@ -35,6 +35,21 @@ import Testing
   client.agentPaneShown(viewer, paneId, true)
 }
 
+/// Answers the reads of a pane's transcript with `page` (given the request's parameters) and the
+/// queue as empty.
+@MainActor private func stubTranscript(
+  _ client: EngineClient,
+  _ page: @escaping @MainActor (JsonValue) async throws -> PaneTranscriptResult
+) {
+  client.requestStub = { method, params in
+    switch method {
+    case .paneTranscript: return try .encoded(await page(params))
+    case .paneQueueList: return try .encoded(PaneQueueListResult(items: [], draft: false))
+    default: throw ClientFailure.invalidFrame
+    }
+  }
+}
+
 private func history(_ id: String) -> [TranscriptMessage] {
   (1...50).map { index in
     TranscriptMessage(
@@ -130,14 +145,9 @@ private func stateChanged(_ paneId: String, _ state: PaneState) throws -> JsonVa
     localId: "reply-\(id)", generation: 1, seq: "900", role: .assistant, kind: .message,
     text: "the whole reply, which streamed while the pane was hidden", complete: true)
   var reads = 0
-  client.requestStub = { method, _ in
-    switch method {
-    case .paneTranscript:
-      reads += 1
-      return try .encoded(PaneTranscriptResult(items: [reply], nextCursor: nil))
-    case .paneQueueList: return try .encoded(PaneQueueListResult(items: [], draft: false))
-    default: throw ClientFailure.invalidFrame
-    }
+  stubTranscript(client) { _ in
+    reads += 1
+    return PaneTranscriptResult(items: [reply], nextCursor: nil)
   }
   for text in ["the", "the whole", "the whole reply, which"] {
     try client.applyAgentEvent(.paneUpdate, chunk(id, text))
@@ -155,4 +165,134 @@ private func stateChanged(_ paneId: String, _ state: PaneState) throws -> JsonVa
   try client.applyAgentEvent(.paneUpdate, chunk(id, "and one more", complete: false))
   client.partials.flush()
   #expect(client.partials.offered == 1)
+}
+
+// What a pane that was hidden must still hold when it is shown: nothing the growing text skipped
+// may leave a hole or an open row behind.
+
+private func message(_ index: Int, text: String? = nil, complete: Bool = true) -> TranscriptMessage
+{
+  TranscriptMessage(
+    localId: "m-\(index)", generation: 1, seq: "\(index)", role: .assistant, kind: .message,
+    text: text ?? "message \(index)", complete: complete)
+}
+
+private func update(_ paneId: String, _ index: Int, text: String? = nil, complete: Bool = true)
+  throws -> JsonValue
+{
+  try .encoded(
+    PaneUpdateEvent.v0(
+      AgentMessageUpdate(
+        eventId: "1", at: "2026-11-19T00:00:00Z", paneId: paneId, kind: .agent_message_chunk,
+        generation: 1, seq: "\(index)", localId: "m-\(index)", text: text ?? "message \(index)",
+        complete: complete)))
+}
+
+private func subagentRow(_ paneId: String, status: SubagentStatus) throws -> JsonValue {
+  try .encoded(
+    PaneUpdateEvent.v8(
+      SubagentUpdate(
+        eventId: "1", at: "2026-11-19T00:00:00Z", paneId: paneId, kind: .subagent,
+        generation: 1, seq: "2", localId: "row",
+        subagent: SubagentRun(subagentId: "alpha", name: "Alpha", task: "Task", status: status))))
+}
+
+/// A client with the agent pane `paneId`, and the view that shows it.
+@MainActor private func shownPane(_ paneId: String) -> (EngineClient, AgentPaneViewer) {
+  let client = EngineClient(socket: "/tmp/sn-hidden-panes/engine.sock")
+  client.connected = true
+  client.panes = [agentPane(paneId, workspaceId: "w")]
+  let viewer = AgentPaneViewer()
+  client.agentPaneShown(viewer, paneId, true)
+  return (client, viewer)
+}
+
+@MainActor private func settle(_ done: @MainActor () -> Bool) async {
+  for _ in 0..<2000 where !done() { await Task.yield() }
+}
+
+@MainActor @Test func aLongRunInAHiddenPaneLeavesNoHoleWhenItIsShown() async throws {
+  let (client, viewer) = shownPane("h")
+  for index in 1...50 { try client.applyAgentEvent(.paneUpdate, update("h", index)) }
+  client.agentPaneShown(viewer, "h", false)
+  // Finished messages are applied while hidden; the window keeps the newest.
+  for index in 51...450 { try client.applyAgentEvent(.paneUpdate, update("h", index)) }
+  stubTranscript(client) { params in
+    let before = params["before"].string.flatMap { Int($0) } ?? 451
+    let first = max(1, before - 100)
+    return PaneTranscriptResult(
+      items: (first..<before).map { message($0) }, nextCursor: first > 1 ? "\(first)" : nil)
+  }
+  client.agentPaneShown(viewer, "h", true)
+  await settle { client.agentPanes["h"]?.messages.last?.seq == "450" }
+  let seqs = (client.agentPanes["h"]?.messages ?? []).compactMap { Int($0.seq) }
+  #expect(seqs.last == 450)
+  #expect(zip(seqs, seqs.dropFirst()).allSatisfy { $1 == $0 + 1 }, "the transcript skips messages")
+}
+
+@MainActor @Test func aRowThatFinishedWhileHiddenIsNotLeftRunning() async throws {
+  let (client, viewer) = shownPane("h")
+  try client.applyAgentEvent(.paneUpdate, subagentRow("h", status: .running))
+  for index in 3...160 { try client.applyAgentEvent(.paneUpdate, update("h", index)) }
+  client.agentPaneShown(viewer, "h", false)
+  for index in 161...180 { try client.applyAgentEvent(.paneUpdate, update("h", index)) }
+  try client.applyAgentEvent(.paneUpdate, subagentRow("h", status: .completed))
+  stubTranscript(client) { _ in
+    PaneTranscriptResult(items: (81...180).map { message($0) }, nextCursor: "81")
+  }
+  client.agentPaneShown(viewer, "h", true)
+  await settle { client.agentPanes["h"]?.messages.last?.seq == "180" }
+  let row = client.agentPanes["h"]?.messages.first { $0.localId == "row" }
+  #expect(row == nil || row?.subagent?.status == .completed, "a helper that finished shows running")
+}
+
+@MainActor @Test func aPaneShownMidReplyKeepsTheNewerLiveText() async throws {
+  let (client, viewer) = shownPane("h")
+  client.agentPaneShown(viewer, "h", false)
+  try client.applyAgentEvent(.paneUpdate, update("h", 7, text: "a", complete: false))
+  #expect(client.agentPanes["h"] == nil && client.agentPanes.isStale("h"))
+  var release: CheckedContinuation<Void, Never>?
+  stubTranscript(client) { _ in
+    await withCheckedContinuation { release = $0 }
+    return PaneTranscriptResult(items: [message(7, text: "a b", complete: false)], nextCursor: nil)
+  }
+  client.agentPaneShown(viewer, "h", true)
+  await settle { release != nil }
+  try client.applyAgentEvent(.paneUpdate, update("h", 7, text: "a b c d", complete: false))
+  client.partials.flush()
+  release?.resume()
+  await settle { !client.agentPanes.isStale("h") }
+  #expect(client.agentPanes["h"]?.messages.map(\.text) == ["a b c d"])
+}
+
+@MainActor @Test func aClosedPaneLeavesNothingInTheStores() throws {
+  let (client, hidden) = client(hidden: 1)
+  try client.applyAgentEvent(.paneUpdate, chunk(hidden[0], "text"))
+  #expect(client.agentPanes.isStale(hidden[0]))
+  client.removePane(hidden[0])
+  #expect(!client.agentPanes.isStale(hidden[0]) && client.pane(hidden[0]) == nil)
+}
+
+@Test func onlyTheGrowingTextOfAReplyOrAThoughtIsSkippedOnTheWire() throws {
+  func wire(_ update: PaneUpdateEvent) throws -> JsonValue { try .encoded(update) }
+  let partial = try wire(
+    .v0(
+      AgentMessageUpdate(
+        eventId: "1", at: "t", paneId: "p", kind: .agent_message_chunk, generation: 1, seq: "1",
+        localId: "m", text: "x", complete: false)))
+  let finished = try wire(
+    .v0(
+      AgentMessageUpdate(
+        eventId: "1", at: "t", paneId: "p", kind: .agent_message_chunk, generation: 1, seq: "1",
+        localId: "m", text: "x", complete: true)))
+  let thought = try wire(
+    .v1(
+      AgentThoughtUpdate(
+        eventId: "1", at: "t", paneId: "p", kind: .agent_thought_chunk, generation: 1, seq: "1",
+        localId: "m", text: "x", complete: false)))
+  let tool = try subagentRow("p", status: .running)
+  #expect(
+    AgentPartialUpdates.isPartial(wire: partial) && AgentPartialUpdates.isPartial(wire: thought))
+  #expect(
+    !AgentPartialUpdates.isPartial(wire: finished) && !AgentPartialUpdates.isPartial(wire: tool))
 }

@@ -16,7 +16,7 @@ fn connected(panes: &[(&str, &str)]) -> (State, Vec<Effect>) {
     (state, effects)
 }
 
-fn notification(name: EventName, params: Value) -> Event {
+pub(super) fn notification(name: EventName, params: Value) -> Event {
     Event::Notification { name, params }
 }
 
@@ -753,47 +753,4 @@ fn a_pane_opens_in_the_folder_it_is_asked_for_else_in_the_one_of_its_workspace()
             ticket: 5,
         }
     );
-}
-
-/// An agent working in a workspace nobody looks at: its messages cost the window no frame and the
-/// client no decoding, and the reload made when the workspace is shown brings them.
-#[test]
-fn the_messages_of_an_agent_in_a_workspace_nobody_shows_come_with_the_reload() {
-    let mut state = State::default();
-    state.apply(Event::Connected(Snapshot {
-        workspaces: vec![workspace("w"), workspace("other")],
-        panes: vec![pane("a", "w", "agent"), pane("h", "other", "agent")],
-        ..Snapshot::default()
-    }));
-    let update = |pane: &str, text: &str| {
-        notification(
-            EventName::PaneUpdate,
-            json!({"eventId": "9", "at": "now", "paneId": pane, "kind": "agent_message_chunk",
-                   "generation": 1, "seq": "2", "localId": "m", "text": text, "complete": false}),
-        )
-    };
-    let hidden = update("h", "streaming in the other workspace");
-    assert!(
-        !state.changes_view(&hidden),
-        "no frame for a pane not shown"
-    );
-    assert!(state.apply(hidden).is_empty());
-    assert!(
-        state.agent("h").unwrap().messages().is_empty(),
-        "not decoded"
-    );
-    let shown = update("a", "streaming here");
-    assert!(state.changes_view(&shown));
-    state.apply(shown);
-    assert_eq!(state.agent("a").unwrap().messages().len(), 1);
-
-    state.select_workspace("other");
-    assert_eq!(
-        state.refill_transcript("h"),
-        Some(Command::LoadTranscript {
-            pane_id: "h".into()
-        }),
-        "what it missed is read once when it is shown"
-    );
-    assert!(state.changes_view(&update("h", "now it is followed")));
 }

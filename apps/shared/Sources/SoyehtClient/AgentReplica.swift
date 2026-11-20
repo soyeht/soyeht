@@ -293,10 +293,13 @@ extension EngineClient {
     if eventName != .paneUpdate { partials.flush() }
     switch eventName {
     case .paneUpdate:
-      // A pane no view shows is not followed message by message: what it receives comes back
-      // in one reload when it is shown. Its update is not even read, so a reply that streams in
-      // a hidden pane costs this client no more than the line that says it arrived.
-      if let paneId = params["paneId"].string, !agentPanes.isShown(paneId) {
+      // The growing text of a reply or a thought is not read for a pane no view shows: each
+      // update carries the whole text so far, and the reload when the pane is shown brings it.
+      // Everything else (a finished message, a tool call, a subagent, a plan, usage) is applied,
+      // so a row that is still open keeps its place and its end.
+      if AgentPartialUpdates.isPartial(wire: params), let paneId = params["paneId"].string,
+        !agentPanes.isShown(paneId)
+      {
         agentPanes.markStale(paneId)
         return
       }
@@ -495,6 +498,7 @@ extension EngineClient {
   func discardAgentPane(_ paneId: String) {
     partials.flush()
     agentPanes[paneId] = nil
+    agentPanes.forget(paneId)
     agentWebDrafts.removeValue(forKey: paneId)
   }
 

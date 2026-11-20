@@ -413,7 +413,7 @@ impl State {
             EventName::PaneUpdate => {
                 // A pane that is not shown is not followed message by message: what it receives
                 // comes back in the one reload made when it is shown. Its update is not read.
-                if let Some(id) = self.hidden_agent(&params).map(str::to_owned) {
+                if let Some(id) = self.skipped_text(&params).map(str::to_owned) {
                     if let Some(view) = self.agents.get_mut(&id) {
                         view.mark_stale();
                     }
@@ -556,8 +556,12 @@ impl State {
         }
     }
 
-    /// The pane an event names, when it is an agent that no workspace shows.
-    pub(crate) fn hidden_agent<'a>(&self, params: &'a Value) -> Option<&'a str> {
+    /// The pane an update names, when the update is the growing text of a reply or a thought of
+    /// an agent that no workspace shows: the reload when it is shown brings that text.
+    pub(crate) fn skipped_text<'a>(&self, params: &'a Value) -> Option<&'a str> {
+        if !agent::is_growing_text(params) {
+            return None;
+        }
         let id = params.get("paneId")?.as_str()?;
         self.agents
             .get(id)
@@ -634,5 +638,7 @@ pub(crate) fn observe_turn(view: &mut AgentView, pane: &Pane) {
     view.turn.observe(prompt, std::time::Instant::now());
 }
 
+#[cfg(test)]
+mod hidden_tests;
 #[cfg(test)]
 mod tests;

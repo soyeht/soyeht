@@ -64,7 +64,7 @@ final class PaneStore {
     setAll(panes)
     let ids = Set(panes.map(\.paneId))
     for pane in panes { box(pane.paneId).pane = pane }
-    for gone in before where !ids.contains(gone.paneId) { boxes[gone.paneId]?.pane = nil }
+    for gone in before where !ids.contains(gone.paneId) { forget(gone.paneId) }
     for (workspaceId, slice) in byWorkspace {
       slice.panes = panes.filter { $0.workspaceId == workspaceId }
     }
@@ -98,8 +98,14 @@ final class PaneStore {
   func remove(_ paneId: String) {
     guard let removed = box(paneId).pane else { return }
     setAll(list.filter { $0.paneId != paneId })
-    box(paneId).pane = nil
+    forget(paneId)
     refreshSlices(for: removed)
+  }
+
+  /// A pane that is gone: its readers are told, and the store keeps nothing of it.
+  private func forget(_ paneId: String) {
+    boxes[paneId]?.pane = nil
+    boxes.removeValue(forKey: paneId)
   }
 
   private func box(_ paneId: String) -> PaneBox {

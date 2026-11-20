@@ -274,7 +274,7 @@ impl State {
             Event::Notification {
                 name: EventName::PaneUpdate,
                 params,
-            } => self.hidden_agent(params).is_none(),
+            } => self.skipped_text(params).is_none(),
             _ => true,
         }
     }

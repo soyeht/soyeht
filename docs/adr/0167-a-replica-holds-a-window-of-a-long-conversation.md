@@ -3,6 +3,7 @@
 - Status: accepted. Extends ADR 0146 (each client keeps a domain in a replica): the agent replica holds
   a window of the transcript, not everything it ever received.
 - Date: 2026-11-18
+- Amended by ADR 0170: a pane no view shows does not read the growing text of an unfinished reply or thought.
 
 ## Context
 

@@ -88,6 +88,12 @@ public final class AgentPaneStore {
 
   func isStale(_ paneId: String) -> Bool { stale.contains(paneId) }
 
+  /// A pane that is closed leaves no mark behind.
+  func forget(_ paneId: String) {
+    stale.remove(paneId)
+    reading.remove(paneId)
+  }
+
   /// A page is asked for: if it arrives, it covers what made the pane stale until now.
   func beginRead(_ paneId: String) {
     if stale.contains(paneId) { reading.insert(paneId) }
@@ -183,6 +189,7 @@ public final class AgentPaneStore {
   func retainOnly(_ paneIds: Set<String>) {
     let gone = models.keys.filter { !paneIds.contains($0) }
     for paneId in gone { models.removeValue(forKey: paneId) }
+    for paneId in gone { forget(paneId) }
     if !gone.isEmpty { attentionChanged?() }
   }
 
