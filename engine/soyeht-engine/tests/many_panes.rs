@@ -16,6 +16,26 @@ use support::*;
 const STARTED_WITH: u64 = 256;
 const PANES: usize = 300;
 
+/// Asks for `count` terminals in the workspace at once and returns their pane ids.
+fn create_terminals(client: &mut Client, workspace: &str, count: usize) -> Vec<String> {
+    let requests: Vec<u64> = (0..count)
+        .map(|n| {
+            client.send(
+                "pane.create",
+                json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":format!("pane-{n}")}),
+            )
+        })
+        .collect();
+    requests
+        .into_iter()
+        .map(|id| {
+            let reply = client.wait(id);
+            assert!(reply["error"].is_null(), "{reply}");
+            reply["result"]["paneId"].as_str().unwrap().to_owned()
+        })
+        .collect()
+}
+
 #[test]
 fn three_hundred_terminals_all_start_and_answer_with_a_service_limit_of_256() {
     // The programs the rig starts inherit the limit of a service that the system started.
@@ -24,22 +44,7 @@ fn three_hundred_terminals_all_start_and_answer_with_a_service_limit_of_256() {
     let rig = Rig::with_environment(&[("SHELL", "/bin/sh")]);
     let mut client = rig.client();
     let workspace = client.add_workspace(&rig.path, "many-panes");
-    let requests: Vec<u64> = (0..PANES)
-        .map(|n| {
-            client.send(
-                "pane.create",
-                json!({"workspaceId":workspace,"mode":"terminal","idempotencyKey":format!("pane-{n}")}),
-            )
-        })
-        .collect();
-    let panes: Vec<String> = requests
-        .into_iter()
-        .map(|id| {
-            let reply = client.wait(id);
-            assert!(reply["error"].is_null(), "{reply}");
-            reply["result"]["paneId"].as_str().unwrap().to_owned()
-        })
-        .collect();
+    let panes = create_terminals(&mut client, &workspace, PANES);
 
     let deadline = Instant::now() + ASYNC_ASSERTION_TIMEOUT * 2;
     loop {
@@ -70,4 +75,46 @@ fn three_hundred_terminals_all_start_and_answer_with_a_service_limit_of_256() {
         (0..PANES).all(|n| rig.path.join(format!("answered-{n}")).exists())
     });
     let _: Value = client.call("engine.status", json!({}));
+}
+
+const CLOSING: usize = 60;
+
+/// Whether the process still exists. A child that ended but was not collected still answers, so a
+/// zombie fails the test too.
+fn exists(pid: i64) -> bool {
+    // SAFETY: signal 0 only checks whether the process exists.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+#[test]
+fn closing_a_workspace_of_sixty_terminals_takes_well_under_a_second() {
+    let rig = Rig::with_environment(&[("SHELL", "/bin/sh")]);
+    let mut client = rig.client();
+    let workspace = client.add_workspace(&rig.path, "closing-panes");
+    create_terminals(&mut client, &workspace, CLOSING);
+    let mut pids = Vec::new();
+    wait_until("every terminal started", || {
+        pids = client
+            .section("panes")
+            .iter()
+            .filter_map(|pane| pane["pid"].as_i64())
+            .collect();
+        pids.len() == CLOSING
+    });
+
+    let started = Instant::now();
+    client.call(
+        "workspace.close",
+        json!({"workspaceId":workspace,"idempotencyKey":"close-all"}),
+    );
+    let answered = started.elapsed();
+    wait_until("every terminal is gone and collected", || {
+        !pids.iter().any(|pid| exists(*pid))
+    });
+    let gone = started.elapsed();
+    eprintln!("closing {CLOSING} terminals: answered {answered:?}, all gone {gone:?}");
+    assert!(
+        gone < Duration::from_secs(1),
+        "closing {CLOSING} terminals took {gone:?}"
+    );
 }

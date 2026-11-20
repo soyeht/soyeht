@@ -1,50 +1,220 @@
-//! The end of a connection. A peer that is still sending when the supervisor ends the connection
-//! (a request that does not decode, a second `hello`, a refusal) leaves unread bytes behind, and
-//! closing a socket that holds unread bytes resets the connection on Windows' loopback TCP: the
-//! peer then loses what the supervisor wrote but it had not read yet, the refusal included, or
-//! keeps half of a frame. The supervisor says it is done writing and reads what the peer still
-//! sends, up to a limit, before it closes.
+//! Closing processes: one or many at once. The registry is written once for all of them, under the
+//! state lock; the processes are then ended and waited for with the lock released (ADR 0171).
 
-use soyeht_platform::local::Stream;
-use std::io::Read;
-use std::net::Shutdown;
-use std::time::{Duration, Instant};
+use super::{Live, State, error, reach};
+use crate::{
+    Error, Result,
+    child::{Child, Reach},
+    wire::{MAX_CLOSE_MANY, Response},
+    wire_kind,
+};
+use soyeht_platform::log;
+use std::sync::{Arc, MutexGuard, Weak};
 
-/// The longest the supervisor waits for a peer to stop sending once it has ended a connection.
-const DRAIN_DEADLINE: Duration = Duration::from_secs(1);
-/// The most it reads from a peer that does not stop.
-const DRAIN_LIMIT: usize = 64 * 1024;
-
-/// Serves `stream` with `serve`, then closes it as described above, whatever `serve` returned.
-pub(super) fn after<T>(mut stream: Stream, serve: impl FnOnce(&mut Stream) -> T) -> T {
-    let result = serve(&mut stream);
-    finish(&mut stream);
-    result
+/// Answers a `CloseMany`: refused when it names too many, else [`close_answer`].
+pub(super) fn close_many_answer(state: MutexGuard<'_, State>, instance_ids: &[String]) -> Response {
+    if instance_ids.len() > MAX_CLOSE_MANY {
+        return error(wire_kind::INVALID_PARAMS, "too many processes to close");
+    }
+    close_answer(state, instance_ids)
 }
 
-fn finish(stream: &mut Stream) {
-    // A peer that already reset the connection leaves nothing to drain, and nothing to report:
-    // the connection ends either way.
-    if stream.shutdown(Shutdown::Write).is_err() {
-        return;
+/// Closes `instance_ids` and answers when every process is gone. The registry is written once
+/// for all of them and the wait happens with the state released.
+pub(super) fn close_answer(mut state: MutexGuard<'_, State>, instance_ids: &[String]) -> Response {
+    let closing = mark_closed(&mut state, instance_ids);
+    drop(state);
+    closing.and_then(end_all).map_or_else(
+        |e| error(wire_kind::OPERATION_FAILED, &e.to_string()),
+        |()| Response::Ok,
+    )
+}
+
+/// Marks the processes closed in the registry, writes it once, and takes them out of the live
+/// set. A process the registry does not know, or that was closed already, is not an error: a
+/// close is idempotent. One that another request is still ending is returned too, so this close
+/// waits for it as well and does not answer before it is gone (a new engine's close, while the
+/// connection it replaced is still closing). The processes come in the registry's order, which
+/// is the order their locks are taken in, whatever the request.
+fn mark_closed(state: &mut State, instance_ids: &[String]) -> Result<Vec<Arc<Live>>> {
+    let mut newly_closed: Vec<String> = Vec::new();
+    let mut known: Vec<String> = Vec::new();
+    for instance in state.registry.instances.values_mut() {
+        if !instance_ids.contains(&instance.instance_id) {
+            continue;
+        }
+        known.push(instance.instance_id.clone());
+        if !instance.closed {
+            instance.closed = true;
+            newly_closed.push(instance.spawn.instance_key.clone());
+        }
     }
-    let started = Instant::now();
-    let mut spent = 0;
-    let mut buffer = [0_u8; 1024];
-    while spent < DRAIN_LIMIT {
-        let Some(left) = DRAIN_DEADLINE.checked_sub(started.elapsed()) else {
-            return;
-        };
-        if stream.set_read_timeout(Some(left)).is_err() {
-            return;
+    if !newly_closed.is_empty()
+        && let Err(failure) = state.registry.save(&state.directory)
+    {
+        for key in &newly_closed {
+            state
+                .registry
+                .instances
+                .get_mut(key)
+                .ok_or(Error::RegistryInstanceMissing)?
+                .closed = false;
         }
-        // The end of the peer's input, a reset and the deadline all end the drain.
-        let Ok(read) = stream.read(&mut buffer) else {
-            return;
-        };
-        if read == 0 {
-            return;
+        return Err(failure);
+    }
+    let mut lives = Vec::with_capacity(known.len());
+    for instance_id in known {
+        if let Some(live) = state.live.remove(&instance_id) {
+            state.closing.insert(instance_id, Arc::downgrade(&live));
+            lives.push(live);
+        } else if let Some(live) = state.closing.get(&instance_id).and_then(Weak::upgrade) {
+            lives.push(live);
         }
-        spent += read;
+    }
+    // What nothing holds any more is over.
+    state.closing.retain(|_, live| live.strong_count() > 0);
+    Ok(lives)
+}
+
+/// Ends every process still running, together, and announces their exits. A poisoned lock is
+/// recovered and its process ended: a panic elsewhere says nothing about the process. A process
+/// that cannot be looked at (`try_wait` fails, which on Unix means it is not our child any more
+/// and its pid may belong to another process) is never signalled; the failure is returned after
+/// the others are ended.
+fn end_all(lives: Vec<Arc<Live>>) -> Result<()> {
+    let mut failure: Option<Error> = None;
+    let mut guards: Vec<_> = lives
+        .iter()
+        .map(|live| {
+            let guard = live.child.lock().unwrap_or_else(|poisoned| {
+                log::event("ptyd.child_lock_poisoned", &[]);
+                poisoned.into_inner()
+            });
+            (guard, live)
+        })
+        .collect();
+    let mut running: Vec<(&mut Child, Reach)> = Vec::new();
+    for (guard, live) in &mut guards {
+        match guard.try_wait() {
+            Ok(Some(_)) => {}
+            Ok(None) => running.push((&mut **guard, reach(live))),
+            Err(error) => {
+                failure.get_or_insert(error.into());
+            }
+        }
+    }
+    Child::end_together(&mut running);
+    drop(running);
+    drop(guards);
+    for live in &lives {
+        live.mark_exited();
+    }
+    failure.map_or(Ok(()), Err)
+}
+
+/// Records the exit status of the process under `key`. True when it is worth writing the registry:
+/// a closed process is not listed and a restart marks every process closed, so its status is
+/// not worth a durable write of the whole registry under the state lock, which closing many
+/// processes would repeat for each (ADR 0171).
+pub(super) fn record_exit(state: &mut State, key: &str, code: i32) -> bool {
+    state
+        .registry
+        .instances
+        .get_mut(key)
+        .is_some_and(|instance| {
+            instance.exit_code = Some(code);
+            !instance.closed
+        })
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+    use crate::{
+        registry::Registry,
+        retention::Retention,
+        server::{OutputState, watch::Watchers},
+        wire::{Instance, ProcessKind, Spawn},
+    };
+    use std::sync::{Mutex, atomic::AtomicBool};
+
+    fn state_with_one_process() -> (State, std::path::PathBuf) {
+        let directory = std::env::temp_dir().join(format!("soyeht-close-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let spawn = Spawn {
+            instance_key: "key".into(),
+            generation: 1,
+            kind: ProcessKind::Pty,
+            cwd: "/".into(),
+            argv: vec!["sleep".into()],
+            env: Default::default(),
+            cols: 80,
+            rows: 24,
+        };
+        let instance = Instance {
+            instance_id: "one".into(),
+            supervisor_id: "s".into(),
+            spawn,
+            pid: 1,
+            closed: false,
+            exit_code: None,
+        };
+        let live = Live {
+            master: Mutex::new(std::fs::File::open("/dev/null").unwrap()),
+            resizer: None,
+            child: Mutex::new(Child::new(
+                std::process::Command::new("sleep")
+                    .arg("60")
+                    .spawn()
+                    .unwrap(),
+            )),
+            output: Mutex::new(OutputState {
+                retention: Retention::new(1024).unwrap(),
+                pending: None,
+                told: false,
+            }),
+            guard: None,
+            exited: AtomicBool::new(false),
+            read_done: AtomicBool::new(false),
+            instance_id: "one".into(),
+            watchers: Arc::default(),
+            exit_announced: AtomicBool::new(false),
+            foreground_unreadable: AtomicBool::new(false),
+        };
+        let state = State {
+            directory: directory.clone(),
+            supervisor_id: "s".into(),
+            registry: Registry {
+                version: 1,
+                engine_generation: 0,
+                supervisor_generation: 1,
+                instances: [("key".to_owned(), instance)].into(),
+            },
+            live: [("one".to_owned(), Arc::new(live))].into(),
+            closing: Default::default(),
+            active: None,
+            inputs: Default::default(),
+            watchers: Arc::<Watchers>::default(),
+        };
+        (state, directory)
+    }
+
+    #[test]
+    fn a_second_close_gets_the_process_the_first_is_still_ending_and_nothing_after() {
+        let (mut state, directory) = state_with_one_process();
+        let ids = ["one".to_owned()];
+
+        let first = mark_closed(&mut state, &ids).unwrap();
+        assert_eq!(first.len(), 1);
+        let second = mark_closed(&mut state, &ids).unwrap();
+        assert_eq!(second.len(), 1, "the process is still being ended");
+        assert!(Arc::ptr_eq(&first[0], &second[0]));
+
+        // The close that held it is over, and so is the process.
+        end_all(first).unwrap();
+        drop(second);
+        assert!(mark_closed(&mut state, &ids).unwrap().is_empty());
+        assert!(state.closing.is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

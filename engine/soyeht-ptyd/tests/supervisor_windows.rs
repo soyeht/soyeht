@@ -109,6 +109,30 @@ fn closing_a_pipe_process_ends_the_children_it_started() {
 }
 
 #[test]
+fn closing_many_processes_in_one_request_ends_them_and_what_they_started() {
+    let (daemon, mut client) = Daemon::start();
+    let (config, marker) = adapter_with_child(&daemon);
+    let adapter = spawn(&mut client, config);
+    let child = wait_for_pid(&marker);
+    let mut started = vec![adapter];
+    started.extend((0..4).map(|_| spawn(&mut client, daemon.shell())));
+    let instance_ids = started.iter().map(|i| i.instance_id.clone()).collect();
+
+    let answer = client.request(Request::CloseMany { instance_ids }).unwrap();
+
+    assert!(matches!(answer, Response::Ok), "{answer:?}");
+    // Gone when the answer comes: nothing is waited for here.
+    assert!(!is_running(child));
+    for instance in &started {
+        assert!(!is_running(instance.pid));
+    }
+    let Response::Instances(listed) = client.request(Request::List).unwrap() else {
+        panic!("expected a list");
+    };
+    assert!(listed.is_empty(), "{listed:?}");
+}
+
+#[test]
 fn killing_the_supervisor_ends_a_pipe_process_and_its_children() {
     let (mut daemon, mut client) = Daemon::start();
     let (config, marker) = adapter_with_child(&daemon);

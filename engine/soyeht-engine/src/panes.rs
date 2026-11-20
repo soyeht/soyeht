@@ -555,6 +555,14 @@ impl Core {
     }
 
     pub fn finish_close(&mut self, id: &str) -> Result<()> {
+        let process = self.release_closed_pane(id)?;
+        self.end_process(process);
+        Ok(())
+    }
+
+    /// Everything of a closed pane that the Core holds, released; what the supervisor holds for
+    /// it is returned to end, so a caller that closes many panes ends their processes together.
+    pub(crate) fn release_closed_pane(&mut self, id: &str) -> Result<PaneProcess> {
         self.editor.remove_pane(id);
         self.web.pages.forget(id);
         self.terminal_captures.remove(id);
@@ -570,20 +578,47 @@ impl Core {
             saved.pane.mode,
             PaneMode::Editor | PaneMode::Web | PaneMode::Writing
         ) {
-            return Ok(());
+            return Ok(PaneProcess::Nothing);
         }
-        match saved.instance_id.clone() {
-            Some(instance_id) => self.close_process(&instance_id),
+        Ok(match saved.instance_id.clone() {
+            Some(instance_id) => PaneProcess::Recorded(instance_id),
             // A process the engine never recorded: a start that outran the pane's close ends by
             // closing its own (`finish_pane_start`), and one that was lost on the way is found
             // by the identity it was asked for.
-            None => {
-                let key = saved.instance_key.clone();
-                self.close_unrecorded_process(&key);
+            None => PaneProcess::Unrecorded(saved.instance_key.clone()),
+        })
+    }
+
+    /// Ends the process a closed pane left with the supervisor.
+    fn end_process(&mut self, process: PaneProcess) {
+        match process {
+            PaneProcess::Nothing => {}
+            PaneProcess::Recorded(instance_id) => self.close_process(&instance_id),
+            PaneProcess::Unrecorded(key) => self.close_unrecorded_process(&key),
+        }
+    }
+
+    /// Ends the processes of closed panes: those the engine recorded together, the others each.
+    pub(crate) fn end_processes(&mut self, processes: Vec<PaneProcess>) {
+        let mut recorded = Vec::new();
+        for process in processes {
+            match process {
+                PaneProcess::Recorded(instance_id) => recorded.push(instance_id),
+                other => self.end_process(other),
             }
         }
-        Ok(())
+        self.close_processes(recorded);
     }
+}
+
+/// What a closed pane leaves with the supervisor.
+pub(crate) enum PaneProcess {
+    /// Nothing: the pane has no process.
+    Nothing,
+    /// The process the engine recorded, by its instance id.
+    Recorded(String),
+    /// A process the engine may not have recorded, by the identity its start asked for.
+    Unrecorded(String),
 }
 
 #[cfg(test)]

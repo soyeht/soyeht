@@ -281,7 +281,11 @@ const SUPERVISOR_WAITS: &[(&str, usize, &str)] = &[
         "the connect job and Core::open, before the Core is shared",
     ),
     ("soyeht-engine/src/input.rs", 1, "offload: pane.input"),
-    ("soyeht-engine/src/spawn_retry.rs", 3, "jobs: closes"),
+    (
+        "soyeht-engine/src/spawn_retry.rs",
+        4,
+        "jobs: closes, and the close of a workspace's processes together",
+    ),
     (
         "soyeht-engine/src/supervisor_handle.rs",
         5,

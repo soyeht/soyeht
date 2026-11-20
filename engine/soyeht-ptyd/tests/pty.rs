@@ -1,7 +1,11 @@
 //! The pseudo-terminal session, without the supervisor around it; the same on every system.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use soyeht_ptyd::{child::Reach, io::Output, pty};
+use soyeht_ptyd::{
+    child::{Child, Exit, Reach},
+    io::Output,
+    pty,
+};
 use std::{
     io::{Read, Write},
     process::Command,
@@ -68,16 +72,27 @@ fn typed_input_reaches_the_child_and_a_resize_is_accepted() {
     session.child.wait().unwrap();
 }
 
+/// Collects the child's exit, waiting for it for at most `limit`.
+fn wait_within(child: &mut Child, limit: Duration) -> Option<Exit> {
+    let deadline = Instant::now() + limit;
+    loop {
+        if let Some(exit) = child.try_wait().unwrap() {
+            return Some(exit);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 #[test]
 fn a_killed_terminal_is_collected_within_a_bound_even_when_nobody_reads_its_output() {
     let program = if cfg!(windows) { "cmd.exe" } else { "/bin/cat" };
     let mut session = pty::spawn(Command::new(program), 24, 80).unwrap();
     session.input.write_all(b"unread-output\r\n").unwrap();
     session.child.kill(Reach::Group);
-    let exit = session
-        .child
-        .wait_within(std::time::Duration::from_secs(10))
-        .unwrap();
+    let exit = wait_within(&mut session.child, Duration::from_secs(10));
     assert!(exit.is_some());
 }
 
@@ -85,10 +100,7 @@ fn a_killed_terminal_is_collected_within_a_bound_even_when_nobody_reads_its_outp
 #[cfg(unix)]
 fn assert_interrupt_ends_a_program() {
     let mut session = pty::spawn(shell("kill -INT $$; echo survived"), 24, 80).unwrap();
-    let exit = session
-        .child
-        .wait_within(Duration::from_secs(10))
-        .unwrap()
+    let exit = wait_within(&mut session.child, Duration::from_secs(10))
         .expect("the program was not interrupted");
     assert_eq!(exit.code(), None, "the program ended on its own");
 }
