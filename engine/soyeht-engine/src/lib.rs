@@ -6,7 +6,8 @@ mod agent_capture;
 pub mod agents;
 pub mod auth;
 mod avatars;
-mod close_together;
+#[cfg(test)]
+mod close_together_tests;
 pub mod core;
 pub mod core_lock;
 mod device_notices;
