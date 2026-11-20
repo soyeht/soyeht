@@ -9,8 +9,8 @@ use super::{Live, State, lock, refuse, send};
 use crate::{
     Result,
     wire::{
-        FEATURE_FOREGROUND, FEATURE_PANE_BINDING, FEATURE_WATCH, Readable, Request, Response,
-        VERSION, Watched,
+        FEATURE_CLOSE_MANY, FEATURE_FOREGROUND, FEATURE_PANE_BINDING, FEATURE_WATCH, Readable,
+        Request, Response, VERSION, Watched,
     },
     wire_kind,
 };
@@ -157,6 +157,7 @@ pub(super) fn welcome(state: &State) -> Response {
             FEATURE_WATCH.into(),
             FEATURE_PANE_BINDING.into(),
             FEATURE_FOREGROUND.into(),
+            FEATURE_CLOSE_MANY.into(),
         ],
     }
 }

@@ -84,6 +84,22 @@ impl Child {
         }
     }
 
+    /// Ends the jobs of several children without waiting for any of them: the caller waits for
+    /// all together (`survivors`), so a batch costs one wait and not one for each child.
+    pub(super) fn kill_together(children: &[(&Child, Reach)]) {
+        for (child, _) in children {
+            if let Err(error) = child.spawned.terminate_tree() {
+                soyeht_platform::log::failure("ptyd.kill_tree_failed", &error);
+            }
+        }
+    }
+
+    /// Whether the job still holds a process: ending a job is asynchronous, and the child's own
+    /// exit is not all there is to wait for.
+    pub(super) fn survivors(&self) -> io::Result<bool> {
+        Ok(!self.spawned.tree_is_gone()?)
+    }
+
     /// Hangs up the child's terminal, as closing its window would. A child without a terminal
     /// is ended, because a hang-up has nothing to reach.
     pub fn request_stop(&self) {
