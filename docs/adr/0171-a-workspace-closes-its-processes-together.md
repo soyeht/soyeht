@@ -23,20 +23,28 @@ supervisor, so the costs added up and nothing could overlap.
 ## Decision
 
 1. **`CloseMany`.** One request names up to `MAX_CLOSE_MANY` (256) processes. The supervisor marks
-   them closed and writes its registry once, under the state lock, then releases the lock, kills
-   every process group, and waits for all of them under one bounded limit (`Child::end_together`:
-   the time is that of the slowest process, and the pause between two looks starts at half a
-   millisecond). The answer comes when every process is gone and collected, so the guarantees of
-   `Close` hold for each: a process that ignores the polite signals is killed (the signal is
+   them closed and writes its registry once, under the state lock, then releases the lock and ends
+   all of them together (`Child::end_together`). The limit of the wait (2 s) starts before the first
+   process is ended. On Unix the process table is read once for every agent's tree
+   (`soyeht_platform::process::kill_trees`; reading it for each tree cost seconds for a few hundred
+   of them), and on Windows every job is terminated first and all are then waited for. The wait is
+   that of the slowest process and not the sum of them, and the pause between two looks starts at
+   half a millisecond. The answer comes when every process is gone and collected, so the guarantees
+   of `Close` hold for each: a process that ignores the polite signals is killed (the signal is
    `SIGKILL` for a group, and the whole tree for an adapter), no process is left a zombie, and a
-   process the supervisor does not know or has closed already is not an error. A request over
-   the limit is refused as `invalid_params`.
+   process the supervisor does not know or has closed already is not an error. An error looking at
+   one process does not stop the others from being ended: the first is reported after all of them.
+   A request over the limit is refused as `invalid_params`.
 2. **`Close` is `CloseMany` of one**, so a single close also waits without the state lock, and
    the wait polls finer than before.
 3. **An exit watcher writes the registry only for a process that is not closed.** A closed
    process is not listed, and a restart of the supervisor marks every process closed when it loads the registry,
    so its exit status is not worth a durable write of the whole registry under the state lock.
-4. **A feature, not a version.** The supervisor lists `close-many` in its welcome
+4. **A second close waits for the first.** The supervisor keeps the processes a close is ending in
+   a `closing` set until nothing holds them. A close of a process that is already closed but still
+   being ended (a new engine's, while the connection it replaced is still closing) waits for it
+   through the lock of the process, and does not answer before it is gone.
+5. **A feature, not a version.** The supervisor lists `close-many` in its welcome
    (`FEATURE_CLOSE_MANY`), as it lists `foreground` (ADR 0165), so a running supervisor of the
    protocol version that does not list it keeps working after an engine update. The engine's
    `workspace.close` ends the processes of the workspace's panes in one job when the link lists
@@ -52,3 +60,6 @@ supervisor, so the costs added up and nothing could overlap.
   all of them. Pruning them is a separate change: a spawn with the key of a closed instance
   answers with that instance today.
 - A close of one pane writes the registry once, not twice.
+- Follow-up: the durable write of `closed` has no reader (a restart marks every instance closed
+  when it loads the registry), so dropping it would make every single `pane.close` fast too. It is
+  left as it is here.

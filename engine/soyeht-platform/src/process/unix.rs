@@ -61,27 +61,48 @@ pub(super) fn terminate(pid: u32) -> std::io::Result<()> {
 /// before the group is signalled, because once the leader dies its children are reparented
 /// and no longer reachable from it. `leader` has the conditions of [`signal_group`].
 pub fn kill_tree(leader: u32) {
-    let escaped = descendants(leader);
-    signal_group(leader, GroupSignal::Kill);
-    for descendant in escaped {
-        if let Ok(descendant) = libc::pid_t::try_from(descendant)
-            && descendant > 1
-        {
-            // SAFETY: the pid was read from the process table an instant ago, as a
-            // descendant of a child of this process.
-            unsafe {
-                libc::kill(descendant, libc::SIGKILL);
+    kill_trees(&[leader]);
+}
+
+/// [`kill_tree`] for several leaders: the process table is read once for all of them, and every
+/// descendant is read before any group is signalled. Reading it once for each leader costs more
+/// than the signals do, and seconds for a few hundred of them.
+pub fn kill_trees(leaders: &[u32]) {
+    if leaders.is_empty() {
+        return;
+    }
+    let children = children_by_parent();
+    let escaped: Vec<Vec<u32>> = leaders
+        .iter()
+        .map(|leader| descendants(&children, *leader))
+        .collect();
+    for (leader, escaped) in leaders.iter().zip(escaped) {
+        signal_group(*leader, GroupSignal::Kill);
+        for descendant in escaped {
+            if let Ok(descendant) = libc::pid_t::try_from(descendant)
+                && descendant > 1
+            {
+                // SAFETY: the pid was read from the process table an instant ago, as a
+                // descendant of a child of this process.
+                unsafe {
+                    libc::kill(descendant, libc::SIGKILL);
+                }
             }
         }
     }
 }
 
-/// Every process that descends from `root` by parent links, excluding `root`.
-fn descendants(root: u32) -> Vec<u32> {
+/// Every running process, by its parent.
+fn children_by_parent() -> BTreeMap<u32, Vec<u32>> {
     let mut children: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
     for (pid, parent) in parent_links() {
         children.entry(parent).or_default().push(pid);
     }
+    children
+}
+
+/// Every process that descends from `root` by parent links, excluding `root`.
+fn descendants(children: &BTreeMap<u32, Vec<u32>>, root: u32) -> Vec<u32> {
     let mut found = BTreeSet::new();
     let mut pending = vec![root];
     while let Some(parent) = pending.pop() {
@@ -209,6 +230,39 @@ mod tests {
     }
 
     #[test]
+    fn kill_trees_ends_every_tree_it_is_given() {
+        let _serial = crate::testing::serialize_processes();
+        let _forks = crate::spawning();
+        let mut leaders: Vec<_> = (0..3)
+            .map(|_| {
+                Command::new("sh")
+                    .args(["-c", "sleep 60 & echo $!; wait"])
+                    .stdout(Stdio::piped())
+                    .process_group(0)
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        let sleepers: Vec<u32> = leaders
+            .iter_mut()
+            .map(|leader| {
+                let mut lines = BufReader::new(leader.stdout.take().unwrap()).lines();
+                lines.next().unwrap().unwrap().parse().unwrap()
+            })
+            .collect();
+        let ids: Vec<u32> = leaders.iter().map(std::process::Child::id).collect();
+
+        kill_trees(&ids);
+
+        for leader in &mut leaders {
+            leader.wait().unwrap();
+        }
+        for sleeper in sleepers {
+            assert!(wait_gone(sleeper), "a process of a tree survived");
+        }
+    }
+
+    #[test]
     fn the_descendants_of_a_process_are_found_by_parent_links() {
         let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
@@ -217,7 +271,7 @@ mod tests {
             .spawn()
             .unwrap();
         thread::sleep(Duration::from_millis(300));
-        let found = descendants(shell.id());
+        let found = descendants(&children_by_parent(), shell.id());
         for pid in &found {
             // SAFETY: SIGKILL to a process this test just found below its own child.
             unsafe { libc::kill(*pid as libc::pid_t, libc::SIGKILL) };

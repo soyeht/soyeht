@@ -155,17 +155,26 @@ impl Core {
         // Their processes end together: ending them one after another is slow for a workspace of
         // dozens of terminals.
         let mut processes = Vec::with_capacity(closed.len());
+        let mut failure = None;
         for pane in closed {
-            errors::invariant(
-                self.panes.get_mut(&pane.pane.pane_id),
+            let id = &pane.pane.pane_id;
+            let released = errors::invariant(
+                self.panes.get_mut(id),
                 "Workspace pane disappeared after its close committed",
-            )?
-            .stored
-            .closed = true;
-            processes.push(self.release_closed_pane(&pane.pane.pane_id)?);
+            )
+            .map(|closing| closing.stored.closed = true)
+            .and_then(|()| self.release_closed_pane(id));
+            match released {
+                Ok(process) => processes.push(process),
+                Err(error) => {
+                    failure = Some(error);
+                    break;
+                }
+            }
         }
+        // What was released ends even when a later pane fails: the close is committed.
         self.end_processes(processes);
-        Ok(result)
+        failure.map_or(Ok(result), Err)
     }
 
     pub fn workspace_layout_set(&mut self, connection: &str, params: &Value) -> Result<Value> {

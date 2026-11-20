@@ -28,7 +28,7 @@ use std::io::{self, Read, Write};
 use std::net::Shutdown;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex, MutexGuard,
+    Arc, Mutex, MutexGuard, Weak,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread;
@@ -39,7 +39,7 @@ mod close;
 mod foreground;
 mod watch;
 
-use close::{close_answer, close_many_answer};
+use close::{close_answer, close_many_answer, record_exit};
 use watch::{Watchers, hello_refusal, welcome};
 
 struct Live {
@@ -73,6 +73,8 @@ struct State {
     supervisor_id: String,
     registry: Registry,
     live: BTreeMap<String, Arc<Live>>,
+    /// The processes a close is ending, until nothing holds them any more.
+    closing: BTreeMap<String, Weak<Live>>,
     active: Option<(String, Stream)>,
     inputs: BTreeMap<String, (String, String, usize)>,
     watchers: Arc<Watchers>,
@@ -125,6 +127,7 @@ pub fn run(directory: &Path) -> Result<()> {
         supervisor_id: Uuid::new_v4().to_string(),
         registry,
         live: BTreeMap::new(),
+        closing: BTreeMap::new(),
         active: None,
         inputs: BTreeMap::new(),
         watchers: Arc::default(),
@@ -596,21 +599,6 @@ fn execute_ack(state: &State, instance_id: &str, seq: u64) -> Result<Response> {
             Err(failure) => error(failure.wire_kind(), "invalid acknowledgement"),
         },
     )
-}
-
-/// Records the exit status of the process under `key`. True when it is worth writing the registry:
-/// a closed process is not listed and a restart marks every process closed, so its status is
-/// not worth a durable write of the whole registry under the state lock, which closing many
-/// processes would repeat for each (ADR 0171).
-fn record_exit(state: &mut State, key: &str, code: i32) -> bool {
-    state
-        .registry
-        .instances
-        .get_mut(key)
-        .is_some_and(|instance| {
-            instance.exit_code = Some(code);
-            !instance.closed
-        })
 }
 
 fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>, key: String) {

@@ -22,7 +22,7 @@ pub enum Reach {
 
 use soyeht_platform::log;
 use std::{
-    thread,
+    io, thread,
     time::{Duration, Instant},
 };
 
@@ -45,21 +45,23 @@ impl Child {
         Self::end_together(&mut [(self, reach)])
     }
 
-    /// [`Child::end`] for several children at once: each is killed first and then all are waited
-    /// for under one limit, so the time is that of the slowest child and not the sum of them. True
-    /// when every one was collected.
+    /// [`Child::end`] for several children at once: all are ended first, with one read of the
+    /// process table (`Child::kill_together`), and then all are waited for under one limit that
+    /// starts before the first is ended, so the wait is that of the slowest child and not the sum
+    /// of them. True when every one was collected.
     pub fn end_together(children: &mut [(&mut Child, Reach)]) -> bool {
-        for (child, reach) in children.iter() {
-            child.kill(*reach);
-        }
         let deadline = Instant::now() + REAP_LIMIT;
+        let ended: Vec<(&Child, Reach)> = children
+            .iter()
+            .map(|(child, reach)| (&**child, *reach))
+            .collect();
+        Self::kill_together(&ended);
         let mut pause = FIRST_PAUSE;
         let mut collected = true;
         let mut waiting: Vec<usize> = (0..children.len()).collect();
         loop {
-            waiting.retain(|&at| match children[at].0.try_wait() {
-                Ok(None) => true,
-                Ok(Some(_)) => false,
+            waiting.retain(|&at| match children[at].0.gone() {
+                Ok(gone) => !gone,
                 Err(error) => {
                     log::failure("ptyd.child_wait_failed", &error);
                     collected = false;
@@ -70,14 +72,20 @@ impl Child {
                 return collected;
             }
             if Instant::now() >= deadline {
-                for _ in &waiting {
-                    log::event("ptyd.child_still_running_after_kill", &[]);
-                }
+                log::event(
+                    "ptyd.child_still_running_after_kill",
+                    &[("count", &waiting.len().to_string())],
+                );
                 return false;
             }
             thread::sleep(pause);
             pause = (pause * 2).min(LAST_PAUSE);
         }
+    }
+
+    /// Whether the child's exit is collected and nothing of it is left.
+    fn gone(&mut self) -> io::Result<bool> {
+        Ok(self.try_wait()?.is_some() && !self.survivors()?)
     }
 
     /// Ends a child that has no exit watcher (a spawn that failed part-way) and makes sure it is

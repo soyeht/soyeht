@@ -22,7 +22,7 @@ use std::io;
 pub use dump::non_dumpable;
 pub use end::end_child;
 #[cfg(unix)]
-pub use unix::{GroupSignal, kill_tree, signal_group};
+pub use unix::{GroupSignal, kill_tree, kill_trees, signal_group};
 
 /// Asks the program that runs as process `pid` to end: on Unix the stop request that closing a
 /// terminal sends (the engine answers it by stopping cleanly; the supervisor has no handler, so

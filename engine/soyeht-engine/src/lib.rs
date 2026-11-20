@@ -6,6 +6,7 @@ mod agent_capture;
 pub mod agents;
 pub mod auth;
 mod avatars;
+mod close_together;
 pub mod core;
 pub mod core_lock;
 mod device_notices;
