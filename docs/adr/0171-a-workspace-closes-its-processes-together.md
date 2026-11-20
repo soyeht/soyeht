@@ -29,12 +29,19 @@ supervisor, so the costs added up and nothing could overlap.
    (`soyeht_platform::process::kill_trees`; reading it for each tree cost seconds for a few hundred
    of them), and on Windows every job is terminated first and all are then waited for. The wait is
    that of the slowest process and not the sum of them, and the pause between two looks starts at
-   half a millisecond. The answer comes when every process is gone and collected, so the guarantees
-   of `Close` hold for each: a process that ignores the polite signals is killed (the signal is
-   `SIGKILL` for a group, and the whole tree for an adapter), no process is left a zombie, and a
-   process the supervisor does not know or has closed already is not an error. An error looking at
-   one process does not stop the others from being ended: the first is reported after all of them.
-   A request over the limit is refused as `invalid_params`.
+   half a millisecond. The answer comes when every process is gone, so the guarantees of `Close`
+   hold for each: a process that ignores the polite signals is killed (the signal is `SIGKILL`
+   for a group, and the whole tree for an adapter), and a process the supervisor does not know or
+   has closed already is not an error. Two limits of "gone". On Unix only the child itself is
+   collected (no zombie of the supervisor's own); the rest of its tree is signalled, and a
+   process that left the group can stay a zombie under its new parent for a moment after the
+   answer. Windows waits for the whole job. And a process that outlasts the 2 s limit is logged
+   once for the batch (`ptyd.child_still_running_after_kill`, with the count) and left to its
+   exit watcher, which collects it when it does end: the answer is still `ok`, as it was for
+   `Close`. A poisoned lock of a process is recovered and the process ended. A process that cannot
+   be looked at (`try_wait` fails, which on Unix means it is not the supervisor's child any more
+   and its pid may belong to another process) is never signalled; the failure is reported after
+   the others are ended. A request over the limit is refused as `invalid_params`.
 2. **`Close` is `CloseMany` of one**, so a single close also waits without the state lock, and
    the wait polls finer than before.
 3. **An exit watcher writes the registry only for a process that is not closed.** A closed

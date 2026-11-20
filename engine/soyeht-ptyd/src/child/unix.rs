@@ -56,8 +56,9 @@ impl Child {
         kill_trees(&leaders);
     }
 
-    /// Whether anything of the child is left after its exit was collected: never on Unix, where
-    /// the exit of the child is all there is to wait for.
+    /// Whether anything of the child is left after its exit was collected. Never on Unix: only the
+    /// child itself is collected. The rest of its tree is signalled, and a child that left its
+    /// group can stay a zombie under its new parent for a moment after the answer.
     pub(super) fn survivors(&self) -> io::Result<bool> {
         Ok(false)
     }

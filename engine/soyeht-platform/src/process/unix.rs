@@ -68,6 +68,12 @@ pub fn kill_tree(leader: u32) {
 /// descendant is read before any group is signalled. Reading it once for each leader costs more
 /// than the signals do, and seconds for a few hundred of them.
 pub fn kill_trees(leaders: &[u32]) {
+    // 0 and 1 are never ours, and the descendants of 1 are every process there is.
+    let leaders: Vec<u32> = leaders
+        .iter()
+        .copied()
+        .filter(|leader| *leader > 1)
+        .collect();
     if leaders.is_empty() {
         return;
     }
@@ -230,13 +236,17 @@ mod tests {
     }
 
     #[test]
-    fn kill_trees_ends_every_tree_it_is_given() {
+    fn kill_trees_ends_every_tree_it_is_given_and_refuses_pid_zero_and_one() {
         let _serial = crate::testing::serialize_processes();
         let _forks = crate::spawning();
+        // Each shell leads a group, starts one sleeper in it and one in a session of its own.
         let mut leaders: Vec<_> = (0..3)
             .map(|_| {
                 Command::new("sh")
-                    .args(["-c", "sleep 60 & echo $!; wait"])
+                    .args([
+                        "-c",
+                        "sleep 60 & echo $!; perl -MPOSIX -e 'setsid(); exec q(sleep), q(60)' & echo $!; wait",
+                    ])
                     .stdout(Stdio::piped())
                     .process_group(0)
                     .spawn()
@@ -245,12 +255,17 @@ mod tests {
             .collect();
         let sleepers: Vec<u32> = leaders
             .iter_mut()
-            .map(|leader| {
+            .flat_map(|leader| {
                 let mut lines = BufReader::new(leader.stdout.take().unwrap()).lines();
-                lines.next().unwrap().unwrap().parse().unwrap()
+                (0..2)
+                    .map(|_| lines.next().unwrap().unwrap().parse().unwrap())
+                    .collect::<Vec<u32>>()
             })
             .collect();
-        let ids: Vec<u32> = leaders.iter().map(std::process::Child::id).collect();
+        // Give perl time to leave the group before the trees are read.
+        thread::sleep(Duration::from_millis(500));
+        let mut ids: Vec<u32> = leaders.iter().map(std::process::Child::id).collect();
+        ids.extend([0, 1]);
 
         kill_trees(&ids);
 

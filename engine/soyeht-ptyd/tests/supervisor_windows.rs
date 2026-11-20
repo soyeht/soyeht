@@ -121,9 +121,10 @@ fn closing_many_processes_in_one_request_ends_them_and_what_they_started() {
     let answer = client.request(Request::CloseMany { instance_ids }).unwrap();
 
     assert!(matches!(answer, Response::Ok), "{answer:?}");
-    wait_until_ended(child);
+    // Gone when the answer comes: nothing is waited for here.
+    assert!(!is_running(child));
     for instance in &started {
-        wait_until_ended(instance.pid);
+        assert!(!is_running(instance.pid));
     }
     let Response::Instances(listed) = client.request(Request::List).unwrap() else {
         panic!("expected a list");

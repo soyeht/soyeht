@@ -166,9 +166,9 @@ impl Core {
             .and_then(|()| self.release_closed_pane(id));
             match released {
                 Ok(process) => processes.push(process),
+                // The later panes are released all the same; the first failure is returned.
                 Err(error) => {
-                    failure = Some(error);
-                    break;
+                    failure.get_or_insert(error);
                 }
             }
         }
