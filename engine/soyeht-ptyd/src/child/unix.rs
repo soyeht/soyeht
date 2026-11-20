@@ -1,5 +1,5 @@
 use super::{Exit, Reach};
-use soyeht_platform::process::{GroupSignal, kill_tree, signal_group};
+use soyeht_platform::process::{GroupSignal, kill_trees, signal_group};
 use std::io;
 
 /// A child that leads its own process group (a terminal's session, or a pipe guardian).
@@ -40,10 +40,27 @@ impl Child {
 
     /// Ends the child's processes as far as `reach` says.
     pub fn kill(&self, reach: Reach) {
-        match reach {
-            Reach::Group => signal_group(self.0.id(), GroupSignal::Kill),
-            Reach::Tree => kill_tree(self.0.id()),
+        Self::kill_together(&[(self, reach)]);
+    }
+
+    /// Ends several children at once, each as far as its `reach` says. The process table is read
+    /// once for all the trees (`kill_trees`).
+    pub(super) fn kill_together(children: &[(&Child, Reach)]) {
+        let mut leaders = Vec::new();
+        for (child, reach) in children {
+            match reach {
+                Reach::Group => signal_group(child.0.id(), GroupSignal::Kill),
+                Reach::Tree => leaders.push(child.0.id()),
+            }
         }
+        kill_trees(&leaders);
+    }
+
+    /// Whether anything of the child is left after its exit was collected. Never on Unix: only the
+    /// child itself is collected. The rest of its tree is signalled, and a child that left its
+    /// group can stay a zombie under its new parent for a moment after the answer.
+    pub(super) fn survivors(&self) -> io::Result<bool> {
+        Ok(false)
     }
 
     /// Asks the child's process group to stop, as a terminal being closed does.

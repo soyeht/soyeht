@@ -28,16 +28,18 @@ use std::io::{self, Read, Write};
 use std::net::Shutdown;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    Arc, Mutex, MutexGuard,
+    Arc, Mutex, MutexGuard, Weak,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+mod close;
 mod foreground;
 mod watch;
 
+use close::{close_answer, close_many_answer, record_exit};
 use watch::{Watchers, hello_refusal, welcome};
 
 struct Live {
@@ -71,6 +73,8 @@ struct State {
     supervisor_id: String,
     registry: Registry,
     live: BTreeMap<String, Arc<Live>>,
+    /// The processes a close is ending, until nothing holds them any more.
+    closing: BTreeMap<String, Weak<Live>>,
     active: Option<(String, Stream)>,
     inputs: BTreeMap<String, (String, String, usize)>,
     watchers: Arc<Watchers>,
@@ -123,6 +127,7 @@ pub fn run(directory: &Path) -> Result<()> {
         supervisor_id: Uuid::new_v4().to_string(),
         registry,
         live: BTreeMap::new(),
+        closing: BTreeMap::new(),
         active: None,
         inputs: BTreeMap::new(),
         watchers: Arc::default(),
@@ -257,6 +262,10 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
                     drop(state);
                     foreground::answer(asked)
                 }
+                // Ending the processes waits for them, with the state released: a terminal's input
+                // and output, and every other request, go on meanwhile.
+                Request::Close { instance_id } => close_answer(state, &[instance_id]),
+                Request::CloseMany { instance_ids } => close_many_answer(state, &instance_ids),
                 request => {
                     let response = execute(&mut state, &shared, request)
                         .unwrap_or_else(|e| error(wire_kind::OPERATION_FAILED, &e.to_string()));
@@ -281,7 +290,10 @@ fn execute(state: &mut State, shared: &Arc<Mutex<State>>, request: Request) -> R
         Request::List => execute_list(state),
         Request::Spawn(config) => execute_spawn(state, shared, config),
         Request::Kill { instance_id } => execute_kill(state, &instance_id),
-        Request::Close { instance_id } => execute_close(state, &instance_id),
+        Request::Close { .. } | Request::CloseMany { .. } => Ok(error(
+            wire_kind::OPERATION_FAILED,
+            "a close is answered outside the state",
+        )),
         Request::PendingInputs => execute_pending_inputs(state),
         Request::Foreground { .. } => Ok(error(
             wire_kind::OPERATION_FAILED,
@@ -442,36 +454,6 @@ fn execute_kill(state: &State, instance_id: &str) -> Result<Response> {
     }
     // Keep the live output and registry entry until Close. ACP kill stops a
     // command but leaves its output available to the caller.
-    Ok(Response::Ok)
-}
-
-fn execute_close(state: &mut State, instance_id: &str) -> Result<Response> {
-    if let Some(instance) = state
-        .registry
-        .instances
-        .values_mut()
-        .find(|instance| instance.instance_id == instance_id)
-    {
-        let key = instance.spawn.instance_key.clone();
-        let was_closed = instance.closed;
-        instance.closed = true;
-        if !was_closed && let Err(failure) = state.registry.save(&state.directory) {
-            let restored = state
-                .registry
-                .instances
-                .get_mut(&key)
-                .ok_or(Error::RegistryInstanceMissing)?;
-            restored.closed = false;
-            return Err(failure);
-        }
-        if let Some(live) = state.live.remove(instance_id) {
-            let mut child = lock(&live.child, "child")?;
-            if child.try_wait()?.is_none() {
-                child.end(reach(&live));
-            }
-            live.mark_exited();
-        }
-    }
     Ok(Response::Ok)
 }
 
@@ -708,13 +690,11 @@ fn start_readers(mut reader: Output, live: Arc<Live>, shared: Arc<Mutex<State>>,
                         live.mark_exited();
                         break;
                     };
-                    if let Some(instance) = state.registry.instances.get_mut(&key) {
-                        instance.exit_code = Some(code);
-                    }
                     // Published after the status, under the lock a `List` takes, so a reader
                     // that sees the process exited also finds its exit status.
+                    let durable = record_exit(&mut state, &key, code);
                     live.mark_exited();
-                    if state.registry.save(&state.directory).is_err() {
+                    if durable && state.registry.save(&state.directory).is_err() {
                         log::event("ptyd.registry_write_failed", &[]);
                     }
                     break;
