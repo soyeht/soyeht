@@ -4,7 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_platform::local::{connect, connect_proved};
+use soyeht_platform::local::{Stream, connect_proved};
 use soyeht_platform::testing::scratch_dir;
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Request, Response, VERSION};
@@ -82,9 +82,25 @@ const END_OF_CONNECTION: Duration = Duration::from_secs(10);
 /// each (`NONCE_BYTES` and `PROOF_BYTES` of the local endpoint, which are private).
 const PROOF_ANSWER: usize = 64;
 
+/// A connection that has not proved the secret. On Unix it is the plain socket. On Windows the
+/// platform's `connect` always proves, so the test reads the port from the endpoint file, as any
+/// process that can read the file could, and connects to it without the exchange.
+fn connect_unproved(socket: &std::path::Path) -> Stream {
+    #[cfg(unix)]
+    {
+        soyeht_platform::local::connect(socket).unwrap()
+    }
+    #[cfg(windows)]
+    {
+        let file = std::fs::read_to_string(socket).unwrap();
+        let port: u16 = file.split_whitespace().nth(1).unwrap().parse().unwrap();
+        std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).unwrap()
+    }
+}
+
 /// Sends `input` and everything the supervisor says back until it ends the connection. A
 /// supervisor that does not end it within [`END_OF_CONNECTION`] fails the case.
-fn send(mut stream: soyeht_platform::local::Stream, input: &[u8]) -> Vec<u8> {
+fn send(mut stream: Stream, input: &[u8]) -> Vec<u8> {
     stream.set_read_timeout(Some(END_OF_CONNECTION)).unwrap();
     // The peer may close before all of the input is written; that is the supervisor ending
     // the connection, not a failure of the test.
@@ -182,7 +198,7 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     // A connection that has not proved the secret (ADR 0160) is sent the same framed garbage:
     // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
-        let answer = send(connect(&socket).unwrap(), input);
+        let answer = send(connect_unproved(&socket), input);
         assert!(
             answer.is_empty() || answer.len() == PROOF_ANSWER,
             "an unproved peer was answered with {} bytes: {answer:?}",
