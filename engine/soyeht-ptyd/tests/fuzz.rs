@@ -199,8 +199,12 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
         let answer = send(connect_unproved(&socket), input);
+        // On Windows the supervisor closes on the input it did not read, which resets the
+        // connection, and the reset discards what the peer had not read yet: the answer may be
+        // cut short, but never longer than the nonce and the proof.
+        let whole = answer.is_empty() || answer.len() == PROOF_ANSWER;
         assert!(
-            answer.is_empty() || answer.len() == PROOF_ANSWER,
+            whole || (cfg!(windows) && answer.len() < PROOF_ANSWER),
             "an unproved peer was answered with {} bytes: {answer:?}",
             answer.len()
         );

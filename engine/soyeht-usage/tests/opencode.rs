@@ -585,23 +585,22 @@ fn opencodes_own_variables_move_its_files() {
         ("XDG_CONFIG_HOME".into(), "/config".into()),
         ("OPENCODE_DB".into(), "history.db".into()),
     ];
+    // The reader joins the folders it is given with this system's separator.
+    let database = Path::new("/data").join("opencode").join("history.db");
     host.files = vec![
         (
-            "/config/opencode/opencode.json".into(),
+            Path::new("/config").join("opencode").join("opencode.json"),
             soyeht_usage::host::FileRead::Bytes(config("openai/gpt-5.5")),
         ),
-        (
-            "/data/opencode/history.db".into(),
-            soyeht_usage::host::FileRead::Unreadable,
-        ),
+        (database.clone(), soyeht_usage::host::FileRead::Unreadable),
     ];
     host.local_usage = activity(1, 0.0);
     let host = Arc::new(host);
     assert_eq!(refresh(&host).reading.state, UsageState::Ok);
     assert!(matches!(
         &usage_reads(&host)[0],
-        Call::OpencodeUsage { database, provider: Some(provider), .. }
-            if database == Path::new("/data/opencode/history.db") && provider == "openai"
+        Call::OpencodeUsage { database: read, provider: Some(provider), .. }
+            if *read == database && provider == "openai"
     ));
 
     // An in-memory database has no file to read.

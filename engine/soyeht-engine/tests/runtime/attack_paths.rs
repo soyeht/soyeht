@@ -34,7 +34,12 @@ impl Site {
         fs::write(outside.join("inner/deep.txt"), SECRET).unwrap();
         symlink(&outside, project.join("out_link")).unwrap();
         symlink(outside.join("secret.txt"), project.join("file_link")).unwrap();
-        symlink("../outside", project.join("relative_link")).unwrap();
+        // A relative target is written with the separator of the system: Windows does not follow "../".
+        symlink(
+            Path::new("..").join("outside"),
+            project.join("relative_link"),
+        )
+        .unwrap();
         Self { project, outside }
     }
 

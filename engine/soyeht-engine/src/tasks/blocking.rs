@@ -461,7 +461,7 @@ mod tests {
         );
 
         crate::tasks::assert_poll_rests_for_retry(&core);
-        std::fs::remove_dir_all(directory).unwrap();
+        crate::test_paths::remove_after(core, directory);
     }
 
     #[test]

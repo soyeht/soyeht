@@ -2,6 +2,17 @@
 
 use std::{fs, path::PathBuf};
 
+/// `path`, when it is written as an absolute Unix path, as an absolute path of this system:
+/// Windows needs a drive before a path is absolute, and writes its separators another way. Any
+/// other text is the path as it is.
+pub(crate) fn absolute(path: &str) -> PathBuf {
+    if cfg!(windows) && path.starts_with('/') {
+        PathBuf::from(format!("C:{}", path.replace('/', "\\")))
+    } else {
+        PathBuf::from(path)
+    }
+}
+
 /// A folder of its own for one test, removed when the test ends. Its name carries "next" like
 /// every place of the app.
 pub(crate) struct Scratch(pub(crate) PathBuf);

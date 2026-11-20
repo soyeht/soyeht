@@ -60,6 +60,8 @@ mod harness_switch;
 mod harness_switch_names_and_failures;
 mod ink_recognition;
 mod language_and_project_search;
+// Its terminals run `awk` and `touch`, which a Windows shell does not have.
+#[cfg(unix)]
 mod many_terminals_subscribed_at_once;
 mod native_permissions_and_modes;
 mod permissions_and_queue;

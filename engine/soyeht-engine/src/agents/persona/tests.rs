@@ -158,7 +158,7 @@ fn only_an_avatar_pane_has_a_persona() {
         text(&MemoryStore::default(), &with_adapter(true), "w").unwrap(),
         None
     );
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn a_session_that_loads_carries_the_system_prompt_of_an_adapter_that_takes_one()
     let changes = opening(&store, &directory, &mut other);
     assert!(!has_system_prompt(&requested(&changes, "session/load")));
     assert!(other.queue.is_empty() && !other.persona_pending);
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn a_new_session_carries_the_persona_by_the_channel_the_adapter_has() {
     assert!(!has_system_prompt(&requested(&changes, "session/new")));
     // Nothing is queued: the persona rides on the first prompt, once the session exists.
     assert!(other.queue.is_empty());
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 fn opened(state: &mut State, store: &Store, directory: &std::path::Path) -> Result<()> {
@@ -278,7 +278,7 @@ fn a_session_that_was_created_owes_the_persona_to_its_first_prompt_once() {
         ahead_of(&store, &mut state, ("w", "prompt-3"), person.clone()).unwrap(),
         person
     );
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -289,7 +289,7 @@ fn what_is_owed_survives_the_engine_stopping_with_the_prompt_in_flight() {
     let kept: State = serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
     assert!(kept.persona_pending);
     assert_eq!(kept.persona_carried_by.as_deref(), Some("prompt-1"));
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn a_persona_that_holds_the_end_line_cannot_end_the_block_early() {
     assert_eq!(delivered.matches(BLOCK_END).count(), 1);
     assert!(delivered.ends_with(BLOCK_END));
     assert!(delivered.contains("After."));
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn an_adapter_with_a_system_prompt_owes_nothing_to_its_prompts() {
     other.avatar = false;
     mark_pending(&mut other);
     assert!(!other.persona_pending);
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -373,7 +373,7 @@ fn shown(chunks: &[(&str, &str)]) -> Vec<String> {
         .unwrap();
     }
     crate::agents::updates::finish_replayed_user(&store, "p", 1, &mut state, &mut changes).unwrap();
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
     changes
         .messages
         .iter()
@@ -450,7 +450,7 @@ fn a_persona_saved_while_a_prompt_streams_is_not_settled_by_that_prompts_answer(
     assert!(state.persona_carried_by.is_none());
     answered(&mut state, "prompt-1", true);
     assert!(state.persona_pending);
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }
 
 #[test]
@@ -470,5 +470,5 @@ fn a_load_starts_a_replay_afresh() {
     state.session_id = Some("native-1".into());
     opening(&store, &directory, &mut state);
     assert!(state.persona_replay.is_none());
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(store, directory);
 }

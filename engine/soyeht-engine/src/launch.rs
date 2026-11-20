@@ -162,6 +162,8 @@ mod tests {
 
     #[test]
     fn the_arguments_a_service_definition_passes_are_read() {
+        // The supervisor's program must be an absolute path, which is written another way on Windows.
+        let program = crate::test_paths::rooted("/p/ptyd");
         let parsed = parse(
             &[
                 "--profile",
@@ -169,12 +171,12 @@ mod tests {
                 "--data-dir",
                 "/d",
                 RESTART_SUPERVISOR_FLAG,
-                "/p/ptyd",
+                program.to_str().unwrap(),
             ],
             None,
         )
         .unwrap();
-        assert_eq!(parsed.supervisor_program, Some(PathBuf::from("/p/ptyd")));
+        assert_eq!(parsed.supervisor_program, Some(program));
         assert!(parsed.listen.is_empty());
     }
 

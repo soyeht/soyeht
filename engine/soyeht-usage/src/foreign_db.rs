@@ -537,6 +537,7 @@ mod tests {
             connection.query_row("SELECT 7", [], |row| row.get::<_, i64>(0)),
             Ok(7)
         );
+        drop(connection);
         fs::remove_file(path).unwrap();
     }
 

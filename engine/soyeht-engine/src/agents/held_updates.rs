@@ -145,7 +145,7 @@ mod tests {
         assert_eq!(names, ["second"]);
         assert_eq!(commands_changed(&changes), 2);
         assert!(opened.held_updates.is_empty());
-        std::fs::remove_dir_all(&directory).unwrap();
+        crate::test_paths::remove_after(store, &directory);
     }
 
     #[test]

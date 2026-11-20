@@ -58,8 +58,9 @@ pub(super) const BOTH: [Component; 2] = [Component::Engine, Component::Ptyd];
 /// runs.
 pub(super) fn launchd(graphical: bool, loaded: bool) -> Recorder {
     let changed: Rc<RefCell<HashMap<String, bool>>> = Rc::default();
+    // A job's file path ends with its label, with the separator of this system.
     let label = |text: &str| {
-        text.rsplit('/')
+        text.rsplit(['/', '\\'])
             .next()
             .unwrap_or(text)
             .trim_end_matches(".plist")
