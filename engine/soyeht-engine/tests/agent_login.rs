@@ -107,8 +107,10 @@ fn refusal(client: &mut Client, method: &str, pane: &str, key: &str) -> Value {
 
 fn callback_port(rig: &Rig) -> u16 {
     let path = rig.path.join("native/login.port");
-    wait_until("login listener", || path.is_file());
-    fs::read_to_string(path).unwrap().trim().parse().unwrap()
+    // The file exists before its text does: wait for the port itself.
+    let port = |path: &std::path::Path| fs::read_to_string(path).ok()?.trim().parse::<u16>().ok();
+    wait_until("login listener", || port(&path).is_some());
+    port(&path).unwrap()
 }
 
 fn forget_listener(rig: &Rig) {
