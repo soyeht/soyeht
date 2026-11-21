@@ -12,8 +12,7 @@ private struct AgentPaneHydrationTaskKey: Equatable {
 struct PaneCard: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
-  /// The pane as the grid last laid it out; what the card draws is read from the client below.
-  let outline: Pane
+  let pane: Pane
   let tint: Color
   let onClose: (String) -> Void
   let onTasks: () -> Void
@@ -26,10 +25,6 @@ struct PaneCard: View {
   let onPaneDrop: (String, String, PaneLayoutDropZone) -> Void
   @State private var showingAutomation = false
   @State private var capture = PaneExperimentCapture()
-
-  /// The pane the card draws, read here so that a change of this pane runs this card and no other:
-  /// the grid reads only where the panes go.
-  private var pane: Pane { client.pane(outline.paneId) ?? outline }
 
   var body: some View {
     Group {

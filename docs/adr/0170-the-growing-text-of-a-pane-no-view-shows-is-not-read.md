@@ -36,7 +36,7 @@ app is fixed is for a run of the Release build to say.
   (`panes(in:)`) or of a mode (`panes(mode:)`). A write changes the list and the pane, workspace and mode it
   concerns, so a view that shows one pane or one workspace does not run for another workspace's agent. A
   pane's state is written once. A closed pane leaves nothing in the store.
-- **The attention summary is a value of its own.** The tab strip and the rail read it (`agentAttention`); it
+- **The attention summary is a value of its own.** The tab strip and the rail read it (`agentAttentionRequests`, `agentWaitingTotal`, `agentWorking` and `agentAttention(in:)`; ADR 0172); it
   is made again when a pane or a request changes, and its readers hear of it only when it differs.
 
 ## Consequences

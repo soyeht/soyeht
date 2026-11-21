@@ -8,7 +8,9 @@ extension PaneLayoutTree {
   /// Gives the first editor leaf whose pane is no longer listed to the single
   /// live editor pane, when that pane has no leaf yet. Every other layout is
   /// returned unchanged; leaves of panes that are gone are removed elsewhere.
-  public func adoptingLiveEditor(_ livePanes: [Pane]) -> PaneLayoutTree {
+  public func adoptingLiveEditor<Source: PaneLayoutSource>(_ livePanes: [Source])
+    -> PaneLayoutTree
+  {
     let editors = livePanes.filter { $0.mode == .editor }
     guard editors.count == 1, let editor = editors.first,
       !paneIdsInCanonicalOrder.contains(editor.paneId)
@@ -33,16 +35,5 @@ extension PaneLayoutTree {
       }
       return .split(split)
     }
-  }
-}
-
-extension EngineClient {
-  /// The panes a workspace lays out: every pane except the editor panes behind
-  /// the active tab, which share its slot.
-  public func layoutPanes(_ workspacePanes: [Pane]) -> [Pane] {
-    guard let workspaceId = workspacePanes.first(where: { $0.mode == .editor })?.workspaceId,
-      let active = activeEditorPaneId(in: workspaceId)
-    else { return workspacePanes }
-    return workspacePanes.filter { $0.mode != .editor || $0.paneId == active }
   }
 }

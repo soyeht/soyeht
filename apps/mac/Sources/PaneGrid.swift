@@ -85,12 +85,12 @@ struct PaneGrid: View {
     self.onTasks = onTasks
   }
 
-  private var workspacePanes: [Pane] {
+  private var workspacePanes: [PaneOutline] {
     guard let workspaceId else { return [] }
     return client.outlinedPanes(in: workspaceId)
   }
 
-  private var panes: [Pane] {
+  private var panes: [PaneOutline] {
     client.paneGridPanes(workspacePanes, mode: mode)
   }
 
@@ -299,7 +299,7 @@ private struct PaneLayoutTreeSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
   let workspaceId: String
-  let panes: [Pane]
+  let panes: [PaneOutline]
   let tree: PaneLayoutTree
   let plan: PaneLayoutGeometryResult
   let viewportSize: CGSize
@@ -326,7 +326,7 @@ private struct PaneLayoutTreeSurface: View {
       delegate: PaneLayoutFallbackDropDelegate(interaction: interaction))
   }
 
-  private var panesById: [String: Pane] {
+  private var panesById: [String: PaneOutline] {
     Dictionary(uniqueKeysWithValues: panes.map { ($0.paneId, $0) })
   }
 
@@ -341,7 +341,7 @@ private struct PaneLayoutTreeSurface: View {
 struct PaneLayoutNodeSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
-  let panesById: [String: Pane]
+  let panesById: [String: PaneOutline]
   let tintIndices: [String: Int]
   let workspaceId: String
   let tree: PaneLayoutTree
@@ -421,7 +421,7 @@ struct PaneLayoutNodeSurface: View {
   }
 
   @ViewBuilder private func leafSurface(
-    pane: Pane, geometry: PaneLayoutNodeGeometry
+    pane: PaneOutline, geometry: PaneLayoutNodeGeometry
   ) -> some View {
     let halo = CGFloat(MacPaneLayoutMetrics.paneHalo)
     let contentWidth = CGFloat(geometry.contentSize.width)
@@ -446,7 +446,7 @@ struct PaneLayoutNodeSurface: View {
   }
 
   private func paneSurface(
-    pane: Pane, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat,
+    pane: PaneOutline, halo: CGFloat, contentWidth: CGFloat, contentHeight: CGFloat,
     visible: Bool = true
   ) -> some View {
     let cardWidth = max(0, contentWidth - 2 * halo)
@@ -456,18 +456,22 @@ struct PaneLayoutNodeSurface: View {
       // transcript, the scroll, the draft), so the tab shows it as it was when opened. The other
       // panes stay mounted: a terminal keeps its screen.
       if isVisible && visible || pane.mode != .agent {
-        PaneCard(
-          client: client, webHost: webHost, outline: pane,
-          tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
-          onTasks: onTasks, onSplit: onSplit,
-          interaction: interactionsEnabled ? interaction : nil,
-          companionLinked: companionLinked, isVisible: isVisible && visible,
-          cardWidth: cardWidth,
-          dropTargetSize: CGSize(
-            width: cardWidth,
-            height: max(0, contentHeight - 2 * halo)),
-          onPaneDrop: onPaneDrop
-        )
+        // A card reads its own pane, so a change of this pane runs this card and no other: the
+        // grid reads only where the panes go.
+        LivePane(client: client, paneId: pane.paneId) { live in
+          PaneCard(
+            client: client, webHost: webHost, pane: live,
+            tint: paneTint(tintIndices[pane.paneId] ?? 0), onClose: onClose,
+            onTasks: onTasks, onSplit: onSplit,
+            interaction: interactionsEnabled ? interaction : nil,
+            companionLinked: companionLinked, isVisible: isVisible && visible,
+            cardWidth: cardWidth,
+            dropTargetSize: CGSize(
+              width: cardWidth,
+              height: max(0, contentHeight - 2 * halo)),
+            onPaneDrop: onPaneDrop
+          )
+        }
       } else {
         Color.clear
       }
@@ -480,9 +484,10 @@ struct PaneLayoutNodeSurface: View {
     .frame(width: contentWidth, height: contentHeight, alignment: .topLeading)
   }
 
-  /// Every grouped pane stays mounted; only the selected one, or the first, is visible. The
-  /// strip stays put and the pane scrolls under it when the window is smaller than the pane's
-  /// floor, so nothing is drawn past the slot.
+  /// Only the selected pane of the group, or the first, is visible; the others stay mounted,
+  /// except an agent, which is drawn only while it is open (`paneSurface`). The strip stays put
+  /// and the pane scrolls under it when the window is smaller than the pane's floor, so nothing
+  /// is drawn past the slot.
   private func tabGroupSurface(
     _ group: PaneLayoutTabGroup, geometry: PaneLayoutNodeGeometry
   ) -> some View {
@@ -520,5 +525,17 @@ struct PaneLayoutNodeSurface: View {
 
   private func paneTint(_ index: Int) -> Color {
     [MacTheme.agentRose, MacTheme.agentBlue, MacTheme.agentGreen, MacTheme.agentSand][index % 4]
+  }
+}
+
+/// Draws what `content` makes of the pane `paneId`, read here: the view runs for a change of that
+/// pane and for no other, and draws nothing once the pane is gone.
+private struct LivePane<Content: View>: View {
+  let client: EngineClient
+  let paneId: String
+  @ViewBuilder let content: (Pane) -> Content
+
+  var body: some View {
+    if let pane = client.pane(paneId) { content(pane) }
   }
 }

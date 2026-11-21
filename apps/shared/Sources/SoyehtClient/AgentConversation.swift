@@ -95,6 +95,7 @@ extension AgentConversationView where HarnessControl == EmptyView {
   @State private var bottomVisibleId: String?
   @State private var subagents = AgentSubagentDisclosure()
   @FocusState private var promptFocused: Bool
+  @State private var placeCaretAtEnd = false
 
   public init(
     client: EngineClient, paneId: String, isVisible: Bool = true,
@@ -183,6 +184,20 @@ extension AgentConversationView where HarnessControl == EmptyView {
     }
     .onChange(of: isVisible, initial: true) { _, shown in
       client.agentPaneShown(viewer, paneId, shown)
+      // The tab was closed with the keyboard in this composer: it goes back to it.
+      if shown, AgentPromptDrafts.shared.takeFocus(for: paneId),
+        client.selectedPaneId == paneId
+      {
+        placeCaretAtEnd = true
+        Task { @MainActor in promptFocused = true }
+      }
+    }
+    .onChange(of: promptFocused) { _, focused in
+      // The field was drawn anew and took the keyboard: it selects what is typed, and the next
+      // key would replace it. The cursor goes after the draft.
+      guard focused, placeCaretAtEnd else { return }
+      placeCaretAtEnd = false
+      AgentPromptDrafts.shared.caret(for: paneId).place(at: prompt.count, in: prompt)
     }
     .onChange(of: paneId) { old, new in
       client.agentPaneShown(viewer, old, false)
@@ -190,6 +205,8 @@ extension AgentConversationView where HarnessControl == EmptyView {
     }
     .onDisappear {
       client.agentPaneShown(viewer, paneId, false)
+      AgentPromptDrafts.shared.keepFocus(promptFocused, for: paneId)
+      AgentPromptDrafts.shared.caret(for: paneId).reset()
       if !prompt.isEmpty { client.setDraft(paneId, active: false) }
     }
   }

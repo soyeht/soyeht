@@ -29,7 +29,7 @@ public struct PaneOutline: Equatable, Sendable {
   public let writingKind: WritingKind?
   public let writingSection: WritingSection?
 
-  init(_ pane: Pane) {
+  public init(_ pane: Pane) {
     paneId = pane.paneId
     workspaceId = pane.workspaceId
     mode = pane.mode
@@ -37,6 +37,13 @@ public struct PaneOutline: Equatable, Sendable {
     writingKind = pane.writingKind
     writingSection = pane.writingSection
   }
+}
+
+/// The panes of one workspace as outlines, observed as one list that changes only when an outline
+/// does.
+@MainActor @Observable
+final class OutlineSlice {
+  fileprivate(set) var panes: [PaneOutline] = []
 }
 
 /// One pane's outline, observed on its own: told only when the outline changes, so a view that
@@ -48,7 +55,7 @@ final class PaneOutlineBox {
 
 /// The panes of a client, observed at the grain the views read them: the whole list (every change
 /// of every pane), one pane (`pane(_:)`), the panes of one workspace or of one mode, and the
-/// outline of a workspace's panes (`outline(in:)`). A write changes the list and the boxes it
+/// outline of a workspace's panes (`outlinedPanes(in:)`). A write changes the list and the boxes it
 /// concerns, so what runs is what shows the pane that changed.
 @MainActor @Observable
 final class PaneStore {
@@ -59,8 +66,7 @@ final class PaneStore {
   @ObservationIgnored private var byWorkspace: [String: PaneSlice] = [:]
   @ObservationIgnored private var byMode: [PaneMode: PaneSlice] = [:]
   @ObservationIgnored private var outlineBoxes: [String: PaneOutlineBox] = [:]
-  @ObservationIgnored private var outlines: [String: PaneSlice] = [:]
-  @ObservationIgnored private var outlineKeys: [String: [PaneOutline]] = [:]
+  @ObservationIgnored private var outlines: [String: OutlineSlice] = [:]
   /// Told after every write, for what is made from the whole list (the attention summary).
   @ObservationIgnored var didChange: (@MainActor () -> Void)?
 
@@ -100,14 +106,12 @@ final class PaneStore {
     return box.value
   }
 
-  /// The panes of a workspace as its grid lays them out. The list is told only when a pane comes,
-  /// goes, moves, changes its mode or its name; the values in it are as they were at that change,
-  /// so what draws a pane reads `pane(_:)`.
-  func outlinedPanes(in workspaceId: String) -> [Pane] {
+  /// The outlines of a workspace's panes, as its grid lays them out. The list is told only when a
+  /// pane comes, goes, moves, changes its mode or its name.
+  func outlinedPanes(in workspaceId: String) -> [PaneOutline] {
     if let slice = outlines[workspaceId] { return slice.panes }
-    let slice = PaneSlice()
-    slice.panes = list.filter { $0.workspaceId == workspaceId }
-    outlineKeys[workspaceId] = slice.panes.map(PaneOutline.init)
+    let slice = OutlineSlice()
+    slice.panes = list.filter { $0.workspaceId == workspaceId }.map(PaneOutline.init)
     outlines[workspaceId] = slice
     return slice.panes
   }
@@ -203,11 +207,8 @@ final class PaneStore {
 
   private func refreshOutline(of workspaceId: String) {
     guard let slice = outlines[workspaceId] else { return }
-    let panes = list.filter { $0.workspaceId == workspaceId }
-    let keys = panes.map(PaneOutline.init)
-    guard keys != outlineKeys[workspaceId] else { return }
-    outlineKeys[workspaceId] = keys
-    slice.panes = panes
+    let next = list.filter { $0.workspaceId == workspaceId }.map(PaneOutline.init)
+    if next != slice.panes { slice.panes = next }
   }
 
   private func refreshSlices(for pane: Pane) {

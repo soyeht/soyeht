@@ -29,10 +29,11 @@ public struct AgentPaneTickerView: View {
   private let timeFont: Font
   private let color: Color
   @Environment(\.agentTickerSource) private var source
-  @State private var clock = AgentTurnClock()
+  @State private var clock: AgentTurnClock
 
   public init(client: EngineClient, paneId: String, font: Font, timeFont: Font, color: Color) {
     self.client = client
+    _clock = State(initialValue: client.agentPanes.turnClock(paneId))
     self.paneId = paneId
     self.font = font
     self.timeFont = timeFont
@@ -40,6 +41,12 @@ public struct AgentPaneTickerView: View {
   }
 
   private var pane: Pane? { client.pane(paneId) }
+
+  /// Notes the running turn, and keeps the clock in the client for the next time this header is drawn.
+  private func observe(_ activePromptId: String?) {
+    clock.observe(activePromptId: activePromptId, now: .now)
+    client.agentPanes.keepTurnClock(clock, for: paneId)
+  }
 
   private func context(now: Date) -> AgentTickerContext {
     AgentTickerContext(
@@ -63,8 +70,8 @@ public struct AgentPaneTickerView: View {
       }
     }
     .padding(.trailing, AgentTickerMetrics.trailingPadding)
-    .onAppear { clock.observe(activePromptId: activePromptId, now: .now) }
-    .onChange(of: activePromptId) { _, id in clock.observe(activePromptId: id, now: .now) }
+    .onAppear { observe(activePromptId) }
+    .onChange(of: activePromptId) { _, id in observe(id) }
     .accessibilityIdentifier("agent-ticker-\(paneId)")
   }
 }

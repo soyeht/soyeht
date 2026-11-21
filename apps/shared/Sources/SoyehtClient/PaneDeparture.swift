@@ -5,17 +5,6 @@ import SoyehtProtocol
 /// simply drops out: nothing is raised to the person, and a late event or answer about it never
 /// brings it back or asks the engine about it again.
 extension EngineClient {
-  /// The panes of a workspace as its grid lays them out: the reader runs when a pane comes, goes,
-  /// moves or is renamed, not at every turn of an agent. The values are as of that change; a view
-  /// that draws a pane reads `pane(_:)`.
-  public func outlinedPanes(in workspaceId: String) -> [Pane] {
-    paneStore.outlinedPanes(in: workspaceId)
-  }
-
-  /// Where the pane `paneId` is: its workspace, mode and what its tab says. The reader runs when
-  /// that changes, not at every turn of an agent.
-  public func paneOutline(of paneId: String?) -> PaneOutline? { paneStore.outline(of: paneId) }
-
   /// Whether the engine answered that what a request named does not exist.
   static func isNotFound(_ error: Error) -> Bool {
     guard case ClientFailure.remote(let kind, _, _) = error else { return false }

@@ -176,3 +176,23 @@ private func reply(_ paneId: String, _ text: String, complete: Bool) throws -> J
   #expect(grid.count == 2)
   #expect(window.client.outlinedPanes(in: "w1").map(\.paneId) == ["v"])
 }
+
+@MainActor @Test func aHeaderDrawnAgainKeepsItsTurnClockAndAComposerItsKeyboard() {
+  let window = Window()
+  let started = Date(timeIntervalSince1970: 1_000)
+  var clock = AgentTurnClock()
+  clock.observe(activePromptId: "p0", now: started)
+  window.client.agentPanes.keepTurnClock(clock, for: "h")
+  // The header was drawn again: it starts from what the client kept, not from zero.
+  var again = window.client.agentPanes.turnClock("h")
+  again.observe(activePromptId: "p0", now: started.addingTimeInterval(60))
+  #expect(again.startedAt == started)
+  #expect(window.client.agentPanes.turnClock("t").startedAt == nil)
+
+  let drafts = AgentPromptDrafts()
+  drafts.keepFocus(true, for: "v")
+  #expect(drafts.takeFocus(for: "v") && !drafts.takeFocus(for: "v"), "the note is taken once")
+  drafts.keepFocus(true, for: "v")
+  drafts.discard("v")
+  #expect(!drafts.takeFocus(for: "v"), "a closed pane leaves no note")
+}
