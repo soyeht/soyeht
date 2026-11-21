@@ -54,6 +54,18 @@ public enum PaneLayoutAxis: String, Hashable, Sendable {
   case vertical
 }
 
+/// What the layout needs to know of a pane: which it is and what kind. A `Pane` is one, and so is
+/// the `PaneOutline` a grid follows.
+public protocol PaneLayoutSource {
+  var paneId: String { get }
+  var workspaceId: String { get }
+  var mode: PaneMode { get }
+  var writingKind: WritingKind? { get }
+}
+
+extension Pane: PaneLayoutSource {}
+extension PaneOutline: PaneLayoutSource {}
+
 public struct PaneLayoutLeaf: Equatable, Sendable {
   public var paneId: String
   public var kind: PaneLayoutKind
@@ -63,7 +75,7 @@ public struct PaneLayoutLeaf: Equatable, Sendable {
     self.kind = kind
   }
 
-  public init(pane: Pane) {
+  public init(pane: some PaneLayoutSource) {
     self.init(
       paneId: pane.paneId,
       kind: PaneLayoutKind(mode: pane.mode, writingKind: pane.writingKind))

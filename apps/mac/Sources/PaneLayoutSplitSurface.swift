@@ -5,7 +5,7 @@ import SwiftUI
 struct PaneLayoutCompanionSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
-  let panesById: [String: Pane]
+  let panesById: [String: PaneOutline]
   let tintIndices: [String: Int]
   let workspaceId: String
   let split: PaneLayoutSplit
@@ -242,7 +242,7 @@ struct PaneLayoutCompanionSurface: View {
 struct PaneLayoutSplitSurface: View {
   @Bindable var client: EngineClient
   let webHost: MacWebHost
-  let panesById: [String: Pane]
+  let panesById: [String: PaneOutline]
   let tintIndices: [String: Int]
   let workspaceId: String
   let split: PaneLayoutSplit

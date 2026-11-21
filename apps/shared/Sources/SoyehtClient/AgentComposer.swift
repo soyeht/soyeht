@@ -20,10 +20,19 @@ struct AgentComposer<HarnessControl: View>: View {
   /// The engine connection; menus and send wait for it.
   let connected: Bool
   let submit: () -> Void
+  /// The cursor. On the Mac the client holds it, so the view that gives the keyboard back to a
+  /// reopened tab can place it; elsewhere two views can draw one pane, and each keeps its own.
+  @State private var ownCaret = AgentComposerCaret()
+  private var caret: AgentComposerCaret {
+    #if os(macOS)
+      AgentPromptDrafts.shared.caret(for: paneId)
+    #else
+      ownCaret
+    #endif
+  }
   @State private var dictation = DictationController(makeSession: {
     DictationEngineStore.shared.session()
   })
-  @State private var caret = AgentComposerCaret()
   @State private var slash = SlashCompletionState()
   /// The control row is as tall as its text: at an accessibility text size it grows instead of
   /// clipping the chips.
@@ -182,7 +191,7 @@ struct AgentComposer<HarnessControl: View>: View {
 
 /// The composer's cursor, where dictation inserts its transcript. The selection-aware text
 /// field exists from macOS 15 and iOS 18; earlier systems append at the end.
-@MainActor final class AgentComposerCaret {
+@MainActor @Observable final class AgentComposerCaret {
   private var selection: Any?
 
   @ViewBuilder func textField(text: Binding<String>) -> some View {
@@ -192,6 +201,9 @@ struct AgentComposer<HarnessControl: View>: View {
       TextField("", text: text, axis: .vertical)
     }
   }
+
+  /// Forgets the cursor: a field drawn again starts without one.
+  func reset() { selection = nil }
 
   func offset(in text: String) -> Int? {
     guard #available(macOS 15, iOS 18, *), let selection = selection as? TextSelection,

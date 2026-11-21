@@ -91,7 +91,7 @@ struct WorkspaceTopBar: View {
             .accessibilityIdentifier("workspace-tabs-overflow")
             .popover(isPresented: $overflowPresented, arrowEdge: .bottom) {
               WorkspaceOverflowList(
-                workspaces: hiddenWorkspaces, attention: client.agentAttention,
+                client: client, workspaces: hiddenWorkspaces,
                 onSelect: { workspaceId in
                   overflowPresented = false
                   onSelectWorkspace(workspaceId)
@@ -156,10 +156,8 @@ struct WorkspaceTopBar: View {
       HStack(spacing: MacTheme.Space.x10) {
         ForEach(client.workspaces, id: \.workspaceId) { workspace in
           WorkspaceTab(
-            workspaceId: workspace.workspaceId, name: workspace.name,
+            client: client, workspaceId: workspace.workspaceId, name: workspace.name,
             selected: workspace.workspaceId == workspaceId,
-            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
-            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
             keyboardFocusable: plan.sticky?.workspaceId != workspace.workspaceId,
             focusedWorkspaceId: $focusedWorkspaceId,
             action: { onSelectWorkspace(workspace.workspaceId) },
@@ -218,9 +216,8 @@ struct WorkspaceTopBar: View {
           workspaceStickyBackdrop(
             edge: sticky.edge, width: stickyOcclusionWidth(for: sticky, in: measurement))
           WorkspaceTab(
-            workspaceId: workspace.workspaceId, name: workspace.name, selected: true,
-            waitingCount: client.agentAttention.waitingCount(in: workspace.workspaceId),
-            isWorking: client.agentAttention.hasWorkingAgent(in: workspace.workspaceId),
+            client: client, workspaceId: workspace.workspaceId, name: workspace.name,
+            selected: true,
             keyboardFocusable: false, focusedWorkspaceId: nil,
             action: { reveal(workspace.workspaceId, edge: sticky.edge, using: proxy) },
             onClose: { onCloseWorkspace(workspace.workspaceId) },
@@ -437,19 +434,24 @@ private struct WorkspaceTabMeasurementPreferenceKey: PreferenceKey {
 }
 
 private struct WorkspaceTab: View {
+  let client: EngineClient
   let workspaceId: String
   let name: String
   let selected: Bool
-  let waitingCount: Int
-  let isWorking: Bool
   let keyboardFocusable: Bool
   let focusedWorkspaceId: FocusState<String?>.Binding?
   let action: () -> Void
   let onClose: () -> Void
   var identifierPrefix = "workspace-tab"
 
+  /// What the tab shows of its agents. Read here, in the tab, so an agent that starts or stops in
+  /// another workspace does not run this body.
+  private var attention: WorkspaceAttention { client.agentAttention(in: workspaceId) }
+
   var body: some View {
-    HStack(spacing: MacTheme.Space.x6) {
+    let waitingCount = attention.waiting
+    let isWorking = attention.working
+    return HStack(spacing: MacTheme.Space.x6) {
       Button(action: action) {
         HStack(spacing: MacTheme.Space.x8) {
           Text(name).font(MacTheme.chrome(MacTheme.TypeScale.caption, weight: .semibold))
@@ -668,8 +670,8 @@ private final class HorizontalScrollBridgeView: NSView {
 }
 
 private struct WorkspaceOverflowList: View {
+  let client: EngineClient
   let workspaces: [Workspace]
-  let attention: AgentAttentionSummary
   let onSelect: (String) -> Void
 
   var body: some View {
@@ -679,6 +681,7 @@ private struct WorkspaceOverflowList: View {
       ScrollView {
         LazyVStack(alignment: .leading, spacing: MacTheme.Space.x6) {
           ForEach(workspaces, id: \.workspaceId) { workspace in
+            let attention = client.agentAttention(in: workspace.workspaceId)
             Button {
               onSelect(workspace.workspaceId)
             } label: {
@@ -690,9 +693,9 @@ private struct WorkspaceOverflowList: View {
                   .foregroundStyle(MacTheme.ink)
                   .multilineTextAlignment(.leading)
                   .fixedSize(horizontal: false, vertical: true)
-                if attention.waitingCount(in: workspace.workspaceId) > 0 {
-                  AgentAttentionBadge(count: attention.waitingCount(in: workspace.workspaceId))
-                } else if attention.hasWorkingAgent(in: workspace.workspaceId) {
+                if attention.waiting > 0 {
+                  AgentAttentionBadge(count: attention.waiting)
+                } else if attention.working {
                   AgentWorkingDot()
                 }
                 Spacer(minLength: 0)
@@ -703,9 +706,9 @@ private struct WorkspaceOverflowList: View {
             }
             .help(workspace.name)
             .accessibilityLabel(
-              attention.waitingCount(in: workspace.workspaceId) > 0
-                ? "\(workspace.name), \(AgentAttentionPolicy.waitingLabel(count: attention.waitingCount(in: workspace.workspaceId)))"
-                : attention.hasWorkingAgent(in: workspace.workspaceId)
+              attention.waiting > 0
+                ? "\(workspace.name), \(AgentAttentionPolicy.waitingLabel(count: attention.waiting))"
+                : attention.working
                   ? "\(workspace.name), agents working" : workspace.name
             )
             .accessibilityIdentifier("workspace-overflow-\(workspace.workspaceId)")

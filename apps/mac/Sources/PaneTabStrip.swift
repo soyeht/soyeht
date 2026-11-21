@@ -5,7 +5,7 @@ import SwiftUI
 /// The tab strip over panes shown one at a time: an adaptive writing companion in tabs, or the
 /// tab group `PaneLayoutFit` makes when the panes do not fit the window side by side.
 struct PaneTabStrip: View {
-  let panes: [Pane]
+  let panes: [PaneOutline]
   let selectedPaneId: String?
   /// Prefix of the accessibility identifiers of the strip and of each tab.
   let identifier: String
@@ -37,7 +37,7 @@ struct PaneTabStrip: View {
     .accessibilityIdentifier("\(identifier)s")
   }
 
-  private func icon(for pane: Pane) -> String {
+  private func icon(for pane: PaneOutline) -> String {
     switch pane.mode {
     case .agent: "cpu"
     case .terminal: "terminal"
