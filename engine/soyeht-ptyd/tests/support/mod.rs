@@ -50,6 +50,20 @@ impl Daemon {
         (daemon, client)
     }
 
+    /// A supervisor in a short-named folder (a socket path is limited to about a hundred bytes)
+    /// that has seen an engine of generation 1 come and go, and the path of its socket. The
+    /// folder is removed when the daemon is dropped.
+    pub fn in_scratch_folder() -> (Self, PathBuf) {
+        let directory = soyeht_platform::testing::scratch_dir("ptyd");
+        let daemon = Self {
+            child: Self::launch(&directory),
+            directory,
+        };
+        drop(daemon.connect(1));
+        let socket = daemon.directory.join("ptyd.sock");
+        (daemon, socket)
+    }
+
     pub fn launch(directory: &PathBuf) -> Child {
         Command::new(env!("CARGO_BIN_EXE_soyeht-ptyd"))
             .arg("--data-dir")

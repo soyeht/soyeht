@@ -5,7 +5,6 @@
 
 use serde_json::{Value, json};
 use soyeht_platform::local::{Stream, connect_proved};
-use soyeht_platform::testing::scratch_dir;
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Request, Response, VERSION};
 use std::io::{Read, Write};
@@ -124,15 +123,7 @@ fn send(mut stream: Stream, input: &[u8]) -> Vec<u8> {
 
 #[test]
 fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
-    // A short name: the socket in it has a path limit of about a hundred bytes. The daemon
-    // removes the folder when it is dropped.
-    let directory = scratch_dir("ptyd");
-    let mut daemon = Daemon {
-        child: Daemon::launch(&directory),
-        directory,
-    };
-    drop(daemon.connect(1));
-    let socket = daemon.directory.join("ptyd.sock");
+    let (mut daemon, socket) = Daemon::in_scratch_folder();
 
     // Any request before the hello is refused with the one error, and nothing is executed. The
     // connection has proved the secret (ADR 0160), as every client of the supervisor does.

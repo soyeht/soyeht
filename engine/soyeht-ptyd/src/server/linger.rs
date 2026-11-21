@@ -54,10 +54,6 @@ mod tests {
     use super::*;
     use soyeht_platform::local::pair;
     use std::io::Write;
-    use std::sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    };
     use std::thread;
 
     /// How long ending a connection takes, and the peer if it is still there. `peer` acts on its
@@ -135,28 +131,32 @@ mod tests {
         assert!(sees_the_end(&mut theirs));
     }
 
-    #[test]
-    fn a_peer_that_floods_is_cut_at_the_limit_and_not_waited_for_past_the_deadline() {
+    /// How long ending a connection takes while the peer keeps writing `piece` every `pause`, until
+    /// the supervisor has closed (its next write fails).
+    fn ended_while_the_peer_writes(piece: &'static [u8], pause: Duration) -> Duration {
         let (mut theirs, ours) = pair().unwrap();
-        let stop = Arc::new(AtomicBool::new(false));
-        let flooding = {
-            let (stop, mut flood) = (Arc::clone(&stop), theirs.try_clone().unwrap());
-            thread::spawn(move || {
-                let chunk = [1_u8; 8192];
-                while !stop.load(Ordering::Relaxed) && flood.write_all(&chunk).is_ok() {}
-            })
-        };
+        let writing = thread::spawn(move || {
+            while theirs.write_all(piece).is_ok() {
+                thread::sleep(pause);
+            }
+        });
         let started = Instant::now();
         after(ours, |_| {});
         let took = started.elapsed();
+        writing.join().unwrap();
+        took
+    }
+
+    fn assert_ended_at_the_deadline(took: Duration) {
         assert!(
             took < DRAIN_DEADLINE + Duration::from_millis(500),
             "{took:?}"
         );
-        // The supervisor has closed: the flood ends on its own, with an error.
-        flooding.join().unwrap();
-        stop.store(true, Ordering::Relaxed);
-        assert!(theirs.write_all(&[1; 8192]).is_err() || sees_the_end(&mut theirs));
+    }
+
+    #[test]
+    fn a_peer_that_floods_is_cut_at_the_limit_and_not_waited_for_past_the_deadline() {
+        assert_ended_at_the_deadline(ended_while_the_peer_writes(&[1; 8192], Duration::ZERO));
     }
 
     #[test]
@@ -166,28 +166,12 @@ mod tests {
             took >= DRAIN_DEADLINE - Duration::from_millis(100),
             "{took:?}"
         );
-        assert!(
-            took < DRAIN_DEADLINE + Duration::from_millis(500),
-            "{took:?}"
-        );
+        assert_ended_at_the_deadline(took);
     }
 
     #[test]
     fn a_peer_that_drips_one_byte_at_a_time_does_not_stretch_the_deadline() {
-        let (mut theirs, ours) = pair().unwrap();
-        let dripping = thread::spawn(move || {
-            while theirs.write_all(&[1]).is_ok() {
-                thread::sleep(Duration::from_millis(50));
-            }
-        });
-        let started = Instant::now();
-        after(ours, |_| {});
-        let took = started.elapsed();
-        assert!(
-            took < DRAIN_DEADLINE + Duration::from_millis(500),
-            "{took:?}"
-        );
-        dripping.join().unwrap();
+        assert_ended_at_the_deadline(ended_while_the_peer_writes(&[1], Duration::from_millis(50)));
     }
 
     #[test]

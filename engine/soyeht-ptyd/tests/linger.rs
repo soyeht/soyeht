@@ -5,7 +5,6 @@
 
 use serde_json::json;
 use soyeht_platform::local::connect_proved;
-use soyeht_platform::testing::scratch_dir;
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Response, VERSION};
 use std::io::Write;
@@ -21,17 +20,6 @@ const UNDECODABLE: [u8; 7] = [1, 0, 0, 0, 2, b'{', b'}'];
 /// than the supervisor reads before it gives up.
 const AFTERWARDS: usize = 32 * 1024;
 
-fn daemon() -> (Daemon, std::path::PathBuf) {
-    let directory = scratch_dir("ptyd");
-    let daemon = Daemon {
-        child: Daemon::launch(&directory),
-        directory,
-    };
-    drop(daemon.connect(1));
-    let socket = daemon.directory.join("ptyd.sock");
-    (daemon, socket)
-}
-
 /// Writes `AFTERWARDS` bytes in pieces, after the supervisor has had the time to end the
 /// connection, and ends the peer's input. A supervisor that closed on unread input fails a write.
 fn write_afterwards(stream: &mut soyeht_platform::local::Stream) {
@@ -44,7 +32,7 @@ fn write_afterwards(stream: &mut soyeht_platform::local::Stream) {
 
 #[test]
 fn a_request_connection_that_sent_an_undecodable_frame_is_still_read_after_it_ended() {
-    let (_daemon, socket) = daemon();
+    let (_daemon, socket) = Daemon::in_scratch_folder();
     let mut stream = connect_proved(&socket).unwrap();
     stream.write_all(&UNDECODABLE).unwrap();
     write_afterwards(&mut stream);
@@ -52,7 +40,7 @@ fn a_request_connection_that_sent_an_undecodable_frame_is_still_read_after_it_en
 
 #[test]
 fn a_watch_connection_that_sent_an_undecodable_frame_gets_its_welcome_and_is_still_read() {
-    let (_daemon, socket) = daemon();
+    let (_daemon, socket) = Daemon::in_scratch_folder();
     let mut stream = connect_proved(&socket).unwrap();
     stream
         .set_read_timeout(Some(ASYNC_ASSERTION_TIMEOUT))
