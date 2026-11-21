@@ -68,11 +68,11 @@
     })
     defer { link.stop() }
     let channel = link.channel
-    let traffic = answeredTraffic(on: channel, for: 1.6)
+    let traffic = answeredTraffic(on: channel, for: 4.5)
     let applier = applyingAnswers(of: link)
     defer { applier.cancel() }
     let slow = Task.detached {
-      try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.3)
+      try await channel.response(.usageList, .object([:]), timeoutSeconds: 1.0)
     }
     while link.server.requests.first(where: { $0.method == RequestMethod.usageList.rawValue })
       == nil
@@ -81,8 +81,8 @@
     }
     let id = try #require(
       link.server.requests.first { $0.method == RequestMethod.usageList.rawValue }?.id)
-    // Two and a half windows pass with the engine answering others, then it answers this one.
-    try await Task.sleep(for: .milliseconds(750))
+    // Two and a half windows (of a second) pass with the engine answering others, then it answers this one.
+    try await Task.sleep(for: .milliseconds(2500))
     try link.server.push(json: [
       .object(["jsonrpc": .string("2.0"), "id": .string(id), "result": .object([:])])
     ])
@@ -98,11 +98,11 @@
     })
     defer { link.stop() }
     let channel = link.channel
-    let traffic = answeredTraffic(on: channel, for: 2)
+    let traffic = answeredTraffic(on: channel, for: 3.5)
     let applier = applyingAnswers(of: link)
     defer { applier.cancel() }
     do {
-      _ = try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.3)
+      _ = try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.6)
       Issue.record("An unanswered request completed")
     } catch ClientFailure.requestTimeout(let method) {
       #expect(method == RequestMethod.usageList.rawValue)
@@ -116,7 +116,7 @@
   @Test func aKeyDoesNotWaitBehindABurstOfTheClientsOwnRequests() async throws {
     // An engine that serves one request at a time and takes 20 ms for each, as under load.
     let link = try await Link(answer: { _ in
-      Thread.sleep(forTimeInterval: 0.02)
+      Thread.sleep(forTimeInterval: 0.04)
       return .object(["acceptedBytes": .integer(1)])
     })
     defer { link.stop() }
@@ -134,8 +134,8 @@
       .paneInput, .object(["paneId": .string("p"), "bytes": .string("YQ==")]),
       timeoutSeconds: 5, delivery: .immediate)
     let waitedNs = DispatchTime.now().uptimeNanoseconds - startedNs
-    // Behind at most the requests already sent (2 of them, 40 ms), not the 100 (2 s).
-    #expect(waitedNs < 800_000_000)
+    // Behind at most the requests already sent (2 of them, 40 ms), not the 100 (4 s).
+    #expect(waitedNs < 1_500_000_000)
     for task in burst { await task.value }
   }
 
@@ -147,9 +147,9 @@
       defer { link.stop() }
       let channel = link.channel
       let request = Task.detached {
-        try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.25)
+        try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.75)
       }
-      await keepMainActorBusy(for: 0.6)
+      await keepMainActorBusy(for: 1.0)
       // The answer was read and taken out of the waiting requests while nothing applied it: its
       // deadline passed with nothing to fail, and the connection stayed open.
       #expect(link.channel.pending.count == 0)

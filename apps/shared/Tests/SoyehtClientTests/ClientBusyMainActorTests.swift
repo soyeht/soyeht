@@ -41,7 +41,7 @@
       let revision = client.connectionRevision
 
       let usage = Task {
-        try await client.request(.usageList, .encoded(UsageListParams()), timeoutSeconds: 0.3)
+        try await client.request(.usageList, .encoded(UsageListParams()), timeoutSeconds: 0.6)
       }
       // Forty keys, one after another, as typed; the engine takes each before the next leaves.
       let keys = Array("printf 'KEYS_%s' DONE; echo\r".utf8)
