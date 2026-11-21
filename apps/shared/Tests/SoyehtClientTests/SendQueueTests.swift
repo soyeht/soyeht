@@ -1,6 +1,7 @@
 import Foundation
 import SoyehtProtocol
 import Testing
+import os
 
 @testable import SoyehtClient
 
@@ -9,7 +10,8 @@ import Testing
 @MainActor
 private final class FakeTransport {
   private(set) var sent: [String] = []
-  private(set) var failures: [Error] = []
+  private let failureLog = OSAllocatedUnfairLock<[Error]>(initialState: [])
+  var failures: [Error] { failureLog.withLock { $0 } }
   var failOn: String?
   var holdAfter: String?
   private var release: CheckedContinuation<Void, Never>?
@@ -35,9 +37,10 @@ private final class FakeTransport {
   }
 
   func queue() -> SendQueue<[String]> {
-    SendQueue(
+    let failureLog = failureLog
+    return SendQueue(
       transmit: { [unowned self] unit in try await self.transmit(unit) },
-      onFailure: { [unowned self] error in self.failures.append(error) })
+      onFailure: { error in failureLog.withLock { $0.append(error) } })
   }
 }
 
@@ -145,7 +148,7 @@ private func heldUpload(
   let transport = FakeTransport()
   let queue = transport.queue()
   let (upload, waiting) = await heldUpload(transport, queue, behind: "waiting")
-  queue.fail(ClientFailure.timeout)
+  await queue.fail(ClientFailure.timeout)
   await #expect(throws: ClientFailure.self) { try await waiting.value }
   await #expect(throws: ClientFailure.self) { try await queue.send(["later"]) }
   transport.resume()

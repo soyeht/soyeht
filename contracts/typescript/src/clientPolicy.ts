@@ -8,6 +8,7 @@ export const clientPolicy = {
     "reconnectCeilingMs": 30000,
     "draftBeatMs": 8000,
     "agentPartialFlushMs": 16,
+    "applyBudgetMs": 4,
     "diagnosticsMs": 30000,
     "copiedFeedbackMs": 1500,
     "serviceCommandMs": 60000
@@ -35,6 +36,9 @@ export const clientPolicy = {
     "heldMessages": 300,
     "offscreenMessages": 50,
     "diagnosticsReportBytes": 4194304,
+    "incomingQueueBytes": 33554432,
+    "requestWindows": 4,
+    "requestsInFlight": 2,
     "serviceReportBytes": 65536
   },
   "pageSize": {

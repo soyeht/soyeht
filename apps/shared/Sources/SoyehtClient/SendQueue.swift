@@ -13,8 +13,9 @@ import Foundation
 /// transport failure inside a unit ends the connection for the same reason: the units behind it
 /// fail with that error and `onFailure` closes the wire, so the engine drops the half unit with the
 /// connection.
-@MainActor
-final class SendQueue<Unit: Sendable> {
+///
+/// The queue is its own actor: nothing a connection sends waits for the main actor (ADR 0171).
+actor SendQueue<Unit: Sendable> {
   private final class Entry {
     let id: UInt64
     let unit: Unit
@@ -27,8 +28,8 @@ final class SendQueue<Unit: Sendable> {
     }
   }
 
-  private let transmit: @MainActor (Unit) async throws -> Void
-  private let onFailure: @MainActor (Error) -> Void
+  private let transmit: @Sendable (Unit) async throws -> Void
+  private let onFailure: @Sendable (Error) -> Void
   private var waiting: [Entry] = []
   private var draining = false
   private var failure: Error?
@@ -36,8 +37,8 @@ final class SendQueue<Unit: Sendable> {
 
   /// `transmit` puts one whole unit on the transport; `onFailure` runs once, when it throws.
   init(
-    transmit: @escaping @MainActor (Unit) async throws -> Void,
-    onFailure: @escaping @MainActor (Error) -> Void
+    transmit: @escaping @Sendable (Unit) async throws -> Void,
+    onFailure: @escaping @Sendable (Error) -> Void
   ) {
     self.transmit = transmit
     self.onFailure = onFailure
@@ -55,7 +56,7 @@ final class SendQueue<Unit: Sendable> {
         drain()
       }
     } onCancel: {
-      Task { @MainActor in self.cancel(id) }
+      Task { await self.cancel(id) }
     }
   }
 
@@ -76,7 +77,7 @@ final class SendQueue<Unit: Sendable> {
   private func drain() {
     guard !draining else { return }
     draining = true
-    Task { @MainActor in
+    Task {
       while !waiting.isEmpty {
         let entry = waiting.removeFirst()
         do {

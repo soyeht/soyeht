@@ -7,7 +7,10 @@ surface, `phonePairsByConsentReadsFreshStateAndLosesRevokedAccess` is the paired
 (pairing by consent, fresh state, revoked access), and
 `manyLongTerminalsConnectOnceAndKeepTheirHistory` is seven terminals of long output in two
 workspaces, the connection a Mac app with that many terminals makes (one connection, no
-slow-consumer close, every terminal's history, and again after a reconnect). A change to the
+slow-consumer close, every terminal's history, and again after a reconnect), and
+`theClientKeepsItsConnectionAndItsKeysMovingWhileTheMainActorIsBusy` is the transport under a busy
+main actor (a request answered, the connection kept and the keys typed sent while the main actor is
+held, ADR 0171). A change to the
 engine's stream, screen or outbox code, or to the client's terminal or connection code, can break
 them while every unit test passes, and the full `swift test` that would say so runs only after the
 merge. This runs them in the fast tier, with the programs of `e2e.stage_programs`: the same stable
@@ -30,6 +33,7 @@ TEST_NAMES = (
     "nativeClientReconnectsAndDrivesItsOwnShellAndEditor",
     "manyLongTerminalsConnectOnceAndKeepTheirHistory",
     "phonePairsByConsentReadsFreshStateAndLosesRevokedAccess",
+    "theClientKeepsItsConnectionAndItsKeysMovingWhileTheMainActorIsBusy",
 )
 # What the tests start: the product programs, the engine with the test hooks and the fake agent
 # (`PhoneConnectionTests` starts both).
