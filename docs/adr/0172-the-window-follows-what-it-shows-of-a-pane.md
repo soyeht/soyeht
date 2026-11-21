@@ -39,14 +39,17 @@ again, the end of the turn), and each of them ran the whole window:
   second is not a change for any view. The agent's queue and sign-in methods are written only when they
   differ.
 - **An agent in a tab nobody has open is not drawn.** What the client holds stays: the transcript, the
-  scroll reference, the typed draft and its attachments, the turn clock of the header (kept per pane in
-  the client) and whether the composer had the keyboard, which goes back to it when the tab is opened
-  and the pane is the selected one. What lives only in a view is lost, as it already is when the person
-  changes workspace: an answer typed into a question and not sent, the rows opened in the conversation
-  (subagent disclosure, tool rows), a dictation in flight, an open popover or the automation panel, and
-  the pending "new messages" mark. Drawing the agent again also sends `pane.draft` with `active` false
-  when the draft is not empty, as a workspace switch does. Other panes stay mounted: a terminal keeps
-  its screen.
+  scroll reference, the typed draft and its attachments, and the start of the running turn (noted from
+  the pane's updates, so a turn that starts while the tab is closed is timed from its start). On the Mac
+  the keyboard also goes back to a composer that had it, with the cursor after the draft, when the tab is
+  opened and its pane is the selected one; on a phone or a tablet nothing raises the software keyboard by
+  itself. What lives only in a view is lost, as it already is when the person changes workspace: an answer
+  typed into a question and not sent, the rows opened in the conversation (subagent disclosure, tool
+  rows), a dictation in flight, an open popover or the automation panel, and the pending "new messages"
+  mark. Taking the view down sends `pane.draft` with `active` false when the draft is not empty, as a
+  workspace switch does, and drawing it again resumes the heartbeat. Only one view draws a pane on the Mac,
+  so the cursor the client holds is not shared by two views; elsewhere each view keeps its own. Other
+  panes stay mounted: a terminal keeps its screen.
 
 ## Consequences
 

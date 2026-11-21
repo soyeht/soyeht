@@ -184,29 +184,29 @@ extension AgentConversationView where HarnessControl == EmptyView {
     }
     .onChange(of: isVisible, initial: true) { _, shown in
       client.agentPaneShown(viewer, paneId, shown)
-      // The tab was closed with the keyboard in this composer: it goes back to it.
-      if shown, AgentPromptDrafts.shared.takeFocus(for: paneId),
-        client.selectedPaneId == paneId
-      {
-        placeCaretAtEnd = true
-        Task { @MainActor in promptFocused = true }
+      #if os(macOS)
+        restoreKeyboard(shown)
+      #endif
+    }
+    #if os(macOS)
+      .onChange(of: promptFocused) { _, focused in
+        // The field was drawn anew and took the keyboard: it selects what is typed, and the next
+        // key would replace it. The cursor goes after the draft.
+        guard focused, placeCaretAtEnd else { return }
+        placeCaretAtEnd = false
+        AgentPromptDrafts.shared.caret(for: paneId).place(at: prompt.count, in: prompt)
       }
-    }
-    .onChange(of: promptFocused) { _, focused in
-      // The field was drawn anew and took the keyboard: it selects what is typed, and the next
-      // key would replace it. The cursor goes after the draft.
-      guard focused, placeCaretAtEnd else { return }
-      placeCaretAtEnd = false
-      AgentPromptDrafts.shared.caret(for: paneId).place(at: prompt.count, in: prompt)
-    }
+    #endif
     .onChange(of: paneId) { old, new in
       client.agentPaneShown(viewer, old, false)
       client.agentPaneShown(viewer, new, isVisible)
     }
     .onDisappear {
       client.agentPaneShown(viewer, paneId, false)
-      AgentPromptDrafts.shared.keepFocus(promptFocused, for: paneId)
-      AgentPromptDrafts.shared.caret(for: paneId).reset()
+      #if os(macOS)
+        AgentPromptDrafts.shared.keepFocus(promptFocused, for: paneId)
+        AgentPromptDrafts.shared.caret(for: paneId).reset()
+      #endif
       if !prompt.isEmpty { client.setDraft(paneId, active: false) }
     }
   }
@@ -415,6 +415,25 @@ extension AgentConversationView where HarnessControl == EmptyView {
     }.font(style.captionFont).tint(style.ink).padding(.horizontal, inset)
       .padding(.bottom, PaneInteriorMetrics.cardVerticalPadding)
   }
+
+  #if os(macOS)
+    /// A tab closed with the keyboard in this composer gives it back when it is opened again. Only
+    /// on the Mac: a phone or a tablet raises its software keyboard when a field takes focus, which
+    /// the person asks for by tapping.
+    private func restoreKeyboard(_ shown: Bool) {
+      guard shown, AgentPromptDrafts.shared.takeFocus(for: paneId),
+        client.selectedPaneId == paneId
+      else { return }
+      placeCaretAtEnd = true
+      Task { @MainActor in
+        promptFocused = true
+        // The cursor is placed when the field takes the keyboard; if it never does, a later click
+        // must not be moved.
+        do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+        placeCaretAtEnd = false
+      }
+    }
+  #endif
 
   private func submit() {
     let catalog = client.slashCatalog(paneId: paneId)

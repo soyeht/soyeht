@@ -177,18 +177,22 @@ private func reply(_ paneId: String, _ text: String, complete: Bool) throws -> J
   #expect(window.client.outlinedPanes(in: "w1").map(\.paneId) == ["v"])
 }
 
-@MainActor @Test func aHeaderDrawnAgainKeepsItsTurnClockAndAComposerItsKeyboard() {
+@MainActor @Test func aTurnThatStartsWhileTheTabIsClosedIsTimedFromItsStart() throws {
   let window = Window()
-  let started = Date(timeIntervalSince1970: 1_000)
-  var clock = AgentTurnClock()
-  clock.observe(activePromptId: "p0", now: started)
-  window.client.agentPanes.keepTurnClock(clock, for: "h")
-  // The header was drawn again: it starts from what the client kept, not from zero.
-  var again = window.client.agentPanes.turnClock("h")
-  again.observe(activePromptId: "p0", now: started.addingTimeInterval(60))
-  #expect(again.startedAt == started)
+  // No header is drawn for `h`: the turn is noted from the pane's updates.
+  try window.client.applyPaneEvent(
+    .paneUpdated, window.pane("h", queue: 0, active: true, state: .working))
+  let started = try #require(window.client.agentPanes.turnClock("h").startedAt)
+  try window.client.applyPaneEvent(
+    .paneUpdated, window.pane("h", queue: 1, active: true, state: .working))
+  #expect(window.client.agentPanes.turnClock("h").startedAt == started, "the same turn goes on")
+  try window.client.applyPaneEvent(
+    .paneUpdated, window.pane("h", queue: 0, active: false, state: .idle))
+  #expect(window.client.agentPanes.turnClock("h").startedAt == nil)
   #expect(window.client.agentPanes.turnClock("t").startedAt == nil)
+}
 
+@MainActor @Test func aComposerThatHadTheKeyboardIsNotedOnceAndAClosedPaneLeavesNoNote() {
   let drafts = AgentPromptDrafts()
   drafts.keepFocus(true, for: "v")
   #expect(drafts.takeFocus(for: "v") && !drafts.takeFocus(for: "v"), "the note is taken once")

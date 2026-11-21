@@ -265,6 +265,7 @@ extension EngineClient {
     agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
     agentTranscriptLoadsInFlight = agentTranscriptLoadsInFlight.filter { paneIds.contains($0.key) }
     for pane in panes where pane.mode == .agent {
+      agentPanes.noteTurn(of: pane)
       agentPanes.update(pane.paneId) { view in
         view.permission = nil
         view.elicitation = nil

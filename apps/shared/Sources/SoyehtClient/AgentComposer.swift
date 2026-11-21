@@ -20,6 +20,16 @@ struct AgentComposer<HarnessControl: View>: View {
   /// The engine connection; menus and send wait for it.
   let connected: Bool
   let submit: () -> Void
+  /// The cursor. On the Mac the client holds it, so the view that gives the keyboard back to a
+  /// reopened tab can place it; elsewhere two views can draw one pane, and each keeps its own.
+  @State private var ownCaret = AgentComposerCaret()
+  private var caret: AgentComposerCaret {
+    #if os(macOS)
+      AgentPromptDrafts.shared.caret(for: paneId)
+    #else
+      ownCaret
+    #endif
+  }
   @State private var dictation = DictationController(makeSession: {
     DictationEngineStore.shared.session()
   })
@@ -177,11 +187,6 @@ struct AgentComposer<HarnessControl: View>: View {
     caret.place(at: result.cursor, in: result.text)
     focus.wrappedValue = true
   }
-}
-
-extension AgentComposer {
-  /// The cursor of this pane's composer; the client keeps it, so the view can be drawn again.
-  fileprivate var caret: AgentComposerCaret { AgentPromptDrafts.shared.caret(for: paneId) }
 }
 
 /// The composer's cursor, where dictation inserts its transcript. The selection-aware text

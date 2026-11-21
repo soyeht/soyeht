@@ -76,8 +76,9 @@ public final class AgentPaneStore {
   /// until a page that was asked for after it arrives, so a reload that fails is made again.
   @ObservationIgnored private var stale: Set<String> = []
   @ObservationIgnored private var reading: Set<String> = []
-  /// When each pane's running turn started, as this device saw it. A header that is drawn again
-  /// (its tab was closed and opened) goes on from it instead of counting from zero.
+  /// When each pane's running turn started, as this device saw it, noted from the pane's updates
+  /// whether or not a header is drawn: a header drawn again (its tab was closed and opened) reads
+  /// it instead of counting from zero.
   @ObservationIgnored private var turnClocks: [String: AgentTurnClock] = [:]
   /// Told when a pane's requests change or a pane appears or goes: the attention summary reads them.
   @ObservationIgnored var attentionChanged: (@MainActor () -> Void)?
@@ -100,7 +101,12 @@ public final class AgentPaneStore {
 
   func turnClock(_ paneId: String) -> AgentTurnClock { turnClocks[paneId] ?? AgentTurnClock() }
 
-  func keepTurnClock(_ clock: AgentTurnClock, for paneId: String) { turnClocks[paneId] = clock }
+  /// Notes the turn the pane's update says is running.
+  func noteTurn(of pane: Pane) {
+    var clock = turnClock(pane.paneId)
+    clock.observe(activePromptId: pane.agent?.activePromptId, now: .now)
+    turnClocks[pane.paneId] = clock
+  }
 
   /// A page is asked for: if it arrives, it covers what made the pane stale until now.
   func beginRead(_ paneId: String) {
@@ -196,6 +202,7 @@ public final class AgentPaneStore {
   /// What a pane update says of the pane's agent that the views of the pane show. Written only when
   /// it differs: a write makes the pane's transcript be grouped again.
   func noteSession(of pane: Pane) {
+    noteTurn(of: pane)
     let paused = pane.agent?.queuePaused ?? false
     let methods = pane.agent?.authMethods ?? []
     let held = self[pane.paneId]
