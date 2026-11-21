@@ -749,7 +749,8 @@ mod tests {
                 .strip_prefix(&root)
                 .unwrap()
                 .to_string_lossy()
-                .into_owned();
+                // The list names files with slashes, on every system.
+                .replace('\\', "/");
             let text = std::fs::read_to_string(&file).unwrap();
             let own = [
                 ".overflow_y_scroll()",
