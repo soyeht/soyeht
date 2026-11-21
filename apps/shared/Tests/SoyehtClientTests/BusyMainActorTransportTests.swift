@@ -61,16 +61,31 @@
     }
   }
 
-  @MainActor
-  @Test func aRequestWaitingBehindOthersIsNoTimeoutWhileTheEngineKeepsAnswering() async throws {
+  /// A link to an engine that answers everything except `usage.list`, with other requests going
+  /// out for `seconds` and the answers applied as the main actor would.
+  @MainActor private func linkHoldingUsageList(trafficFor seconds: Double) async throws -> (
+    link: Link, traffic: Task<Void, Never>, applier: Task<Void, Never>
+  ) {
     let link = try await Link(answer: {
       $0.method == RequestMethod.usageList.rawValue ? nil : .object([:])
     })
+    return (link, answeredTraffic(on: link.channel, for: seconds), applyingAnswers(of: link))
+  }
+
+  /// A link to an engine that takes at most `limit` bytes of each `pane.input`.
+  @MainActor private func linkAccepting(upTo limit: Int) async throws -> Link {
+    try await Link(answer: { request in
+      let count = request.params["bytes"].string.flatMap { Data(base64Encoded: $0)?.count } ?? 0
+      return .object(["acceptedBytes": .integer(Int64(min(count, limit)))])
+    })
+  }
+
+  @MainActor
+  @Test func aRequestWaitingBehindOthersIsNoTimeoutWhileTheEngineKeepsAnswering() async throws {
+    let (link, traffic, applier) = try await linkHoldingUsageList(trafficFor: 4.5)
     defer { link.stop() }
-    let channel = link.channel
-    let traffic = answeredTraffic(on: channel, for: 4.5)
-    let applier = applyingAnswers(of: link)
     defer { applier.cancel() }
+    let channel = link.channel
     let slow = Task.detached {
       try await channel.response(.usageList, .object([:]), timeoutSeconds: 1.0)
     }
@@ -93,14 +108,10 @@
 
   @MainActor
   @Test func aRequestTheEngineNeverAnswersFailsAloneWhileItAnswersTheOthers() async throws {
-    let link = try await Link(answer: {
-      $0.method == RequestMethod.usageList.rawValue ? nil : .object([:])
-    })
+    let (link, traffic, applier) = try await linkHoldingUsageList(trafficFor: 3.5)
     defer { link.stop() }
-    let channel = link.channel
-    let traffic = answeredTraffic(on: channel, for: 3.5)
-    let applier = applyingAnswers(of: link)
     defer { applier.cancel() }
+    let channel = link.channel
     do {
       _ = try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.6)
       Issue.record("An unanswered request completed")
@@ -215,22 +226,11 @@
     }
 
     @Test func terminalInputLeavesInOrderWhileTheMainActorIsBusy() async throws {
-      let link = try await Link(answer: { request in
-        let count = request.params["bytes"].string.flatMap { Data(base64Encoded: $0)?.count } ?? 0
-        return .object(["acceptedBytes": .integer(Int64(count))])
-      })
+      let link = try await linkAccepting(upTo: .max)
       defer { link.stop() }
       let channel = link.channel
-      let input = TerminalInputQueue(
-        limitBytes: 1 << 20, chunkBytes: 4,
-        send: { paneId, chunk in
-          let params = JsonValue.object([
-            "paneId": .string(paneId), "bytes": .string(chunk.base64EncodedString()),
-          ])
-          let result = try await channel.response(
-            .paneInput, params, timeoutSeconds: 5, delivery: .immediate)
-          return result.value["acceptedBytes"].int ?? 0
-        },
+      let input = TerminalInputQueue.sending(
+        through: channel, limitBytes: 1 << 20, chunkBytes: 4, isConnected: { true },
         failed: { Issue.record("Input failed: \($0.localizedDescription)") })
       let text = "echo the quick brown fox\r"
       let startedNs = DispatchTime.now().uptimeNanoseconds
@@ -252,38 +252,25 @@
     }
 
     @Test func inputTheEngineTakesOnlyPartOfIsResentInOrderAndInChunks() async throws {
-      let link = try await Link(answer: { request in
-        let count = request.params["bytes"].string.flatMap { Data(base64Encoded: $0)?.count } ?? 0
-        return .object(["acceptedBytes": .integer(Int64(min(count, 3)))])
-      })
+      let link = try await linkAccepting(upTo: 3)
       defer { link.stop() }
       let channel = link.channel
-      let done = AsyncStream.makeStream(of: Void.self)
-      let input = TerminalInputQueue(
-        limitBytes: 1 << 20, chunkBytes: 8,
-        send: { paneId, chunk in
-          let params = JsonValue.object([
-            "paneId": .string(paneId), "bytes": .string(chunk.base64EncodedString()),
-          ])
-          let result = try await channel.response(
-            .paneInput, params, timeoutSeconds: 5, delivery: .immediate)
-          let accepted = result.value["acceptedBytes"].int ?? 0
-          if accepted == chunk.count { done.continuation.yield() }
-          return accepted
-        },
+      let input = TerminalInputQueue.sending(
+        through: channel, limitBytes: 1 << 20, chunkBytes: 8, isConnected: { true },
         failed: { Issue.record("Input failed: \($0.localizedDescription)") })
       let first = Data("abcdefghijklmnopqrst".utf8)
       let second = Data("UVWXYZ".utf8)
       #expect(input.enqueue(first, paneId: "p"))
       #expect(input.enqueue(second, paneId: "p"))
-      var finished = 0
-      for await _ in done.stream {
-        finished += 1
-        if finished == 2 { break }
+      func pieces() -> [Data] {
+        link.server.requests.compactMap {
+          $0.params["bytes"].string.flatMap { Data(base64Encoded: $0) }
+        }
       }
-      let bytes = link.server.requests.compactMap {
-        $0.params["bytes"].string.flatMap { Data(base64Encoded: $0) }
+      for _ in 0..<500 where pieces().reduce(0, { $0 + min($1.count, 3) }) < 26 {
+        try await Task.sleep(for: .milliseconds(10))
       }
+      let bytes = pieces()
       #expect(bytes.allSatisfy { $0.count <= 8 })
       // The engine kept 3 bytes of each piece: what it kept, in order, is what was typed.
       let kept = bytes.reduce(into: Data()) { $0.append($1.prefix(3)) }

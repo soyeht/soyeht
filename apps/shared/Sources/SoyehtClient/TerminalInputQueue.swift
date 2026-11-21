@@ -98,3 +98,39 @@ final class TerminalInputQueue: Sendable {
     }
   }
 }
+
+extension TerminalInputQueue {
+  /// The queue of a client: each piece is a `pane.input` request through `channel` whose answer
+  /// resumes the sender at once (`ReplyDelivery.immediate`). Only connection loss is retried,
+  /// with the same idempotency key, as `EngineClient.mutation` does, after `isConnected` says the
+  /// client is connected again.
+  static func sending(
+    through channel: RequestChannel, limitBytes: Int = inputQueueBytes,
+    chunkBytes: Int = inputChunkBytes, isConnected: @escaping @Sendable () async -> Bool,
+    failed: @escaping @Sendable (Error) -> Void
+  ) -> TerminalInputQueue {
+    TerminalInputQueue(
+      limitBytes: limitBytes, chunkBytes: chunkBytes,
+      send: { paneId, chunk in
+        let params = try JsonValue.encoded(
+          PaneInputParams(
+            paneId: paneId, bytes: chunk.base64EncodedString(),
+            idempotencyKey: UUID().uuidString))
+        for attempt in 0..<3 {
+          do {
+            let result = try await channel.response(
+              .paneInput, params, timeoutSeconds: defaultRequestTimeout, delivery: .immediate
+            ).value
+            return result["acceptedBytes"].int ?? 0
+          } catch let error as ClientFailure where error.canRetry && attempt < 2 {
+            for _ in 0..<120 {
+              if await isConnected() { break }
+              try await Task.sleep(for: .milliseconds(100))
+            }
+          }
+        }
+        throw ClientFailure.disconnected
+      },
+      failed: failed)
+  }
+}

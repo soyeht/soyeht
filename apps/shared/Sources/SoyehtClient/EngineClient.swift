@@ -98,27 +98,8 @@ public final class EngineClient {
   @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
   /// Terminal input leaves from its own task, never behind the main actor (`TerminalInputQueue`).
-  @ObservationIgnored private lazy var terminalInput = TerminalInputQueue(
-    send: { [channel, weak self] paneId, chunk in
-      let params = try JsonValue.encoded(
-        PaneInputParams(
-          paneId: paneId, bytes: chunk.base64EncodedString(), idempotencyKey: UUID().uuidString))
-      // Only connection loss is retried, with the same key, as `mutation` does.
-      for attempt in 0..<3 {
-        do {
-          let result = try await channel.response(
-            .paneInput, params, timeoutSeconds: defaultRequestTimeout, delivery: .immediate
-          ).value
-          return result["acceptedBytes"].int ?? 0
-        } catch let error as ClientFailure where error.canRetry && attempt < 2 {
-          for _ in 0..<120 {
-            if await self?.connected == true { break }
-            try await Task.sleep(for: .milliseconds(100))
-          }
-        }
-      }
-      throw ClientFailure.disconnected
-    },
+  @ObservationIgnored private lazy var terminalInput = TerminalInputQueue.sending(
+    through: channel, isConnected: { [weak self] in await self?.connected == true },
     failed: { [weak self] error in
       Task { @MainActor in self?.problem = error.localizedDescription }
     })
