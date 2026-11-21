@@ -49,7 +49,7 @@ enum EngineReader {
   /// returned to be queued for the main actor.
   private static func route(_ message: JsonValue, pending: PendingRequests) -> Incoming? {
     guard message["jsonrpc"].string == "2.0", let id = message["id"].string,
-      let request = pending.take(id)
+      let request = pending.answer(id)
     else { return .message(message) }
     switch request.delivery {
     case .ordered: return .reply(request, message)

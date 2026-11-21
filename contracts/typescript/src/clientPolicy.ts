@@ -37,6 +37,8 @@ export const clientPolicy = {
     "offscreenMessages": 50,
     "diagnosticsReportBytes": 4194304,
     "incomingQueueBytes": 33554432,
+    "requestWindows": 4,
+    "requestsInFlight": 2,
     "serviceReportBytes": 65536
   },
   "pageSize": {

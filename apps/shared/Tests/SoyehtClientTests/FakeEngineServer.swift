@@ -43,6 +43,8 @@
 
     init(answer: @escaping Answer = { _ in .object([:]) }) throws {
       self.answer = answer
+      // A write to a client that has gone is an error to ignore, not a signal that ends the run.
+      signal(SIGPIPE, SIG_IGN)
       listener = socket(AF_UNIX, SOCK_STREAM, 0)
       var address = sockaddr_un()
       address.sun_family = sa_family_t(AF_UNIX)

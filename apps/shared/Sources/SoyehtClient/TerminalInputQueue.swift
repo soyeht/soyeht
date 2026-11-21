@@ -53,14 +53,24 @@ final class TerminalInputQueue: Sendable {
     return true
   }
 
+  /// What to send next: the first queued entry, with the entries right behind it for the same pane
+  /// added while they fit in one piece. Keys typed while a piece is on its way go together in the
+  /// next one, so the wait of a key is one round trip however slow the engine is, not one per key.
   private func next() -> Entry? {
     state.withLock { state in
       guard !state.items.isEmpty else {
         state.draining = false
         return nil
       }
-      let entry = state.items.removeFirst()
+      var entry = state.items.removeFirst()
       state.bytes -= entry.data.count
+      while let following = state.items.first, following.paneId == entry.paneId,
+        entry.data.count + following.data.count <= chunkBytes
+      {
+        entry = Entry(paneId: entry.paneId, data: entry.data + following.data)
+        state.bytes -= following.data.count
+        state.items.removeFirst()
+      }
       return entry
     }
   }

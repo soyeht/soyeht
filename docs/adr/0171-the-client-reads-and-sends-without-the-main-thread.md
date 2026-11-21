@@ -26,7 +26,14 @@ request whose answer had to come back through the same turns before the next key
   and, for a reply, takes the request out of `PendingRequests` (a lock around a table) at once, which also
   cancels its deadline. A deadline therefore never fires for an answer the app already holds, however long
   the main actor takes to apply it. A request that the engine truly leaves unanswered still fails after
-  `ClientPolicy.requestTimeoutMs` and ends the connection it went out on.
+  `ClientPolicy.requestTimeoutMs`, and a connection that answered nothing for that long is closed.
+- **A request behind others is not a silent engine.** The engine serves a connection's requests one at a
+  time (each takes as long as its wait for the Core lock, tens of milliseconds with many agents streaming),
+  so a burst of the client's own requests queues in the engine. When a deadline passes and the engine has
+  answered other requests since this one was sent, the request waits another window, up to
+  `ClientPolicy.capsRequestWindows` windows in all, and then fails alone with the connection left open.
+  The Mac app's per-pane queue refreshes (`pane.queue.list`, about 15 a second with 21 hidden agents
+  streaming) were the burst in the run that measured this.
 - **The main actor applies, in order, in batches.** Everything the reader does not finish itself (events,
   terminal and attachment frames, and the replies whose caller reads state events changed) goes to
   `IncomingQueue` in the order it was read. `EngineClient` takes the whole backlog at once and applies it in
@@ -43,6 +50,12 @@ request whose answer had to come back through the same turns before the next key
   `ClientPolicy.terminalInputChunkBytes`, in order, each after the engine said how much of the previous piece
   it took, and its answers are `immediate`: they resume the sender from the reader, not through the main
   actor. Connection loss is retried with the same idempotency key, as `mutation` does.
+- **The client does not queue a burst in front of its own keys.** At most `ClientPolicy.capsRequestsInFlight`
+  requests wait for the engine at once (`RequestSlots`); the others wait in the client, in order, and their
+  deadline starts when they are sent. Terminal input skips the line, so a key waits at most for the requests
+  already sent, not for a burst of queue refreshes (in the run that measured this, keys reached the engine
+  24 to 34 seconds late behind about 15 refreshes a second). Slots are given back when the answer is read,
+  not when the main actor applies it.
 - **Which answers wait for the main actor.** `ReplyDelivery.ordered` (the default) resumes the caller from the
   main actor after the events read before the answer, because callers read the state those events changed.
   `immediate` is for a request whose answer reads nothing the main actor holds.

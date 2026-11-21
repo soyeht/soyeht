@@ -47,6 +47,8 @@ public enum ClientPolicy {
     public static let capsOffscreenMessages = 50
     public static let capsDiagnosticsReportBytes = 4194304
     public static let capsIncomingQueueBytes = 33554432
+    public static let capsRequestWindows = 4
+    public static let capsRequestsInFlight = 2
     public static let capsServiceReportBytes = 65536
     public static let pageSizeQueue: UInt32 = 64
     public static let pageSizeHarnesses: UInt32 = 64

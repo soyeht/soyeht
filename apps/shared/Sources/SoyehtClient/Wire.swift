@@ -395,4 +395,3 @@ struct WebHostResponse: Sendable {
     try WirePayload(message: message, attachments: attachments).frames(maxAttachments: 1)
   }
 }
-

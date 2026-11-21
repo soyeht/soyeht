@@ -35,6 +35,110 @@
     }
   }
 
+  /// What the main actor does with the answers the reader queues: resumes their callers.
+  private func applyingAnswers(of link: Link) -> Task<Void, Never> {
+    let queue = link.queue
+    return Task.detached {
+      while true {
+        let batch = await queue.next()
+        if batch.isEmpty { return }
+        for case .reply(let entry, _) in batch {
+          entry.continuation.resume(returning: EngineResponse(value: .null, attachment: nil))
+        }
+      }
+    }
+  }
+
+  /// Other requests, answered by the fake engine every 40 ms for `seconds`.
+  private func answeredTraffic(on channel: RequestChannel, for seconds: Double) -> Task<Void, Never>
+  {
+    Task.detached {
+      let end = DispatchTime.now().uptimeNanoseconds + UInt64(seconds * 1_000_000_000)
+      while DispatchTime.now().uptimeNanoseconds < end {
+        _ = try? await channel.response(.harnessList, .object([:]), timeoutSeconds: 5)
+        try? await Task.sleep(for: .milliseconds(40))
+      }
+    }
+  }
+
+  @MainActor
+  @Test func aRequestWaitingBehindOthersIsNoTimeoutWhileTheEngineKeepsAnswering() async throws {
+    let link = try await Link(answer: {
+      $0.method == RequestMethod.usageList.rawValue ? nil : .object([:])
+    })
+    defer { link.stop() }
+    let channel = link.channel
+    let traffic = answeredTraffic(on: channel, for: 1.6)
+    let applier = applyingAnswers(of: link)
+    defer { applier.cancel() }
+    let slow = Task.detached {
+      try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.3)
+    }
+    while link.server.requests.first(where: { $0.method == RequestMethod.usageList.rawValue })
+      == nil
+    {
+      try await Task.sleep(for: .milliseconds(5))
+    }
+    let id = try #require(
+      link.server.requests.first { $0.method == RequestMethod.usageList.rawValue }?.id)
+    // Two and a half windows pass with the engine answering others, then it answers this one.
+    try await Task.sleep(for: .milliseconds(750))
+    try link.server.push(json: [
+      .object(["jsonrpc": .string("2.0"), "id": .string(id), "result": .object([:])])
+    ])
+    _ = try await slow.value
+    #expect(link.wire.isOpen)
+    await traffic.value
+  }
+
+  @MainActor
+  @Test func aRequestTheEngineNeverAnswersFailsAloneWhileItAnswersTheOthers() async throws {
+    let link = try await Link(answer: {
+      $0.method == RequestMethod.usageList.rawValue ? nil : .object([:])
+    })
+    defer { link.stop() }
+    let channel = link.channel
+    let traffic = answeredTraffic(on: channel, for: 2)
+    let applier = applyingAnswers(of: link)
+    defer { applier.cancel() }
+    do {
+      _ = try await channel.response(.usageList, .object([:]), timeoutSeconds: 0.3)
+      Issue.record("An unanswered request completed")
+    } catch ClientFailure.requestTimeout(let method) {
+      #expect(method == RequestMethod.usageList.rawValue)
+    }
+    // It failed alone: the engine was answering, so the connection stays.
+    #expect(link.wire.isOpen)
+    await traffic.value
+  }
+
+  @MainActor
+  @Test func aKeyDoesNotWaitBehindABurstOfTheClientsOwnRequests() async throws {
+    // An engine that serves one request at a time and takes 20 ms for each, as under load.
+    let link = try await Link(answer: { _ in
+      Thread.sleep(forTimeInterval: 0.02)
+      return .object(["acceptedBytes": .integer(1)])
+    })
+    defer { link.stop() }
+    let channel = link.channel
+    let applier = applyingAnswers(of: link)
+    defer { applier.cancel() }
+    let burst = (0..<100).map { _ in
+      Task.detached {
+        _ = try? await channel.response(.harnessList, .object([:]), timeoutSeconds: 10)
+      }
+    }
+    try await Task.sleep(for: .milliseconds(100))
+    let startedNs = DispatchTime.now().uptimeNanoseconds
+    _ = try await channel.response(
+      .paneInput, .object(["paneId": .string("p"), "bytes": .string("YQ==")]),
+      timeoutSeconds: 5, delivery: .immediate)
+    let waitedNs = DispatchTime.now().uptimeNanoseconds - startedNs
+    // Behind at most the requests already sent (2 of them, 40 ms), not the 100 (2 s).
+    #expect(waitedNs < 800_000_000)
+    for task in burst { await task.value }
+  }
+
   /// The tests that keep the main actor busy run one at a time: each one slows every other
   /// main-actor job of the suite by a slice per hop.
   @Suite(.serialized) @MainActor struct BusyMainActor {
@@ -187,6 +291,27 @@
     }
   }
 
+  @Test func keysTypedWhileAPieceIsOnItsWayGoTogetherInTheNextOne() async throws {
+    let gate = AsyncStream.makeStream(of: Void.self)
+    let pieces = PieceLog()
+    let input = TerminalInputQueue(
+      limitBytes: 1 << 20, chunkBytes: 8,
+      send: { _, chunk in
+        await pieces.add(chunk)
+        if await pieces.count == 1 { for await _ in gate.stream { break } }
+        return chunk.count
+      },
+      failed: { _ in })
+    #expect(input.enqueue(Data("a".utf8), paneId: "p"))
+    while await pieces.count < 1 { await Task.yield() }
+    // The first piece is out and its answer has not come: these wait.
+    for key in "bcdefghijkl" { #expect(input.enqueue(Data(String(key).utf8), paneId: "p")) }
+    gate.continuation.yield()
+    while await pieces.total < 12 { await Task.yield() }
+    let sent = await pieces.values.map { String(decoding: $0, as: UTF8.self) }
+    #expect(sent == ["a", "bcdefghi", "jkl"])
+  }
+
   @Test func inputBeyondTheQueueLimitIsRefusedWholeAndNothingIsQueued() async throws {
     let held = AsyncStream.makeStream(of: Void.self)
     let input = TerminalInputQueue(
@@ -208,4 +333,12 @@
     queue.finish(failing: ClientFailure.invalidStream)
     #expect(await queue.next().isEmpty)
   }
+
+  private actor PieceLog {
+    private(set) var values: [Data] = []
+    var count: Int { values.count }
+    var total: Int { values.reduce(0) { $0 + $1.count } }
+    func add(_ value: Data) { values.append(value) }
+  }
+
 #endif
