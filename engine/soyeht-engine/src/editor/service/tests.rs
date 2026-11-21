@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use uuid::Uuid;
-use {super::*, crate::test_paths::rooted};
+use {super::*, soyeht_platform::testing::rooted};
 
 #[derive(Default)]
 struct FakeFiles {
@@ -318,6 +318,33 @@ fn set_read_only(path: &Path, read_only: bool) {
     fs::set_permissions(path, permissions).unwrap();
 }
 
+/// Putting a new file over the old one, which is how a write replaces a file, does not care for a
+/// read-only bit on Unix, so a caller says whether the bit holds. Windows refuses to rename over
+/// a read-only file, so there the bit holds for both and `Replace` is refused as `Refuse` is.
+#[cfg(windows)]
+#[test]
+fn the_system_disk_never_replaces_a_read_only_file_on_windows() {
+    let (directory, path) = temporary_note("before");
+    set_read_only(&path, true);
+    for read_only in [ReadOnly::Refuse, ReadOnly::Replace] {
+        let refused = SystemFiles
+            .write_text_if_unchanged(&path, "before", "lost", read_only)
+            .unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
+        assert_eq!(fs::read_to_string(&path).unwrap(), "before");
+    }
+    // The refused write leaves no temporary file beside the note.
+    let leftovers: Vec<_> = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(soyeht_platform::fs::TEMPORARY_PREFIX))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
+    set_read_only(&path, false);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[cfg(unix)]
 #[test]
 fn the_system_disk_refuses_a_read_only_file_only_when_asked_to() {
     let (directory, path) = temporary_note("before");

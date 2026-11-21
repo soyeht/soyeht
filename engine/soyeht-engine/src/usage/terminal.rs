@@ -514,16 +514,20 @@ mod tests {
         fs::remove_dir_all(scratch).unwrap();
     }
 
+    #[cfg(unix)]
     struct WaitsForever;
 
+    #[cfg(unix)]
     impl TerminalDriver for WaitsForever {
         fn step(&mut self, _screen: &str, _elapsed: Duration) -> TerminalStep {
             TerminalStep::Wait
         }
     }
 
+    #[cfg(unix)]
     struct Panics;
 
+    #[cfg(unix)]
     impl TerminalDriver for Panics {
         fn step(&mut self, screen: &str, _elapsed: Duration) -> TerminalStep {
             // After the program has written its process id, which it does before the prompt.

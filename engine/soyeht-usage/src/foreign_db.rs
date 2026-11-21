@@ -531,12 +531,14 @@ mod tests {
             .unwrap_err();
         assert_eq!(Unreadable::of(&error).0, "OperationInterrupted");
         assert!(started.elapsed() < Duration::from_secs(10));
+        drop(connection);
         // a deadline still ahead leaves an ordinary query alone
         let connection = open_live(&path, Instant::now() + Duration::from_secs(60)).unwrap();
         assert_eq!(
             connection.query_row("SELECT 7", [], |row| row.get::<_, i64>(0)),
             Ok(7)
         );
+        drop(connection);
         fs::remove_file(path).unwrap();
     }
 

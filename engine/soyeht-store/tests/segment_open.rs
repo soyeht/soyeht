@@ -8,7 +8,9 @@ use soyeht_store::segments::{Log, Record, slow_disk};
 use std::{fs, io::Write, time::Duration, time::Instant};
 use uuid::Uuid;
 
-const PAUSE: Duration = Duration::from_millis(100);
+/// The pause of one flush. The bounds below leave one pause of slack for the real flushes of the
+/// files, which a busy Windows disk makes slow, so it is long next to them.
+const PAUSE: Duration = Duration::from_millis(300);
 
 fn record(n: u64) -> Record {
     Record::Data {

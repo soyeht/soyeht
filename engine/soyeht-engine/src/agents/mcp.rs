@@ -137,8 +137,8 @@ mod tests {
     fn declare(store: &MemoryTaskStore, state: &State, saved: &PaneRecord) -> StdioMcpServer {
         declaration_with_executable(
             store,
-            &crate::test_paths::rooted("/tmp/data"),
-            &crate::test_paths::rooted("/opt/soyeht/bin/soyeht-mcp"),
+            &soyeht_platform::testing::rooted("/tmp/data"),
+            &soyeht_platform::testing::rooted("/opt/soyeht/bin/soyeht-mcp"),
             state,
             saved,
         )

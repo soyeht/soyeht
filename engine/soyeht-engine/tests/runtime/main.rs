@@ -35,8 +35,12 @@ use support::*;
 #[path = "../../../soyeht-protocol/tests/fuzz_support/mod.rs"]
 mod fuzz_support;
 
+// These three start the rig's `#!/bin/sh` runners, which Windows does not run.
+#[cfg(unix)]
 mod adapter_acknowledgement;
+#[cfg(unix)]
 mod adapter_directory;
+#[cfg(unix)]
 mod agent_cli_choice;
 mod agent_message_names;
 mod attack_floods;
@@ -56,6 +60,8 @@ mod harness_switch;
 mod harness_switch_names_and_failures;
 mod ink_recognition;
 mod language_and_project_search;
+// Its terminals run `awk` and `touch`, which a Windows shell does not have.
+#[cfg(unix)]
 mod many_terminals_subscribed_at_once;
 mod native_permissions_and_modes;
 mod permissions_and_queue;

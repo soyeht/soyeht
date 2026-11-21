@@ -15,5 +15,8 @@ soyeht-platform = { path = "../soyeht-platform" }
 soyeht-protocol = { path = "../soyeht-protocol" }
 uuid.workspace = true
 
+[dev-dependencies]
+soyeht-platform = { path = "../soyeht-platform", features = ["test-support"] }
+
 [lints]
 workspace = true

@@ -120,7 +120,7 @@ fn a_task_with_more_comments_than_a_prompt_holds_still_gets_its_first_prompt() {
     assert!(text.len() <= limits::PROMPT_BYTES);
     assert!(text.contains("earlier comments omitted"));
     assert!(text.contains("note 209 "), "the newest comment is kept");
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn a_comment_longer_than_a_prompt_is_cut_and_the_task_is_dispatched() {
 
     assert_eq!(stage(&core, "A-1"), "prompt_accepted");
     assert!(first_text(&core, "pane-1").len() <= limits::PROMPT_BYTES);
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn a_dispatch_row_that_cannot_advance_does_not_stop_the_rows_after_it() {
     assert_eq!(stage(&core, "A-1"), "prompt_accepted");
     assert_eq!(stage(&core, "A-2"), "prompt_accepted");
     assert!(first_text(&core, "pane-2").contains("# Do the work"));
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }
 
 #[test]
@@ -159,7 +159,7 @@ fn a_dispatch_row_that_waits_rests_for_the_retry_delay() {
     core.advance_task_dispatches().unwrap();
 
     crate::tasks::assert_poll_rests_for_retry(&core);
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }
 
 #[test]
@@ -191,7 +191,7 @@ fn a_store_write_ends_the_rest_of_a_task_poll_that_is_waiting() {
         Some(std::time::Duration::ZERO),
         "a store write ends the rest of the waiting poll"
     );
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }
 
 #[test]
@@ -210,5 +210,5 @@ fn the_caller_gets_the_error_of_its_own_row_and_not_the_error_of_another() {
         errors::kind(&error),
         soyeht_protocol::ErrorKind::InternalError
     );
-    std::fs::remove_dir_all(directory).unwrap();
+    crate::test_paths::remove_after(core, directory);
 }

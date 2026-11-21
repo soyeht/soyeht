@@ -106,6 +106,8 @@ fn the_openai_request_carries_the_picture_the_instruction_the_model_and_the_key(
     assert!(sent.body.windows(8).any(|window| window == signature));
 }
 
+// Windows does not allow a quote or a backslash in a file name, so the file cannot exist there.
+#[cfg(unix)]
 #[test]
 fn a_file_name_with_a_quote_a_semicolon_and_a_backslash_is_uploaded_whole() {
     let job = Job::new();

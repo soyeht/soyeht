@@ -80,7 +80,7 @@ fn a_new_open_forgets_the_updates_held_for_the_last_one() {
     .unwrap();
     assert_eq!(state.phase, Phase::Opening);
     assert!(state.held_updates.is_empty() && !state.held_overflowed);
-    std::fs::remove_dir_all(&directory).unwrap();
+    crate::test_paths::remove_after(store, &directory);
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn an_error_to_session_new_forgets_the_updates_held_for_it() {
     );
     assert!(result.is_err());
     assert!(state.held_updates.is_empty());
-    std::fs::remove_dir_all(&directory).unwrap();
+    crate::test_paths::remove_after(store, &directory);
 }
 
 #[test]

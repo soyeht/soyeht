@@ -432,7 +432,7 @@ mod tests {
             ),
         );
         assert!(other.is_err());
-        std::fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 
     #[test]
@@ -456,6 +456,6 @@ mod tests {
             asked.lock().unwrap().len() == 1
         });
         assert_eq!(*asked.lock().unwrap(), ["confirm"]);
-        std::fs::remove_dir_all(root).unwrap();
+        crate::test_paths::remove_after(core, root);
     }
 }

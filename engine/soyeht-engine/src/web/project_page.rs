@@ -48,11 +48,14 @@ impl PageFile {
     /// by the names `soyeht_web::name_allowed` accepts, on the path as written and as resolved.
     pub(crate) fn resolve(workspace_root: &Path, requested: &str) -> Result<Self> {
         let outside = || errors::invalid("Project file path must stay within the workspace");
-        let named = Path::new(requested).components().all(|part| match part {
-            Component::Normal(name) => name.to_str().is_some_and(name_allowed),
-            Component::CurDir => true,
-            _ => false,
-        });
+        // A backslash is not a separator of the slash path a page asks for, though Windows reads it
+        // as one: it names the same file on no two systems, so it is refused on every one.
+        let named = !requested.contains('\\')
+            && Path::new(requested).components().all(|part| match part {
+                Component::Normal(name) => name.to_str().is_some_and(name_allowed),
+                Component::CurDir => true,
+                _ => false,
+            });
         if !named {
             return Err(outside());
         }
