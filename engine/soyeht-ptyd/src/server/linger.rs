@@ -131,12 +131,17 @@ mod tests {
         assert!(sees_the_end(&mut theirs));
     }
 
+    /// How long the peer writes at most in the tests below. A drain that lost its deadline or
+    /// its limit ends when the writer does, so it fails the assertions instead of hanging.
+    const WRITER_STOPS_AFTER: Duration = Duration::from_secs(3);
+
     /// How long ending a connection takes while the peer keeps writing `piece` every `pause`, until
-    /// the supervisor has closed (its next write fails).
+    /// the supervisor has closed (its next write fails) or [`WRITER_STOPS_AFTER`].
     fn ended_while_the_peer_writes(piece: &'static [u8], pause: Duration) -> Duration {
         let (mut theirs, ours) = pair().unwrap();
         let writing = thread::spawn(move || {
-            while theirs.write_all(piece).is_ok() {
+            let started = Instant::now();
+            while started.elapsed() < WRITER_STOPS_AFTER && theirs.write_all(piece).is_ok() {
                 thread::sleep(pause);
             }
         });
@@ -155,13 +160,29 @@ mod tests {
     }
 
     #[test]
-    fn a_peer_that_floods_is_cut_at_the_limit_and_not_waited_for_past_the_deadline() {
-        assert_ended_at_the_deadline(ended_while_the_peer_writes(&[1; 8192], Duration::ZERO));
+    fn a_peer_that_floods_is_cut_at_the_limit_long_before_the_deadline() {
+        // A flood reaches the limit in milliseconds: a drain with no limit would go on until the
+        // deadline.
+        let took = ended_while_the_peer_writes(&[1; 8192], Duration::ZERO);
+        assert!(took < DRAIN_DEADLINE / 2, "{took:?}");
     }
 
     #[test]
-    fn a_peer_that_stays_silent_is_waited_for_about_the_deadline() {
-        let (took, _) = ended(|_| true, |_| {});
+    fn a_peer_that_stays_silent_is_told_it_is_over_at_once_and_waited_for_about_the_deadline() {
+        let (mut theirs, ours) = pair().unwrap();
+        theirs
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let started = Instant::now();
+        let ending = thread::spawn(move || after(ours, |_| {}));
+        // The peer reads the end of the stream (the supervisor's half-close) while the
+        // supervisor is still reading: without the half-close it reads it at the deadline.
+        assert!(sees_the_end(&mut theirs));
+        let told = started.elapsed();
+        assert!(told < DRAIN_DEADLINE / 2, "{told:?}");
+        assert!(!ending.is_finished());
+        ending.join().unwrap();
+        let took = started.elapsed();
         assert!(
             took >= DRAIN_DEADLINE - Duration::from_millis(100),
             "{took:?}"

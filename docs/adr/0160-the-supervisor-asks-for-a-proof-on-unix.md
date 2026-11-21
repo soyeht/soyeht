@@ -123,4 +123,8 @@ has had since ADR 0086; a boundary against the user's own unconfined processes i
   generation plus one.
 - `hmac`, `sha2` and `getrandom` become dependencies of `soyeht-platform` on every system; they
   were its dependencies on Windows and in its tests.
-- When the supervisor ends a connection it has proved, it half-closes (it says it is done writing) and reads what the peer still sends, for at most a second and 64 KiB, before it closes: closing a socket that holds unread bytes resets the connection on Windows, and the reset discards the refusal the peer had not read yet. A connection that did not prove is not read: it is closed at once, and may be reset.
+- When the supervisor ends a connection it has proved, it half-closes (it says it is done writing)
+  and reads what the peer still sends, for at most a second and 64 KiB, before it closes: closing
+  a socket that holds unread bytes resets the connection on Windows, and the reset discards the
+  refusal the peer had not read yet. A connection that did not prove is not read: it is closed at
+  once, and may be reset.
