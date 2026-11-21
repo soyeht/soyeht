@@ -117,12 +117,23 @@ fn process_is_alive(process: u32) -> bool {
 mod tests {
     use super::*;
 
+    /// The tests take turns: `a_folder_that_was_made_before_is_not_used` fills the names the next
+    /// tries of the shared counter would use, and a folder another test made would shift them.
+    static TURNS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn turn() -> std::sync::MutexGuard<'static, ()> {
+        TURNS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn scratch(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("soyeht-private-test-{name}-{}", std::process::id()))
     }
 
     #[test]
     fn each_private_page_gets_a_new_folder_named_for_this_program() {
+        let _turn = turn();
         let root = scratch("new");
         let first = make_folder(&root).unwrap();
         let second = make_folder(&root).unwrap();
@@ -140,6 +151,7 @@ mod tests {
 
     #[test]
     fn a_folder_that_was_made_before_is_not_used() {
+        let _turn = turn();
         let root = scratch("taken");
         std::fs::create_dir_all(&root).unwrap();
         // The names the next tries would use are all taken, as by somebody who guessed them.
@@ -153,6 +165,7 @@ mod tests {
 
     #[test]
     fn a_folder_of_a_program_that_ended_goes_and_one_that_runs_stays() {
+        let _turn = turn();
         let root = scratch("stale");
         std::fs::create_dir_all(root.join("1999999999-0")).unwrap();
         let mine = make_folder(&root).unwrap();

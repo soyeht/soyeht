@@ -236,6 +236,11 @@ mod tests {
         PathBuf::from("/opt/next/bin")
     }
 
+    // The tests marked `#[cfg(unix)]` write macOS and Linux definitions with Unix paths. A Windows
+    // host does not read `/opt/...` as an absolute path (the guard refuses it there, as it should:
+    // a definition on Windows holds drive paths), so these cases cannot run on it. The definitions
+    // for Windows are the tests without the mark.
+    #[cfg(unix)]
     #[test]
     fn the_engine_names_its_profile_and_the_supervisor_does_not() {
         let layout = test_layout(System::Macos, Path::new(ROOT));
@@ -259,6 +264,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn only_launchd_is_given_a_path_and_a_unit_or_task_inherits_the_users_own() {
         let mac = test_layout(System::Macos, Path::new(ROOT))
@@ -283,6 +289,7 @@ mod tests {
         assert!(windows.environment.is_empty());
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_rendered_files_carry_a_path_only_on_the_mac() {
         let text = |system, component| {
@@ -301,6 +308,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn only_the_linux_engine_waits_for_the_supervisor_and_only_a_task_names_a_user() {
         let engine = |system| {
@@ -323,35 +331,44 @@ mod tests {
 
     #[test]
     fn a_windows_task_starts_the_host_which_starts_the_program_and_keeps_its_log() {
-        let layout = test_layout(System::Windows, Path::new(ROOT));
-        let definition = layout.definition(Component::Ptyd, &programs()).unwrap();
-        let log = "/tmp/next-test/data/next/logs/ptyd.log";
-        assert_eq!(definition.program, "/opt/next/bin/soyeht-service-host.exe");
+        // Paths of this system, so that the test runs on a Windows host as well as on the others.
+        let root = soyeht_platform::testing::rooted(ROOT);
+        let programs = soyeht_platform::testing::rooted("/opt/next/bin");
+        let data = root.join("data").join("next");
+        let text = |path: PathBuf| path.display().to_string();
+        let mut layout = test_layout(System::Windows, &root);
+        layout.data = data.clone();
+        let definition = layout.definition(Component::Ptyd, &programs).unwrap();
+        let log = text(data.join("logs").join("ptyd.log"));
+        assert_eq!(
+            definition.program,
+            text(programs.join("soyeht-service-host.exe"))
+        );
         assert_eq!(
             definition.arguments,
             [
                 "--log",
-                log,
+                log.as_str(),
                 "--",
-                "/opt/next/bin/soyeht-ptyd.exe",
+                text(programs.join("soyeht-ptyd.exe")).as_str(),
                 "--data-dir",
-                "/tmp/next-test/data/next"
+                text(data.clone()).as_str()
             ]
         );
-        assert_eq!(definition.log.as_deref(), Some(log));
+        assert_eq!(definition.log.as_deref(), Some(log.as_str()));
         assert_eq!(
             definition.files,
             [
-                "/opt/next/bin/soyeht-service-host.exe",
-                "/opt/next/bin/soyeht-ptyd.exe"
+                text(programs.join("soyeht-service-host.exe")),
+                text(programs.join("soyeht-ptyd.exe"))
             ]
         );
         // The other systems start the program itself.
-        let mac = test_layout(System::Macos, Path::new(ROOT))
-            .definition(Component::Ptyd, &programs())
-            .unwrap();
-        assert_eq!(mac.program, "/opt/next/bin/soyeht-ptyd");
-        assert_eq!(mac.files, ["/opt/next/bin/soyeht-ptyd"]);
+        let mut layout = test_layout(System::Macos, &root);
+        layout.data = data;
+        let mac = layout.definition(Component::Ptyd, &programs).unwrap();
+        assert_eq!(mac.program, text(programs.join("soyeht-ptyd")));
+        assert_eq!(mac.files, [text(programs.join("soyeht-ptyd"))]);
     }
 
     #[test]
@@ -383,6 +400,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_data_directory_of_the_legacy_app_is_refused() {
         let mut layout = test_layout(System::Macos, Path::new(ROOT));
@@ -397,6 +415,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn programs_may_sit_in_an_ordinary_install_folder() {
         let layout = test_layout(System::Linux, Path::new(ROOT));

@@ -475,11 +475,13 @@ fn reader_lines() -> Vec<(String, usize, String)> {
         }
         let text = fs::read_to_string(&file).unwrap();
         let production = shipped(&text);
+        // The rules name a file with slashes, on every system.
         let shown = file
             .strip_prefix(engine_root())
             .unwrap()
             .display()
-            .to_string();
+            .to_string()
+            .replace('\\', "/");
         for (index, line) in production.lines().enumerate() {
             if !line.trim_start().starts_with("//") {
                 lines.push((shown.clone(), index + 1, line.to_owned()));

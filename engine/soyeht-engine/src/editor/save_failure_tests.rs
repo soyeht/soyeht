@@ -293,6 +293,9 @@ async fn a_failed_recreate_leaves_no_file_and_never_turns_the_draft_into_a_confl
     rig.assert_created_with_the_draft();
 }
 
+// Replacing a read-only file puts a new file over it, which Windows refuses (see
+// `the_system_disk_never_replaces_a_read_only_file_on_windows`).
+#[cfg(unix)]
 #[tokio::test]
 async fn a_project_replace_still_replaces_a_read_only_file_as_it_always_did() {
     let mut fixture = EditorFixture::new(&[("a.rs", "needle\n"), ("b.rs", "needle\n")]).await;

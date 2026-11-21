@@ -124,6 +124,7 @@ mod tests {
         assert_eq!(seen(&store, "phone").unwrap(), Some(7));
         dismiss(&mut store, "local", 250);
         assert_eq!(seen(&store, "local").unwrap(), Some(250));
+        drop(store);
         std::fs::remove_dir_all(path).unwrap();
     }
 
@@ -159,6 +160,7 @@ mod tests {
         assert_eq!(dated.len(), 1);
         assert_eq!(dated[0].device_id, "a");
         assert_eq!(dated[0].node.as_deref(), Some("box"));
+        drop(store);
         std::fs::remove_dir_all(path).unwrap();
     }
 
@@ -183,6 +185,7 @@ mod tests {
         });
         assert_eq!(pane_ids(&store, "phone"), ["a", "e"]);
         assert!(panes_created_by(&store, "nobody").unwrap().is_empty());
+        drop(store);
         std::fs::remove_dir_all(path).unwrap();
     }
 
@@ -214,6 +217,7 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(pane_ids(&store, "phone"), ["by-phone"]);
+        drop(store);
         std::fs::remove_dir_all(path).unwrap();
     }
 

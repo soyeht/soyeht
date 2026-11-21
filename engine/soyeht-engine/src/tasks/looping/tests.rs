@@ -4,7 +4,7 @@ use crate::{
     test_panes::insert_agent_pane,
 };
 use soyeht_protocol::{LoopSetParams, Workspace, limits};
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 const NOW_MS: i64 = 1_000_000;
 
@@ -60,10 +60,6 @@ fn queued(core: &Core, pane: &str) -> Vec<String> {
         .collect()
 }
 
-fn remove(directory: &Path) {
-    std::fs::remove_dir_all(directory).unwrap();
-}
-
 #[test]
 fn a_loop_row_that_cannot_dispatch_does_not_stop_the_loops_after_it() {
     // A row stored before the prompt length was checked: the first in the order, never able
@@ -90,7 +86,7 @@ fn a_loop_row_that_cannot_dispatch_does_not_stop_the_loops_after_it() {
         queue,
         "nothing is dispatched twice"
     );
-    remove(&directory);
+    crate::test_paths::remove_after(core, &directory);
 }
 
 #[test]
@@ -140,5 +136,5 @@ fn holding_a_loop_back_keeps_the_saved_round_and_does_not_enable_a_finished_loop
         Some((finished, 200)),
         "a loop that has ended is left as it is"
     );
-    remove(&directory);
+    crate::test_paths::remove_after(core, &directory);
 }

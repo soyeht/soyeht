@@ -8,7 +8,7 @@ type Answer = std::result::Result<Outcome, errors::Error>;
 
 struct Rig {
     core: Core,
-    directory: PathBuf,
+    directory: crate::test_paths::Folder,
     local: String,
     /// A harness of the profile that an avatar's pane can be started with.
     harness: String,
@@ -41,7 +41,7 @@ impl Rig {
         std::fs::create_dir(&directory).unwrap();
         let mut rig = Self {
             core: boot(&directory),
-            directory,
+            directory: crate::test_paths::Folder::new(directory),
             local: String::new(),
             harness: "avatar-test".into(),
         };
@@ -202,12 +202,6 @@ impl Rig {
 
     fn folder(&self, avatar: &str) -> PathBuf {
         avatar_directory(&self.core, avatar)
-    }
-}
-
-impl Drop for Rig {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.directory).unwrap();
     }
 }
 

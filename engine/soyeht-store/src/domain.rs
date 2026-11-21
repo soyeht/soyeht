@@ -613,6 +613,7 @@ mod tests {
         assert!(repeated.is_err());
         assert!(store.input_intent("client", "d").unwrap().is_some());
         assert!(store.idempotency_receipt("client", "d").unwrap().is_none());
+        drop(store);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
@@ -627,6 +628,7 @@ mod tests {
         assert!(store.drop_input_intent("op-a", recorded + 1).unwrap());
         assert!(store.input_intent("client", "a").unwrap().is_none());
         assert!(!store.drop_input_intent("op-a", recorded + 1).unwrap());
+        drop(store);
         std::fs::remove_dir_all(directory).unwrap();
     }
 }

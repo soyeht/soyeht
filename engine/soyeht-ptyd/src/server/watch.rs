@@ -68,9 +68,16 @@ impl Watch {
         })
     }
 
+    /// Ends the watch's writer, and leaves its connection as it is: the connection's own thread
+    /// ends it with the half-close and the read of `server::linger`, which a connection already
+    /// shut down in both directions would not get.
+    fn stop(&self) {
+        self.change(|pending| pending.closed = true);
+    }
+
     /// Ends the watch: its writer stops and the read of its connection fails.
     fn close(&self) {
-        self.change(|pending| pending.closed = true);
+        self.stop();
         let stream = self
             .stream
             .lock()
@@ -221,7 +228,7 @@ impl Watchers {
 /// the supervisor has recorded and must equal it; it never writes the registry and never takes
 /// the place of the request connection.
 pub(super) fn serve(
-    mut stream: Stream,
+    stream: &mut Stream,
     shared: &Arc<Mutex<State>>,
     version: u32,
     engine_generation: u64,
@@ -229,16 +236,16 @@ pub(super) fn serve(
     let watchers = {
         let state = lock(shared, "state")?;
         if let Some((kind, message)) = hello_refusal(&state, version, engine_generation) {
-            return refuse(&mut stream, kind, message);
+            return refuse(stream, kind, message);
         }
         if engine_generation > state.registry.engine_generation {
             return refuse(
-                &mut stream,
+                stream,
                 wire_kind::UNAUTHORIZED,
                 "no engine of this generation is connected",
             );
         }
-        send(&mut stream, &welcome(&state))?;
+        send(stream, &welcome(&state))?;
         Arc::clone(&state.watchers)
     };
     let watch = Arc::new(Watch {
@@ -250,8 +257,8 @@ pub(super) fn serve(
     stream.set_write_timeout(Some(WRITE_TIMEOUT))?;
     watchers.add(&watch);
     write_notices(stream.try_clone()?, Arc::clone(&watch));
-    let result = answer_requests(&mut stream, shared, &watch);
-    watch.close();
+    let result = answer_requests(stream, shared, &watch);
+    watch.stop();
     watchers.remove(&watch);
     result
 }

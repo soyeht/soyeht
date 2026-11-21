@@ -67,8 +67,9 @@ impl Rig {
         announce(&mut core, &directory, "chief", harness, mode);
         announce(&mut core, &directory, "claude-pane", "claude", "default");
         announce(&mut core, &directory, "codex-pane", "codex", "read-only");
-        let entry =
-            |id: &str| json!({"id":id,"name":id,"command":"/bin/ls","args":[],"version":"1"});
+        // A command that exists on every system: the test program itself.
+        let program = std::env::current_exe().unwrap().display().to_string();
+        let entry = |id: &str| json!({"id":id,"name":id,"command":program,"args":[],"version":"1"});
         std::fs::write(
             directory.join("harnesses.json"),
             json!([entry("claude"), entry("codex"), entry("stub")]).to_string(),

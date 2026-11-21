@@ -579,29 +579,31 @@ fn the_activity_of_a_pane_without_a_plan_is_counted_for_the_panes_provider() {
 
 #[test]
 fn opencodes_own_variables_move_its_files() {
+    // The folders are absolute paths of this system (a drive is part of one on Windows), and the
+    // reader joins them with its separator.
+    let data = soyeht_platform::testing::rooted("/data");
+    let config_home = soyeht_platform::testing::rooted("/config");
     let mut host = FakeHost::new(Platform::Linux);
     host.env = vec![
-        ("XDG_DATA_HOME".into(), "/data".into()),
-        ("XDG_CONFIG_HOME".into(), "/config".into()),
+        ("XDG_DATA_HOME".into(), data.display().to_string()),
+        ("XDG_CONFIG_HOME".into(), config_home.display().to_string()),
         ("OPENCODE_DB".into(), "history.db".into()),
     ];
+    let database = data.join("opencode").join("history.db");
     host.files = vec![
         (
-            "/config/opencode/opencode.json".into(),
+            config_home.join("opencode").join("opencode.json"),
             soyeht_usage::host::FileRead::Bytes(config("openai/gpt-5.5")),
         ),
-        (
-            "/data/opencode/history.db".into(),
-            soyeht_usage::host::FileRead::Unreadable,
-        ),
+        (database.clone(), soyeht_usage::host::FileRead::Unreadable),
     ];
     host.local_usage = activity(1, 0.0);
     let host = Arc::new(host);
     assert_eq!(refresh(&host).reading.state, UsageState::Ok);
     assert!(matches!(
         &usage_reads(&host)[0],
-        Call::OpencodeUsage { database, provider: Some(provider), .. }
-            if database == Path::new("/data/opencode/history.db") && provider == "openai"
+        Call::OpencodeUsage { database: read, provider: Some(provider), .. }
+            if *read == database && provider == "openai"
     ));
 
     // An in-memory database has no file to read.

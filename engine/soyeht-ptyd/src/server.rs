@@ -37,6 +37,7 @@ use uuid::Uuid;
 
 mod close;
 mod foreground;
+mod linger;
 mod watch;
 
 use close::{close_answer, close_many_answer, record_exit};
@@ -145,7 +146,7 @@ pub fn run(directory: &Path) -> Result<()> {
         }
         let state = Arc::clone(&state);
         thread::spawn(move || {
-            if let Err(error) = connection(stream, state) {
+            if let Err(error) = linger::after(stream, |stream| connection(stream, state)) {
                 log::failure("ptyd.connection_failed", &error);
             }
         });
@@ -197,10 +198,10 @@ impl Drop for EndpointFile {
     }
 }
 
-fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
+fn connection(stream: &mut Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     stream.set_read_timeout(Some(Duration::from_secs(5)))?;
     stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-    let Some(request) = read_json::<Request>(&mut stream)? else {
+    let Some(request) = read_json::<Request>(&mut *stream)? else {
         return Ok(());
     };
     let Request::Hello {
@@ -209,7 +210,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
         role,
     } = request
     else {
-        return refuse(&mut stream, wire_kind::UNAUTHORIZED, "hello required");
+        return refuse(stream, wire_kind::UNAUTHORIZED, "hello required");
     };
     if role == Role::Watch {
         return watch::serve(stream, &shared, version, engine_generation);
@@ -218,11 +219,11 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
     {
         let mut state = lock(&shared, "state")?;
         if let Some((kind, message)) = hello_refusal(&state, version, engine_generation) {
-            return refuse(&mut stream, kind, message);
+            return refuse(stream, kind, message);
         }
         if engine_generation == state.registry.engine_generation && state.active.is_some() {
             return refuse(
-                &mut stream,
+                stream,
                 wire_kind::ENGINE_CONNECTED,
                 "an engine is already connected",
             );
@@ -242,14 +243,14 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
             let _ = old.shutdown(Shutdown::Both);
         }
         state.active = Some((connection_id.clone(), stream.try_clone()?));
-        if let Err(error) = send(&mut stream, &welcome(&state)) {
+        if let Err(error) = send(stream, &welcome(&state)) {
             state.active = None;
             return Err(error);
         }
     }
     let result: Result<()> = (|| {
         stream.set_read_timeout(None)?;
-        while let Some(request) = read_json(&mut stream)? {
+        while let Some(request) = read_json(&mut *stream)? {
             let mut state = lock(&shared, "state")?;
             if state.active.as_ref().map(|(id, _)| id.as_str()) != Some(connection_id.as_str()) {
                 return Err(Error::ConnectionSuperseded);
@@ -273,7 +274,7 @@ fn connection(mut stream: Stream, shared: Arc<Mutex<State>>) -> Result<()> {
                     response
                 }
             };
-            send(&mut stream, &response)?;
+            send(stream, &response)?;
         }
         Ok(())
     })();

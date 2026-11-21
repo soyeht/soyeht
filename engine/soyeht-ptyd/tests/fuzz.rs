@@ -4,8 +4,7 @@
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use serde_json::{Value, json};
-use soyeht_platform::local::{connect, connect_proved};
-use soyeht_platform::testing::scratch_dir;
+use soyeht_platform::local::{Stream, connect_proved};
 use soyeht_protocol::frame::{Frame, read_json, write_json};
 use soyeht_ptyd::wire::{Request, Response, VERSION};
 use std::io::{Read, Write};
@@ -82,9 +81,25 @@ const END_OF_CONNECTION: Duration = Duration::from_secs(10);
 /// each (`NONCE_BYTES` and `PROOF_BYTES` of the local endpoint, which are private).
 const PROOF_ANSWER: usize = 64;
 
+/// A connection that has not proved the secret. On Unix it is the plain socket. On Windows the
+/// platform's `connect` always proves, so the test reads the port from the endpoint file, as any
+/// process that can read the file could, and connects to it without the exchange.
+fn connect_unproved(socket: &std::path::Path) -> Stream {
+    #[cfg(unix)]
+    {
+        soyeht_platform::local::connect(socket).unwrap()
+    }
+    #[cfg(windows)]
+    {
+        let file = std::fs::read_to_string(socket).unwrap();
+        let port: u16 = file.split_whitespace().nth(1).unwrap().parse().unwrap();
+        std::net::TcpStream::connect((std::net::Ipv4Addr::LOCALHOST, port)).unwrap()
+    }
+}
+
 /// Sends `input` and everything the supervisor says back until it ends the connection. A
 /// supervisor that does not end it within [`END_OF_CONNECTION`] fails the case.
-fn send(mut stream: soyeht_platform::local::Stream, input: &[u8]) -> Vec<u8> {
+fn send(mut stream: Stream, input: &[u8]) -> Vec<u8> {
     stream.set_read_timeout(Some(END_OF_CONNECTION)).unwrap();
     // The peer may close before all of the input is written; that is the supervisor ending
     // the connection, not a failure of the test.
@@ -108,15 +123,7 @@ fn send(mut stream: soyeht_platform::local::Stream, input: &[u8]) -> Vec<u8> {
 
 #[test]
 fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
-    // A short name: the socket in it has a path limit of about a hundred bytes. The daemon
-    // removes the folder when it is dropped.
-    let directory = scratch_dir("ptyd");
-    let mut daemon = Daemon {
-        child: Daemon::launch(&directory),
-        directory,
-    };
-    drop(daemon.connect(1));
-    let socket = daemon.directory.join("ptyd.sock");
+    let (mut daemon, socket) = Daemon::in_scratch_folder();
 
     // Any request before the hello is refused with the one error, and nothing is executed. The
     // connection has proved the secret (ADR 0160), as every client of the supervisor does.
@@ -148,6 +155,13 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
         })
         .collect();
     seeds.push(hello.clone());
+    // A watch connection (its own path of the supervisor): the hello, then a frame that is no
+    // request, then a request of the wrong kind for a watch.
+    let watch = framed(
+        &json!({"method":"hello","params":{"version":VERSION,"engine_generation":1,"role":"watch"}}),
+    );
+    seeds.push([watch.clone(), vec![1, 0, 0, 0, 2, b'{', b'}']].concat());
+    seeds.push([watch, framed(&json!({"method":"list"}))].concat());
     seeds.push(vec![1, 0xff, 0xff, 0xff, 0xff]);
     seeds.push(vec![1, 0, 0, 0, 2, b'{', b'}']);
     let seeds: Vec<&[u8]> = seeds.iter().map(Vec::as_slice).collect();
@@ -182,9 +196,15 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     // A connection that has not proved the secret (ADR 0160) is sent the same framed garbage:
     // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
-        let answer = send(connect(&socket).unwrap(), input);
+        let answer = send(connect_unproved(&socket), input);
+        // On Windows the supervisor closes on the input it did not read (what is sent after the
+        // nonce and the proof), which resets the connection, and the reset discards what the peer
+        // had not read yet: the answer may be cut short then, but never longer than the nonce and
+        // the proof.
+        let whole = answer.is_empty() || answer.len() == PROOF_ANSWER;
+        let reset = cfg!(windows) && input.len() > PROOF_ANSWER && answer.len() < PROOF_ANSWER;
         assert!(
-            answer.is_empty() || answer.len() == PROOF_ANSWER,
+            whole || reset,
             "an unproved peer was answered with {} bytes: {answer:?}",
             answer.len()
         );

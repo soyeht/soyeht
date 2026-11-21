@@ -5,7 +5,6 @@ use super::*;
 /// The `node` that runs the installed Claude adapter (the first start installs it with the rig's
 /// `npm`). It writes the Claude Code executable its adapter was told to drive (nothing when it
 /// was told none) to the returned file, then starts the fake agent.
-#[cfg(unix)]
 fn install_recording_runner(rig: &Rig) -> PathBuf {
     let seen = rig.path.join("claude-executable-seen");
     rig.install_fake_locked_adapter_runner(&format!(
@@ -17,7 +16,6 @@ fn install_recording_runner(rig: &Rig) -> PathBuf {
 
 /// A `claude` on the engine's search path that answers `--version` with `version`, as an
 /// installer leaves it: a link to the file of that version, which an update points elsewhere.
-#[cfg(unix)]
 fn install_claude(rig: &Rig, version: &str) {
     let versions = rig.path.join("claude-versions");
     fs::create_dir_all(&versions).unwrap();
@@ -35,7 +33,6 @@ fn install_claude(rig: &Rig, version: &str) {
 
 /// Opens an agent pane on the Claude harness and returns the Claude Code executable its adapter
 /// was told to drive: empty when it was told none.
-#[cfg(unix)]
 fn executable_the_adapter_is_told(
     client: &mut Client,
     workspace: &str,
@@ -71,7 +68,6 @@ fn executable_the_adapter_is_told(
     told
 }
 
-#[cfg(unix)]
 #[test]
 fn the_adapter_drives_the_claude_on_the_search_path_only_while_it_is_new_enough() {
     let rig = Rig::with_own_search_path();
@@ -116,7 +112,6 @@ fn the_adapter_drives_the_claude_on_the_search_path_only_while_it_is_new_enough(
     assert!(chosen.iter().all(|line| !line.contains("bin/claude")));
 }
 
-#[cfg(unix)]
 #[test]
 fn a_switch_to_the_harness_gives_its_adapter_the_claude_the_person_has() {
     let rig = Rig::with_own_search_path();
