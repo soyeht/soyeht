@@ -70,8 +70,10 @@ import Testing
     try client.applyPaneEvent(.paneUpdated, pane(id, queue: 1, active: false, state: .idle))
     try client.applyPaneEvent(.paneUpdated, pane(id, queue: 0, active: true, state: .working))
     try client.applyPaneEvent(.paneStateChanged, stateChanged(id, .working, "Agent is working"))
-    for round in 1...50 { try client.applyAgentEvent(.paneUpdate, partial(id, "reply \(round)")) }
-    try client.applyAgentEvent(.paneUpdate, finished(id))
+    for round in 1...50 {
+      try client.applyAgentEvent(.paneUpdate, reply(id, "reply \(round)", complete: false))
+    }
+    try client.applyAgentEvent(.paneUpdate, reply(id, "the reply", complete: true))
     try client.applyPaneEvent(.paneUpdated, pane(id, queue: 0, active: false, state: .idle))
     try client.applyPaneEvent(.paneStateChanged, stateChanged(id, .idle, "Agent turn ended"))
     try client.applyAgentEvent(
@@ -91,20 +93,12 @@ private func stateChanged(_ paneId: String, _ state: PaneState, _ phrase: String
       source: .protocol))
 }
 
-private func partial(_ paneId: String, _ text: String) throws -> JsonValue {
+private func reply(_ paneId: String, _ text: String, complete: Bool) throws -> JsonValue {
   try .encoded(
     PaneUpdateEvent.v0(
       AgentMessageUpdate(
         eventId: "1", at: "t", paneId: paneId, kind: .agent_message_chunk, generation: 1,
-        seq: "900", localId: "reply", text: text, complete: false)))
-}
-
-private func finished(_ paneId: String) throws -> JsonValue {
-  try .encoded(
-    PaneUpdateEvent.v0(
-      AgentMessageUpdate(
-        eventId: "1", at: "t", paneId: paneId, kind: .agent_message_chunk, generation: 1,
-        seq: "900", localId: "reply", text: "the reply", complete: true)))
+        seq: "900", localId: "reply", text: text, complete: complete)))
 }
 
 @MainActor @Test func aTurnOfAnAgentNobodyShowsRunsOnlyTheTabOfItsWorkspace() throws {
