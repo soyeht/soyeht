@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 import SoyehtProtocol
 import Testing
 
@@ -10,22 +9,6 @@ import Testing
 /// none of it unless what the chrome shows of that pane changed. Each reader below is what a view
 /// body of the Mac app reads; the tests count how often it is told, which says the same on any
 /// machine.
-
-/// Counts how many times what `read` reads changed, re-arming after each one.
-@MainActor private final class Told {
-  private(set) var count = 0
-
-  init(_ read: @escaping @MainActor () -> Void) { arm(read) }
-
-  private func arm(_ read: @escaping @MainActor () -> Void) {
-    withObservationTracking(read) {
-      MainActor.assumeIsolated {
-        self.count += 1
-        self.arm(read)
-      }
-    }
-  }
-}
 
 /// A window on workspace `w1`, which shows the agent pane `v` and holds the agent pane `t` in
 /// another tab of its group, and workspace `w2`, whose agent pane `h` nobody shows.
@@ -47,24 +30,24 @@ import Testing
   }
 
   /// What each view of the chrome reads, by name.
-  var readers: [(String, Told)] {
+  var readers: [(String, Changes)] {
     let client = client
     return [
       (
         "the root of the window",
-        Told {
+        Changes {
           _ = client.agentAttentionRequests
           _ = client.paneOutline(of: client.selectedPaneId)
           _ = client.workspaces
           _ = client.connected
         }
       ),
-      ("the tab of w1", Told { _ = client.agentAttention(in: "w1") }),
-      ("the tab of w2", Told { _ = client.agentAttention(in: "w2") }),
-      ("the rail", Told { _ = (client.agentWaitingTotal, client.agentWorking) }),
-      ("the usage rings", Told { _ = client.usage.readings }),
-      ("the grid of w1", Told { _ = client.outlinedPanes(in: "w1") }),
-      ("the card of v", Told { _ = (client.pane("v"), client.agentPanes.isAsking("v")) }),
+      ("the tab of w1", Changes { _ = client.agentAttention(in: "w1") }),
+      ("the tab of w2", Changes { _ = client.agentAttention(in: "w2") }),
+      ("the rail", Changes { _ = (client.agentWaitingTotal, client.agentWorking) }),
+      ("the usage rings", Changes { _ = client.usage.readings }),
+      ("the grid of w1", Changes { _ = client.outlinedPanes(in: "w1") }),
+      ("the card of v", Changes { _ = (client.pane("v"), client.agentPanes.isAsking("v")) }),
     ]
   }
 
@@ -163,8 +146,8 @@ private func finished(_ paneId: String) throws -> JsonValue {
   let window = Window()
   try window.client.applyPaneEvent(
     .paneStateChanged, stateChanged("h", .working, "Agent is working"))
-  let told = Told { _ = window.client.pane("h") }
-  let slice = Told { _ = window.client.panes(in: "w2") }
+  let told = Changes { _ = window.client.pane("h") }
+  let slice = Changes { _ = window.client.panes(in: "w2") }
   for _ in 1...20 {
     try window.client.applyPaneEvent(
       .paneStateChanged, stateChanged("h", .working, "Agent is working"))
@@ -191,7 +174,7 @@ private func finished(_ paneId: String) throws -> JsonValue {
 
 @MainActor @Test func theGridFollowsAPaneThatComesGoesOrIsRenamed() throws {
   let window = Window()
-  let grid = Told { _ = window.client.outlinedPanes(in: "w1") }
+  let grid = Changes { _ = window.client.outlinedPanes(in: "w1") }
   var renamed = agentPane("t", workspaceId: "w1")
   renamed.name = "renamed"
   try window.client.applyPaneEvent(.paneRenamed, .object(["pane": .encoded(renamed)]))

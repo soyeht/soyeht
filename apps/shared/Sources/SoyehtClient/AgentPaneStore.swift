@@ -185,6 +185,26 @@ public final class AgentPaneStore {
     change(&self[paneId, default: AgentPaneView()])
   }
 
+  /// What a pane update says of the pane's agent that the views of the pane show. Written only when
+  /// it differs: a write makes the pane's transcript be grouped again.
+  func noteSession(of pane: Pane) {
+    let paused = pane.agent?.queuePaused ?? false
+    let methods = pane.agent?.authMethods ?? []
+    let held = self[pane.paneId]
+    let same =
+      (held?.queuePaused ?? false) == paused
+      && (held?.authMethods ?? []).map(Self.key) == methods.map(Self.key)
+    if same { return }
+    update(pane.paneId) {
+      $0.queuePaused = paused
+      $0.authMethods = methods
+    }
+  }
+
+  private static func key(_ method: AuthMethod) -> [String] {
+    [method.id, method.name, method.description ?? "", method.terminal ? "terminal" : ""]
+  }
+
   /// Drops the panes not in `paneIds`; readers hear of it only when one went.
   func retainOnly(_ paneIds: Set<String>) {
     let gone = models.keys.filter { !paneIds.contains($0) }

@@ -10,7 +10,7 @@ import Testing
 /// written and what is notified, not time, so they say the same on any machine.
 
 /// Counts how many times what `read` reads changed, re-arming after each one.
-@MainActor private final class Changes {
+@MainActor final class Changes {
   private(set) var count = 0
 
   init(_ read: @escaping @MainActor () -> Void) { arm(read) }
