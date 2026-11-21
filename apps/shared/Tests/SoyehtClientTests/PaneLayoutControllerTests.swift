@@ -195,7 +195,7 @@ func draftWithLivePanesKeepsTheStoredTreeAndRejectsAnUnknownWorkspace() throws {
     try controller.beginDraft(
       workspaceId: "workspace", livePanes: [terminalPane("a")], sizing: testSizing) == stored)
   #expect(throws: PaneLayoutControllerError.missingWorkspace("other")) {
-    try controller.beginDraft(workspaceId: "other", livePanes: [], sizing: testSizing)
+    try controller.beginDraft(workspaceId: "other", livePanes: [Pane](), sizing: testSizing)
   }
 }
 

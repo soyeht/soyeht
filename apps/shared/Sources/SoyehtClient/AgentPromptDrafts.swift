@@ -18,6 +18,10 @@ public final class AgentPromptDrafts {
   /// Not observed: a view asks for the pane's attachments while it is built, and the object
   /// is observable on its own.
   @ObservationIgnored private var staged: [String: AgentComposerAttachments] = [:]
+  /// The panes whose composer had the keyboard when its view went away. The view is drawn again
+  /// when a tab is opened, and the keyboard goes back to the composer that had it.
+  @ObservationIgnored private var composersWithFocus: Set<String> = []
+  @ObservationIgnored private var carets: [String: AgentComposerCaret] = [:]
 
   init() {}
 
@@ -99,5 +103,23 @@ public final class AgentPromptDrafts {
   func discard(_ paneId: String) {
     texts[paneId] = nil
     staged[paneId] = nil
+    composersWithFocus.remove(paneId)
+    carets[paneId] = nil
   }
+
+  /// The cursor of the pane's composer, the same object for as long as the pane lives.
+  func caret(for paneId: String) -> AgentComposerCaret {
+    if let kept = carets[paneId] { return kept }
+    let created = AgentComposerCaret()
+    carets[paneId] = created
+    return created
+  }
+
+  /// Notes whether the pane's composer has the keyboard, as its view goes away.
+  func keepFocus(_ focused: Bool, for paneId: String) {
+    if focused { composersWithFocus.insert(paneId) } else { composersWithFocus.remove(paneId) }
+  }
+
+  /// Whether the composer had the keyboard when it went away; asking takes the note back.
+  func takeFocus(for paneId: String) -> Bool { composersWithFocus.remove(paneId) != nil }
 }

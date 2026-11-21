@@ -82,18 +82,18 @@ private func summaryOf(_ panes: [Pane], _ views: [String: AgentPaneView]) -> Age
   let before = summaryOf([pane], ["one": view])
   let after = summaryOf([pane], ["one": view])
   var cursor = AgentAttentionNotificationCursor()
-  #expect(cursor.newRequests(in: before, connected: false).isEmpty)
-  #expect(cursor.newRequests(in: before, connected: true).isEmpty)
-  #expect(cursor.newRequests(in: after, connected: true).isEmpty)
-  #expect(cursor.newRequests(in: after, connected: false).isEmpty)
-  #expect(cursor.newRequests(in: after, connected: true).isEmpty)
+  #expect(cursor.newRequests(in: before.requests, connected: false).isEmpty)
+  #expect(cursor.newRequests(in: before.requests, connected: true).isEmpty)
+  #expect(cursor.newRequests(in: after.requests, connected: true).isEmpty)
+  #expect(cursor.newRequests(in: after.requests, connected: false).isEmpty)
+  #expect(cursor.newRequests(in: after.requests, connected: true).isEmpty)
 
   view.permission = PermissionRequest(
     requestId: "next", paneId: "one", generation: 1, promptId: "prompt",
     title: "Write", detail: "", options: [], expiresAt: "later")
   let next = summaryOf([pane], ["one": view])
-  #expect(cursor.newRequests(in: next, connected: true).map(\.requestId) == ["next"])
-  #expect(cursor.newRequests(in: next, connected: true).isEmpty)
+  #expect(cursor.newRequests(in: next.requests, connected: true).map(\.requestId) == ["next"])
+  #expect(cursor.newRequests(in: next.requests, connected: true).isEmpty)
 }
 
 @Test @MainActor func attentionNotificationsAreOnUntilTurnedOffAndNeedAnInactiveApp() throws {
@@ -188,11 +188,8 @@ private func request(_ identity: String, workspaceId: String = "w") -> AgentAtte
   for item in ContractVector.cases(vector, "cursor") {
     var cursor = AgentAttentionNotificationCursor()
     for (index, step) in (item["steps"].array ?? []).enumerated() {
-      let summary = AgentAttentionSummary(
-        requests: (step["identities"].array ?? []).compactMap(\.string).map { request($0) },
-        workingPaneIdsByWorkspace: [:])
-      let new = cursor.newRequests(
-        in: summary, connected: step["connected"].bool ?? false)
+      let requests = (step["identities"].array ?? []).compactMap(\.string).map { request($0) }
+      let new = cursor.newRequests(in: requests, connected: step["connected"].bool ?? false)
       #expect(
         new.map(\.identity) == (step["new"].array ?? []).compactMap(\.string),
         "\(item["name"].string ?? "") step \(index)")

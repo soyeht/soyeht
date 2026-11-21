@@ -137,18 +137,6 @@ public final class EngineClient {
     webHost = nil
     watchAttention()
   }
-  public var selectedPane: Pane? { pane(selectedPaneId) }
-
-  /// The pane `paneId`, followed on its own: a change in another pane does not run the reader.
-  public func pane(_ paneId: String?) -> Pane? { paneStore.pane(paneId) }
-
-  /// The panes of a workspace, followed on their own: a change in another workspace's pane does
-  /// not run the reader.
-  public func panes(in workspaceId: String) -> [Pane] { paneStore.panes(in: workspaceId) }
-
-  /// The panes of one mode, followed on their own.
-  public func panes(mode: PaneMode) -> [Pane] { paneStore.panes(mode: mode) }
-
   public func start() {
     guard lifecycle == nil else { return }
     lifecycle = Task { [weak self] in
@@ -495,11 +483,17 @@ public final class EngineClient {
     case .paneStateChanged:
       let event = try params.decoded(PaneStateChangedEvent.self)
       if let pane = pane(event.paneId) {
-        paneStore.update(event.paneId) {
-          $0.state = event.state
-          $0.source = event.source
-          $0.confidence = event.confidence
-          $0.phrase = event.phrase
+        // The engine sends the pane and then its state: a state the pane holds already is not a
+        // change for any view.
+        if pane.state != event.state || pane.source != event.source
+          || pane.confidence != event.confidence || pane.phrase != event.phrase
+        {
+          paneStore.update(event.paneId) {
+            $0.state = event.state
+            $0.source = event.source
+            $0.confidence = event.confidence
+            $0.phrase = event.phrase
+          }
         }
         if pane.mode == .agent && event.state == .dead { refreshHarnesses() }
       }
@@ -515,10 +509,7 @@ public final class EngineClient {
       }
     #endif
     if pane.mode == .agent {
-      agentPanes.update(pane.paneId) {
-        $0.queuePaused = pane.agent?.queuePaused ?? false
-        $0.authMethods = pane.agent?.authMethods ?? []
-      }
+      agentPanes.noteSession(of: pane)
     }
     upsertWebPane(pane)
   }

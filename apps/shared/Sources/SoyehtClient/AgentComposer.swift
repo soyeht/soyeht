@@ -23,7 +23,6 @@ struct AgentComposer<HarnessControl: View>: View {
   @State private var dictation = DictationController(makeSession: {
     DictationEngineStore.shared.session()
   })
-  @State private var caret = AgentComposerCaret()
   @State private var slash = SlashCompletionState()
   /// The control row is as tall as its text: at an accessibility text size it grows instead of
   /// clipping the chips.
@@ -180,9 +179,14 @@ struct AgentComposer<HarnessControl: View>: View {
   }
 }
 
+extension AgentComposer {
+  /// The cursor of this pane's composer; the client keeps it, so the view can be drawn again.
+  fileprivate var caret: AgentComposerCaret { AgentPromptDrafts.shared.caret(for: paneId) }
+}
+
 /// The composer's cursor, where dictation inserts its transcript. The selection-aware text
 /// field exists from macOS 15 and iOS 18; earlier systems append at the end.
-@MainActor final class AgentComposerCaret {
+@MainActor @Observable final class AgentComposerCaret {
   private var selection: Any?
 
   @ViewBuilder func textField(text: Binding<String>) -> some View {
@@ -192,6 +196,9 @@ struct AgentComposer<HarnessControl: View>: View {
       TextField("", text: text, axis: .vertical)
     }
   }
+
+  /// Forgets the cursor: a field drawn again starts without one.
+  func reset() { selection = nil }
 
   func offset(in text: String) -> Int? {
     guard #available(macOS 15, iOS 18, *), let selection = selection as? TextSelection,
