@@ -9,19 +9,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// `path`, written as an absolute Unix path, as an absolute path on this system. Windows needs
-/// a drive letter before a path counts as absolute.
-pub(crate) fn rooted(path: &str) -> PathBuf {
-    if cfg!(windows) {
-        PathBuf::from(format!("C:{}", path.replace('/', "\\")))
-    } else {
-        PathBuf::from(path)
-    }
-}
-
-/// [`rooted`] as text.
+/// [`soyeht_platform::testing::rooted`] as text.
 pub(crate) fn rooted_text(path: &str) -> String {
-    rooted(path).to_string_lossy().into_owned()
+    soyeht_platform::testing::rooted(path)
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// Drops `open` (a core, a store: whatever keeps files in `folder` open), then removes the
@@ -71,6 +63,12 @@ impl Deref for Folder {
 
 impl Drop for Folder {
     fn drop(&mut self) {
-        remove_after((), &self.0);
+        if std::thread::panicking() {
+            // The test has failed already; its folder is removed if it can be, and a second
+            // panic here would end the run instead of reporting the first.
+            drop(fs::remove_dir_all(&self.0));
+        } else {
+            remove_after((), &self.0);
+        }
     }
 }

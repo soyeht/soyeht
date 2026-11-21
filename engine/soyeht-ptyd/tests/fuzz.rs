@@ -164,6 +164,13 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
         })
         .collect();
     seeds.push(hello.clone());
+    // A watch connection (its own path of the supervisor): the hello, then a frame that is no
+    // request, then a request of the wrong kind for a watch.
+    let watch = framed(
+        &json!({"method":"hello","params":{"version":VERSION,"engine_generation":1,"role":"watch"}}),
+    );
+    seeds.push([watch.clone(), vec![1, 0, 0, 0, 2, b'{', b'}']].concat());
+    seeds.push([watch, framed(&json!({"method":"list"}))].concat());
     seeds.push(vec![1, 0xff, 0xff, 0xff, 0xff]);
     seeds.push(vec![1, 0, 0, 0, 2, b'{', b'}']);
     let seeds: Vec<&[u8]> = seeds.iter().map(Vec::as_slice).collect();
@@ -199,12 +206,14 @@ fn a_supervisor_refuses_a_request_before_hello_and_survives_framed_garbage() {
     // the supervisor says no more than the nonce and its proof, and it takes nothing from it.
     fuzz_bytes("ptyd-wire-unproved", WIRE_CASES, &corpus, |input| {
         let answer = send(connect_unproved(&socket), input);
-        // On Windows the supervisor closes on the input it did not read, which resets the
-        // connection, and the reset discards what the peer had not read yet: the answer may be
-        // cut short, but never longer than the nonce and the proof.
+        // On Windows the supervisor closes on the input it did not read (what is sent after the
+        // nonce and the proof), which resets the connection, and the reset discards what the peer
+        // had not read yet: the answer may be cut short then, but never longer than the nonce and
+        // the proof.
         let whole = answer.is_empty() || answer.len() == PROOF_ANSWER;
+        let reset = cfg!(windows) && input.len() > PROOF_ANSWER && answer.len() < PROOF_ANSWER;
         assert!(
-            whole || (cfg!(windows) && answer.len() < PROOF_ANSWER),
+            whole || reset,
             "an unproved peer was answered with {} bytes: {answer:?}",
             answer.len()
         );

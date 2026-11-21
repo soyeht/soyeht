@@ -214,7 +214,7 @@ mod tests {
             "/Applications/Soyeht.next.app/Contents/MacOS",
             "/Users/a/Library/Application Support/Next/bin",
         ] {
-            require_programs("path", &crate::testing::absolute(path)).unwrap();
+            require_programs("path", &soyeht_platform::testing::rooted(path)).unwrap();
         }
     }
 
@@ -244,7 +244,8 @@ mod tests {
                 "Application Support/Soyeht Dev,",
             ),
         ] {
-            let error = require_programs("path", &crate::testing::absolute(path)).unwrap_err();
+            let error =
+                require_programs("path", &soyeht_platform::testing::rooted(path)).unwrap_err();
             assert!(error.to_string().contains(said), "{path}: {error}");
         }
         assert!(require_programs("path", &legacy_values::program()).is_err());
@@ -276,7 +277,7 @@ mod tests {
             "/opt/soyeht",
         ] {
             assert!(
-                require_path("path", &crate::testing::absolute(path)).is_err(),
+                require_path("path", &soyeht_platform::testing::rooted(path)).is_err(),
                 "{path}"
             );
         }
@@ -285,7 +286,7 @@ mod tests {
             "/Users/a/.local/share/next",
             "C:\\Users\\a\\AppData\\Local\\Next",
         ] {
-            require_path("path", &crate::testing::absolute(path)).unwrap();
+            require_path("path", &soyeht_platform::testing::rooted(path)).unwrap();
         }
     }
 }

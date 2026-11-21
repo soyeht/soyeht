@@ -48,3 +48,151 @@ fn finish(stream: &mut Stream) {
         spent += read;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soyeht_platform::local::pair;
+    use std::io::Write;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    use std::thread;
+
+    /// How long ending a connection takes, and the peer if it is still there. `peer` acts on its
+    /// end first and says whether it keeps it.
+    fn ended(
+        peer: impl FnOnce(&mut Stream) -> bool,
+        serve: impl FnOnce(&mut Stream),
+    ) -> (Duration, Option<Stream>) {
+        let (mut theirs, ours) = pair().unwrap();
+        // Set now: some systems refuse a timeout on a socket whose peer has closed.
+        theirs
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let theirs = peer(&mut theirs).then_some(theirs);
+        let started = Instant::now();
+        after(ours, serve);
+        (started.elapsed(), theirs)
+    }
+
+    /// Whether the peer is told that the connection is over: it reads the end of the stream.
+    fn sees_the_end(peer: &mut Stream) -> bool {
+        let mut byte = [0_u8; 1];
+        matches!(peer.read(&mut byte), Ok(0))
+    }
+
+    #[test]
+    fn a_peer_that_closed_leaves_nothing_to_wait_for() {
+        let (took, _) = ended(|_| false, |_| {});
+        assert!(took < Duration::from_millis(500), "{took:?}");
+    }
+
+    #[test]
+    fn a_peer_that_ended_its_input_is_not_waited_for_and_sees_the_end() {
+        let (took, peer) = ended(
+            |peer| {
+                peer.shutdown(Shutdown::Write).unwrap();
+                true
+            },
+            |_| {},
+        );
+        assert!(took < Duration::from_millis(500), "{took:?}");
+        assert!(sees_the_end(&mut peer.unwrap()));
+    }
+
+    #[test]
+    fn a_connection_a_clone_already_shut_down_in_both_directions_ends_at_once() {
+        let (took, _) = ended(
+            |peer| {
+                peer.write_all(b"unread").unwrap();
+                true
+            },
+            |stream| {
+                stream
+                    .try_clone()
+                    .unwrap()
+                    .shutdown(Shutdown::Both)
+                    .unwrap()
+            },
+        );
+        assert!(took < Duration::from_millis(500), "{took:?}");
+    }
+
+    #[test]
+    fn what_the_peer_sends_after_the_end_is_read_and_the_peer_is_told_it_is_over() {
+        // The peer keeps its input open and writes after the supervisor is done writing.
+        let (mut theirs, ours) = pair().unwrap();
+        theirs
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let ending = thread::spawn(move || after(ours, |_| {}));
+        thread::sleep(Duration::from_millis(100));
+        theirs.write_all(&[7; 20_000]).unwrap();
+        theirs.shutdown(Shutdown::Write).unwrap();
+        ending.join().unwrap();
+        assert!(sees_the_end(&mut theirs));
+    }
+
+    #[test]
+    fn a_peer_that_floods_is_cut_at_the_limit_and_not_waited_for_past_the_deadline() {
+        let (mut theirs, ours) = pair().unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let flooding = {
+            let (stop, mut flood) = (Arc::clone(&stop), theirs.try_clone().unwrap());
+            thread::spawn(move || {
+                let chunk = [1_u8; 8192];
+                while !stop.load(Ordering::Relaxed) && flood.write_all(&chunk).is_ok() {}
+            })
+        };
+        let started = Instant::now();
+        after(ours, |_| {});
+        let took = started.elapsed();
+        assert!(
+            took < DRAIN_DEADLINE + Duration::from_millis(500),
+            "{took:?}"
+        );
+        // The supervisor has closed: the flood ends on its own, with an error.
+        flooding.join().unwrap();
+        stop.store(true, Ordering::Relaxed);
+        assert!(theirs.write_all(&[1; 8192]).is_err() || sees_the_end(&mut theirs));
+    }
+
+    #[test]
+    fn a_peer_that_stays_silent_is_waited_for_about_the_deadline() {
+        let (took, _) = ended(|_| true, |_| {});
+        assert!(
+            took >= DRAIN_DEADLINE - Duration::from_millis(100),
+            "{took:?}"
+        );
+        assert!(
+            took < DRAIN_DEADLINE + Duration::from_millis(500),
+            "{took:?}"
+        );
+    }
+
+    #[test]
+    fn a_peer_that_drips_one_byte_at_a_time_does_not_stretch_the_deadline() {
+        let (mut theirs, ours) = pair().unwrap();
+        let dripping = thread::spawn(move || {
+            while theirs.write_all(&[1]).is_ok() {
+                thread::sleep(Duration::from_millis(50));
+            }
+        });
+        let started = Instant::now();
+        after(ours, |_| {});
+        let took = started.elapsed();
+        assert!(
+            took < DRAIN_DEADLINE + Duration::from_millis(500),
+            "{took:?}"
+        );
+        dripping.join().unwrap();
+    }
+
+    #[test]
+    fn the_result_of_serving_is_returned() {
+        let (_theirs, ours) = pair().unwrap();
+        assert_eq!(after(ours, |_| 42), 42);
+    }
+}

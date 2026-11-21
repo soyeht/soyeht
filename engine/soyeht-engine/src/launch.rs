@@ -163,7 +163,7 @@ mod tests {
     #[test]
     fn the_arguments_a_service_definition_passes_are_read() {
         // The supervisor's program must be an absolute path, which is written another way on Windows.
-        let program = crate::test_paths::rooted("/p/ptyd");
+        let program = soyeht_platform::testing::rooted("/p/ptyd");
         let parsed = parse(
             &[
                 "--profile",

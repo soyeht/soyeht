@@ -332,8 +332,8 @@ mod tests {
     #[test]
     fn a_windows_task_starts_the_host_which_starts_the_program_and_keeps_its_log() {
         // Paths of this system, so that the test runs on a Windows host as well as on the others.
-        let root = crate::testing::absolute(ROOT);
-        let programs = crate::testing::absolute("/opt/next/bin");
+        let root = soyeht_platform::testing::rooted(ROOT);
+        let programs = soyeht_platform::testing::rooted("/opt/next/bin");
         let data = root.join("data").join("next");
         let text = |path: PathBuf| path.display().to_string();
         let mut layout = test_layout(System::Windows, &root);

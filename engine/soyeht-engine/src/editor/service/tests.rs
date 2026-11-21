@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 use uuid::Uuid;
-use {super::*, crate::test_paths::rooted};
+use {super::*, soyeht_platform::testing::rooted};
 
 #[derive(Default)]
 struct FakeFiles {
@@ -333,6 +333,13 @@ fn the_system_disk_never_replaces_a_read_only_file_on_windows() {
         assert_eq!(refused.kind(), io::ErrorKind::PermissionDenied);
         assert_eq!(fs::read_to_string(&path).unwrap(), "before");
     }
+    // The refused write leaves no temporary file beside the note.
+    let leftovers: Vec<_> = fs::read_dir(&directory)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(soyeht_platform::fs::TEMPORARY_PREFIX))
+        .collect();
+    assert!(leftovers.is_empty(), "{leftovers:?}");
     set_read_only(&path, false);
     fs::remove_dir_all(directory).unwrap();
 }

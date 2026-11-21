@@ -24,6 +24,17 @@ pub(crate) fn serialize_processes() -> std::sync::MutexGuard<'static, ()> {
     PROCESSES.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// `path`, when it is written as an absolute Unix path, as an absolute path of this system:
+/// Windows needs a drive before a path is absolute, and writes its separators another way. Any
+/// other text is the path as it is.
+pub fn rooted(path: &str) -> PathBuf {
+    if cfg!(windows) && path.starts_with('/') {
+        PathBuf::from(format!("C:{}", path.replace('/', "\\")))
+    } else {
+        PathBuf::from(path)
+    }
+}
+
 /// A new, empty directory in the system's temporary folder for the test called `name`; it is
 /// unique to this process and call. The
 /// test removes it when it ends.

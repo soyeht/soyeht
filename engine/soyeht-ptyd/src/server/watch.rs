@@ -68,9 +68,16 @@ impl Watch {
         })
     }
 
+    /// Ends the watch's writer, and leaves its connection as it is: the connection's own thread
+    /// ends it with the half-close and the read of `server::linger`, which a connection already
+    /// shut down in both directions would not get.
+    fn stop(&self) {
+        self.change(|pending| pending.closed = true);
+    }
+
     /// Ends the watch: its writer stops and the read of its connection fails.
     fn close(&self) {
-        self.change(|pending| pending.closed = true);
+        self.stop();
         let stream = self
             .stream
             .lock()
@@ -251,7 +258,7 @@ pub(super) fn serve(
     watchers.add(&watch);
     write_notices(stream.try_clone()?, Arc::clone(&watch));
     let result = answer_requests(stream, shared, &watch);
-    watch.close();
+    watch.stop();
     watchers.remove(&watch);
     result
 }
