@@ -31,16 +31,22 @@ request whose answer had to come back through the same turns before the next key
   time (each takes as long as its wait for the Core lock, tens of milliseconds with many agents streaming),
   so a burst of the client's own requests queues in the engine. When a deadline passes and the engine has
   answered other requests since this one was sent, the request waits another window, up to
-  `ClientPolicy.capsRequestWindows` windows in all, and then fails alone with the connection left open.
+  `ClientPolicy.capsRequestWindows` (2) windows in all, so an engine that goes silent is noticed in up to two
+  request timeouts, and then fails alone with the connection left open.
   The Mac app's per-pane queue refreshes (`pane.queue.list`, about 15 a second with 21 hidden agents
   streaming) were the burst in the run that measured this.
-- **The main actor applies, in order, in batches.** Everything the reader does not finish itself (events,
+- **The main actor applies, in order, in batches, and a caller goes before the frames behind its answer.** Everything the reader does not finish itself (events,
   terminal and attachment frames, and the replies whose caller reads state events changed) goes to
   `IncomingQueue` in the order it was read. `EngineClient` takes the whole backlog at once and applies it in
   order, giving the window a turn after each `ClientPolicy.applyBudgetMs`, so a backlog does not stop the
   window from drawing and the window's own work coalesces what a batch wrote. The replica rules (event
   cursor, stream gaps, snapshot parts, reconnect hydration) are unchanged: they run on the main actor over the
-  same sequence.
+  same sequence. A request made from the main actor is registered, queued for sending and awaited in the
+  caller's isolation, so the answer resumes the caller on the main actor directly; the apply loop ends its
+  turn after each answer, and the caller reads the state that answer and everything before it left, as it did
+  when the reader ran on the main actor (`pane.create`'s replay is applied before the caller selects the
+  pane, never after). What is read and not applied when the connection ends, the answer being applied
+  included, fails its request.
 - **The backlog is bounded.** More than `ClientPolicy.capsIncomingQueueBytes` waiting means the main actor
   has lost the screen: the connection ends with `invalidStream`, every request whose answer was read but not
   applied fails, and the reconnect hydrates the replicas again. The engine never sees this client as slow
@@ -51,8 +57,11 @@ request whose answer had to come back through the same turns before the next key
   it took, and its answers are `immediate`: they resume the sender from the reader, not through the main
   actor. Connection loss is retried with the same idempotency key, as `mutation` does.
 - **The client does not queue a burst in front of its own keys.** At most `ClientPolicy.capsRequestsInFlight`
-  requests wait for the engine at once (`RequestSlots`); the others wait in the client, in order, and their
-  deadline starts when they are sent. Terminal input skips the line, so a key waits at most for the requests
+  requests wait for the engine at once (`RequestAdmission`); the others wait in the client, in the order they
+  were made, and their wait counts against their deadline (which a request the engine is answering others
+  meanwhile extends, below). Requests are queued for sending synchronously, in call order, so two requests
+  made one after the other reach the engine in that order. Terminal input, and a request the engine is given longer than the usual wait for (it can hold its place
+  for a long time; the engine serves some methods concurrently), skip the line, so a key waits at most for the requests
   already sent, not for a burst of queue refreshes (in the run that measured this, keys reached the engine
   24 to 34 seconds late behind about 15 refreshes a second). Slots are given back when the answer is read,
   not when the main actor applies it.
