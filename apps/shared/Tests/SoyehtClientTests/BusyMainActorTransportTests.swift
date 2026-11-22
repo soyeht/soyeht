@@ -9,14 +9,16 @@
   @MainActor struct Link {
     let server: FakeEngineServer
     let wire: Wire
-    let channel = RequestChannel()
+    let channel: RequestChannel
     let queue: IncomingQueue
     let reader: Task<Void, Never>
 
     init(
       answer: @escaping FakeEngineServer.Answer = { _ in .object([:]) },
-      queueBytes: Int = ClientPolicy.capsIncomingQueueBytes
+      queueBytes: Int = ClientPolicy.capsIncomingQueueBytes,
+      channel: RequestChannel = RequestChannel()
     ) async throws {
+      self.channel = channel
       server = try FakeEngineServer(answer: answer)
       wire = Wire(socket: server.path)
       try await wire.open(greetingTimeout: .seconds(60))
@@ -353,11 +355,12 @@
     }
 
     @Test func inputIsSentAgainWithTheSameKeyAfterTheConnectionIsLost() async throws {
-      let first = try await Link(answer: { _ in nil })
-      let second = try await linkAccepting(upTo: .max)
-      defer { second.stop() }
+      // Two connections to two engines, one channel; the one attached last is the one in use.
       let channel = RequestChannel()
-      channel.attach(first.wire)
+      let second = try await Link(
+        answer: { _ in .object(["acceptedBytes": .integer(1)]) }, channel: channel)
+      let first = try await Link(answer: { _ in nil }, channel: channel)
+      defer { second.stop() }
       let secondWire = second.wire
       let input = TerminalInputQueue.sending(
         through: channel,

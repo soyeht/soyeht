@@ -22,7 +22,7 @@
     let (least, most) = (now() + UInt64(seconds * 1e9), now() + UInt64(cap * 1e9))
     while now() < most, now() < least || !condition() {
       busySlice()
-      await Task.yield()
+      try? await Task.sleep(for: .milliseconds(20))
     }
   }
 

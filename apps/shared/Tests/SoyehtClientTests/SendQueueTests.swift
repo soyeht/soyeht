@@ -57,6 +57,12 @@ private func heldUpload(
   return (upload, waiting)
 }
 
+private final class Failures: Sendable {
+  private let lock = OSAllocatedUnfairLock<[Error?]>(initialState: [])
+  var errors: [Error?] { lock.withLock { $0 } }
+  func add(_ error: Error?) { lock.withLock { $0.append(error) } }
+}
+
 private final class Completions: Sendable {
   private let lock = OSAllocatedUnfairLock(initialState: 0)
   var count: Int { lock.withLock { $0 } }
@@ -142,10 +148,11 @@ private final class Completions: Sendable {
   let transport = FakeTransport()
   transport.failOn = "prompt"
   let queue = transport.queue()
-  let upload = Task { try await queue.send(["photo", "prompt"]) }
-  let behind = Task { try await queue.send(["behind"]) }
-  await #expect(throws: ClientFailure.self) { try await upload.value }
-  await #expect(throws: ClientFailure.self) { try await behind.value }
+  let ended = Failures()
+  queue.enqueue(["photo", "prompt"]) { ended.add($0) }
+  queue.enqueue(["behind"]) { ended.add($0) }
+  while ended.errors.count < 2 { await Task.yield() }
+  #expect(ended.errors.allSatisfy { $0 is ClientFailure })
   await #expect(throws: ClientFailure.self) { try await queue.send(["later"]) }
   #expect(transport.sent == ["photo"])
   #expect(transport.failures.count == 1)
