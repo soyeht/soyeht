@@ -303,6 +303,7 @@
       await keepMainActorBusy(until: {
         pieces(of: server).reduce(0) { $0 + $1.count } >= text.utf8.count
       })
+      while !input.isIdle { try await Task.sleep(for: .milliseconds(5)) }
       let typed = String(
         decoding: pieces(of: server).reduce(into: Data()) { $0.append($1) }, as: UTF8.self)
       #expect(typed == text)
@@ -343,6 +344,7 @@
       await keepMainActorBusy(until: {
         pieces(of: server).reduce(0) { $0 + min($1.count, 3) } >= 26
       })
+      while !input.isIdle { try await Task.sleep(for: .milliseconds(5)) }
       let bytes = pieces(of: server)
       #expect(bytes.allSatisfy { $0.count <= 8 })
       // The engine kept 3 bytes of each piece: what it kept, in order, is what was typed.
@@ -372,6 +374,7 @@
       channel.pending.failAll(ClientFailure.disconnected)
       let secondServer = second.server
       while secondServer.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+      while !input.isIdle { try await Task.sleep(for: .milliseconds(5)) }
       let keys = [first.server, second.server].compactMap { server in
         server.requests.first?.params["idempotencyKey"].string
       }

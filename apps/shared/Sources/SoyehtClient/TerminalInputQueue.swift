@@ -39,6 +39,9 @@ final class TerminalInputQueue: Sendable {
     self.failed = failed
   }
 
+  /// Whether everything queued has been sent and answered.
+  var isIdle: Bool { state.withLock { $0.items.isEmpty && !$0.draining } }
+
   /// Queues `data` for `paneId`. `false` when more than the limit is waiting: nothing was queued.
   func enqueue(_ data: Data, paneId: String) -> Bool {
     let start = state.withLock { state -> Bool? in
