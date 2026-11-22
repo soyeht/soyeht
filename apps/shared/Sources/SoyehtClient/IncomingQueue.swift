@@ -30,6 +30,7 @@ final class IncomingQueue: Sendable {
     var bytes = 0
     var waiter: CheckedContinuation<[Incoming], Never>?
     var finished = false
+    var failure: Error?
   }
 
   private let state = OSAllocatedUnfairLock(initialState: State())
@@ -87,15 +88,20 @@ final class IncomingQueue: Sendable {
 
   /// Ends the queue. What was never applied fails: a request whose answer was read but not
   /// applied is resumed with `error`, so no caller waits for ever, and the consumer stops.
-  func finish(failing error: Error = ClientFailure.disconnected) {
+  func finish(failing error: Error? = nil) {
+    let reason = error ?? ClientFailure.disconnected
     let (waiter, dropped) = state.withLock { state in
       state.finished = true
+      state.failure = error
       defer { (state.items, state.bytes, state.waiter) = ([], 0, nil) }
       return (state.waiter, state.items)
     }
-    for case .reply(let request, _) in dropped { request.continuation.resume(throwing: error) }
+    for case .reply(let request, _) in dropped { request.continuation.resume(throwing: reason) }
     waiter?.resume(returning: [])
   }
+
+  /// Why the queue ended, when it ended because something was wrong (a full backlog).
+  var failure: Error? { state.withLock { $0.failure } }
 
   var queuedBytes: Int { state.withLock { $0.bytes } }
 }

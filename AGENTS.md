@@ -188,9 +188,11 @@ ADR when you change a boundary.
   tests of `soyeht-protocol`, the desktop, Android core and TypeScript tests, and the library tests
   of an engine crate that reads it; the other engine integration tests run after the merge.
 - The rules the Mac, iOS and desktop clients share are `x-clientPolicy` in `protocol.json`:
-  request, greeting and reconnect timings, the web read's settle poll and deadline share, the
-  terminal input chunk, the `caps` (waiting messages read, links found in one text, pages of a model
-  catalogue, tool calls the ticker lists), the usage and context band thresholds and ring opacities,
+  request, greeting and reconnect timings, the Mac client's apply slice, the web read's settle poll
+  and deadline share, the terminal input chunk, the `caps` (waiting messages read, links found in one
+  text, pages of a model catalogue, tool calls the ticker lists, the bytes the client's backlog of
+  unapplied frames may hold, the requests it lets wait for the engine at once and the deadline windows
+  a request waits while the engine answers others), the usage and context band thresholds and ring opacities,
   the weekly-window rule, provider names, which configuration selector is the model, effort or
   permission one, and the `voice` group: the voice loop's frame size, timings, listener noises and
   sentence limits and stops (`contracts/vectors/voice-turns.json` and `speech-text.json` are written

@@ -133,7 +133,7 @@ final class PendingRequests: Sendable {
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     onTimeout: @escaping @Sendable () -> Void
   ) -> Task<Void, Never> {
-    Task { [weak self] in
+    Task.detached { [weak self] in
       do { try await waitForTimeout(method, timeoutSeconds) } catch { return }
       guard let self else { return }
       switch self.expire(id, windowsLeft: windowsLeft, timeoutSeconds: timeoutSeconds) {
@@ -165,19 +165,27 @@ final class PendingRequests: Sendable {
     }
   }
 
-  /// Waits for the answer to a request that `send` puts on the wire under a fresh id. A request
-  /// that outlives its deadline fails and is logged; when the connection answered nothing meanwhile
-  /// it runs `onTimeout` too (the caller closes the wire).
+  /// Fails request `id`, which waits no longer.
+  func fail(_ id: String, _ error: Error) {
+    take(id)?.continuation.resume(throwing: error)
+  }
+
+  /// Waits for the answer to the request `id`. It is registered and its deadline started now, in
+  /// the calling context (so that callers on the main actor resume on it, in the order of the
+  /// answers), and `start` is called there too, once, to put the request on the wire; it must not
+  /// block. A request that outlives its deadline fails and is logged; when the connection answered
+  /// nothing meanwhile it runs `onTimeout` too (the caller closes the wire).
   func response(
+    id: String = UUID().uuidString,
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double,
     delivery: ReplyDelivery = .ordered, windows: Int = ClientPolicy.capsRequestWindows,
     release: (@Sendable () -> Void)? = nil,
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     onTimeout: @escaping @Sendable () -> Void,
-    send: @escaping @Sendable (String) async throws -> Void
+    isolation: isolated (any Swift.Actor)? = #isolation,
+    start: (String) -> Void
   ) async throws -> EngineResponse {
-    let id = UUID().uuidString
-    return try await withCheckedThrowingContinuation { continuation in
+    try await withCheckedThrowingContinuation { continuation in
       state.withLock {
         $0.entries[id] = Entry(
           method: method, params: params, startedAtNs: Self.now(),
@@ -191,13 +199,7 @@ final class PendingRequests: Sendable {
         timeout.cancel()
         return
       }
-      Task {
-        do {
-          try await send(id)
-        } catch {
-          if let request = self.take(id) { request.continuation.resume(throwing: error) }
-        }
-      }
+      start(id)
     }
   }
 }

@@ -119,7 +119,8 @@ extension TerminalInputQueue {
         for attempt in 0..<3 {
           do {
             let result = try await channel.response(
-              .paneInput, params, timeoutSeconds: defaultRequestTimeout, delivery: .immediate
+              .paneInput, params, timeoutSeconds: defaultRequestTimeout, delivery: .immediate,
+              lane: .priority
             ).value
             return result["acceptedBytes"].int ?? 0
           } catch let error as ClientFailure where error.canRetry && attempt < 2 {

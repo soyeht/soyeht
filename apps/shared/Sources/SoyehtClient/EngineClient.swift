@@ -97,6 +97,9 @@ public final class EngineClient {
   /// without it and must ask for the screen again.
   @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
+  /// How much unapplied output a connection may hold before it is ended and read again; a test
+  /// lowers it.
+  @ObservationIgnored var incomingQueueBytes = ClientPolicy.capsIncomingQueueBytes
   /// Terminal input leaves from its own task, never behind the main actor (`TerminalInputQueue`).
   @ObservationIgnored private lazy var terminalInput = TerminalInputQueue.sending(
     through: channel, isConnected: { [weak self] in await self?.connected == true },
@@ -245,7 +248,7 @@ public final class EngineClient {
     guard first["method"].eventName == .authChallenge else { throw ClientFailure.invalidFrame }
     // The reader runs on no actor; this actor applies what it queues, in order, and yields to the
     // window between batches (ADR 0171).
-    let queue = IncomingQueue()
+    let queue = IncomingQueue(limitBytes: incomingQueueBytes)
     let pending = pending
     let reader = Task.detached {
       await EngineReader.run(wire: wire, pending: pending, queue: queue)
@@ -288,17 +291,26 @@ public final class EngineClient {
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
     if let stubbed = try await stubbedResponse(method, params) { return stubbed }
+    // A request the engine is given longer than the usual wait for can hold its place for a long
+    // time: it does not count against the limit on requests waiting for the engine.
+    let lane: RequestLane = timeoutSeconds > defaultRequestTimeout ? .priority : .normal
     return try await channel.response(
-      method, params, timeoutSeconds: timeoutSeconds, attachments: attachments)
+      method, params, timeoutSeconds: timeoutSeconds, lane: lane, attachments: attachments)
   }
   func pendingResponse(
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double,
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
     send: @escaping @Sendable (String) async throws -> Void
   ) async throws -> EngineResponse {
-    try await pending.response(
+    let pending = pending
+    return try await pending.response(
       method, params, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout,
-      onTimeout: { [channel] in channel.wire?.close() }, send: send)
+      onTimeout: { [channel] in channel.wire?.close() }
+    ) { id in
+      Task {
+        do { try await send(id) } catch { pending.fail(id, error) }
+      }
+    }
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
@@ -350,29 +362,48 @@ public final class EngineClient {
   private func apply(_ queue: IncomingQueue, from wire: Wire) async {
     let budget = Duration.milliseconds(ClientPolicy.applyBudgetMs)
     let clock = ContinuousClock()
-    var sliceStart = clock.now
     while true {
       let batch = await queue.next()
-      if batch.isEmpty { return }
+      if batch.isEmpty {
+        // The queue ended because the backlog passed its limit: say so, and resynchronize.
+        if let error = queue.failure, self.wire === wire {
+          connectionText = error.localizedDescription
+          disconnect()
+        }
+        return
+      }
+      var sliceStart = clock.now
       for (index, item) in batch.enumerated() {
-        do {
-          guard self.wire === wire else { throw ClientFailure.disconnected }
-          try receive(item)
-        } catch {
-          if self.wire === wire {
-            connectionText = error.localizedDescription
-            disconnect()
-          }
-          for case .reply(let request, _) in batch[(index + 1)...] {
-            request.continuation.resume(throwing: ClientFailure.disconnected)
-          }
+        guard self.wire === wire else {
+          Self.abandon(batch[index...])
           return
         }
-        if clock.now - sliceStart >= budget {
+        do {
+          try receive(item)
+        } catch {
+          connectionText = error.localizedDescription
+          disconnect()
+          Self.abandon(batch[(index + 1)...])
+          return
+        }
+        // A caller resumed by this answer goes before the frames behind it: it reads the state the
+        // answer and everything before it left, as it did when the reader ran on this actor.
+        if case .reply = item {
+          await Task.yield()
+          sliceStart = clock.now
+        } else if clock.now - sliceStart >= budget {
           await Task.yield()
           sliceStart = clock.now
         }
       }
+    }
+  }
+
+  /// Fails the requests whose answers were read and will not be applied: no one else would resume
+  /// them.
+  private static func abandon(_ items: ArraySlice<Incoming>) {
+    for case .reply(let request, _) in items {
+      request.continuation.resume(throwing: ClientFailure.disconnected)
     }
   }
 

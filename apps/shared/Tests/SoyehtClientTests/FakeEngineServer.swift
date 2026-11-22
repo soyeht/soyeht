@@ -7,13 +7,20 @@
 
   @MainActor private func busySlice() { Thread.sleep(forTimeInterval: 0.05) }
 
-  /// The main actor kept busy for `seconds`, the way a window of many panes keeps it: work in
-  /// slices of 50 ms with the other main-actor jobs between them, so each hop a connection takes
-  /// through the main actor costs a slice. (A hold with no turns at all would also stop every
-  /// other test of the suite, which share the main actor.)
-  @MainActor func keepMainActorBusy(for seconds: Double) async {
-    let end = DispatchTime.now().uptimeNanoseconds + UInt64(seconds * 1_000_000_000)
-    while DispatchTime.now().uptimeNanoseconds < end {
+  /// The main actor held, with no turn for anything else, for `seconds`.
+  @MainActor func holdMainActor(_ seconds: Double) { Thread.sleep(forTimeInterval: seconds) }
+
+  /// The main actor kept busy, the way a window of many panes keeps it: work in slices of 50 ms
+  /// with the other main-actor jobs between them, so each hop a connection takes through the main
+  /// actor costs a slice. (A hold with no turns at all would also stop every other test of the
+  /// suite, which share the main actor.) It lasts at least `seconds` and until `condition` holds,
+  /// and never more than `cap` seconds; a test asserts on `condition`, not on the time.
+  @MainActor func keepMainActorBusy(
+    for seconds: Double = 0, until condition: () -> Bool = { true }, cap: Double = 30
+  ) async {
+    let now = { DispatchTime.now().uptimeNanoseconds }
+    let (least, most) = (now() + UInt64(seconds * 1e9), now() + UInt64(cap * 1e9))
+    while now() < most, now() < least || !condition() {
       busySlice()
       await Task.yield()
     }

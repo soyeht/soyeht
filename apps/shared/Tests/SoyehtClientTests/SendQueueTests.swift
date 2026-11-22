@@ -57,6 +57,12 @@ private func heldUpload(
   return (upload, waiting)
 }
 
+private final class Completions: Sendable {
+  private let lock = OSAllocatedUnfairLock(initialState: 0)
+  var count: Int { lock.withLock { $0 } }
+  func add() { lock.withLock { $0 += 1 } }
+}
+
 @MainActor private func settle() async {
   for _ in 0..<20 { await Task.yield() }
 }
@@ -68,18 +74,20 @@ private func heldUpload(
   let units: [[String]] = [
     ["photo-1", "photo-2", "prompt"], ["state"], ["list"], ["a", "b", "c", "commit"], ["ping"],
   ]
-  let tasks = units.map { unit in Task { try await queue.send(unit) } }
-  for task in tasks { try await task.value }
+  let left = Completions()
+  for unit in units { queue.enqueue(unit) { _ in left.add() } }
+  while left.count < units.count { await Task.yield() }
   #expect(transport.sent == units.flatMap { $0 })
 }
 
 @MainActor
-@Test func requestsMadeConcurrentlyKeepTheOrderTheyWereQueuedIn() async throws {
+@Test func requestsQueuedOneAfterTheOtherLeaveInThatOrder() async throws {
   let transport = FakeTransport()
   let queue = transport.queue()
   let names = (0..<30).map { "request-\($0)" }
-  let tasks = names.map { name in Task { try await queue.send([name]) } }
-  for task in tasks { try await task.value }
+  let left = Completions()
+  for name in names { queue.enqueue([name]) { _ in left.add() } }
+  while left.count < names.count { await Task.yield() }
   #expect(transport.sent == names)
 }
 
@@ -148,7 +156,7 @@ private func heldUpload(
   let transport = FakeTransport()
   let queue = transport.queue()
   let (upload, waiting) = await heldUpload(transport, queue, behind: "waiting")
-  await queue.fail(ClientFailure.timeout)
+  queue.fail(ClientFailure.timeout)
   await #expect(throws: ClientFailure.self) { try await waiting.value }
   await #expect(throws: ClientFailure.self) { try await queue.send(["later"]) }
   transport.resume()

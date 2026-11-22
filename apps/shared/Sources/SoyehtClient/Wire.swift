@@ -163,7 +163,7 @@ final class Wire: Sendable {
       return (state.sendQueue, state.greetingDeadline)
     }
     fail(reason)
-    if let queue { Task { await queue.fail(reason) } }
+    queue?.fail(reason)
     connection?.cancel()
     webSocket?.cancel(with: .goingAway, reason: nil)
     session?.invalidateAndCancel()
@@ -176,6 +176,26 @@ final class Wire: Sendable {
 
   func send(_ response: WebHostResponse) async throws {
     try await write(response.frames())
+  }
+
+  /// The unit `message` and its attachments leave as, built now so that a caller can queue it at
+  /// the moment it asks (`enqueue`).
+  func unit(for message: JsonValue, attachments: [WebHostAttachment] = []) throws -> [Outgoing] {
+    guard isOpen else { throw ClientFailure.disconnected }
+    return try Outgoing.unit(
+      WirePayload(message: message, attachments: attachments).frames(), singleWrite: webSocket == nil
+    )
+  }
+
+  /// Queues a unit behind the ones queued before it, with no suspension: units leave in the order
+  /// of the calls. `completion` runs when it has left, or with why it did not.
+  func enqueue(_ unit: [Outgoing], completion: @escaping @Sendable (Error?) -> Void) {
+    guard isOpen else {
+      completion(ClientFailure.disconnected)
+      return
+    }
+    // A unit that fails on the transport ends the connection (`sendQueue`'s `onFailure`).
+    sendQueue.enqueue(unit, completion: completion)
   }
 
   /// Queues the frames of one message as a unit and returns when the unit has left: another
@@ -252,13 +272,15 @@ final class Wire: Sendable {
   }
 
   private func fail(_ error: Error) {
-    let (open, read) = state.withLock { state in
+    let (open, read, reason) = state.withLock { state in
       if state.terminalFailure == nil { state.terminalFailure = error }
       defer { (state.openWaiter, state.readWaiter) = (nil, nil) }
-      return (state.openWaiter, state.readWaiter)
+      return (state.openWaiter, state.readWaiter, state.terminalFailure)
     }
     open?.resume(throwing: error)
-    read?.continuation.resume(throwing: ClientFailure.disconnected)
+    // A read ends with the reason the connection was closed for ("no answer in time"), not with
+    // the transport's own "cancelled".
+    read?.continuation.resume(throwing: reason as? ClientFailure ?? ClientFailure.disconnected)
   }
 
   /// A socket this wire closed reports `URLError.cancelled`, which reads "cancelled" to the

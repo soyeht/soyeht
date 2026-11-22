@@ -5,22 +5,39 @@
 
   @testable import SoyehtClient
 
-  /// When each `method` call began, as the engine's log says (`engine.operation_started`).
-  private func engineStarts(of method: String, in log: String) -> [Date] {
-    let format = ISO8601DateFormatter()
-    format.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-    return log.split(separator: "\n").compactMap { line in
-      guard line.contains("\"engine.operation_started\""), line.contains("\"method\":\"\(method)\"")
+  /// How many times the engine's log says it began `method`.
+  private func engineStarts(of method: String, in log: String) -> Int {
+    log.split(separator: "\n").filter {
+      $0.contains("\"engine.operation_started\"") && $0.contains("\"method\":\"\(method)\"")
+    }.count
+  }
+
+  /// The methods of the `engine.operation_started` lines of `log`, in the order the engine wrote
+  /// them.
+  private func startedMethods(in log: Substring) -> [String] {
+    log.split(separator: "\n").compactMap { line in
+      guard line.contains("\"engine.operation_started\""),
+        let range = line.range(of: "\"method\":\"")
       else { return nil }
-      guard let range = line.range(of: "\"startedAt\":\"") else { return nil }
       let rest = line[range.upperBound...]
-      return rest.firstIndex(of: "\"").flatMap { format.date(from: String(rest[..<$0])) }
+      return rest.firstIndex(of: "\"").map { String(rest[..<$0]) }
     }
   }
 
-  /// The whole client against the engine programs of the build, with the main actor held for
-  /// seconds: a request whose deadline ends meanwhile is answered and the connection stays, and
-  /// the keys typed meanwhile reach the engine at once, not when the main actor is free again.
+  private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
+  }
+
+  /// The whole client against the engine programs of the build, with the main actor busy: a
+  /// request whose deadline passes meanwhile is answered and the connection stays, the keys typed
+  /// meanwhile reach the engine, a caller resumes before the frames behind its answer are applied,
+  /// requests reach the engine in the order they were made, a client stopped with an answer in its
+  /// backlog ends every request, and a backlog over its limit ends the connection and says why.
+  /// One engine and one client for all of it. No result here is a time: a wait ends when what it
+  /// waits for has happened.
   extension BusyMainActor {
     @Test func theClientKeepsItsConnectionAndItsKeysMovingWhileTheMainActorIsBusy() async throws {
       guard let fixture = EngineFixture() else { return }
@@ -29,41 +46,111 @@
       try await fixture.start()
       client.start()
       try await until(seconds: 90) { client.connected }
-      var screen = Data()
+      var screen = ""
       client.terminalOutput = { bytes, reset in
-        if reset { screen.removeAll() }
-        screen.append(bytes)
+        if reset { screen = "" }
+        screen += String(decoding: bytes, as: UTF8.self)
       }
       _ = try await client.createTerminalPane(directory: fixture.directory)
-      try await until(seconds: 90) {
-        String(decoding: screen, as: UTF8.self).contains("SWIFT_READY>")
-      }
+      try await until(seconds: 90) { screen.contains("SWIFT_READY>") }
+
+      // Keys and a request with a deadline of a second, with the main actor busy for longer.
       let revision = client.connectionRevision
-
+      let (inputs, usages) = (
+        engineStarts(of: RequestMethod.paneInput.rawValue, in: fixture.logText),
+        engineStarts(of: RequestMethod.usageList.rawValue, in: fixture.logText)
+      )
       let usage = Task {
-        try await client.request(.usageList, .encoded(UsageListParams()), timeoutSeconds: 0.6)
+        try await client.request(.usageList, .encoded(UsageListParams()), timeoutSeconds: 1)
       }
-      // Forty keys, one after another, as typed; the engine takes each before the next leaves.
-      let keys = Array("printf 'KEYS_%s' DONE; echo\r".utf8)
-      for key in keys { client.input(Data([key])) }
-      let heldAt = Date()
-      await keepMainActorBusy(for: 0.8)
-      let log = fixture.logText
-      let typed = engineStarts(of: RequestMethod.paneInput.rawValue, in: log).filter {
-        $0 >= heldAt - 1
-      }
-      // Keys typed while a piece is on its way go together, so there are fewer requests than keys.
-      #expect(!typed.isEmpty)
-      for start in typed { #expect(start < heldAt + 0.5, "A key reached the engine late") }
-      let asked = engineStarts(of: RequestMethod.usageList.rawValue, in: log).filter {
-        $0 >= heldAt - 1
-      }
-      #expect(!asked.isEmpty)
-
+      for key in "printf 'KEYS_%s' DONE; echo\r".utf8 { client.input(Data([key])) }
+      await keepMainActorBusy(
+        for: 1.5,
+        until: {
+          let log = fixture.logText
+          return engineStarts(of: RequestMethod.paneInput.rawValue, in: log) > inputs
+            && engineStarts(of: RequestMethod.usageList.rawValue, in: log) > usages
+        })
       _ = try await usage.value
       #expect(client.connected)
       #expect(client.connectionRevision == revision)
-      try await until { String(decoding: screen, as: UTF8.self).contains("KEYS_DONE") }
+      try await until(seconds: 90) { screen.contains("KEYS_DONE") }
+
+      // A caller resumes before the output that follows its answer is applied.
+      var late = 0
+      for round in 0..<6 {
+        let marker = "RESULT_\(round)_"
+        client.input(Data("sleep 0.05; printf 'RES%sULT_\(round)_\\n' ''\r".utf8))
+        let caller = Task { @MainActor () -> Bool in
+          _ = try? await client.request(.usageList, .encoded(UsageListParams()))
+          return screen.contains(marker)
+        }
+        // The request is on its way; the window is held while its answer and, 50 ms later, the
+        // output come back, and both wait in the backlog.
+        for _ in 0..<4 { await Task.yield() }
+        holdMainActor(0.15)
+        if await caller.value { late += 1 }
+        try await until(seconds: 90) { screen.contains(marker) }
+      }
+      #expect(late == 0, "A caller resumed after the output behind its answer was applied")
+
+      // Two requests made one after the other in one turn reach the engine in that order.
+      let mark = fixture.logText.endIndex
+      let rounds = 100
+      for _ in 0..<rounds {
+        let a = Task { @MainActor in
+          _ = try? await client.request(.usageList, .encoded(UsageListParams()))
+        }
+        let b = Task { @MainActor in
+          _ = try? await client.request(.harnessCustomList, .encoded(HarnessCustomListParams()))
+        }
+        await a.value
+        await b.value
+      }
+      let order = startedMethods(in: fixture.logText[mark...]).filter {
+        $0 == RequestMethod.usageList.rawValue || $0 == RequestMethod.harnessCustomList.rawValue
+      }
+      var swapped = 0
+      for index in stride(from: 0, to: order.count - 1, by: 2)
+      where order[index] == RequestMethod.harnessCustomList.rawValue {
+        swapped += 1
+      }
+      #expect(order.count == 2 * rounds)
+      #expect(swapped == 0, "A request made second reached the engine first")
+
+      // A client stopped while an answer waits in its backlog ends the request it answers.
+      for _ in 0..<5 {
+        try await until(seconds: 90) { client.connected }
+        let done = Flag()
+        Task { @MainActor in
+          _ = try? await client.request(.usageList, .encoded(UsageListParams()))
+          done.set()
+        }
+        for _ in 0..<4 { await Task.yield() }
+        // The answer is read and waits in the backlog while the window is held; then the client
+        // is stopped, as an iPhone going to the background does.
+        holdMainActor(0.2)
+        client.stop()
+        await keepMainActorBusy(until: { done.isSet }, cap: 10)
+        #expect(done.isSet, "A request answered just before stop() never ended")
+        client.start()
+      }
+
+      // A backlog over its limit ends the connection, says why, and the next connection starts
+      // again from the engine's state.
+      try await until(seconds: 90) { client.connected }
+      client.incomingQueueBytes = 256 * 1024
+      client.stop()
+      client.start()
+      try await until(seconds: 90) { client.connected }
+      let before = client.connectionRevision
+      client.input(Data("head -c 3000000 /dev/urandom | base64\r".utf8))
+      let resynchronize = ClientFailure.invalidStream.localizedDescription
+      await keepMainActorBusy(until: { client.connectionText == resynchronize }, cap: 60)
+      #expect(client.connectionText == resynchronize)
+      #expect(!client.connected)
+      client.incomingQueueBytes = ClientPolicy.capsIncomingQueueBytes
+      try await until(seconds: 90) { client.connected && client.connectionRevision > before }
     }
   }
 #endif
