@@ -6,7 +6,6 @@ use super::*;
 const PACKAGE: &str = "@google/gemini-cli@0.59.0";
 
 /// An `npx` that starts the fake agent, as the runner of the registry's unchecked adapters would.
-#[cfg(unix)]
 fn install_runner(rig: &Rig) {
     write_script(
         &rig.path.join("bin/npx"),
@@ -42,7 +41,6 @@ fn create(client: &mut Client, workspace: &str, key: &str, extra: Value) -> Valu
     client.request("pane.create", params)
 }
 
-#[cfg(unix)]
 #[test]
 fn an_unchecked_package_starts_only_for_a_person_who_acknowledged_it_and_only_that_version() {
     let rig = Rig::new();
@@ -97,7 +95,6 @@ fn an_unchecked_package_starts_only_for_a_person_who_acknowledged_it_and_only_th
     assert!(!listed(&mut client));
 }
 
-#[cfg(unix)]
 #[test]
 fn a_switch_to_an_unchecked_package_needs_the_acknowledgement_too() {
     let rig = Rig::new();

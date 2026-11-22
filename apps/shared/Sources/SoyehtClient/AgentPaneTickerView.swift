@@ -29,7 +29,6 @@ public struct AgentPaneTickerView: View {
   private let timeFont: Font
   private let color: Color
   @Environment(\.agentTickerSource) private var source
-  @State private var clock = AgentTurnClock()
 
   public init(client: EngineClient, paneId: String, font: Font, timeFont: Font, color: Color) {
     self.client = client
@@ -44,11 +43,10 @@ public struct AgentPaneTickerView: View {
   private func context(now: Date) -> AgentTickerContext {
     AgentTickerContext(
       pane: pane, view: client.agentPanes[paneId] ?? AgentPaneView(),
-      turnStartedAt: clock.startedAt, now: now)
+      turnStartedAt: client.agentPanes.turnClock(paneId).startedAt, now: now)
   }
 
   public var body: some View {
-    let activePromptId = pane?.agent?.activePromptId
     let snapshot = source.snapshot(for: context(now: .now))
     HStack(spacing: PaneInteriorMetrics.tightSpacing) {
       AgentTickerLine(items: snapshot.items, font: font, timeFont: timeFont, color: color)
@@ -63,8 +61,6 @@ public struct AgentPaneTickerView: View {
       }
     }
     .padding(.trailing, AgentTickerMetrics.trailingPadding)
-    .onAppear { clock.observe(activePromptId: activePromptId, now: .now) }
-    .onChange(of: activePromptId) { _, id in clock.observe(activePromptId: id, now: .now) }
     .accessibilityIdentifier("agent-ticker-\(paneId)")
   }
 }

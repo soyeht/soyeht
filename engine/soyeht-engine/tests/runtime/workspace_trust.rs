@@ -119,11 +119,10 @@ fn trusting_a_folder_restarts_the_server_with_every_feature_and_restricting_stop
     assert_eq!(decided["workspaceIds"], json!([workspace]));
     wait_state(&mut client, &workspace, "rust", "ready");
     let started = record(&folder);
-    assert!(
-        started["argv"][0]
-            .as_str()
-            .unwrap()
-            .ends_with("rust-analyzer")
+    // The program is `rust-analyzer.exe` on Windows.
+    assert_eq!(
+        Path::new(started["argv"][0].as_str().unwrap()).file_stem(),
+        Some(std::ffi::OsStr::new("rust-analyzer"))
     );
     assert!(started["initializationOptions"].is_null());
     assert_eq!(trust_of(&mut client, &workspace), "trusted");

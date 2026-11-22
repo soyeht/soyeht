@@ -42,11 +42,12 @@ Set-Location (Join-Path $repoRoot 'engine')
 Invoke-Step 'cargo fmt' { cargo fmt --all --check }
 Invoke-Step 'cargo clippy' { cargo clippy --locked --workspace --all-targets -j $jobs -- -D warnings }
 Invoke-Step 'cargo build' { cargo build --locked --workspace -j $jobs }
-Invoke-Step 'cargo test' { cargo test --locked --workspace -j $jobs }
+# --no-fail-fast: one run on the VM lists every failing test, not only the first binary's.
+Invoke-Step 'cargo test' { cargo test --locked --workspace --no-fail-fast -j $jobs }
 
 # The desktop client is its own workspace; its Windows code compiles only here.
 Set-Location (Join-Path $repoRoot 'apps\desktop')
 Invoke-Step 'desktop cargo fmt' { cargo fmt --all --check }
 Invoke-Step 'desktop cargo clippy' { cargo clippy --locked --workspace --all-targets -j $jobs -- -D warnings }
-Invoke-Step 'desktop cargo test' { cargo test --locked --workspace -j $jobs }
+Invoke-Step 'desktop cargo test' { cargo test --locked --workspace --no-fail-fast -j $jobs }
 Write-Host 'check_engine_windows: passed'

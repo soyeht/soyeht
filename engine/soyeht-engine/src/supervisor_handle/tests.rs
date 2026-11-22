@@ -260,7 +260,7 @@ fn an_input_is_confirmed_once_its_receipt_is_durable() {
     assert_eq!(*asked.lock().unwrap(), ["input:bHMK"]);
     core.flush_all_input_receipts().unwrap();
     assert_eq!(*asked.lock().unwrap(), ["input:bHMK", "confirm"]);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn follow_ups_go_in_order_and_a_size_not_yet_sent_is_replaced() {
     }
 
     assert_eq!(*sizes.lock().unwrap(), ["a:80", "b:100", "a:110"]);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -325,7 +325,7 @@ fn a_lost_link_is_dropped_only_by_the_call_that_used_it() {
     let current = core.supervisor().unwrap();
     assert!(core.settle_supervisor(&current, lost()).is_err());
     assert!(core.ptyd.is_none());
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -457,7 +457,7 @@ fn the_tick_drops_a_broken_link_at_once_and_a_request_under_the_lock_fails_fast(
     assert!(core.ptyd.is_some());
     core.ensure_supervisor();
     assert!(core.ptyd.is_none());
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 /// The pane of `open_core` and its process.
@@ -498,7 +498,7 @@ fn an_input_follows_the_sends_to_its_process_that_were_made_before_it() {
         *asked.lock().unwrap(),
         ["shell-instance:80", "shell-instance:90", "input:bHMK"]
     );
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -517,7 +517,7 @@ fn inputs_to_one_process_reach_it_in_the_order_they_were_dispatched() {
     later.join().unwrap();
 
     assert_eq!(*asked.lock().unwrap(), ["input:YQ==", "input:Yg=="]);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -531,7 +531,7 @@ fn a_turn_that_never_ran_does_not_hold_the_ones_after_it() {
     next.wait();
 
     assert!(started.elapsed() < Duration::from_millis(100));
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -543,7 +543,7 @@ fn a_turn_for_a_process_named_twice_does_not_wait_for_itself() {
     // It waits for the turn before it, once, and never for its own end.
     assert_eq!(twice.before.len(), 1);
     assert!(Arc::ptr_eq(&twice.before[0], &earlier.mine));
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -584,7 +584,7 @@ fn typing_does_not_wait_for_a_free_worker() {
     for _ in 0..8 {
         release.send(()).unwrap();
     }
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -607,7 +607,7 @@ fn sends_an_input_took_come_back_when_its_request_ran_out_of_time_first() {
 
     // Its work sent nothing: neither the size it had taken nor the typed bytes.
     assert_eq!(*asked.lock().unwrap(), ["shell-instance:80"]);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -632,7 +632,7 @@ fn a_failed_read_on_a_replaced_link_does_not_cool_the_pane_down() {
 
     assert!(core.ptyd.is_some());
     assert!(core.background.accepts(&job));
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -669,7 +669,7 @@ fn a_close_goes_after_the_sends_ahead_of_it_and_the_ones_queued_for_the_process_
         core.apply_background();
         thread::sleep(Duration::from_millis(1));
     }
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -736,7 +736,7 @@ fn an_input_job_waits_for_the_supervisor_off_the_lock_after_the_sends_ahead_of_i
     assert_eq!(*accepted.lock().unwrap(), Some(Some(4)));
     // The size queued for the process went in front of the bytes.
     assert_eq!(*asked.lock().unwrap(), ["size:90", "input:bHMK"]);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 /// A core with a size queued for the process while the follow-up job is busy, so the queue is
@@ -776,7 +776,7 @@ fn the_sends_an_input_took_go_back_when_its_job_cannot_start() {
 
     assert!(started.is_err());
     assert_size_queued(&core);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }
 
 #[test]
@@ -791,5 +791,5 @@ fn a_job_that_ended_with_no_answer_still_returns_the_sends_it_took() {
 
     assert!(settled.is_err());
     assert_size_queued(&core);
-    std::fs::remove_dir_all(root).unwrap();
+    crate::test_paths::remove_after(core, root);
 }

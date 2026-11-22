@@ -203,6 +203,7 @@ mod tests {
         bytes
     }
 
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     fn sizes(directory: &Path) -> Vec<(String, u64)> {
         let mut found: Vec<_> = fs::read_dir(directory)
             .unwrap()

@@ -10,7 +10,7 @@ import Testing
 /// written and what is notified, not time, so they say the same on any machine.
 
 /// Counts how many times what `read` reads changed, re-arming after each one.
-@MainActor private final class Changes {
+@MainActor final class Changes {
   private(set) var count = 0
 
   init(_ read: @escaping @MainActor () -> Void) { arm(read) }
@@ -108,7 +108,7 @@ private func stateChanged(_ paneId: String, _ state: PaneState) throws -> JsonVa
     _ = client.panes(in: "w1")
     _ = client.agentPanes.isAsking("v")
   }
-  let tabs = Changes { _ = client.agentAttention }
+  let tabs = Changes { _ = client.agentAttention(in: "w2") }
   let workspace = Changes { _ = client.panes(in: "w2") }
   for id in hidden {
     for round in 1...100 { try client.applyAgentEvent(.paneUpdate, chunk(id, "reply \(round)")) }
@@ -117,11 +117,11 @@ private func stateChanged(_ paneId: String, _ state: PaneState) throws -> JsonVa
   }
   #expect(visible.count == 0, "what shows pane v ran for work in another workspace")
   #expect(tabs.count == 0, "the summary did not change: the agents were working already")
-  #expect(workspace.count == 15, "each write of a pane tells its own workspace, once")
+  #expect(workspace.count == 3, "a state a pane holds already is not written again")
 
   for id in hidden { try client.applyPaneEvent(.paneStateChanged, stateChanged(id, .idle)) }
   #expect(visible.count == 0)
-  #expect(tabs.count == 3, "each agent that stops is one change of the summary, not five writes")
+  #expect(tabs.count == 1, "the tab changes when the last agent of the workspace stops")
 }
 
 @MainActor @Test func aPaneThatChangesRunsTheReadersOfThatPaneAndWorkspace() throws {

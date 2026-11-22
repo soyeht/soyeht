@@ -131,18 +131,20 @@ struct WorkspaceWindow: View {
     .onAppear {
       reconcileWebSessions()
       attentionNotifications.observe(
-        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+        client.agentAttentionRequests, workspaces: client.workspaces,
+        connected: client.connected)
       openPendingAgentAttention()
     }
     .onChange(of: webPaneKeys) { _, _ in reconcileWebSessions() }
     .onChange(of: client.connectionRevision) { _, _ in webHost.resynchronize() }
-    .onChange(of: client.agentAttention) { _, summary in
+    .onChange(of: client.agentAttentionRequests) { _, requests in
       attentionNotifications.observe(
-        summary, workspaces: client.workspaces, connected: client.connected)
+        requests, workspaces: client.workspaces, connected: client.connected)
     }
     .onChange(of: client.connected) { _, _ in
       attentionNotifications.observe(
-        client.agentAttention, workspaces: client.workspaces, connected: client.connected)
+        client.agentAttentionRequests, workspaces: client.workspaces,
+        connected: client.connected)
       openPendingAgentAttention()
     }
     .onChange(of: attentionNotifications.pendingRoute) { _, _ in openPendingAgentAttention() }
@@ -459,11 +461,13 @@ struct WorkspaceWindow: View {
   }
 
   private var selectedTaskWorkspaceId: String? {
-    taskWorkspaceId ?? client.selectedPane?.workspaceId ?? client.workspaces.first?.workspaceId
+    taskWorkspaceId ?? selectedOutline?.workspaceId ?? client.workspaces.first?.workspaceId
   }
+  /// Where the selected pane is; the window does not run again for its state or its phrase.
+  private var selectedOutline: PaneOutline? { client.paneOutline(of: client.selectedPaneId) }
   private var railDestination: WorkspaceDestination {
-    guard navigation.destination == .agents, client.selectedPane?.mode == .writing,
-      let section = client.selectedPane?.writingSection
+    guard navigation.destination == .agents, selectedOutline?.mode == .writing,
+      let section = selectedOutline?.writingSection
     else { return navigation.destination }
     return section.destination
   }
@@ -476,7 +480,7 @@ struct WorkspaceWindow: View {
     guard let route = attentionNotifications.pendingRoute else { return }
     guard client.connected else { return }
     guard
-      client.agentAttention.contains(
+      client.agentAttentionContains(
         workspaceId: route.workspaceId, paneId: route.paneId, identity: route.requestIdentity)
     else {
       attentionNotifications.clearPendingRoute()

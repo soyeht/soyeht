@@ -51,7 +51,9 @@ extension EngineClient {
 
   /// The panes a grid shows for a destination. Every grid shows the editor
   /// panes as one tabbed area: only the active tab's pane is laid out.
-  public func paneGridPanes(_ workspacePanes: [Pane], mode: PaneMode?) -> [Pane] {
+  public func paneGridPanes<Source: PaneLayoutSource>(
+    _ workspacePanes: [Source], mode: PaneMode?
+  ) -> [Source] {
     layoutPanes(workspacePanes).filter { mode == nil || $0.mode == mode }
   }
 

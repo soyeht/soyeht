@@ -119,8 +119,8 @@ public final class PaneLayoutController {
 
   /// Reconciles the displayed layout with live panes without treating the repair as confirmed.
   /// This keeps a pane created before a failed layout commit visible to the caller.
-  public func reconciledPresentation(
-    for workspaceId: String, livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  public func reconciledPresentation<Source: PaneLayoutSource>(
+    for workspaceId: String, livePanes: [Source], sizing: PaneLayoutSizingPolicy
   ) throws -> PaneLayoutReconciliation {
     guard let displayed = presentation(for: workspaceId)?.displayed else {
       throw PaneLayoutControllerError.missingWorkspace(workspaceId)
@@ -147,8 +147,8 @@ public final class PaneLayoutController {
   /// stored tree until its first arrangement, so the draft starts from the live panes reconciled
   /// the way the view shows them; the repair is not confirmed until the gesture commits.
   @discardableResult
-  public func beginDraft(
-    workspaceId: String, livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  public func beginDraft<Source: PaneLayoutSource>(
+    workspaceId: String, livePanes: [Source], sizing: PaneLayoutSizingPolicy
   ) throws -> PaneLayoutTree {
     guard let entry = entries[workspaceId] else {
       throw PaneLayoutControllerError.missingWorkspace(workspaceId)

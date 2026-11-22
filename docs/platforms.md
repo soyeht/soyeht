@@ -613,10 +613,21 @@ One-time VM setup. Take a snapshot first so the VM can return to a clean state:
 
 - Ubuntu: `apt-get install build-essential git curl`, then rustup with the profile
   `minimal`.
-- Windows: `winget install Microsoft.VisualStudio.2022.BuildTools` with the
-  `VCTools` workload and the ARM64 tools, `winget install Git.Git`, `LLVM.LLVM` on
-  ARM64, and rustup (`aarch64-pc-windows-msvc` host). The check needs symbolic links,
-  so the VMPal exec must be elevated: the script runs it with `--admin`.
+- Windows (on a fresh VM, from an elevated `vmpal exec --admin`): `winget` is installed but not on
+  the PATH of the exec session; run the `winget.exe` in
+  `C:\Program Files\WindowsApps\Microsoft.DesktopAppInstaller_*`. Give it `--source winget`
+  (the `msstore` source fails there with a certificate error), `--silent`,
+  `--accept-package-agreements --accept-source-agreements --disable-interactivity`, and install
+  `Git.Git`, `LLVM.LLVM` (ARM64, for the C code of `ring`), `Rustlang.Rustup` and
+  `Microsoft.VisualStudio.2022.BuildTools` with
+  `--override "--quiet --wait --norestart --nocache --add Microsoft.VisualStudio.Workload.VCTools
+  --add Microsoft.VisualStudio.Component.VC.Tools.ARM64
+  --add Microsoft.VisualStudio.Component.Windows11SDK.26100 --includeRecommended"` (about an
+  hour). Then install the toolchain of `rust-toolchain.toml` once, so the check does not install
+  it in the middle of a step (rustup writes progress to stderr, which PowerShell can turn into an
+  error): `rustup toolchain install <channel> --profile minimal -c clippy -c rustfmt`. The host
+  is `aarch64-pc-windows-msvc` on an ARM64 VM. The check needs symbolic links, so the VMPal exec
+  must be elevated: the script runs it with `--admin`.
 
 The scripts are deliberately not steps of `scripts/check_all.sh`, which stays the
 single merge-gate list and runs on macOS. To make Linux and Windows gate steps later,

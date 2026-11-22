@@ -44,9 +44,11 @@ public final class UsageReplica: ClientReplica {
   }
 
   private func replace(_ reading: UsageReading) {
-    readings.removeAll { $0.provider == reading.provider }
-    readings.append(reading)
-    readings.sort { $0.provider.order < $1.provider.order }
+    // One write, so a reader of the readings is told once.
+    var next = readings.filter { $0.provider != reading.provider }
+    next.append(reading)
+    next.sort { $0.provider.order < $1.provider.order }
+    readings = next
   }
 
   func reset() {

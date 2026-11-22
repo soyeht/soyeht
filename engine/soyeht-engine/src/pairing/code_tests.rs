@@ -14,7 +14,7 @@ use ed25519_dalek::SigningKey;
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 use soyeht_protocol::{ErrorKind, frame::Frame};
-use std::{net::IpAddr, path::PathBuf, sync::Arc, time::Duration};
+use std::{net::IpAddr, sync::Arc, time::Duration};
 
 pub(super) struct Mode(Approval, Arc<FixturePeers>);
 
@@ -39,7 +39,7 @@ pub(super) type Answer = std::result::Result<Value, errors::Error>;
 /// appear in.
 pub(super) struct Rig {
     pub(super) core: Core,
-    directory: PathBuf,
+    directory: crate::test_paths::Folder,
     pub(super) peers: Arc<FixturePeers>,
     local_traffic: Vec<String>,
     receivers: Vec<(String, Receiver)>,
@@ -55,7 +55,7 @@ impl Rig {
         let core = Core::open_with(&directory, Arc::new(Mode(approval, peers.clone()))).unwrap();
         Self {
             core,
-            directory,
+            directory: crate::test_paths::Folder::new(directory),
             peers,
             local_traffic: vec![],
             receivers: vec![],
@@ -133,12 +133,6 @@ impl Rig {
     pub(super) fn open_window(&mut self, app: &str) -> String {
         let window = self.call(app, "device.pair.start", json!({})).unwrap();
         window["code"].as_str().unwrap().to_owned()
-    }
-}
-
-impl Drop for Rig {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.directory).unwrap();
     }
 }
 

@@ -334,7 +334,7 @@ mod tests {
 
     #[test]
     fn sizes_are_checked_against_the_declaration_and_both_limits() {
-        let staging = crate::test_paths::rooted("/staging");
+        let staging = soyeht_platform::testing::rooted("/staging");
         let staging = staging.as_path();
         let image = attachment(PromptAttachmentKind::Image, "image/png");
         let item = staged(image.clone(), b"abc".to_vec(), staging, 3).unwrap();

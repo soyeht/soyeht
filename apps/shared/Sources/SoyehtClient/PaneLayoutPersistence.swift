@@ -44,7 +44,7 @@ public struct PaneLayoutState: Equatable, Sendable {
     }
   }
 
-  public init(workspaceLayout: JsonValue, livePanes: [Pane]) {
+  public init<Source: PaneLayoutSource>(workspaceLayout: JsonValue, livePanes: [Source]) {
     self.init(workspaceLayout: workspaceLayout)
     var liveKinds: [String: PaneLayoutKind] = [:]
     for pane in livePanes {
@@ -73,8 +73,8 @@ public struct PaneLayoutState: Equatable, Sendable {
   /// Adds panes that appeared after a custom layout was stored without discarding that layout.
   /// The returned IDs are suitable for one structured diagnostic at the integration boundary.
   @discardableResult
-  public mutating func reconcile(
-    livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  public mutating func reconcile<Source: PaneLayoutSource>(
+    livePanes: [Source], sizing: PaneLayoutSizingPolicy
   ) throws -> [String] {
     tree = tree?.adoptingLiveEditor(livePanes)
     var present = Set(tree?.paneIdsInCanonicalOrder ?? [])
@@ -249,8 +249,8 @@ extension WorkspacePaneLayoutAxis {
 extension EngineClient {
   /// The pane tree a device without its own layout engine shows: the reconciled presentation,
   /// else the stored layout reconciled locally. Each failure is logged once per workspace.
-  public func presentedLayoutTree(
-    workspaceId: String, livePanes: [Pane], sizing: PaneLayoutSizingPolicy
+  public func presentedLayoutTree<Source: PaneLayoutSource>(
+    workspaceId: String, livePanes: [Source], sizing: PaneLayoutSizingPolicy
   ) -> PaneLayoutTree? {
     let reconciled = ClientDiagnostics.attempt("pane_layout_present_failed", key: workspaceId) {
       try paneLayouts.reconciledPresentation(

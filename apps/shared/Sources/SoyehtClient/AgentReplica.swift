@@ -59,8 +59,8 @@ public enum AgentTranscriptHydrationPolicy {
   }
 }
 
-/// When the agent transcript follows its newest message. Hidden tabs stay
-/// mounted but do not scroll; they catch up when they become visible again.
+/// When the agent transcript follows its newest message. An agent in a tab nobody has open is not
+/// drawn, so it has nothing to follow; its view starts again when the tab is opened.
 public struct AgentConversationFollow: Equatable, Sendable {
   public static let bottomAnchor = "agent-bottom"
 
@@ -265,6 +265,7 @@ extension EngineClient {
     agentTranscriptRevisions = agentTranscriptRevisions.filter { paneIds.contains($0.key) }
     agentTranscriptLoadsInFlight = agentTranscriptLoadsInFlight.filter { paneIds.contains($0.key) }
     for pane in panes where pane.mode == .agent {
+      agentPanes.noteTurn(of: pane)
       agentPanes.update(pane.paneId) { view in
         view.permission = nil
         view.elicitation = nil
