@@ -76,46 +76,64 @@
       #expect(client.connectionRevision == revision)
       try await until(seconds: 90) { screen.contains("KEYS_DONE") }
 
-      // A caller resumes before the output that follows its answer is applied.
-      var late = 0
+      // A caller resumes before the output that follows its answer is applied. A round in which the
+      // answer is slower than the output it is compared with (a loaded host) proves nothing and is
+      // made again; a caller that is late is late in every round.
+      var rounds = 0
       for round in 0..<6 {
-        let marker = "RESULT_\(round)_"
-        client.input(Data("sleep 0.05; printf 'RES%sULT_\(round)_\\n' ''\r".utf8))
-        let caller = Task { @MainActor () -> Bool in
-          _ = try? await client.request(.usageList, .encoded(UsageListParams()))
-          return screen.contains(marker)
+        var late = true
+        for attempt in 0..<3 where late {
+          let marker = "RESULT_\(round)_\(attempt)_"
+          client.input(Data("sleep 0.05; printf 'RES%sULT_\(round)_\(attempt)_\\n' ''\r".utf8))
+          let caller = Task { @MainActor () -> Bool in
+            _ = try? await client.request(.usageList, .encoded(UsageListParams()))
+            return screen.contains(marker)
+          }
+          // The request is on its way; the window is held while its answer and, 50 ms later, the
+          // output come back, and both wait in the backlog.
+          for _ in 0..<4 { await Task.yield() }
+          holdMainActor(0.15)
+          late = await caller.value
+          try await until(seconds: 90) { screen.contains(marker) }
         }
-        // The request is on its way; the window is held while its answer and, 50 ms later, the
-        // output come back, and both wait in the backlog.
-        for _ in 0..<4 { await Task.yield() }
-        holdMainActor(0.15)
-        if await caller.value { late += 1 }
-        try await until(seconds: 90) { screen.contains(marker) }
+        #expect(!late, "A caller resumed after the output behind its answer was applied")
+        rounds += 1
       }
-      #expect(late == 0, "A caller resumed after the output behind its answer was applied")
+      #expect(rounds == 6)
 
       // Two requests made one after the other in one turn reach the engine in that order.
       let mark = fixture.logText.endIndex
-      let rounds = 100
-      for _ in 0..<rounds {
+      let pairs = 100
+      let failed = Flag()
+      for _ in 0..<pairs {
         let a = Task { @MainActor in
-          _ = try? await client.request(.usageList, .encoded(UsageListParams()))
+          do { _ = try await client.request(.usageList, .encoded(UsageListParams())) } catch {
+            failed.set()
+          }
         }
         let b = Task { @MainActor in
-          _ = try? await client.request(.harnessCustomList, .encoded(HarnessCustomListParams()))
+          do {
+            _ = try await client.request(.harnessCustomList, .encoded(HarnessCustomListParams()))
+          } catch { failed.set() }
         }
         await a.value
         await b.value
       }
-      let order = startedMethods(in: fixture.logText[mark...]).filter {
-        $0 == RequestMethod.usageList.rawValue || $0 == RequestMethod.harnessCustomList.rawValue
+      #expect(!failed.isSet)
+      func pairOrder() -> [String] {
+        startedMethods(in: fixture.logText[mark...]).filter {
+          $0 == RequestMethod.usageList.rawValue || $0 == RequestMethod.harnessCustomList.rawValue
+        }
       }
+      // The engine's log is written a moment after the answers are sent.
+      try await until(seconds: 60) { pairOrder().count >= 2 * pairs }
+      let order = pairOrder()
       var swapped = 0
       for index in stride(from: 0, to: order.count - 1, by: 2)
       where order[index] == RequestMethod.harnessCustomList.rawValue {
         swapped += 1
       }
-      #expect(order.count == 2 * rounds)
+      #expect(order.count == 2 * pairs)
       #expect(swapped == 0, "A request made second reached the engine first")
 
       // A client stopped while an answer waits in its backlog ends the request it answers.

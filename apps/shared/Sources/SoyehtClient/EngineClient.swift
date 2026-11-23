@@ -79,7 +79,7 @@ public final class EngineClient {
   }
   /// The wire and the requests waiting on it, which the reader and the input task use without the
   /// main actor.
-  @ObservationIgnored private let channel = RequestChannel()
+  @ObservationIgnored let channel = RequestChannel()
   private var wire: Wire? { channel.wire }
   #if DEBUG
     @ObservationIgnored var requestStub: RequestStub?
@@ -347,7 +347,7 @@ public final class EngineClient {
   /// turn between slices of `ClientPolicy.applyBudgetMs`, so a long backlog (the main thread was
   /// busy for seconds) does not become a longer one. What is not applied when the connection ends
   /// fails its requests, which no one else would resume.
-  private func apply(_ queue: IncomingQueue, from wire: Wire) async {
+  func apply(_ queue: IncomingQueue, from wire: Wire) async {
     let budget = Duration.milliseconds(ClientPolicy.applyBudgetMs)
     let clock = ContinuousClock()
     while true {
