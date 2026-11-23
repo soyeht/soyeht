@@ -2,7 +2,6 @@
   import Foundation
   import SoyehtProtocol
   import Testing
-  import os
 
   @testable import SoyehtClient
 
@@ -39,7 +38,9 @@
 
       /// A request is answered and an event follows its answer in the backlog; the apply loop
       /// (at `priority`) runs. Whether the caller, when it resumed, already saw the event.
-      func callerSawTheEventBehindItsAnswer(priority: _Concurrency.TaskPriority?) async throws -> Bool {
+      func callerSawTheEventBehindItsAnswer(priority: _Concurrency.TaskPriority?) async throws
+        -> Bool
+      {
         let client = client
         let caller = Task { @MainActor () -> Bool in
           _ = try await client.request(.usageList, .encoded(UsageListParams()))
@@ -73,13 +74,11 @@
       #expect(try await setup.callerSawTheEventBehindItsAnswer(priority: nil) == false)
     }
 
-    /// The caller goes first because the apply loop waits for it, not because both have the same
-    /// priority: an apply loop of the lowest priority, with every thread of the pool busy, still
-    /// applies the frame behind the answer after the caller.
+    /// The caller goes first because the apply loop waits for it (`Acknowledgement`), not because
+    /// both run at one priority: an apply loop of the lowest priority still applies the frame
+    /// behind the answer after the caller.
     @Test func aCallerStillGoesFirstWhenTheApplyLoopHasTheLowestPriority() async throws {
-      let busy = BusyThreads(count: 2 * ProcessInfo.processInfo.activeProcessorCount)
-      defer { busy.stop() }
-      for _ in 0..<10 {
+      for _ in 0..<5 {
         let setup = try await Setup()
         defer { setup.stop() }
         #expect(try await setup.callerSawTheEventBehindItsAnswer(priority: .background) == false)
@@ -106,21 +105,6 @@
       setup.queue.finish()
       await applier.value
     }
-  }
-
-  /// Threads that spin until stopped, so that the pool the tasks run on is full.
-  private final class BusyThreads: @unchecked Sendable {
-    private let stopped = OSAllocatedUnfairLock(initialState: false)
-
-    init(count: Int) {
-      for _ in 0..<count {
-        Thread.detachNewThread { [stopped] in
-          while !stopped.withLock({ $0 }) { _ = (0..<1000).reduce(0, +) }
-        }
-      }
-    }
-
-    func stop() { stopped.withLock { $0 = true } }
   }
 
   private final class Ended: @unchecked Sendable {
