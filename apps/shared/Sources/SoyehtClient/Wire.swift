@@ -182,9 +182,8 @@ final class Wire: Sendable {
   /// the moment it asks (`enqueue`).
   func unit(for message: JsonValue, attachments: [WebHostAttachment] = []) throws -> [Outgoing] {
     guard isOpen else { throw ClientFailure.disconnected }
-    return try Outgoing.unit(
-      WirePayload(message: message, attachments: attachments).frames(), singleWrite: webSocket == nil
-    )
+    let frames = try WirePayload(message: message, attachments: attachments).frames()
+    return try Outgoing.unit(frames, singleWrite: webSocket == nil)
   }
 
   /// Queues a unit behind the ones queued before it, with no suspension: units leave in the order

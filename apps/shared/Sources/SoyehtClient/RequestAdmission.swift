@@ -70,7 +70,9 @@ final class RequestAdmission: Sendable {
         state.holding.insert(next.id)
         return next
       }
-      if let index = state.waiting.firstIndex(where: { $0.id == id }) { state.waiting.remove(at: index) }
+      if let index = state.waiting.firstIndex(where: { $0.id == id }) {
+        state.waiting.remove(at: index)
+      }
       return nil
     }
     next?.start()

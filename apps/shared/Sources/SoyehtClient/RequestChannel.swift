@@ -38,13 +38,13 @@ final class RequestChannel: Sendable {
     return try await pending.response(
       id: id, method, params, timeoutSeconds: timeoutSeconds, delivery: delivery,
       release: { admission.finish(id) },
-      waitForTimeout: waitForTimeout, onTimeout: { wire.close() }, isolation: isolation
-    ) { id in
-      admission.enter(id: id, lane: lane) {
-        wire.enqueue(unit) { error in
-          if let error { pending.fail(id, error) }
+      waitForTimeout: waitForTimeout, onTimeout: { wire.close() }, isolation: isolation,
+      start: { id in
+        admission.enter(id: id, lane: lane) {
+          wire.enqueue(unit) { error in
+            if let error { pending.fail(id, error) }
+          }
         }
-      }
-    }
+      })
   }
 }

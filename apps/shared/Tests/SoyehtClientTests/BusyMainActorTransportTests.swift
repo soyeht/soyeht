@@ -117,6 +117,34 @@
     })
   }
 
+  /// A `usage.list` request the engine has read and left unanswered, and its id.
+  @MainActor private func unansweredRequest(
+    on link: Link,
+    waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void =
+      PendingRequests.waitForTimeout
+  ) async throws -> (task: Task<EngineResponse, Error>, id: String) {
+    let channel = link.channel
+    let task = Task.detached {
+      try await channel.response(
+        .usageList, .object([:]), timeoutSeconds: 30, waitForTimeout: waitForTimeout)
+    }
+    while link.server.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+    return (task, try #require(link.server.requests.first?.id))
+  }
+
+  /// A request the engine has read and will not answer, with deadlines the test ends (`ticks`),
+  /// on a link whose answers to everything else are applied.
+  @MainActor private func slowRequestBehindOthers() async throws -> (
+    link: Link, applier: Task<Void, Never>, slow: Task<EngineResponse, Error>, id: String,
+    ticks: Ticks
+  ) {
+    let link = try await linkHoldingUsageList()
+    let ticks = Ticks()
+    let (slow, id) = try await unansweredRequest(
+      on: link, waitForTimeout: { _, _ in await ticks.wait() })
+    return (link, link.applyingAnswers(), slow, id, ticks)
+  }
+
   private func pieces(of server: FakeEngineServer) -> [Data] {
     server.requests.filter { $0.method == RequestMethod.paneInput.rawValue }.compactMap {
       $0.params["bytes"].string.flatMap { Data(base64Encoded: $0) }
@@ -173,42 +201,24 @@
     @Test func aRequestWaitingBehindOthersWaitsAnotherWindowWhileTheEngineKeepsAnswering()
       async throws
     {
-      let link = try await linkHoldingUsageList()
+      let (link, applier, slow, id, ticks) = try await slowRequestBehindOthers()
       defer { link.stop() }
-      let applier = link.applyingAnswers()
       defer { applier.cancel() }
       let channel = link.channel
-      let ticks = Ticks()
-      let slow = Task.detached {
-        try await channel.response(
-          .usageList, .object([:]), timeoutSeconds: 30,
-          waitForTimeout: { _, _ in await ticks.wait() })
-      }
-      while link.server.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
       // The engine answers another request, then the first window of the slow one passes.
       _ = try await channel.response(.harnessList, .object([:]), timeoutSeconds: 30)
       await ticks.tick()
       // It waits another window, and the engine answers it.
-      let id = try #require(
-        link.server.requests.first { $0.method == RequestMethod.usageList.rawValue }?.id)
       try link.answer(id)
       _ = try await slow.value
       #expect(link.wire.isOpen)
     }
 
     @Test func aRequestTheEngineNeverAnswersFailsAloneWhileItAnswersTheOthers() async throws {
-      let link = try await linkHoldingUsageList()
+      let (link, applier, slow, _, ticks) = try await slowRequestBehindOthers()
       defer { link.stop() }
-      let applier = link.applyingAnswers()
       defer { applier.cancel() }
       let channel = link.channel
-      let ticks = Ticks()
-      let slow = Task.detached {
-        try await channel.response(
-          .usageList, .object([:]), timeoutSeconds: 30,
-          waitForTimeout: { _, _ in await ticks.wait() })
-      }
-      while link.server.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
       for _ in 0..<ClientPolicy.capsRequestWindows {
         _ = try await channel.response(.harnessList, .object([:]), timeoutSeconds: 30)
         await ticks.tick()
@@ -226,12 +236,7 @@
     @Test func answersAndEventsReachTheMainActorInTheOrderTheyWereRead() async throws {
       let link = try await Link(answer: { _ in nil })
       defer { link.stop() }
-      let channel = link.channel
-      let first = Task.detached {
-        try await channel.response(.usageList, .object([:]), timeoutSeconds: 30)
-      }
-      while link.server.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
-      let id = try #require(link.server.requests.first?.id)
+      let (first, id) = try await unansweredRequest(on: link)
       func event(_ n: Int) -> JsonValue {
         .object([
           "jsonrpc": .string("2.0"), "method": .string("test.event"), "params": .integer(Int64(n)),
@@ -264,12 +269,7 @@
     @Test func aBacklogOverTheLimitFailsTheRequestsItDropsAndEndsTheConnection() async throws {
       let link = try await Link(answer: { _ in nil }, queueBytes: 400)
       defer { link.stop() }
-      let channel = link.channel
-      let request = Task.detached {
-        try await channel.response(.usageList, .object([:]), timeoutSeconds: 30)
-      }
-      while link.server.requests.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
-      let id = try #require(link.server.requests.first?.id)
+      let (request, id) = try await unansweredRequest(on: link)
       // The answer, then more than the queue holds, none of it applied.
       var frames: [JsonValue] = [
         .object(["jsonrpc": .string("2.0"), "id": .string(id), "result": .object([:])])

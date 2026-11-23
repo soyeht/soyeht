@@ -87,7 +87,7 @@ private final class Completions: Sendable {
 }
 
 @MainActor
-@Test func requestsQueuedOneAfterTheOtherLeaveInThatOrder() async throws {
+@Test func requestsMadeConcurrentlyKeepTheOrderTheyWereQueuedIn() async throws {
   let transport = FakeTransport()
   let queue = transport.queue()
   let names = (0..<30).map { "request-\($0)" }
