@@ -1,6 +1,7 @@
 import Foundation
 import SoyehtProtocol
 import Testing
+import os
 
 @testable import SoyehtClient
 
@@ -9,7 +10,8 @@ import Testing
 @MainActor
 private final class FakeTransport {
   private(set) var sent: [String] = []
-  private(set) var failures: [Error] = []
+  private let failureLog = OSAllocatedUnfairLock<[Error]>(initialState: [])
+  var failures: [Error] { failureLog.withLock { $0 } }
   var failOn: String?
   var holdAfter: String?
   private var release: CheckedContinuation<Void, Never>?
@@ -35,9 +37,10 @@ private final class FakeTransport {
   }
 
   func queue() -> SendQueue<[String]> {
-    SendQueue(
+    let failureLog = failureLog
+    return SendQueue(
       transmit: { [unowned self] unit in try await self.transmit(unit) },
-      onFailure: { [unowned self] error in self.failures.append(error) })
+      onFailure: { error in failureLog.withLock { $0.append(error) } })
   }
 }
 
@@ -54,6 +57,18 @@ private func heldUpload(
   return (upload, waiting)
 }
 
+private final class Failures: Sendable {
+  private let lock = OSAllocatedUnfairLock<[Error?]>(initialState: [])
+  var errors: [Error?] { lock.withLock { $0 } }
+  func add(_ error: Error?) { lock.withLock { $0.append(error) } }
+}
+
+private final class Completions: Sendable {
+  private let lock = OSAllocatedUnfairLock(initialState: 0)
+  var count: Int { lock.withLock { $0 } }
+  func add() { lock.withLock { $0 += 1 } }
+}
+
 @MainActor private func settle() async {
   for _ in 0..<20 { await Task.yield() }
 }
@@ -65,8 +80,9 @@ private func heldUpload(
   let units: [[String]] = [
     ["photo-1", "photo-2", "prompt"], ["state"], ["list"], ["a", "b", "c", "commit"], ["ping"],
   ]
-  let tasks = units.map { unit in Task { try await queue.send(unit) } }
-  for task in tasks { try await task.value }
+  let left = Completions()
+  for unit in units { queue.enqueue(unit) { _ in left.add() } }
+  while left.count < units.count { await Task.yield() }
   #expect(transport.sent == units.flatMap { $0 })
 }
 
@@ -75,8 +91,9 @@ private func heldUpload(
   let transport = FakeTransport()
   let queue = transport.queue()
   let names = (0..<30).map { "request-\($0)" }
-  let tasks = names.map { name in Task { try await queue.send([name]) } }
-  for task in tasks { try await task.value }
+  let left = Completions()
+  for name in names { queue.enqueue([name]) { _ in left.add() } }
+  while left.count < names.count { await Task.yield() }
   #expect(transport.sent == names)
 }
 
@@ -131,10 +148,11 @@ private func heldUpload(
   let transport = FakeTransport()
   transport.failOn = "prompt"
   let queue = transport.queue()
-  let upload = Task { try await queue.send(["photo", "prompt"]) }
-  let behind = Task { try await queue.send(["behind"]) }
-  await #expect(throws: ClientFailure.self) { try await upload.value }
-  await #expect(throws: ClientFailure.self) { try await behind.value }
+  let ended = Failures()
+  queue.enqueue(["photo", "prompt"]) { ended.add($0) }
+  queue.enqueue(["behind"]) { ended.add($0) }
+  while ended.errors.count < 2 { await Task.yield() }
+  #expect(ended.errors.allSatisfy { $0 is ClientFailure })
   await #expect(throws: ClientFailure.self) { try await queue.send(["later"]) }
   #expect(transport.sent == ["photo"])
   #expect(transport.failures.count == 1)

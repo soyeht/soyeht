@@ -1,6 +1,7 @@
 import Foundation
 import Network
 import SoyehtProtocol
+import os
 
 public enum ClientFailure: Error, LocalizedError, Sendable {
   case disconnected, invalidFrame, invalidSnapshot, invalidStream, timeout
@@ -47,35 +48,42 @@ extension JsonValue {
   }
 }
 
-/// Owns one connection. All reads and writes are asynchronous; no UI thread waits on a descriptor.
-@MainActor
-final class Wire {
+/// Owns one connection. All reads and writes are asynchronous and none of it runs on the main
+/// actor: the connection's callbacks resume the waiting reader or writer directly, so a main
+/// thread busy for seconds delays nothing that is read from or written to the engine (ADR 0173).
+/// The state is behind a lock, never held across a suspension.
+final class Wire: Sendable {
   private struct ReadWaiter {
     let id: UInt64
     let continuation: CheckedContinuation<Data, Error>
   }
 
+  private struct State {
+    var greetingDeadline: Task<Void, Never>?
+    var openWaiter: CheckedContinuation<Void, Error>?
+    var readWaiter: ReadWaiter?
+    var nextReadId: UInt64 = 0
+    var terminalFailure: Error?
+    var opened = false
+    var closed = false
+    /// Bytes read from the local socket and not yet framed, from `consumed` on.
+    var buffer = Data()
+    var consumed = 0
+    var sendQueue: SendQueue<[Outgoing]>?
+  }
+
+  /// The most one read takes off the local socket: several small frames arrive in one read.
+  private static let readBytes = 256 * 1024
+
   private let connection: NWConnection?
-  private var webSocket: URLSessionWebSocketTask?
-  private var session: URLSession?
-  private var greetingDeadline: Task<Void, Never>?
-  private var openWaiter: CheckedContinuation<Void, Error>?
-  private var readWaiter: ReadWaiter?
-  private var nextReadId: UInt64 = 0
-  private var terminalFailure: Error?
-  private var opened = false
-  private var closed = false
-  /// A unit that fails on the transport leaves the engine with frames it never saw committed, so
-  /// the connection ends with it.
-  private lazy var sendQueue = SendQueue<[Outgoing]>(
-    transmit: { [weak self] unit in
-      guard let self else { throw ClientFailure.disconnected }
-      try await self.transmit(unit)
-    },
-    onFailure: { [weak self] _ in self?.close() })
+  private let webSocket: URLSessionWebSocketTask?
+  private let session: URLSession?
+  private let state = OSAllocatedUnfairLock(initialState: State())
 
   init(socket: String) {
     connection = NWConnection(to: .unix(path: socket), using: .tcp)
+    webSocket = nil
+    session = nil
   }
 
   init(url: URL) {
@@ -87,49 +95,79 @@ final class Wire {
     webSocket = task
   }
 
+  /// A unit that fails on the transport leaves the engine with frames it never saw committed, so
+  /// the connection ends with it.
+  private var sendQueue: SendQueue<[Outgoing]> {
+    state.withLock { state in
+      if let queue = state.sendQueue { return queue }
+      let queue = SendQueue<[Outgoing]>(
+        transmit: { [weak self] unit in
+          guard let self else { throw ClientFailure.disconnected }
+          try await self.transmit(unit)
+        },
+        onFailure: { [weak self] _ in self?.close() })
+      state.sendQueue = queue
+      return queue
+    }
+  }
+
   func open(greetingTimeout: Duration = greetingTimeout) async throws {
-    greetingDeadline = Task { [weak self] in
+    let deadline = Task { [weak self] in
       do { try await Task.sleep(for: greetingTimeout) } catch { return }
       self?.close(ClientFailure.timeout)
     }
+    state.withLock { $0.greetingDeadline = deadline }
     if let webSocket {
       webSocket.resume()
       return
     }
     guard let connection else { throw ClientFailure.disconnected }
-    try await withCheckedThrowingContinuation { continuation in
-      openWaiter = continuation
-      connection.stateUpdateHandler = { [weak self] state in
-        Task { @MainActor in
-          guard let self else { return }
-          switch state {
-          case .ready:
-            self.opened = true
-            self.openWaiter?.resume()
-            self.openWaiter = nil
-          case .failed(let error), .waiting(let error):
-            self.fail(self.opened ? ClientFailure.disconnected : error)
-          case .cancelled:
-            self.fail(ClientFailure.disconnected)
-          default: break
-          }
-        }
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      let failure = state.withLock { state -> Error? in
+        if let failure = state.terminalFailure { return failure }
+        state.openWaiter = continuation
+        return nil
       }
+      if let failure {
+        continuation.resume(throwing: failure)
+        return
+      }
+      connection.stateUpdateHandler = { [weak self] state in self?.connectionChanged(state) }
       connection.start(queue: DispatchQueue(label: "com.soyeht.next.dev.client.socket"))
+    }
+  }
+
+  private func connectionChanged(_ change: NWConnection.State) {
+    switch change {
+    case .ready:
+      let waiter = state.withLock { state -> CheckedContinuation<Void, Error>? in
+        state.opened = true
+        defer { state.openWaiter = nil }
+        return state.openWaiter
+      }
+      waiter?.resume()
+    case .failed(let error), .waiting(let error):
+      fail(state.withLock { $0.opened } ? ClientFailure.disconnected : error)
+    case .cancelled:
+      fail(ClientFailure.disconnected)
+    default: break
     }
   }
 
   /// Ends the connection. `reason` is what a pending or later read reports, so a deadline says
   /// "no answer in time" instead of the transport's own "cancelled".
   func close(_ reason: ClientFailure = .disconnected) {
-    closed = true
+    let (queue, deadline) = state.withLock { state in
+      state.closed = true
+      defer { state.greetingDeadline = nil }
+      return (state.sendQueue, state.greetingDeadline)
+    }
     fail(reason)
-    sendQueue.fail(reason)
+    queue?.fail(reason)
     connection?.cancel()
     webSocket?.cancel(with: .goingAway, reason: nil)
     session?.invalidateAndCancel()
-    greetingDeadline?.cancel()
-    greetingDeadline = nil
+    deadline?.cancel()
   }
 
   func send(_ value: JsonValue, attachments: [WebHostAttachment] = []) async throws {
@@ -140,15 +178,36 @@ final class Wire {
     try await write(response.frames())
   }
 
+  /// The unit `message` and its attachments leave as, built now so that a caller can queue it at
+  /// the moment it asks (`enqueue`).
+  func unit(for message: JsonValue, attachments: [WebHostAttachment] = []) throws -> [Outgoing] {
+    guard isOpen else { throw ClientFailure.disconnected }
+    let frames = try WirePayload(message: message, attachments: attachments).frames()
+    return try Outgoing.unit(frames, singleWrite: webSocket == nil)
+  }
+
+  /// Queues a unit behind the ones queued before it, with no suspension: units leave in the order
+  /// of the calls. `completion` runs when it has left, or with why it did not.
+  func enqueue(_ unit: [Outgoing], completion: @escaping @Sendable (Error?) -> Void) {
+    guard isOpen else {
+      completion(ClientFailure.disconnected)
+      return
+    }
+    // A unit that fails on the transport ends the connection (`sendQueue`'s `onFailure`).
+    sendQueue.enqueue(unit, completion: completion)
+  }
+
   /// Queues the frames of one message as a unit and returns when the unit has left: another
   /// message never lands between them (`SendQueue`).
   private func write(_ frames: [Frame]) async throws {
-    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
+    guard isOpen else { throw ClientFailure.disconnected }
     try await sendQueue.send(try Outgoing.unit(frames, singleWrite: webSocket == nil))
   }
 
+  var isOpen: Bool { state.withLock { !$0.closed && $0.terminalFailure == nil } }
+
   private func transmit(_ unit: [Outgoing]) async throws {
-    guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
+    guard isOpen else { throw ClientFailure.disconnected }
     if let webSocket {
       do {
         for message in unit {
@@ -176,31 +235,34 @@ final class Wire {
     }
   }
 
-  private func exact(_ count: Int) async throws -> Data {
+  /// The next chunk of the local socket, at least one byte.
+  private func receiveChunk() async throws -> Data {
     guard let connection else { throw ClientFailure.disconnected }
-    var result = Data()
-    while result.count < count {
-      guard !closed, terminalFailure == nil else { throw ClientFailure.disconnected }
-      let remaining = count - result.count
-      nextReadId &+= 1
-      let readId = nextReadId
-      let chunk: Data = try await withCheckedThrowingContinuation { continuation in
-        readWaiter = ReadWaiter(id: readId, continuation: continuation)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: remaining) {
-          data, _, _, error in
-          Task { @MainActor [weak self] in
-            self?.finishRead(readId, data: data, error: error)
-          }
-        }
+    return try await withCheckedThrowingContinuation { continuation in
+      let id = state.withLock { state -> UInt64? in
+        guard !state.closed, state.terminalFailure == nil else { return nil }
+        state.nextReadId &+= 1
+        state.readWaiter = ReadWaiter(id: state.nextReadId, continuation: continuation)
+        return state.nextReadId
       }
-      result.append(chunk)
+      guard let id else {
+        continuation.resume(throwing: ClientFailure.disconnected)
+        return
+      }
+      connection.receive(minimumIncompleteLength: 1, maximumLength: Self.readBytes) {
+        [weak self] data, _, _, error in
+        self?.finishRead(id, data: data, error: error)
+      }
     }
-    return result
   }
 
   private func finishRead(_ id: UInt64, data: Data?, error: Error?) {
-    guard readWaiter?.id == id, let waiter = readWaiter else { return }
-    readWaiter = nil
+    let waiter = state.withLock { state -> ReadWaiter? in
+      guard state.readWaiter?.id == id else { return nil }
+      defer { state.readWaiter = nil }
+      return state.readWaiter
+    }
+    guard let waiter else { return }
     guard error == nil, let data, !data.isEmpty else {
       waiter.continuation.resume(throwing: ClientFailure.disconnected)
       return
@@ -209,28 +271,31 @@ final class Wire {
   }
 
   private func fail(_ error: Error) {
-    if terminalFailure == nil { terminalFailure = error }
-    if let waiter = openWaiter {
-      openWaiter = nil
-      waiter.resume(throwing: error)
+    let (open, read, reason) = state.withLock { state in
+      if state.terminalFailure == nil { state.terminalFailure = error }
+      defer { (state.openWaiter, state.readWaiter) = (nil, nil) }
+      return (state.openWaiter, state.readWaiter, state.terminalFailure)
     }
-    if let waiter = readWaiter {
-      readWaiter = nil
-      waiter.continuation.resume(throwing: ClientFailure.disconnected)
-    }
+    open?.resume(throwing: error)
+    // A read ends with the reason the connection was closed for ("no answer in time"), not with
+    // the transport's own "cancelled".
+    read?.continuation.resume(throwing: reason as? ClientFailure ?? ClientFailure.disconnected)
   }
 
   /// A socket this wire closed reports `URLError.cancelled`, which reads "cancelled" to the
   /// person: say why it was closed instead.
   private func transportFailure(_ error: Error) -> Error {
     guard let url = error as? URLError, url.code == .cancelled else { return error }
-    return terminalFailure ?? ClientFailure.disconnected
+    return state.withLock { $0.terminalFailure } ?? ClientFailure.disconnected
   }
 
   func next() async throws -> Frame {
     let frame = try await readFrame()
-    greetingDeadline?.cancel()
-    greetingDeadline = nil
+    let deadline = state.withLock { state in
+      defer { state.greetingDeadline = nil }
+      return state.greetingDeadline
+    }
+    deadline?.cancel()
     return frame
   }
 
@@ -251,13 +316,38 @@ final class Wire {
       @unknown default: throw ClientFailure.invalidFrame
       }
     }
-    let prefix = try await exact(5)
-    let size = prefix.dropFirst().reduce(0) { ($0 << 8) | Int($1) }
-    // Validate before allocating or reading the advertised body.
-    guard let kind = prefix.first, Frame.accepts(kind: kind, length: size) else {
-      throw ClientFailure.invalidFrame
+    while true {
+      guard isOpen else { throw ClientFailure.disconnected }
+      if let frame = try bufferedFrame() { return frame }
+      let chunk = try await receiveChunk()
+      state.withLock { $0.buffer.append(chunk) }
     }
-    return try Frame.decode(prefix + (try await exact(size)))
+  }
+
+  /// The next whole frame of the bytes read so far, if they hold one.
+  private func bufferedFrame() throws -> Frame? {
+    let bytes: Data? = try state.withLock { state in
+      let available = state.buffer.count - state.consumed
+      guard available >= 5 else { return nil }
+      let start = state.consumed
+      let size = (1...4).reduce(0) { ($0 << 8) | Int(state.buffer[start + $1]) }
+      // Validate before waiting for the advertised body.
+      guard Frame.accepts(kind: state.buffer[start], length: size) else {
+        throw ClientFailure.invalidFrame
+      }
+      guard available >= 5 + size else { return nil }
+      let whole = state.buffer.subdata(in: start..<(start + 5 + size))
+      state.consumed += 5 + size
+      if state.consumed == state.buffer.count {
+        state.buffer.removeAll(keepingCapacity: true)
+        state.consumed = 0
+      } else if state.consumed >= Self.readBytes {
+        state.buffer.removeSubrange(0..<state.consumed)
+        state.consumed = 0
+      }
+      return whole
+    }
+    return try bytes.map(Frame.decode)
   }
 }
 
@@ -324,19 +414,5 @@ struct WebHostResponse: Sendable {
 
   func frames() throws -> [Frame] {
     try WirePayload(message: message, attachments: attachments).frames(maxAttachments: 1)
-  }
-}
-
-/// A frame the reader has taken in. A JSON frame is parsed to a tree once, here, away from the
-/// main actor; the reader waits for the parse before it reads the next frame, so frames are
-/// applied in the order they arrived. What the tree holds is read into types on the main actor,
-/// without writing it out as text again (`JsonValue.decoded`).
-enum IncomingFrame: Sendable {
-  case message(JsonValue)
-  case other(Frame)
-
-  /// The tree of a JSON frame, parsed on a background executor.
-  @concurrent static func parse(_ frame: Frame) async throws -> IncomingFrame {
-    .message(try JSONDecoder().decode(JsonValue.self, from: frame.payload))
   }
 }

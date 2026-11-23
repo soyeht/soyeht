@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// One serial queue for everything a connection sends. A request that carries binary attachments
 /// leaves as several frames followed by the request, and the engine commits those frames to "the
@@ -13,84 +14,122 @@ import Foundation
 /// transport failure inside a unit ends the connection for the same reason: the units behind it
 /// fail with that error and `onFailure` closes the wire, so the engine drops the half unit with the
 /// connection.
-@MainActor
-final class SendQueue<Unit: Sendable> {
-  private final class Entry {
+///
+/// Units are queued synchronously, in the order of the calls, from any actor, and sent by a task of
+/// no actor: nothing a connection sends waits for the main actor, and two requests made one after
+/// the other reach the engine in that order (ADR 0173).
+final class SendQueue<Unit: Sendable>: Sendable {
+  private struct Entry {
     let id: UInt64
     let unit: Unit
-    let continuation: CheckedContinuation<Void, Error>
-
-    init(id: UInt64, unit: Unit, continuation: CheckedContinuation<Void, Error>) {
-      self.id = id
-      self.unit = unit
-      self.continuation = continuation
-    }
+    let completion: @Sendable (Error?) -> Void
   }
 
-  private let transmit: @MainActor (Unit) async throws -> Void
-  private let onFailure: @MainActor (Error) -> Void
-  private var waiting: [Entry] = []
-  private var draining = false
-  private var failure: Error?
-  private var nextId: UInt64 = 0
+  private struct State {
+    var waiting: [Entry] = []
+    var draining = false
+    var failure: Error?
+    var nextId: UInt64 = 0
+  }
+
+  private enum Action {
+    case none, drain
+    case refuse(Error)
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+  private let transmit: @Sendable (Unit) async throws -> Void
+  private let onFailure: @Sendable (Error) -> Void
 
   /// `transmit` puts one whole unit on the transport; `onFailure` runs once, when it throws.
   init(
-    transmit: @escaping @MainActor (Unit) async throws -> Void,
-    onFailure: @escaping @MainActor (Error) -> Void
+    transmit: @escaping @Sendable (Unit) async throws -> Void,
+    onFailure: @escaping @Sendable (Error) -> Void
   ) {
     self.transmit = transmit
     self.onFailure = onFailure
   }
 
-  /// Returns when `unit` has left, or throws why it did not.
-  func send(_ unit: Unit) async throws {
-    if let failure { throw failure }
+  /// Queues `unit` behind the ones queued before it; `completion` runs when it has left (`nil`) or
+  /// why it did not. Returns the unit's id, for `cancel`.
+  @discardableResult
+  func enqueue(_ unit: Unit, completion: @escaping @Sendable (Error?) -> Void) -> UInt64 {
+    let (id, action) = state.withLock { state -> (UInt64, Action) in
+      if let failure = state.failure { return (0, .refuse(failure)) }
+      state.nextId &+= 1
+      let id = state.nextId
+      state.waiting.append(Entry(id: id, unit: unit, completion: completion))
+      if state.draining { return (id, .none) }
+      state.draining = true
+      return (id, .drain)
+    }
+    switch action {
+    case .none: break
+    case .drain: Task.detached { [self] in await drain() }
+    case .refuse(let error): completion(error)
+    }
+    return id
+  }
+
+  /// Returns when `unit` has left, or throws why it did not. The unit is queued before the first
+  /// suspension, in the caller's isolation: callers on one actor are queued in the order of the calls.
+  func send(_ unit: Unit, isolation: isolated (any Swift.Actor)? = #isolation) async throws {
     try Task.checkCancellation()
-    nextId &+= 1
-    let id = nextId
+    let queued = OSAllocatedUnfairLock<UInt64?>(initialState: nil)
     try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation { continuation in
-        waiting.append(Entry(id: id, unit: unit, continuation: continuation))
-        drain()
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        let id = enqueue(unit) { error in
+          if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+        }
+        queued.withLock { $0 = id }
+        if Task.isCancelled { cancel(id) }
       }
     } onCancel: {
-      Task { @MainActor in self.cancel(id) }
+      if let id = queued.withLock({ $0 }) { cancel(id) }
     }
   }
 
   /// Fails every unit still waiting, and every later one, with `error`. A unit already leaving is
   /// ended by the transport's own error.
   func fail(_ error: Error) {
-    if failure == nil { failure = error }
-    let entries = waiting
-    waiting.removeAll()
-    for entry in entries { entry.continuation.resume(throwing: error) }
+    let entries = state.withLock { state -> [Entry] in
+      if state.failure == nil { state.failure = error }
+      defer { state.waiting.removeAll() }
+      return state.waiting
+    }
+    for entry in entries { entry.completion(error) }
   }
 
-  private func cancel(_ id: UInt64) {
-    guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
-    waiting.remove(at: index).continuation.resume(throwing: CancellationError())
+  /// Removes the unit `id` if it still waits; nothing of it is sent.
+  func cancel(_ id: UInt64) {
+    let entry = state.withLock { state -> Entry? in
+      guard let index = state.waiting.firstIndex(where: { $0.id == id }) else { return nil }
+      return state.waiting.remove(at: index)
+    }
+    entry?.completion(CancellationError())
   }
 
-  private func drain() {
-    guard !draining else { return }
-    draining = true
-    Task { @MainActor in
-      while !waiting.isEmpty {
-        let entry = waiting.removeFirst()
-        do {
-          if let failure { throw failure }
-          try await transmit(entry.unit)
-          entry.continuation.resume()
-        } catch {
-          let first = failure == nil
-          fail(error)
-          entry.continuation.resume(throwing: error)
-          if first { onFailure(error) }
+  private func drain() async {
+    while true {
+      let entry = state.withLock { state -> Entry? in
+        guard !state.waiting.isEmpty else {
+          state.draining = false
+          return nil
         }
+        return state.waiting.removeFirst()
       }
-      draining = false
+      guard let entry else { return }
+      do {
+        if let failure = state.withLock({ $0.failure }) { throw failure }
+        try await transmit(entry.unit)
+        entry.completion(nil)
+      } catch {
+        let first = state.withLock { $0.failure == nil }
+        fail(error)
+        entry.completion(error)
+        if first { onFailure(error) }
+      }
     }
   }
 }

@@ -77,12 +77,14 @@ public final class EngineClient {
     get { terminalSinks.selected }
     set { terminalSinks.selected = newValue }
   }
-  @ObservationIgnored private var wire: Wire?
+  /// The wire and the requests waiting on it, used off the main actor too.
+  @ObservationIgnored let channel = RequestChannel()
+  var wire: Wire? { channel.wire }
   #if DEBUG
     @ObservationIgnored var requestStub: RequestStub?
   #endif
   @ObservationIgnored private var lifecycle: Task<Void, Never>?
-  @ObservationIgnored private let pending = PendingRequests()
+  private var pending: PendingRequests { channel.pending }
   @ObservationIgnored private var snapshot = SnapshotAssembly()
   /// Not observed: positions move with every chunk. A view reads `terminalGapTexts`.
   @ObservationIgnored var terminalStreams = TerminalStreamReplica() { didSet { syncGapTexts() } }
@@ -94,13 +96,19 @@ public final class EngineClient {
   /// without it and must ask for the screen again.
   @ObservationIgnored private var terminalsWithDroppedOutput: Set<String> = []
   @ObservationIgnored private var cursor: UInt64 = 0
-  @ObservationIgnored private var inputTask: Task<Void, Never>?
-  @ObservationIgnored private var inputQueue: [(String, Data)] = []
-  @ObservationIgnored private var queuedInputBytes = 0
+  /// Unapplied output a connection may hold before it ends (a test lowers it).
+  @ObservationIgnored var incomingQueueBytes = ClientPolicy.capsIncomingQueueBytes
+  /// Terminal input leaves from its own task, never behind the main actor.
+  @ObservationIgnored private lazy var terminalInput = TerminalInputQueue.sending(
+    through: channel, isConnected: { [weak self] in await self?.connected == true },
+    failed: { [weak self] in
+      let text = $0.localizedDescription
+      Task { @MainActor in self?.problem = text }
+    })
   @ObservationIgnored private var resizeTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var resizeGenerations: [String: UInt64] = [:]
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
-  @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
+  @ObservationIgnored var responseAttachments = ResponseAttachmentAssembly()
   /// Panes the engine closed since the last snapshot; a late event about one never brings it back.
   @ObservationIgnored var closedPaneIds: Set<String> = []
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
@@ -171,7 +179,7 @@ public final class EngineClient {
     lifecycle = nil
     disconnect()
   }
-  private func disconnect() {
+  func disconnect() {
     (connected, engineCapabilities) = (false, [])
     resetAgentSession()
     for task in editorWriteTasks.values { task.cancel() }
@@ -213,38 +221,29 @@ public final class EngineClient {
     terminalStreams.removeAll()
     responseAttachments.reset()
     wire?.close()
-    wire = nil
+    channel.attach(nil)
     pending.failAll(ClientFailure.disconnected)
     snapshot = SnapshotAssembly()
   }
   private func session() async throws {
     let wire = credential.map { Wire(url: $0.address) } ?? Wire(socket: socket)
-    self.wire = wire
+    channel.attach(wire)
     try await wire.open()
     let challenge = try await wire.next()
     guard challenge.kind == 1 else { throw ClientFailure.invalidFrame }
     let first = try JSONDecoder().decode(JsonValue.self, from: challenge.payload)
     guard first["method"].eventName == .authChallenge else { throw ClientFailure.invalidFrame }
-    let reader = Task { [weak self] in
-      do {
-        while !Task.isCancelled {
-          let next = try await wire.next()
-          // Only a JSON frame is worth the hop; terminal output is read where it arrives.
-          let frame =
-            next.kind == FrameKind.json ? try await IncomingFrame.parse(next) : .other(next)
-          guard let self, self.wire === wire else { break }
-          try self.receive(frame)
-        }
-      } catch {
-        if let self, self.wire === wire {
-          self.connectionText = error.localizedDescription
-          self.disconnect()
-        }
-      }
+    // The reader runs on no actor; this actor applies what it queues (ADR 0173).
+    let queue = IncomingQueue(limitBytes: incomingQueueBytes)
+    let pending = pending
+    let reader = Task.detached {
+      await EngineReader.run(wire: wire, pending: pending, queue: queue)
     }
+    let applier = Task { [weak self] in await self?.apply(queue, from: wire) }
     defer {
       reader.cancel()
       wire.close()
+      queue.finish()
     }
     let (hello, verification): (HelloParams, EngineVerification?) =
       try credential.map {
@@ -263,7 +262,7 @@ public final class EngineClient {
     try await loadUsage()
     if !pairedDevice { try await loadLocalServers() }
     try await settleConnection()
-    await reader.value
+    await applier.value
   }
   func request(
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double = defaultRequestTimeout,
@@ -278,26 +277,25 @@ public final class EngineClient {
     attachments: [WebHostAttachment] = []
   ) async throws -> EngineResponse {
     if let stubbed = try await stubbedResponse(method, params) { return stubbed }
-    guard let wire else { throw ClientFailure.disconnected }
-    return try await pendingResponse(
-      method, params, timeoutSeconds: timeoutSeconds,
-      waitForTimeout: PendingRequests.waitForTimeout
-    ) { id in
-      try await wire.send(
-        .object([
-          "jsonrpc": .string("2.0"), "id": .string(id),
-          "method": .string(method.rawValue), "params": params,
-        ]), attachments: attachments)
-    }
+    // A request given longer than the usual wait can hold its place for long: it is not counted.
+    let lane: RequestLane = timeoutSeconds > defaultRequestTimeout ? .priority : .normal
+    return try await channel.response(
+      method, params, timeoutSeconds: timeoutSeconds, lane: lane, attachments: attachments)
   }
   func pendingResponse(
     _ method: RequestMethod, _ params: JsonValue, timeoutSeconds: Double,
     waitForTimeout: @escaping @Sendable (RequestMethod, Double) async throws -> Void,
-    send: @escaping @MainActor (String) async throws -> Void
+    send: @escaping @Sendable (String) async throws -> Void
   ) async throws -> EngineResponse {
-    try await pending.response(
+    let pending = pending
+    return try await pending.response(
       method, params, timeoutSeconds: timeoutSeconds, waitForTimeout: waitForTimeout,
-      onTimeout: { [weak self] in self?.wire?.close() }, send: send)
+      onTimeout: { [channel] in channel.wire?.close() },
+      start: { id in
+        Task {
+          do { try await send(id) } catch { pending.fail(id, error) }
+        }
+      })
   }
   /// Retry only connection loss, with the same mutation parameters and idempotency key.
   func mutation<T: Encodable>(
@@ -342,64 +340,8 @@ public final class EngineClient {
     }
     return true
   }
-  private func receive(_ incoming: IncomingFrame) throws {
-    switch incoming {
-    case .message(let message): try receive(message: message)
-    case .other(let frame) where frame.kind == FrameKind.attachment:
-      try responseAttachments.accept(frame)
-    case .other(let frame) where frame.kind == FrameKind.terminal:
-      if let delivery = try terminalStreams.accept(frame) {
-        if terminalStreams.isReplaying(delivery.paneId) { replayGate.progress(delivery.paneId) }
-        deliverTerminalOutput(to: delivery.paneId, bytes: delivery.bytes, reset: false)
-      }
-    case .other: break
-    }
-  }
-
   func receive(message: JsonValue) throws {
     guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
-    if let id = message["id"].string, let request = pending.take(id) {
-      request.timeout.cancel()
-      if message["error"] != .null {
-        if responseAttachments.isPending {
-          responseAttachments.reset()
-          request.continuation.resume(throwing: ClientFailure.invalidFrame)
-          throw ClientFailure.invalidFrame
-        }
-        request.continuation.resume(
-          throwing: ClientFailure.remote(
-            message["error"]["data"]["kind"].string ?? ErrorKind.internal_error.rawValue,
-            message["error"]["message"].string ?? "Request refused",
-            retryAfterSec: message["error"]["data"]["retryAfterSec"].int.flatMap(UInt32.init)))
-        return
-      }
-      let result = message["result"]
-      do {
-        let reference = try responseAttachmentReference(method: request.method, result: result)
-        let attachment = try reference.map {
-          WebHostAttachment(reference: $0, bytes: try responseAttachments.commit($0))
-        }
-        if reference == nil, responseAttachments.isPending { throw ClientFailure.invalidFrame }
-        if request.method == .stateSnapshot { try applySnapshot(result) }
-        if request.method == .paneStreamSubscribe,
-          let paneId = request.params["paneId"].string
-        {
-          let info = try result.decoded(StreamInfo.self)
-          // A close event can overtake an in-flight subscribe response. Do not resurrect stream
-          // state after the pane (or its terminal role) has already disappeared.
-          if panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal }) {
-            try terminalStreams.install(paneId: paneId, info: info)
-          }
-        }
-        request.continuation.resume(
-          returning: EngineResponse(value: result, attachment: attachment)
-        )
-      } catch {
-        request.continuation.resume(throwing: error)
-        throw error
-      }
-      return
-    }
     if try acceptWebHostRequest(message) { return }
     if message["id"] == .null, message["error"] != .null {
       throw ClientFailure.remote(
@@ -521,7 +463,7 @@ public final class EngineClient {
       workspaces.append(workspace)
     }
   }
-  private func applySnapshot(_ value: JsonValue) throws {
+  func applySnapshot(_ value: JsonValue) throws {
     let result = try value.decoded(StateSnapshotResult.self)
     let sections = try snapshot.finish(result)
     let panes = try (sections["panes"] ?? []).map { try $0.decoded(Pane.self) }
@@ -717,40 +659,8 @@ public final class EngineClient {
     guard connected, selectedPaneId == pane,
       panes.contains(where: { $0.paneId == pane && $0.mode == .terminal }), !data.isEmpty
     else { return }
-    guard queuedInputBytes + data.count <= inputQueueBytes else {
+    if !terminalInput.enqueue(data, paneId: pane) {
       problem = "Input is too large. Wait for the keyboard queue to empty."
-      return
-    }
-    inputQueue.append((pane, data))
-    queuedInputBytes += data.count
-    guard inputTask == nil else { return }
-    inputTask = Task {
-      defer { inputTask = nil }
-      while !inputQueue.isEmpty {
-        let (pane, data) = inputQueue.removeFirst()
-        queuedInputBytes -= data.count
-        do {
-          var offset = 0
-          while offset < data.count {
-            let chunk = data.subdata(in: offset..<min(offset + inputChunkBytes, data.count))
-            let result = try await mutation(
-              .paneInput,
-              PaneInputParams(
-                paneId: pane,
-                bytes: chunk.base64EncodedString(), idempotencyKey: UUID().uuidString))
-            guard let accepted = result["acceptedBytes"].int, accepted > 0, accepted <= chunk.count
-            else {
-              throw ClientFailure.invalidFrame
-            }
-            offset += accepted
-          }
-        } catch {
-          problem = error.localizedDescription
-          inputQueue.removeAll()
-          queuedInputBytes = 0
-          break
-        }
-      }
     }
   }
   public func resize(cols: Int, rows: Int) {
