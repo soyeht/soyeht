@@ -16,7 +16,7 @@ enum RequestLane: Sendable {
 /// the client's own requests (a queue refresh for every pane that changed) makes whatever is sent
 /// after it wait for the whole burst: a key typed behind a hundred refreshes reached the engine 25
 /// seconds late. The requests over the limit wait here, in the order they were made, and a request
-/// in the priority lane skips the line (ADR 0171).
+/// in the priority lane skips the line (ADR 0173).
 ///
 /// `enter` runs `start`, which puts the request on the wire, in the calling context when the
 /// request may go out at once, so requests made one after the other are queued for sending in that
@@ -27,10 +27,36 @@ final class RequestAdmission: Sendable {
     let start: @Sendable () -> Void
   }
 
+  /// First in, first out, without moving what is left each time the first goes.
+  private struct Line {
+    private var items: [Waiter] = []
+    private var head = 0
+
+    mutating func append(_ waiter: Waiter) { items.append(waiter) }
+
+    mutating func popFirst() -> Waiter? {
+      guard head < items.count else { return nil }
+      defer {
+        head += 1
+        if head >= 1024 && head * 2 >= items.count {
+          items.removeFirst(head)
+          head = 0
+        }
+      }
+      return items[head]
+    }
+  }
+
   private struct State {
     var free: Int
-    var waiting: [Waiter] = []
+    var line = Line()
+    /// The ids in `line` that still wait: one that leaves before its turn is dropped here and
+    /// skipped when the line reaches it.
+    var queued: Set<String> = []
     var holding: Set<String> = []
+    /// Waiters that took a slot and are not on the wire yet, and whether a thread is starting them.
+    var toStart = Line()
+    var starting = false
   }
 
   private let state: OSAllocatedUnfairLock<State>
@@ -46,12 +72,13 @@ final class RequestAdmission: Sendable {
       return
     }
     let now = state.withLock { state -> Bool in
-      if state.waiting.isEmpty && state.free > 0 {
+      if state.queued.isEmpty && state.free > 0 {
         state.free -= 1
         state.holding.insert(id)
         return true
       }
-      state.waiting.append(Waiter(id: id, start: start))
+      state.line.append(Waiter(id: id, start: start))
+      state.queued.insert(id)
       return false
     }
     if now { start() }
@@ -60,23 +87,38 @@ final class RequestAdmission: Sendable {
   /// Request `id` no longer waits for the engine (answered, failed or timed out): its slot goes to
   /// the longest waiter, or it never started and leaves the line.
   func finish(_ id: String) {
-    let next = state.withLock { state -> Waiter? in
+    let run = state.withLock { state -> Bool in
       if state.holding.remove(id) != nil {
-        guard !state.waiting.isEmpty else {
-          state.free += 1
-          return nil
+        var handed = false
+        while let next = state.line.popFirst() {
+          guard state.queued.remove(next.id) != nil else { continue }
+          state.holding.insert(next.id)
+          state.toStart.append(next)
+          handed = true
+          break
         }
-        let next = state.waiting.removeFirst()
-        state.holding.insert(next.id)
-        return next
+        if !handed { state.free += 1 }
+      } else {
+        state.queued.remove(id)
       }
-      if let index = state.waiting.firstIndex(where: { $0.id == id }) {
-        state.waiting.remove(at: index)
-      }
-      return nil
+      if state.starting { return false }
+      state.starting = true
+      return true
     }
-    next?.start()
+    guard run else { return }
+    // One thread starts them, one after the other. A start that is refused at once (the wire is
+    // closed) comes back through `finish`, and must not go one level deeper for every request in
+    // the line: it finds the thread running and returns.
+    while let next = state.withLock({ state -> Waiter? in
+      guard let next = state.toStart.popFirst() else {
+        state.starting = false
+        return nil
+      }
+      return next
+    }) {
+      next.start()
+    }
   }
 
-  var waiting: Int { state.withLock { $0.waiting.count } }
+  var waiting: Int { state.withLock { $0.queued.count } }
 }

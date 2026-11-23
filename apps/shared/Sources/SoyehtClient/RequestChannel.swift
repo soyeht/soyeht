@@ -4,7 +4,7 @@ import os
 
 /// The connection's requests, usable from any actor: the wire of the connection that is open, and
 /// the requests waiting on it. The main actor's `EngineClient` and the task that sends terminal
-/// input (which never waits for the main actor) go out through the same one (ADR 0171).
+/// input (which never waits for the main actor) go out through the same one (ADR 0173).
 final class RequestChannel: Sendable {
   let pending = PendingRequests()
   private let admission = RequestAdmission()
@@ -13,6 +13,9 @@ final class RequestChannel: Sendable {
   var wire: Wire? { current.withLock { $0 } }
 
   func attach(_ wire: Wire?) { current.withLock { $0 = wire } }
+
+  /// How many requests wait for a free place before they go out.
+  var waitingForTheEngine: Int { admission.waiting }
 
   /// Sends `method` and waits for its answer. The request is registered and queued for sending at
   /// the moment of the call, in the caller's isolation: requests made one after the other reach

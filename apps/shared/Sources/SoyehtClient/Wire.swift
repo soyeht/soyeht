@@ -50,7 +50,7 @@ extension JsonValue {
 
 /// Owns one connection. All reads and writes are asynchronous and none of it runs on the main
 /// actor: the connection's callbacks resume the waiting reader or writer directly, so a main
-/// thread busy for seconds delays nothing that is read from or written to the engine (ADR 0171).
+/// thread busy for seconds delays nothing that is read from or written to the engine (ADR 0173).
 /// The state is behind a lock, never held across a suspension.
 final class Wire: Sendable {
   private struct ReadWaiter {

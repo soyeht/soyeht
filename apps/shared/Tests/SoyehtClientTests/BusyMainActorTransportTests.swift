@@ -426,6 +426,45 @@
       for task in burst { await task.value }
     }
 
+    @Test func aLongLineOfRequestsOnAClosedWireAllFailAndNoneOverflowsTheStack() async throws {
+      // Two requests hold the only places and are never answered; thousands wait behind them.
+      let link = try await Link(answer: { _ in nil })
+      defer { link.stop() }
+      let channel = link.channel
+      let deadlines = Deadlines()
+      let holders = (0..<ClientPolicy.capsRequestsInFlight).map { _ in
+        Task.detached {
+          try await channel.response(
+            .usageList, .object([:]), timeoutSeconds: 12,
+            waitForTimeout: { _, _ in await deadlines.wait() })
+        }
+      }
+      let server = link.server
+      while server.requests.count < holders.count { try await Task.sleep(for: .milliseconds(2)) }
+      let line = 5000
+      let waiters = (0..<line).map { _ in
+        Task.detached { () -> Bool in
+          do {
+            _ = try await channel.response(.harnessList, .object([:]), timeoutSeconds: 600)
+            return false
+          } catch ClientFailure.disconnected {
+            return true
+          } catch {
+            return false
+          }
+        }
+      }
+      while channel.waitingForTheEngine < line { try await Task.sleep(for: .milliseconds(5)) }
+      // The wire is closed and the client has not yet noticed; then a holder's deadline passes and
+      // each place goes to the next in line, whose start is refused at once.
+      link.wire.close()
+      await deadlines.release()
+      var failed = 0
+      for waiter in waiters where await waiter.value { failed += 1 }
+      #expect(failed == line)
+      for holder in holders { _ = try? await holder.value }
+    }
+
     @Test func requestsMadeInOrderInOneTurnReachTheEngineInThatOrder() async throws {
       let link = try await Link()
       defer { link.stop() }

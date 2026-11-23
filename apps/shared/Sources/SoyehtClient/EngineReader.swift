@@ -11,7 +11,7 @@ extension ClientFailure {
   }
 }
 
-/// Reads one connection and feeds the main actor, on no actor of the app (ADR 0171).
+/// Reads one connection and feeds the main actor, on no actor of the app (ADR 0173).
 ///
 /// It frames, parses, and matches the answer to a request with the request that waits for it the
 /// moment the answer is read, so a request's deadline and the main actor's work never meet: an

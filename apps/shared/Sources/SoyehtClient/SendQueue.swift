@@ -17,7 +17,7 @@ import os
 ///
 /// Units are queued synchronously, in the order of the calls, from any actor, and sent by a task of
 /// no actor: nothing a connection sends waits for the main actor, and two requests made one after
-/// the other reach the engine in that order (ADR 0171).
+/// the other reach the engine in that order (ADR 0173).
 final class SendQueue<Unit: Sendable>: Sendable {
   private struct Entry {
     let id: UInt64

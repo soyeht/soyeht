@@ -26,6 +26,38 @@ struct EngineResponse: Sendable {
   var attachment: WebHostAttachment?
 }
 
+/// Says that a caller is back on its actor: the apply loop, which resumed it, waits for this before
+/// it applies the next frame, so the caller reads the state its answer left, whatever the priority
+/// of the tasks involved (ADR 0173).
+final class Acknowledgement: Sendable {
+  private struct State {
+    var fired = false
+    var waiter: CheckedContinuation<Void, Never>?
+  }
+
+  private let state = OSAllocatedUnfairLock(initialState: State())
+
+  func fire() {
+    let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+      state.fired = true
+      defer { state.waiter = nil }
+      return state.waiter
+    }
+    waiter?.resume()
+  }
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      let fired = state.withLock { state -> Bool in
+        if state.fired { return true }
+        state.waiter = continuation
+        return false
+      }
+      if fired { continuation.resume() }
+    }
+  }
+}
+
 /// Where the answer to a request is delivered from. An `ordered` answer is applied by the main
 /// actor in the order the frames arrived, after the events that came before it, because the caller
 /// reads state those events changed. An `immediate` answer resumes its request from the reader,
@@ -38,7 +70,7 @@ enum ReplyDelivery: Sendable { case ordered, immediate }
 ///
 /// It runs on no actor. The reader takes a request out of it the moment its answer is read, which
 /// also cancels its deadline, so a deadline can never fire for an answer the app already holds,
-/// however long the main actor takes to apply it (ADR 0171).
+/// however long the main actor takes to apply it (ADR 0173).
 ///
 /// The engine serves one connection's requests one at a time, so a request can wait behind the
 /// others the client sent. A deadline that passes while the engine has answered other requests
@@ -55,6 +87,8 @@ final class PendingRequests: Sendable {
     var delivery: ReplyDelivery
     /// Gives back the slot the request holds (`RequestSlots`), once it no longer waits.
     var release: (@Sendable () -> Void)?
+    /// Fired when the caller of an `ordered` request is back on its actor with the answer.
+    var acknowledged = Acknowledgement()
   }
 
   private struct State {
@@ -185,11 +219,15 @@ final class PendingRequests: Sendable {
     isolation: isolated (any Swift.Actor)? = #isolation,
     start: (String) -> Void
   ) async throws -> EngineResponse {
-    try await withCheckedThrowingContinuation { continuation in
+    let acknowledged = Acknowledgement()
+    // Whatever ends the wait, the caller is back on its actor here.
+    defer { acknowledged.fire() }
+    return try await withCheckedThrowingContinuation { continuation in
       state.withLock {
         $0.entries[id] = Entry(
           method: method, params: params, startedAtNs: Self.now(),
-          continuation: continuation, timeout: nil, delivery: delivery, release: release)
+          continuation: continuation, timeout: nil, delivery: delivery, release: release,
+          acknowledged: acknowledged)
       }
       // The deadline starts once the request is registered, so one that fires at once finds it.
       let timeout = deadline(

@@ -14,5 +14,9 @@
   "duplication.engine.clones": {
     "value": 265,
     "reason": "The two added clones are the error type of soyeht-image: the opening of its Display match and its Error and From<io::Error> impls, which have the same token shape as the error type of every other crate (soyeht-protocol, soyeht-service). They are the idiom, not copied code."
+  },
+  "central_objects.engine_client_extension_files": {
+    "value": 44,
+    "reason": "EngineClientApply.swift holds the apply loop of the connection (apply, abandon, receive of an incoming item, complete of an answer) that ADR 0173 moves behind the reader: EngineClient.swift would otherwise sit at its 800-line cap. It adds no state to EngineClient (the backlog queue and the request channel are their own types); it only reads and writes the replicas the client already holds."
   }
 }

@@ -1,4 +1,4 @@
-# ADR 0171: The client reads, matches and sends without the main thread
+# ADR 0173: The client reads, matches and sends without the main thread
 
 - Status: accepted. Changes where the client's connection work runs; nothing changes for the engine or the wire.
 - Date: 2026-11-20
@@ -21,7 +21,7 @@ request whose answer had to come back through the same turns before the next key
 ## Decision
 
 - **The wire runs on no actor.** `Wire` takes bytes off the socket in blocks, frames them from a buffer and
-  resumes its reader and writer directly from the connection's callbacks. `SendQueue` is its own actor.
+  resumes its reader and writer directly from the connection's callbacks. `SendQueue` is a lock-based queue of its own: a unit is queued synchronously, in the order of the calls, and sent by a task of no actor.
 - **An answer is matched where it is read.** `EngineReader` runs on no actor: it frames, parses a JSON frame
   and, for a reply, takes the request out of `PendingRequests` (a lock around a table) at once, which also
   cancels its deadline. A deadline therefore never fires for an answer the app already holds, however long
@@ -41,11 +41,14 @@ request whose answer had to come back through the same turns before the next key
   order, giving the window a turn after each `ClientPolicy.applyBudgetMs`, so a backlog does not stop the
   window from drawing and the window's own work coalesces what a batch wrote. The replica rules (event
   cursor, stream gaps, snapshot parts, reconnect hydration) are unchanged: they run on the main actor over the
-  same sequence. A request made from the main actor is registered, queued for sending and awaited in the
-  caller's isolation, so the answer resumes the caller on the main actor directly; the apply loop ends its
-  turn after each answer, and the caller reads the state that answer and everything before it left, as it did
-  when the reader ran on the main actor (`pane.create`'s replay is applied before the caller selects the
-  pane, never after). What is read and not applied when the connection ends, the answer being applied
+  same sequence. A request made from the main actor is registered, queued for
+  sending and awaited in the caller's isolation (`PendingRequests.response`, `RequestChannel.response` and
+  `SendQueue.send` take it), so requests made one after the other are queued in that order. The apply loop
+  does not leave an answer until its caller is back on its actor (`Acknowledgement`: `response` fires it when
+  the wait ends), so the caller reads the state that answer and everything before it left, before the frame
+  behind the answer is applied (`pane.create`'s answer is applied and its caller selects the pane before the
+  replay that follows is applied). This is an acknowledgement, not an assumption that the caller and the apply
+  loop run at one priority. What is read and not applied when the connection ends, the answer being applied
   included, fails its request.
 - **The backlog is bounded.** More than `ClientPolicy.capsIncomingQueueBytes` waiting means the main actor
   has lost the screen: the connection ends with `invalidStream`, every request whose answer was read but not
@@ -60,7 +63,9 @@ request whose answer had to come back through the same turns before the next key
   requests wait for the engine at once (`RequestAdmission`); the others wait in the client, in the order they
   were made, and their wait counts against their deadline (which a request the engine is answering others
   meanwhile extends, below). Requests are queued for sending synchronously, in call order, so two requests
-  made one after the other reach the engine in that order. Terminal input, and a request the engine is given longer than the usual wait for (it can hold its place
+  made one after the other reach the engine in that order. When a place is freed the next waiters are started
+  by one thread, one after the other: a start refused at once (the wire is closed) must not nest one level
+  deeper for every request in a line of thousands. Terminal input, and a request the engine is given longer than the usual wait for (it can hold its place
   for a long time; the engine serves some methods concurrently), skip the line, so a key waits at most for the requests
   already sent, not for a burst of queue refreshes (in the run that measured this, keys reached the engine
   24 to 34 seconds late behind about 15 refreshes a second). Slots are given back when the answer is read,

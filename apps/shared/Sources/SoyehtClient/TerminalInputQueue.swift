@@ -6,7 +6,7 @@ import os
 /// from the main actor with no suspension, and a task of no actor sends them: in order, in pieces
 /// of `ClientPolicy.terminalInputChunkBytes`, each piece after the engine said how much of the
 /// last one it took. Nothing here waits for the main actor, so keystrokes leave while the window
-/// is busy (ADR 0171).
+/// is busy (ADR 0173).
 final class TerminalInputQueue: Sendable {
   private struct Entry: Sendable {
     let paneId: String

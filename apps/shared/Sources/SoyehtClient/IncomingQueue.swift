@@ -18,7 +18,7 @@ enum Incoming: Sendable {
 /// The ordered hand-off from the reader, which runs on no actor, to the main actor, which applies
 /// what was read. The reader never waits for the main actor: a main thread that is busy for
 /// seconds lets this fill, and the reader keeps matching answers to requests and keeping the
-/// engine's output moving (ADR 0171). The main actor takes everything that has arrived in one go
+/// engine's output moving (ADR 0173). The main actor takes everything that has arrived in one go
 /// and applies it in order.
 ///
 /// What waits here is bounded by `ClientPolicy.capsIncomingQueueBytes`: a main actor that falls

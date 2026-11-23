@@ -79,7 +79,7 @@ public final class EngineClient {
   }
   /// The wire and the requests waiting on it, used off the main actor too.
   @ObservationIgnored let channel = RequestChannel()
-  private var wire: Wire? { channel.wire }
+  var wire: Wire? { channel.wire }
   #if DEBUG
     @ObservationIgnored var requestStub: RequestStub?
   #endif
@@ -108,7 +108,7 @@ public final class EngineClient {
   @ObservationIgnored private var resizeTasks: [String: Task<Void, Never>] = [:]
   @ObservationIgnored private var resizeGenerations: [String: UInt64] = [:]
   @ObservationIgnored private var webHostTasks: [String: Task<Void, Never>] = [:]
-  @ObservationIgnored private var responseAttachments = ResponseAttachmentAssembly()
+  @ObservationIgnored var responseAttachments = ResponseAttachmentAssembly()
   /// Panes the engine closed since the last snapshot; a late event about one never brings it back.
   @ObservationIgnored var closedPaneIds: Set<String> = []
   @ObservationIgnored private var lastAgentPaneByWorkspace: [String: String] = [:]
@@ -179,7 +179,7 @@ public final class EngineClient {
     lifecycle = nil
     disconnect()
   }
-  private func disconnect() {
+  func disconnect() {
     (connected, engineCapabilities) = (false, [])
     resetAgentSession()
     for task in editorWriteTasks.values { task.cancel() }
@@ -233,7 +233,7 @@ public final class EngineClient {
     guard challenge.kind == 1 else { throw ClientFailure.invalidFrame }
     let first = try JSONDecoder().decode(JsonValue.self, from: challenge.payload)
     guard first["method"].eventName == .authChallenge else { throw ClientFailure.invalidFrame }
-    // The reader runs on no actor; this actor applies what it queues (ADR 0171).
+    // The reader runs on no actor; this actor applies what it queues (ADR 0173).
     let queue = IncomingQueue(limitBytes: incomingQueueBytes)
     let pending = pending
     let reader = Task.detached {
@@ -340,109 +340,6 @@ public final class EngineClient {
     }
     return true
   }
-  /// Applies what the reader queued, in order, giving the window a turn every
-  /// `ClientPolicy.applyBudgetMs`; what is not applied when the connection ends fails its requests.
-  func apply(_ queue: IncomingQueue, from wire: Wire) async {
-    let budget = Duration.milliseconds(ClientPolicy.applyBudgetMs)
-    let clock = ContinuousClock()
-    while true {
-      let batch = await queue.next()
-      if batch.isEmpty {
-        // The queue ended because the backlog passed its limit: say so, and resynchronize.
-        if let error = queue.failure, self.wire === wire {
-          connectionText = error.localizedDescription
-          disconnect()
-        }
-        return
-      }
-      var sliceStart = clock.now
-      for (index, item) in batch.enumerated() {
-        guard self.wire === wire else {
-          Self.abandon(batch[index...])
-          return
-        }
-        do {
-          try receive(item)
-        } catch {
-          connectionText = error.localizedDescription
-          disconnect()
-          Self.abandon(batch[(index + 1)...])
-          return
-        }
-        // A caller resumed by this answer goes before the frames behind it (ADR 0171).
-        if case .reply = item {
-          await Task.yield()
-          sliceStart = clock.now
-        } else if clock.now - sliceStart >= budget {
-          await Task.yield()
-          sliceStart = clock.now
-        }
-      }
-    }
-  }
-
-  /// Fails the requests whose answers were read and will not be applied.
-  private static func abandon(_ items: ArraySlice<Incoming>) {
-    for case .reply(let request, _) in items {
-      request.continuation.resume(throwing: ClientFailure.disconnected)
-    }
-  }
-
-  private func receive(_ incoming: Incoming) throws {
-    switch incoming {
-    case .failure(let error): throw error
-    case .reply(let request, let message): try complete(request, with: message)
-    case .message(let message): try receive(message: message)
-    case .other(let frame) where frame.kind == FrameKind.attachment:
-      try responseAttachments.accept(frame)
-    case .other(let frame) where frame.kind == FrameKind.terminal:
-      if let delivery = try terminalStreams.accept(frame) {
-        if terminalStreams.isReplaying(delivery.paneId) { replayGate.progress(delivery.paneId) }
-        deliverTerminalOutput(to: delivery.paneId, bytes: delivery.bytes, reset: false)
-      }
-    case .other: break
-    }
-  }
-
-  /// Applies the answer to `request`, which the reader took out of `pending`, and resumes its
-  /// caller.
-  private func complete(_ request: PendingRequests.Entry, with message: JsonValue) throws {
-    if message["error"] != .null {
-      if responseAttachments.isPending {
-        responseAttachments.reset()
-        request.continuation.resume(throwing: ClientFailure.invalidFrame)
-        throw ClientFailure.invalidFrame
-      }
-      request.continuation.resume(throwing: ClientFailure.remote(error: message))
-      return
-    }
-    let result = message["result"]
-    do {
-      let reference = try responseAttachmentReference(method: request.method, result: result)
-      let attachment = try reference.map {
-        WebHostAttachment(reference: $0, bytes: try responseAttachments.commit($0))
-      }
-      if reference == nil, responseAttachments.isPending { throw ClientFailure.invalidFrame }
-      if request.method == .stateSnapshot { try applySnapshot(result) }
-      if request.method == .paneStreamSubscribe,
-        let paneId = request.params["paneId"].string
-      {
-        let info = try result.decoded(StreamInfo.self)
-        // A close event can overtake an in-flight subscribe response. Do not resurrect stream
-        // state after the pane (or its terminal role) has already disappeared.
-        if panes.contains(where: { $0.paneId == paneId && $0.mode == .terminal }) {
-          try terminalStreams.install(paneId: paneId, info: info)
-        }
-      }
-      request.continuation.resume(
-        returning: EngineResponse(value: result, attachment: attachment)
-      )
-    } catch {
-      request.continuation.resume(throwing: error)
-      throw error
-    }
-  }
-
   func receive(message: JsonValue) throws {
     guard message["jsonrpc"].string == "2.0" else { throw ClientFailure.invalidFrame }
     if try acceptWebHostRequest(message) { return }
@@ -566,7 +463,7 @@ public final class EngineClient {
       workspaces.append(workspace)
     }
   }
-  private func applySnapshot(_ value: JsonValue) throws {
+  func applySnapshot(_ value: JsonValue) throws {
     let result = try value.decoded(StateSnapshotResult.self)
     let sections = try snapshot.finish(result)
     let panes = try (sections["panes"] ?? []).map { try $0.decoded(Pane.self) }

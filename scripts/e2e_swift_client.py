@@ -10,7 +10,7 @@ workspaces, the connection a Mac app with that many terminals makes (one connect
 slow-consumer close, every terminal's history, and again after a reconnect), and
 `theClientKeepsItsConnectionAndItsKeysMovingWhileTheMainActorIsBusy` is the transport under a busy
 main actor (a request answered, the connection kept and the keys typed sent while the main actor is
-held, ADR 0171). A change to the
+held, ADR 0173). A change to the
 engine's stream, screen or outbox code, or to the client's terminal or connection code, can break
 them while every unit test passes, and the full `swift test` that would say so runs only after the
 merge. This runs them in the fast tier, with the programs of `e2e.stage_programs`: the same stable
