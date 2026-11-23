@@ -36,31 +36,41 @@
         return .reply(
           entry, .object(["jsonrpc": .string("2.0"), "id": .string(id), "result": .object([:])]))
       }
+
+      /// A request is answered and an event follows its answer in the backlog; the apply loop
+      /// (at `priority`) runs. Whether the caller, when it resumed, already saw the event.
+      func callerSawTheEventBehindItsAnswer(priority: _Concurrency.TaskPriority?) async throws -> Bool {
+        let client = client
+        let caller = Task { @MainActor () -> Bool in
+          _ = try await client.request(.usageList, .encoded(UsageListParams()))
+          // What the answer and everything before it left.
+          return client.reachability != nil
+        }
+        let reply = try await answered()
+        let behind = Incoming.message(
+          .object([
+            "jsonrpc": .string("2.0"),
+            "method": .string(EventName.engineReachabilityChanged.rawValue),
+            "params": .object(["remote": .bool(true)]),
+          ]))
+        #expect(queue.push(reply))
+        #expect(queue.push(behind))
+        let (queue, wire) = (queue, wire)
+        let applier = Task(priority: priority) { @MainActor in
+          await client.apply(queue, from: wire)
+        }
+        let saw = try await caller.value
+        try await until { client.reachability != nil }
+        queue.finish()
+        await applier.value
+        return saw
+      }
     }
 
     @Test func aCallerResumesBeforeTheFramesBehindItsAnswerAreApplied() async throws {
       let setup = try await Setup()
       defer { setup.stop() }
-      let client = setup.client
-      let caller = Task { @MainActor () -> Bool in
-        _ = try await client.request(.usageList, .encoded(UsageListParams()))
-        // What the answer and everything before it left; the frame behind it is not applied yet.
-        return client.reachability != nil
-      }
-      let reply = try await setup.answered()
-      let behind = Incoming.message(
-        .object([
-          "jsonrpc": .string("2.0"),
-          "method": .string(EventName.engineReachabilityChanged.rawValue),
-          "params": .object(["remote": .bool(true)]),
-        ]))
-      #expect(setup.queue.push(reply))
-      #expect(setup.queue.push(behind))
-      let applier = Task { @MainActor in await client.apply(setup.queue, from: setup.wire) }
-      #expect(try await caller.value == false)
-      try await until { client.reachability != nil }
-      setup.queue.finish()
-      await applier.value
+      #expect(try await setup.callerSawTheEventBehindItsAnswer(priority: nil) == false)
     }
 
     /// The caller goes first because the apply loop waits for it, not because both have the same
@@ -72,27 +82,7 @@
       for _ in 0..<10 {
         let setup = try await Setup()
         defer { setup.stop() }
-        let client = setup.client
-        let caller = Task { @MainActor () -> Bool in
-          _ = try await client.request(.usageList, .encoded(UsageListParams()))
-          return client.reachability != nil
-        }
-        let reply = try await setup.answered()
-        let behind = Incoming.message(
-          .object([
-            "jsonrpc": .string("2.0"),
-            "method": .string(EventName.engineReachabilityChanged.rawValue),
-            "params": .object(["remote": .bool(true)]),
-          ]))
-        #expect(setup.queue.push(reply))
-        #expect(setup.queue.push(behind))
-        let applier = Task(priority: .background) { @MainActor in
-          await client.apply(setup.queue, from: setup.wire)
-        }
-        #expect(try await caller.value == false)
-        try await until { client.reachability != nil }
-        setup.queue.finish()
-        await applier.value
+        #expect(try await setup.callerSawTheEventBehindItsAnswer(priority: .background) == false)
       }
     }
 

@@ -145,6 +145,17 @@
     return (link, link.applyingAnswers(), slow, id, ticks)
   }
 
+  /// A `usage.list` request whose deadline passes when `deadlines` say so.
+  private func requestHeld(by deadlines: Deadlines, on channel: RequestChannel) -> Task<
+    EngineResponse, Error
+  > {
+    Task.detached {
+      try await channel.response(
+        .usageList, .object([:]), timeoutSeconds: 12,
+        waitForTimeout: { _, _ in await deadlines.wait() })
+    }
+  }
+
   private func pieces(of server: FakeEngineServer) -> [Data] {
     server.requests.filter { $0.method == RequestMethod.paneInput.rawValue }.compactMap {
       $0.params["bytes"].string.flatMap { Data(base64Encoded: $0) }
@@ -160,11 +171,7 @@
       defer { link.stop() }
       let channel = link.channel
       let deadlines = Deadlines()
-      let request = Task.detached {
-        try await channel.response(
-          .usageList, .object([:]), timeoutSeconds: 12,
-          waitForTimeout: { _, _ in await deadlines.wait() })
-      }
+      let request = requestHeld(by: deadlines, on: channel)
       // The main actor is busy until the answer has been read: nothing applied it.
       await keepMainActorBusy(until: { !link.server.requests.isEmpty && channel.pending.count == 0 }
       )
@@ -433,11 +440,7 @@
       let channel = link.channel
       let deadlines = Deadlines()
       let holders = (0..<ClientPolicy.capsRequestsInFlight).map { _ in
-        Task.detached {
-          try await channel.response(
-            .usageList, .object([:]), timeoutSeconds: 12,
-            waitForTimeout: { _, _ in await deadlines.wait() })
-        }
+        requestHeld(by: deadlines, on: channel)
       }
       let server = link.server
       while server.requests.count < holders.count { try await Task.sleep(for: .milliseconds(2)) }
